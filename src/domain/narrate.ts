@@ -3,6 +3,7 @@ import type { DecisionMaker } from "./decisions";
 import { hasMovedAway, illnessIdsSubsumedByDeath } from "./events";
 import { DREAM_GOALS, dreamGerund, type DreamGoal, type Memory, type PersonMind, type Thought } from "./mind";
 import { keyedDraw, keyedRng } from "./rng";
+import { DEATH_CAUSE_PHRASE, type DeathCause } from "./mortality";
 import { LANDMARK_POOL, pickLandmarkFor, pickLandmarks, seasonFor, type Landmark } from "./town";
 import type { Event, Person } from "./types";
 
@@ -112,9 +113,13 @@ export function narrateEvent(event: Event, people: Readonly<Record<string, Perso
     case "illness":
       if (event.payload.recovered) return pick(seed, event, [`${A} fell ill, but recovered.`, `${A} took ill for a time, then recovered.`]);
       return `${A} fell ill.`;
-    case "death":
+    case "death": {
+      const causeCode = typeof event.payload.cause === "string" ? event.payload.cause : undefined;
+      const causePhrase = causeCode && causeCode in DEATH_CAUSE_PHRASE ? DEATH_CAUSE_PHRASE[causeCode as DeathCause] : undefined;
       if (event.payload.awayFromTown) return `Word reached town that ${A} had died elsewhere, at age ${String(event.payload.age)}.`;
+      if (causePhrase) return pick(seed, event, [`${A} died of ${causePhrase} at age ${String(event.payload.age)}.`, `${A} was taken by ${causePhrase}, at age ${String(event.payload.age)}.`]);
       return pick(seed, event, [`${A} died at age ${String(event.payload.age)}.`, `${A} passed away at age ${String(event.payload.age)}.`]);
+    }
     case "child":
       return `${A} and ${B} decided to have a child.`;
     case "breakdown": {
@@ -163,6 +168,8 @@ export function narrateEvent(event: Event, people: Readonly<Record<string, Perso
       const other = typeof event.payload.otherName === "string" ? event.payload.otherName : "them";
       return REFLECTION_NARRATION[note]?.(A, other) ?? `${A} sat with their thoughts.`;
     }
+    case "levy":
+      return pick(seed, event, [`The lord levied heavily against ${townName}, and ${A} felt it.`, `The lord's collectors came through ${townName} that year, and ${A} paid the price.`]);
     default:
       return `${A}: ${event.kind}.`;
   }
@@ -181,6 +188,39 @@ const REFLECTION_NARRATION: Record<string, (name: string, other: string) => stri
   "followed-the-family-trade": (name) => `${name} resolved to follow in the family's footsteps.`,
   "sought-an-apprenticeship-elsewhere": (name) => `${name} set out to seek an apprenticeship of their own, away from home.`,
   drifted: (name) => `${name} drifted, not yet sure what to make of themselves.`,
+  "competed-with-sibling": (name, other) => `${name} competed with ${other} for attention.`,
+  "bonded-with-sibling": (name, other) => `${name} bonded with ${other} instead of competing.`,
+  "withdrew-from-sibling": (name) => `${name} withdrew rather than compete for attention at home.`,
+  "fought-back-against-bully": (name, other) => `${name} fought back against ${other}.`,
+  "endured-the-bully": (name) => `${name} endured the bullying quietly.`,
+  "told-an-elder": (name) => `${name} told an elder about the bullying.`,
+  "pursued-the-dream-over-trade": (name) => `${name} chose to pursue the dream, whatever it cost the trade.`,
+  "stayed-practical": (name) => `${name} set the dream aside and stayed practical.`,
+  "opened-up-to-a-friend": (name, other) => `${name} opened up to ${other}, and a real friendship took root.`,
+  "kept-their-distance": (name) => `${name} kept a careful distance, and the friendship never quite formed.`,
+  "confronted-the-betrayal": (name, other) => `${name} confronted ${other} over the betrayal.`,
+  "forgave-the-betrayal": (name, other) => `${name} forgave ${other}, though it was not easily done.`,
+  "left-over-the-betrayal": (name, other) => `${name} left ${other} over the betrayal.`,
+  "sought-revenge-for-the-betrayal": (name, other) => `${name} sought revenge against ${other}.`,
+  "doubled-down-on-faith": (name) => `${name} doubled down on their faith.`,
+  "lost-their-faith": (name) => `${name} lost their faith.`,
+  "sought-another-path": (name) => `${name} set aside their faith and sought another path.`,
+  "resisted-temptation": (name) => `${name} resisted the temptation.`,
+  "pursued-an-affair": (name) => `${name} gave in to the temptation.`,
+  "took-an-apprentice": (name, other) => `${name} took ${other} on as an apprentice.`,
+  "declined-to-mentor": (name) => `${name} declined to take on an apprentice.`,
+  "divided-inheritance-eldest": (name) => `${name} left everything to the eldest.`,
+  "divided-inheritance-favorite": (name) => `${name} left everything to a favorite.`,
+  "split-inheritance": (name) => `${name} split the inheritance evenly.`,
+  "inheritance-to-town": (name) => `${name} left the inheritance to the town itself.`,
+  "last-attempt-at-dream": (name) => `${name} made one last attempt at the old dream.`,
+  "passed-on-dream": (name) => `${name} passed the old dream on to someone else.`,
+  "made-peace-with-unrealized-dream": (name) => `${name} made peace with a dream that never came true.`,
+  "apprenticed-to-family-trade": (name, other) => `${name} apprenticed ${other} to the family trade.`,
+  "sent-away-to-apprentice": (name, other) => `${name} sent ${other} elsewhere to apprentice.`,
+  "kept-at-home": (name, other) => `${name} kept ${other} at home a while longer.`,
+  "went-on-pilgrimage": (name) => `${name} set out on a pilgrimage.`,
+  "stayed-home-from-pilgrimage": (name) => `${name} felt the pull of a pilgrimage, and stayed home all the same.`,
 };
 
 /** Third-person narration for a town-level event (round 5, decision 025) — no actors (the event is town-wide), so it doesn't go through the `A`/`B` name substitution the other cases use. */
@@ -358,6 +398,8 @@ function titleFor(event: Event, viewerId: string, people: Readonly<Record<string
       const note = String(event.payload.note ?? "a quiet moment");
       return capitalize(note.replace(/-/g, " "));
     }
+    case "levy":
+      return "The lord's levy";
     default:
       return capitalize(String(event.kind));
   }
@@ -470,6 +512,7 @@ const DEFAULT_SIGNIFICANCE: Record<Event["kind"], number> = {
   dream: 0.6,
   town: 0.7,
   reflection: 0.45,
+  levy: 0.6,
 };
 
 /**

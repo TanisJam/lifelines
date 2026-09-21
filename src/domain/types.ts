@@ -47,7 +47,7 @@ export interface Person {
   mind: PersonMind;
 }
 
-export const EVENT_KINDS = ["birth", "school", "job", "move", "romance", "marriage", "breakup", "feud", "reconciliation", "illness", "death", "child", "breakdown", "dream", "town", "reflection"] as const;
+export const EVENT_KINDS = ["birth", "school", "job", "move", "romance", "marriage", "breakup", "feud", "reconciliation", "illness", "death", "child", "breakdown", "dream", "town", "reflection", "levy"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
 /** JSON-safe payload value. */
