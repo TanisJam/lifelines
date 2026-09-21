@@ -1,0 +1,132 @@
+import type { ChronicleEntry, LifeStreamEvent, RewriteRequest } from "@/contracts/life";
+import { decisionYear } from "@/domain/decisions";
+import { ForkError, getRestoreSnapshot } from "@/domain/fork";
+import { simulate } from "@/domain/simulate";
+import type { Override } from "@/domain/types";
+import { validateOverride } from "@/domain/validate-override";
+import { activeEngineName, getDecisionMaker } from "@/server/decision-engine";
+import { buildLifeChronicle } from "@/server/life-chronicle";
+import { getLife, getLifeBranch, newLifeBranchId, registerLifeBranch } from "@/server/life-store";
+import { sseResponse } from "@/server/sse";
+
+export const runtime = "nodejs";
+
+let overrideCounter = 0;
+
+function errorResponse(message: string, status = 400): Response {
+  return new Response(JSON.stringify({ error: message }), { status, headers: { "Content-Type": "application/json" } });
+}
+
+/**
+ * Streams a rewrite of one protagonist's life from the changed turn forward (round 9, decision
+ * 034/036) — the single-life counterpart to `/api/worlds/[worldId]/edit/stream`. Sends `divergence`
+ * right after `start` (the old vs. new outcome label for the turn being changed), then `tick` frames
+ * from the divergence year on, then `done` with sparse `ghosts` for every downstream turn whose
+ * outcome actually changed.
+ */
+export async function POST(request: Request, context: { params: Promise<{ lifeId: string }> }): Promise<Response> {
+  const { lifeId } = await context.params;
+  const life = getLife(lifeId);
+  if (!life) return errorResponse("Life not found.", 404);
+
+  const body = (await request.json().catch(() => ({}))) as Partial<RewriteRequest>;
+  const branchId = body.branchId?.trim();
+  if (!branchId) return errorResponse('"branchId" is required.');
+  const baseBranch = getLifeBranch(lifeId, branchId);
+  if (!baseBranch) return errorResponse("Branch not found.", 404);
+  if (!body.decisionId || !body.optionId) return errorResponse('"decisionId" and "optionId" are required.');
+
+  overrideCounter += 1;
+  const override: Override = { id: `lov${overrideCounter}-${Date.now().toString(36)}`, decisionId: body.decisionId, optionId: body.optionId };
+
+  let restoreSnapshot;
+  try {
+    restoreSnapshot = getRestoreSnapshot(baseBranch.snapshots, override);
+  } catch (error) {
+    if (error instanceof ForkError) return errorResponse(error.message);
+    throw error;
+  }
+
+  const validation = validateOverride(override, restoreSnapshot.people, restoreSnapshot.events, life.config.seed, life.config, "protagonist");
+  if (!validation.ok) return errorResponse(validation.error);
+
+  const originalDecision = baseBranch.result.decisions.find((d) => d.id === override.decisionId);
+  if (!originalDecision) return errorResponse(`No such decision "${override.decisionId}" in this branch.`);
+  const chosenOption = originalDecision.options.find((o) => o.id === originalDecision.chosen);
+  const newOption = originalDecision.options.find((o) => o.id === override.optionId);
+  if (!newOption) return errorResponse(`"${override.optionId}" is not one of this decision's options.`);
+  const originalLabel = chosenOption?.label ?? originalDecision.chosen;
+  const newLabel = newOption.label;
+  const entryId = originalDecision.resultingEventIds[0] ?? override.decisionId;
+
+  const decisionMaker = getDecisionMaker();
+  const engineSource = activeEngineName();
+  const forkYear = decisionYear(override.decisionId);
+  const newBranchId = newLifeBranchId();
+
+  return sseResponse(async (send) => {
+    const start: LifeStreamEvent = {
+      type: "start",
+      lifeId,
+      branchId: newBranchId,
+      villageName: life.config.town.name,
+      protagonist: { name: life.protagonistName, sex: life.protagonistSex, birthYear: restoreSnapshot.people.protagonist?.birthYear ?? life.config.startYear },
+    };
+    send("start", start);
+
+    const divergence: LifeStreamEvent = { type: "divergence", entryId, year: forkYear, originalLabel, newLabel };
+    send("divergence", divergence);
+
+    const report = await simulate(life.config, restoreSnapshot.people, restoreSnapshot.events, {
+      decisionMaker,
+      engineSource,
+      overrides: [override],
+      fromYear: forkYear,
+      protagonistId: "protagonist",
+    });
+
+    const label = `Changed in ${forkYear}`;
+    const newBranch = registerLifeBranch(lifeId, newBranchId, branchId, forkYear, override, report.result, report.snapshots, label);
+    if (!newBranch) {
+      send("error", { type: "error", message: "Failed to create the new branch." });
+      return;
+    }
+
+    const chronicleResult = await buildLifeChronicle(lifeId, newBranchId);
+    if (!chronicleResult.data) {
+      send("error", { type: "error", message: chronicleResult.error ?? "Failed to build the chronicle." });
+      return;
+    }
+    const chronicle = chronicleResult.data;
+
+    const newEntriesFromFork = chronicle.entries.filter((e) => (e.endYear ?? e.year) >= forkYear);
+    const byYear = new Map<number, ChronicleEntry[]>();
+    for (const entry of newEntriesFromFork) {
+      const bucket = byYear.get(entry.year) ?? [];
+      bucket.push(entry);
+      byYear.set(entry.year, bucket);
+    }
+    for (const year of [...byYear.keys()].sort((a, b) => a - b)) {
+      send("tick", { type: "tick", year, entries: byYear.get(year)! });
+    }
+
+    const oldDecisionsById = new Map(baseBranch.result.decisions.map((d) => [d.id, d] as const));
+    const ghosts: Record<string, string> = {};
+    for (const entry of newEntriesFromFork) {
+      if (!entry.turn) continue;
+      const oldDecision = oldDecisionsById.get(entry.turn.decisionId);
+      if (!oldDecision || oldDecision.chosen === entry.turn.chosen.optionId) continue;
+      const oldLabel = oldDecision.options.find((o) => o.id === oldDecision.chosen)?.label ?? oldDecision.chosen;
+      ghosts[entry.id] = `In the original life, ${oldLabel.charAt(0).toLowerCase()}${oldLabel.slice(1)}.`;
+    }
+
+    const adapterStats = decisionMaker.getStats?.();
+    const done: LifeStreamEvent = {
+      type: "done",
+      chronicle,
+      ghosts,
+      stats: { jevCalls: report.decisionCalls, cacheHits: adapterStats?.cacheHits ?? 0, wallTimeMs: report.wallTimeMs },
+    };
+    send("done", done);
+  });
+}
