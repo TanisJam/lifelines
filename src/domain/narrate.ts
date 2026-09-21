@@ -6,6 +6,7 @@ import { keyedDraw, keyedRng } from "./rng";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "./mortality";
 import { LANDMARK_POOL, pickLandmarkFor, pickLandmarks, seasonFor, type Landmark } from "./town";
 import type { Event, Person } from "./types";
+import { getVignette } from "./vignettes";
 
 /** Landmarks plausible as a place two people would meet — a subset of the town's full landmark set (round 5, decision 026). */
 const MEETING_FRIENDLY: ReadonlySet<Landmark> = new Set(["the fairground", "the market square", "the chapel", "the old well"]);
@@ -179,6 +180,14 @@ export function narrateEvent(event: Event, people: Readonly<Record<string, Perso
     }
     case "levy":
       return pick(seed, event, [`The lord levied heavily against ${townName}, and ${A} felt it.`, `The lord's collectors came through ${townName} that year, and ${A} paid the price.`]);
+    case "vignette": {
+      // "At least one entry per year" (round 10, decision 042): a generic D1 decision, with the
+      // actual title/prose looked up from the vignette pool (`vignettes.ts`) by `payload.vignette` +
+      // `payload.outcome` — never free text stored on the event itself (decision 001).
+      const vignette = getVignette(String(event.payload.vignette ?? ""));
+      const outcome = vignette?.outcomes[String(event.payload.outcome ?? "")];
+      return outcome ? outcome.prose(A, townName) : `${A} lived through an ordinary year.`;
+    }
     default:
       return `${A}: ${event.kind}.`;
   }
@@ -358,7 +367,7 @@ function withArticle(noun: string): string {
  * is expected to refine titles further — this proves the `{title, prose}`
  * shape works, not final copy for all fifteen event kinds).
  */
-function titleFor(event: Event, viewerId: string, people: Readonly<Record<string, Person>>): string {
+function titleFor(event: Event, viewerId: string, people: Readonly<Record<string, Person>>, townName = "town"): string {
   const [a, b] = event.actors;
   const viewer = people[viewerId];
   const otherId = a === viewerId ? b : a;
@@ -409,6 +418,10 @@ function titleFor(event: Event, viewerId: string, people: Readonly<Record<string
     }
     case "levy":
       return "The lord's levy";
+    case "vignette": {
+      const vignette = getVignette(String(event.payload.vignette ?? ""));
+      return vignette ? vignette.title(townName) : "An ordinary year";
+    }
     default:
       return capitalize(String(event.kind));
   }
@@ -425,7 +438,7 @@ function titleFor(event: Event, viewerId: string, people: Readonly<Record<string
  * name-swapped copy of someone else's.
  */
 export function narrateEventForViewer(event: Event, viewerId: string, people: Readonly<Record<string, Person>>, seed = "narrate", townName = "town", allEvents: readonly Event[] = []): RenderedEvent {
-  const title = titleFor(event, viewerId, people);
+  const title = titleFor(event, viewerId, people, townName);
   const viewer = people[viewerId];
   const [a] = event.actors;
 
@@ -522,6 +535,7 @@ const DEFAULT_SIGNIFICANCE: Record<Event["kind"], number> = {
   town: 0.7,
   reflection: 0.45,
   levy: 0.6,
+  vignette: 0.2,
 };
 
 /**

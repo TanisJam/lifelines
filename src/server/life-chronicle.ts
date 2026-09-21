@@ -4,16 +4,13 @@ import { isRealTurn } from "@/domain/chronicle-view";
 import type { DecisionRecord } from "@/domain/decisions";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "@/domain/mortality";
 import { renderPortrait } from "@/domain/mind";
-import { article, familyRelation, lifeSummary, narratePersonTimeline } from "@/domain/narrate";
-import type { Event, EventKind, Job, Person } from "@/domain/types";
+import { familyRelation, lifeSummary, narratePersonTimeline } from "@/domain/narrate";
+import type { Event, Person } from "@/domain/types";
 import { causeNounPhrase } from "@/server/chronicle-data";
 import { getDecisionMaker } from "@/server/decision-engine";
-import { getLatestBranch, getLifeBranch, listLifeBranches, type LifeBranchRecord } from "@/server/life-store";
+import { getLatestBranch, getLifeBranch, listLifeBranches } from "@/server/life-store";
 
 const PROTAGONIST_ID = "protagonist";
-
-/** A gap of at least this many years with no protagonist chronicle entry becomes one `period` summary. */
-const PERIOD_GAP_THRESHOLD_YEARS = 5;
 
 /** Kinds that read as "a major life event without an editable choice" (ui-ux-handoff.md §7, level 2) when they don't already carry a real turn. */
 const LEVEL_2_KINDS = new Set(["marriage", "breakdown", "town", "levy", "dream"]);
@@ -71,99 +68,15 @@ function buildTurn(decision: DecisionRecord, people: Readonly<Record<string, Per
 function levelFor(event: Event, decision: DecisionRecord | undefined, isProtagonistDeath: boolean, significance: number): EntryLevel {
   if (isProtagonistDeath) return 3;
   if (decision && isRealTurn(decision)) return 3;
+  // Decision 042: a `D1` everyday-life vignette is level 1 by default, and level 3 (a turn) only
+  // when it passes `isRealTurn` above — never bumped to level 2 by significance the way other kinds
+  // can be, so an ordinary year doesn't masquerade as "a major event without an editable choice".
+  if (event.kind === "vignette") return 1;
   if (LEVEL_2_KINDS.has(event.kind)) return 2;
   if (event.kind === "death") return 2; // a family member's death, not the protagonist's own
   if (event.kind === "birth" && event.actors[0] !== PROTAGONIST_ID) return 2; // a child is born
   if (significance >= 0.75) return 2;
   return 1;
-}
-
-/** A flavor noun for where each trade's day-to-day work happens — used to give a working-years period title some texture instead of just naming the job. */
-const JOB_PLACE_NOUN: Partial<Record<Job, string>> = {
-  blacksmith: "the forge",
-  healer: "the healer's house",
-  merchant: "the trading post",
-  scholar: "the scriptorium",
-  guard: "the watch",
-  fisher: "the docks",
-  innkeeper: "the inn",
-  weaver: "the loom",
-  farmer: "the fields",
-};
-
-/** The place name to use for a given year: the destination name once away (decision 040's move-away payload may carry the one-time "Name, a kind" introduction — this strips it back to the bare name for a repeat reference), the home town otherwise. */
-function placeNameAt(events: readonly Event[], year: number, homeTownName: string): string {
-  const moves = events
-    .filter((e) => e.kind === "move" && e.actors[0] === PROTAGONIST_ID && e.year <= year)
-    .sort((a, b) => b.year - a.year);
-  const last = moves[0];
-  if (last && last.payload.away === true) {
-    const destination = typeof last.payload.destination === "string" ? last.payload.destination : "a distant town";
-    return destination.split(",")[0]!.trim();
-  }
-  return homeTownName;
-}
-
-/**
- * A narrative title for a quiet stretch (decision 040 fix — the reported bug: a bare "1519–1580"
- * with nothing behind it). Deterministic from the protagonist's life stage, trade and place at the
- * stretch's START, never the year range itself.
- */
-function periodTitle(startAge: number, job: Job, placeName: string): string {
-  if (startAge < 6) return `Early childhood in ${placeName}`;
-  if (startAge < 13) return `Childhood in ${placeName}`;
-  if (startAge < 20) return `Youth in ${placeName}`;
-  if (job !== "none") return `Years at ${JOB_PLACE_NOUN[job] ?? "the trade"} in ${placeName}`;
-  if (startAge >= 60) return `Old age in ${placeName}`;
-  return `Quiet years in ${placeName}`;
-}
-
-/** One extra sentence built from whichever low-significance event kinds actually happened during the gap (dropped from the main timeline for being too quiet to stand alone on their own) — deterministic on presence, not narrated per-event, to stay template-based (decision 001). */
-function periodDetailSentence(stretchEvents: readonly Event[], subject: string): string {
-  const kindOrder: readonly EventKind[] = ["illness", "job", "feud", "breakdown", "dream", "reflection", "town"];
-  const present = kindOrder.find((k) => stretchEvents.some((e) => e.kind === k));
-  if (!present) return "";
-  const possessive = subject === "she" ? "her" : "his";
-  const phrase: Partial<Record<EventKind, string>> = {
-    illness: "a spell of illness came and went",
-    job: `${possessive} trade shifted a little, without much notice`,
-    feud: "a quarrel or two flared and cooled",
-    breakdown: "the weight of it all pressed hard for a time",
-    dream: "old hopes stirred and settled again",
-    reflection: `${subject} kept mostly to ${possessive} own thoughts`,
-    town: "the town had its own small troubles",
-  };
-  const text = phrase[present];
-  return text ? ` Otherwise, ${text}.` : "";
-}
-
-function buildPeriodEntry(startYear: number, endYear: number, branch: LifeBranchRecord, townName: string, events: readonly Event[]): ChronicleEntry | undefined {
-  const snapshot = branch.snapshots.get(startYear) ?? branch.snapshots.get(startYear - 1);
-  const protagonist = snapshot?.people[PROTAGONIST_ID];
-  if (!protagonist) return undefined;
-  const span = endYear - startYear + 1;
-  const subject = protagonist.sex === "f" ? "she" : "he";
-  const startAge = ageInYear(protagonist.birthYear, startYear);
-  const placeName = placeNameAt(events, startYear, townName);
-  const jobPhrase = protagonist.job !== "none" ? `, working as ${article(protagonist.job)} ${protagonist.job}` : "";
-  const spouse = protagonist.spouseId ? snapshot!.people[protagonist.spouseId] : undefined;
-  const links: PersonLink[] = [];
-  let marriedPhrase = "";
-  if (spouse) {
-    marriedPhrase = `, married to {{${spouse.id}}}`;
-    links.push({ personId: spouse.id, name: spouse.name });
-  }
-  const stretchEvents = events.filter((e) => e.year >= startYear && e.year <= endYear && e.actors.includes(PROTAGONIST_ID));
-  return {
-    id: `period:${startYear}-${endYear}`,
-    year: startYear,
-    endYear,
-    level: 1,
-    kind: "period",
-    title: periodTitle(startAge, protagonist.job, placeName),
-    prose: `${span} quiet year${span === 1 ? "" : "s"} passed in ${placeName}${jobPhrase ? `; ${subject}${jobPhrase}` : ""}${marriedPhrase}.${periodDetailSentence(stretchEvents, subject)}`,
-    links,
-  };
 }
 
 function buildEpilogue(protagonist: Person, people: Readonly<Record<string, Person>>, townName: string): string[] {
@@ -258,20 +171,11 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string)
     };
   });
 
+  // Decision 042 supersedes decision 038's period-summary rule for the protagonist: `simulate.ts`
+  // now guarantees at least one event per year of their life (the `D1` everyday-life vignette,
+  // when nothing else happened), so a multi-year "quiet years passed" gap can no longer occur here
+  // — sorting by year is all that's left to do.
   const sorted = [...entries].sort((a, b) => a.year - b.year);
-  const withPeriods: ChronicleEntry[] = [];
-  for (let i = 0; i < sorted.length; i++) {
-    withPeriods.push(sorted[i]!);
-    const next = sorted[i + 1];
-    if (!next) continue;
-    const gapStart = sorted[i]!.year + 1;
-    const gapEnd = next.year - 1;
-    if (gapEnd - gapStart + 1 >= PERIOD_GAP_THRESHOLD_YEARS) {
-      const period = buildPeriodEntry(gapStart, gapEnd, branch, townName, events);
-      if (period) withPeriods.push(period);
-    }
-  }
-  withPeriods.sort((a, b) => a.year - b.year);
 
   const summaryRaw = lifeSummary(protagonist, people, events, townName);
   const { text: summary, links: summaryLinks } = markLinks(summaryRaw, Object.keys(people), people, PROTAGONIST_ID);
@@ -300,7 +204,7 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string)
     summary,
     summaryLinks,
     epilogue: buildEpilogue(protagonist, people, townName),
-    entries: withPeriods,
+    entries: sorted,
     branches,
     cast: buildCast(protagonist, people),
   };

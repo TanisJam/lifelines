@@ -3,12 +3,14 @@ import { mapWithConcurrency } from "./concurrency";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
 import { article } from "./narrate";
-import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, pushThought, renderPortrait, updateRelationship } from "./mind";
+import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import { determineDeathCause, protagonistMortalityBonus } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
+import { seasonFor } from "./town";
 import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type JsonValue, type Job, type Override, type Person, type Sex, type SimulationResult, type Trait, type WorldConfig, type YearSnapshot } from "./types";
+import { getVignette, pickVignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
 import { pickJob, pickTraits } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
@@ -916,6 +918,8 @@ function optionLabel(kind: string, optionId: string, selfName: string, otherName
       return optionId === "apprentice-own-trade" ? `${selfName} apprentices ${otherName ?? "them"} to ${their} own trade` : optionId === "send-away" ? `${selfName} sends ${otherName ?? "them"} elsewhere to apprentice` : `${selfName} keeps ${otherName ?? "them"} at home a while longer`;
     case "PIL1":
       return optionId === "go" ? `${selfName} sets out on pilgrimage` : `${selfName} stays home`;
+    case "D1":
+      return `${selfName} ${D1_OPTION_LABELS[optionId] ?? optionId}`;
     default:
       return optionId;
   }
@@ -989,7 +993,37 @@ function questionText(kind: string, otherName?: string, townName?: string, oppor
   }
 }
 
-const SOCIAL_KINDS = new Set(["Y1", "A1", "A2", "A3", "Y3", "Y4", "A6", "A8", "A11", "C2", "O2", "O4", "A5", "C3", "C1", "C4", "Y2", "Y5", "A4", "A7", "A9", "A10", "O1", "O3", "AP1", "PIL1"]);
+const SOCIAL_KINDS = new Set(["Y1", "A1", "A2", "A3", "Y3", "Y4", "A6", "A8", "A11", "C2", "O2", "O4", "A5", "C3", "C1", "C4", "Y2", "Y5", "A4", "A7", "A9", "A10", "O1", "O3", "AP1", "PIL1", "D1"]);
+
+/** Short, third-person labels for `D1`'s vignette-specific option ids (round 10, decision 042) — unique across the whole pool, same as their Jev criteria text (`vignettes.ts`), just terser for the UI's `DecisionOption.label`. */
+const D1_OPTION_LABELS: Readonly<Record<string, string>> = {
+  "share-grain": "shares the grain",
+  "keep-grain": "keeps the grain close",
+  "tighten-belt": "tightens the belt",
+  "grumble-openly": "grumbles about it",
+  "give-thanks": "gives thanks at the feast",
+  "keep-quiet": "stays quietly relieved",
+  haggle: "haggles hard",
+  "pay-fair": "pays a fair price",
+  focus: "pays close attention",
+  "wander-off": "lets attention wander",
+  "make-peace": "makes peace",
+  "stay-cross": "stays cross",
+  help: "helps the neighbor",
+  decline: "lets it go unanswered",
+  approach: "finds a reason to speak with them",
+  "hold-back": "says nothing",
+  "join-in": "joins the festivities",
+  "keep-to-self": "keeps to home",
+  "nurse-it": "nurses the animal",
+  "let-it-go": "lets the animal go",
+  "pay-it-off": "pays off the debt",
+  "let-it-ride": "lets the debt ride",
+  "teach-patiently": "teaches patiently",
+  "teach-briskly": "pushes through the lesson briskly",
+  "push-through": "pushes through the aches",
+  rest: "rests instead",
+};
 
 function buildQuestion(descriptor: CandidateDescriptor, year: number, config: WorldConfig, people: Record<string, Person>): DecisionQuestion {
   const person = people[descriptor.personId]!;
@@ -999,9 +1033,15 @@ function buildQuestion(descriptor: CandidateDescriptor, year: number, config: Wo
   const partnerSummary = partner ? otherPersonBrief(partner, year, people) : undefined;
 
   const stateKey = descriptor.kind === "Y1" ? "suitor" : descriptor.kind === "Y4" || descriptor.kind === "A6" || descriptor.kind === "O2" ? "rival" : descriptor.kind === "C2" ? "parent" : "partner";
+  // D1 (round 10, decision 042): the question text comes from the vignette itself
+  // (`descriptor.extra.vignette`), not the generic `questionText` table — the whole point of one
+  // generic kind is that its wording lives in the vignette pool, parameterized by state.
+  const vignetteId = descriptor.kind === "D1" && typeof descriptor.extra?.vignette === "string" ? descriptor.extra.vignette : undefined;
+  const vignetteForQuestion = vignetteId ? getVignette(vignetteId) : undefined;
+  const situationQuestion = vignetteForQuestion ? vignetteForQuestion.question(town) : questionText(descriptor.kind, partner?.name, town, descriptor.opportunityJob, descriptor.breakdownKind, descriptor.townEventType);
   const state: Record<string, JsonValue> = {
     self: base,
-    situation: { code: descriptor.kind, question: questionText(descriptor.kind, partner?.name, town, descriptor.opportunityJob, descriptor.breakdownKind, descriptor.townEventType), ...descriptor.extra },
+    situation: { code: descriptor.kind, question: situationQuestion, ...descriptor.extra },
     town,
     year,
   };
@@ -1040,6 +1080,129 @@ async function resolveSocialDecision(question: DecisionQuestion, decisionMaker: 
   // `ruleDistribution` returns raw relative weights for some kinds (e.g. career-change), not necessarily summing to 1.
   const prior = normalizeDistribution(ruleDistribution(question) as Record<string, number>);
   return { prior, final: prior, source: "rules" };
+}
+
+/** The protagonist's first living sibling (shares a mother or father), if any — used for `D1`'s `sibling-quarrel` vignette. */
+function livingSiblingId(people: Readonly<Record<string, Person>>, person: Person): string | undefined {
+  return Object.values(people).find((p) => p.id !== person.id && p.deathYear === undefined && ((person.motherId && p.motherId === person.motherId) || (person.fatherId && p.fatherId === person.fatherId)))?.id;
+}
+
+/** The protagonist's first living child, if any — used for `D1`'s `teaching-a-child` vignette. */
+function livingChildId(people: Readonly<Record<string, Person>>, person: Person): string | undefined {
+  return Object.values(people).find((p) => (p.motherId === person.id || p.fatherId === person.id) && p.deathYear === undefined)?.id;
+}
+
+/** Resolves a `VignetteOutcome.relationshipTarget` tag to a concrete person id — only `simulate.ts` knows the protagonist's actual spouse/parent/sibling/child, so this stays out of the (pure, person-agnostic) vignette pool itself. */
+function relationshipTargetId(target: VignetteRelationshipTarget, person: Person, people: Readonly<Record<string, Person>>): string | undefined {
+  if (target === "spouse") return person.spouseId;
+  if (target === "child") return livingChildId(people, person);
+  if (target === "sibling") return livingSiblingId(people, person);
+  // "parent": prefer a living mother, then a living father.
+  if (person.motherId && people[person.motherId]?.deathYear === undefined) return person.motherId;
+  if (person.fatherId && people[person.fatherId]?.deathYear === undefined) return person.fatherId;
+  return undefined;
+}
+
+/**
+ * "At least one entry per year" (round 10, decision 042): called once per year, ONLY when the
+ * protagonist produced zero events of their own that year (checked by the caller, after every
+ * other biology/social decision for the year has already resolved) — presents ONE everyday-life
+ * `D1` vignette, a real DecisionMaker call sampled exactly like any other social decision, never
+ * throttled by `LIFE_DECISION_BUDGET` (it's always about the protagonist). `overrides` still apply
+ * (a `D1:<protagonistId>:<year>` id), so a rewrite can change what the protagonist did with an
+ * otherwise-quiet year too.
+ */
+async function resolveDailyLifeVignette(
+  protagonist: Person,
+  year: number,
+  seed: string,
+  config: WorldConfig,
+  people: Record<string, Person>,
+  events: Event[],
+  townEventType: TownEventType | undefined,
+  decisionMaker: DecisionMaker,
+  engineSource: "jev" | "rules",
+  overrides: readonly Override[],
+): Promise<{ decision: DecisionRecord; wasRealCall: boolean }> {
+  const ctx: VignetteContext = {
+    age: ageInYear(protagonist.birthYear, year),
+    away: hasMovedAway(events, protagonist.id),
+    job: protagonist.job,
+    hasSpouse: !!protagonist.spouseId,
+    hasChild: livingChildId(people, protagonist) !== undefined,
+    hasLivingParent: relationshipTargetId("parent", protagonist, people) !== undefined,
+    hasLivingSibling: livingSiblingId(people, protagonist) !== undefined,
+    season: seasonFor(seed, protagonist.id, year, "D1"),
+    townEventType,
+  };
+  const vignette = pickVignette(seed, protagonist.id, year, ctx);
+  const options = Object.keys(vignette.outcomes);
+  const decisionId = `D1:${protagonist.id}:${year}`;
+  const descriptor: CandidateDescriptor = { decisionId, kind: "D1", personId: protagonist.id, options, extra: { vignette: vignette.id } };
+  const question = buildQuestion(descriptor, year, config, people);
+  const forced = overrideFor(overrides, decisionId);
+
+  let final: Distribution;
+  let jevRaw: Distribution | undefined;
+  let prior: Distribution | undefined;
+  let source: DecisionSource;
+  let chosen: string;
+  let noise: Record<string, number> = {};
+  let fragility: number;
+  let surprise: boolean;
+  let wasRealCall = false;
+
+  if (forced) {
+    chosen = forced.optionId;
+    final = { [chosen]: 1 };
+    source = "forced";
+    fragility = NOT_FRAGILE;
+    surprise = false;
+  } else {
+    const result = await resolveSocialDecision(question, decisionMaker, engineSource);
+    wasRealCall = engineSource === "jev";
+    jevRaw = result.jevRaw;
+    prior = result.prior;
+    final = result.final;
+    source = result.source;
+    const sample = sampleGumbelMax(final as Record<string, number>, seed, protagonist.id, year, "D1");
+    chosen = sample.chosen;
+    noise = sample.noise;
+    fragility = decisionFragility(sample.scores);
+    surprise = isSurprise(final, chosen);
+  }
+
+  const outcome = vignette.outcomes[chosen]!;
+  const cause = outcome.cause(protagonist.name, config.town.name);
+  const event = pushEvent(events, year, "vignette", [protagonist.id], { vignette: vignette.id, outcome: chosen }, []);
+  pushThought(protagonist.mind, outcome.emotion, cause, outcome.intensity, outcome.duration, year, outcome.facet as Facet | undefined);
+  if (outcome.memorable) addMemory(seed, protagonist.id, year, protagonist.mind, cause, outcome.emotion);
+  if (outcome.relationshipTarget) {
+    const targetId = relationshipTargetId(outcome.relationshipTarget, protagonist, people);
+    const target = targetId ? people[targetId] : undefined;
+    if (target) updateRelationship(protagonist.mind, target.id, target.mind.values, outcome.relationshipDelta ?? 10);
+  }
+
+  const decisionOptions: DecisionOption[] = options.map((id) => ({ id, label: optionLabel("D1", id, protagonist.name) }));
+  const decision: DecisionRecord = {
+    id: decisionId,
+    personId: protagonist.id,
+    year,
+    kind: "D1",
+    question: vignette.question(config.town.name),
+    options: decisionOptions,
+    jevRaw,
+    prior,
+    final,
+    noise,
+    chosen,
+    fragility,
+    surprise,
+    source,
+    causes: [],
+    resultingEventIds: [event.id],
+  };
+  return { decision, wasRealCall };
 }
 
 function biologyDistribution(kind: string, p: number): Distribution {
@@ -1761,6 +1924,26 @@ export async function simulate(
         causes,
         resultingEventIds,
       });
+    }
+
+    // "At least one entry per year" (round 10, decision 042): if the protagonist ends this year
+    // with no event of their own — every other situation this year either didn't fire, or fired
+    // but resolved to "nothing happens" (e.g. A1's "delay") — present one everyday-life vignette so
+    // the chronicle never has a silent year. Checked AFTER biology and social resolution above (not
+    // at candidate-gathering time), since only the actual outcome, not the mere presence of a
+    // candidate, determines whether a year is genuinely quiet. Superseds the old period-summary
+    // rule for the protagonist (see `life-chronicle.ts`) — with every year covered, a "quiet years
+    // passed" gap can no longer occur for them.
+    if (options.protagonistId) {
+      const protagonist = people[options.protagonistId];
+      if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
+        const hasOwnEventThisYear = events.some((e) => e.year === year && e.actors.includes(protagonist.id));
+        if (!hasOwnEventThisYear) {
+          const { decision: d1Decision, wasRealCall } = await resolveDailyLifeVignette(protagonist, year, seed, config, people, events, townEvent, options.decisionMaker, options.engineSource, overrides);
+          decisions.push(d1Decision);
+          if (wasRealCall) decisionCalls += 1;
+        }
+      }
     }
 
     const snapshot: YearSnapshot = { year, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) };

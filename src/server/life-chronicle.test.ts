@@ -186,39 +186,22 @@ describe("buildLifeChronicle — NPC-decided turns are labeled (fixture)", () =>
     }
   });
 
-  it("period summaries fill quiet, multi-year gaps between real entries", async () => {
-    const result = fixtureResult();
-    const life = registerLife("fixture-periods", "fixture-periods-branch", result.config, "Elin Ashwell", "f", result, fixtureSnapshots(result));
-    try {
-      const chronicleResult = await buildLifeChronicle(life.id, life.originalBranchId);
-      expect(chronicleResult.data).toBeDefined();
-      const periods = chronicleResult.data!.entries.filter((e) => e.kind === "period");
-      // Birth (1500) -> AP1 (1510) is a 9-year gap, and AP1 (1510) -> death (1560) is a 49-year gap:
-      // both comfortably over the period threshold.
-      expect(periods.length).toBeGreaterThanOrEqual(2);
-      for (const period of periods) {
-        expect(period.level).toBe(1);
-        expect(period.endYear).toBeDefined();
-        expect(period.endYear!).toBeGreaterThan(period.year);
-        // Decision 040: a period title is a narrative label ("Youth in Ashford", "Years at the
-        // forge in Ashford"), never the bare "1519–1580" year range this round's bug report flagged.
-        expect(period.title).not.toMatch(/^\d+[–-]\d+$/);
-      }
-    } finally {
-      deleteLife(life.id);
-    }
-  });
+  // Decision 042 supersedes decision 040's period-summary machinery for the protagonist: with
+  // `simulate.ts` now guaranteeing at least one event every year (a `D1` everyday-life vignette
+  // when nothing else happened), a quiet multi-year gap can no longer occur for them, so no
+  // "period" entry is ever produced here — see the year-coverage test below instead.
 
-  it("period titles are never a bare year range, across many real simulated lives (decision 040)", async () => {
+  it("no year of the protagonist's life is missing a chronicle entry, across many real simulated lives (decision 042)", async () => {
     for (let i = 0; i < 8; i++) {
-      const { life, result } = await buildRealChronicle(`period-title-${i}`);
+      const { life, result } = await buildRealChronicle(`year-coverage-${i}`);
       try {
         expect(result.data).toBeDefined();
-        const periods = result.data!.entries.filter((e) => e.kind === "period");
-        for (const period of periods) {
-          expect(period.title).not.toMatch(/^\d+[–-]\d+$/);
-          expect(period.title.length).toBeGreaterThan(0);
+        const chronicle = result.data!;
+        const years = new Set(chronicle.entries.map((e) => e.year));
+        for (let year = chronicle.protagonist.birthYear; year <= chronicle.protagonist.deathYear; year++) {
+          expect(years.has(year)).toBe(true);
         }
+        expect(chronicle.entries.some((e) => e.kind === "period")).toBe(false);
       } finally {
         deleteLife(life.id);
       }
