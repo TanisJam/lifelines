@@ -2,6 +2,37 @@
 
 Measured results, newest first. Each entry records the setup, the numbers, and the conclusion drawn from them.
 
+## 2026-09-21 — Jev throughput limits (documented + probed live)
+
+**Documented** ([models](https://docs.typesafe.ai/models.md), [API](https://docs.typesafe.ai/api.md)):
+
+- 64k tokens per request (32k for `state` plus the longest question); up to 255 options per Choice.
+- Rate limit: 1,200 requests/min and 250,000 tokens/s. The docs warn these can change.
+- Price: $0.042 per million **input** tokens; output tokens are free.
+- On 429/529, retry with exponential backoff.
+- Questions in one request are scored independently: "batching neither shifts the answer nor adds variance" ([parallel questions](https://docs.typesafe.ai/cookbooks/parallel_questions.md)).
+
+**Probed live** (`jev-latest`; small state, 2-option Choice questions):
+
+| Questions in one request | Latency | Input tokens |
+|---|---|---|
+| 1 | 860 ms (cold) | 407 |
+| 100 | 347 ms | 7,130 |
+| 500 | 1,041 ms | 34,730 |
+| 950 | 1,826 ms | 65,780 |
+| 1,200 | **fails**: `400 max_tokens_exceeded` | — |
+
+| Parallel requests (1 question each) | Result |
+|---|---|
+| 64 | 64/64 ok in 539 ms |
+| 200 | 200/200 ok in 666 ms (a burst; the sustained limit is 1,200/min) |
+
+**Conclusions:**
+
+- There is no fixed cap on the number of questions: the limit is the **token budget**, roughly 900 short questions per request.
+- The state is paid once per request, and each extra question costs about 68 tokens. Batching every question a person faces in a year into one request is far cheaper and faster than one request per question.
+- Bursts of 200 parallel requests work. Sustained use must stay under 20 requests/s, so the adapter needs a rate limiter plus backoff on 429/529.
+
 ## 2026-09-21 — Eighth round: the rewrite moment (all 4 phases, live), event levels, narrative titles, causal noun phrases, grammar (seed `round8-final-1`)
 
 ### The rewrite moment, verified live end-to-end
