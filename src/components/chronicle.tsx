@@ -1,211 +1,76 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { streamSSE } from "@/lib/sse";
+import type { Chronicle as ChronicleData, ChronicleEntry, LifeStreamEvent } from "@/contracts/life";
+import { getChronicle, rewriteStream } from "@/lib/life-client";
+import { parseProseMarkers } from "@/lib/prose-markers";
+import { prefersReducedMotion } from "@/lib/viewport";
+import { PersonSheet } from "@/components/person-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { isChoiceDecision, isRealTurn } from "@/domain/chronicle-view";
-
-export interface ChronicleCause {
-  readonly eventId: string;
-  readonly phrase: string;
-  readonly year: number;
-  readonly inThisLife: boolean;
-}
-
-export interface ChronicleDecision {
-  readonly id: string;
-  readonly question: string;
-  readonly options: readonly { id: string; label: string }[];
-  readonly chosen: string;
-  readonly fragility: number;
-  readonly surprise: boolean;
-  readonly source: string;
-  readonly final: Readonly<Record<string, number>>;
-}
-
-export interface ChronicleEntry {
-  readonly eventId: string;
-  readonly year: number;
-  readonly kind: string;
-  readonly actors: readonly string[];
-  readonly title: string;
-  readonly prose: string;
-  readonly isKeyMoment: boolean;
-  readonly causes: readonly ChronicleCause[];
-  readonly decision: ChronicleDecision | null;
-}
-
-export interface ChronicleRelationship {
-  readonly personId: string;
-  readonly name: string;
-  readonly relation: string;
-  readonly strength: number | null;
-}
-
-export interface ChronicleBranch {
-  readonly id: string;
-  readonly label: string;
-  readonly forkYear: number | null;
-  readonly parentBranchId: string | null;
-}
-
-export interface ChronicleData {
-  readonly worldId: string;
-  readonly branchId: string;
-  readonly townName: string;
-  readonly person: { id: string; name: string; sex: "f" | "m"; birthYear: number; deathYear?: number; alive: boolean; age: number; job: string };
-  readonly lifeSummary: string;
-  readonly relationships: readonly ChronicleRelationship[];
-  readonly branches: readonly ChronicleBranch[];
-  readonly currentBranch: { id: string; label: string; forkYear: number | null };
-  readonly timeline: readonly ChronicleEntry[];
-}
 
 /**
- * Fragility/surprise as emotional language, not a probability chart (round 6, decision 029 —
- * "Probabilities are secondary and use emotional language"). Numbers only appear once the reader
- * opens the "Why this happened" disclosure.
- *
- * Round 7 fix (decision 030): exactly ONE phrase now, picked by priority (surprise beats
- * near-even beats fragile beats clear-cut) — the old version could emit "unlikely choice" AND
- * "almost chose otherwise" together for the same 2%-vs-98% event, which reads as contradictory
- * (an outcome can't be both a decisive long shot AND a photo finish). Chance events (illness,
- * death) get their own phrasing that never says "chose" — falling ill isn't a choice.
+ * The question in "Why did she choose this?"/"Why did Tomas Vell choose this?"/"Why did this
+ * happen?" — derived from who actually decided (`turn.deciderId`), never assumed. `decidedBy` is
+ * already a ready-made phrase ("Tomas Vell's choice") per the contract; stripping the trailing
+ * "'s choice" recovers the name for an NPC decider without guessing a pronoun for them.
  */
-function describeChance(d: ChronicleDecision, subject: string): string {
-  if (d.source === "forced") return "This moment was rewritten directly.";
-  const choice = isChoiceDecision(d);
-
-  const probs = Object.values(d.final);
-  const sorted = [...probs].sort((a, b) => b - a);
-  const top = sorted[0] ?? 0;
-  const second = sorted[1] ?? 0;
-  const nearEven = second > 0 && top - second < 0.15;
-
-  if (d.surprise) return choice ? "This was an unlikely choice — the odds favored something else." : "Against the odds — the odds favored something else.";
-  if (nearEven) return "Either outcome was plausible.";
-  if (d.fragility < 1) return choice ? `${subject} almost chose otherwise.` : "It could easily have gone otherwise.";
-  return choice ? "This was a fairly clear-cut choice." : "This was a fairly likely outcome.";
-}
-
-/**
- * A short, pronoun-first label for the `.cw-chosen` tag (round 7, decision 031, porting the
- * mock's "◆ SHE STAYED IN RAVENFORD") — our `DecisionOption.label`s are already third-person
- * ("Sable Underhill stays healthy"), so this swaps the leading full name for "She"/"He". CSS does
- * the uppercasing. Disclosed deviation from the mock: this keeps the option's own verb tense
- * (mostly present, e.g. "stays") rather than converting every option's verb to past tense, which
- * would need a full per-situation conjugation table — not attempted this round.
- */
-function chosenTag(label: string, fullName: string, sex: "f" | "m"): string {
-  const pronoun = sex === "f" ? "She" : "He";
-  if (label.startsWith(fullName)) return pronoun + label.slice(fullName.length);
-  const firstName = fullName.split(" ")[0];
-  if (firstName && label.startsWith(firstName)) return pronoun + label.slice(firstName.length);
-  return label;
-}
-
-/**
- * Lowercases only the FIRST letter of a title, not the whole string (round 7, second addendum
- * bug found live: "Follows meets hollis fairwind in 1512" — `.toLowerCase()` on the whole title
- * also lowercased the proper noun inside it, since titles like "Meets Hollis Fairwind" have a
- * name in the middle).
- */
-function lowerFirst(s: string): string {
-  return s.charAt(0).toLowerCase() + s.slice(1);
-}
-
-/**
- * A plain-language branch name — "Original life" / "Changed in 1514" — never the server's raw
- * label ("Original timeline" / "Force ... at A1:...:1514") (round 7, second addendum §13: "No
- * git terms anywhere in the UI"). The server-side label itself is left alone (Loom/branch pills
- * elsewhere in the app still read it), this is a display-only transform.
- */
-function humanizeBranchLabel(forkYear: number | null): string {
-  return forkYear === null ? "Original life" : `Changed in ${forkYear}`;
-}
-
-/** Bolds the last sentence of `lifeSummary`, matching the mock's `<strong>` on the ending's key clause. */
-function EndingParagraph({ summary }: { summary: string }) {
-  const sentences = summary.split(/(?<=\.)\s+/).filter(Boolean);
-  if (sentences.length <= 1) return <p className="cw-ending">{summary}</p>;
-  const last = sentences.pop()!;
-  return (
-    <p className="cw-ending">
-      {sentences.join(" ")} <strong>{last}</strong>
-    </p>
-  );
+function whyQuestion(turn: NonNullable<ChronicleEntry["turn"]>, protagonistSex: "f" | "m"): string {
+  if (turn.deciderId === "chance") return "Why did this happen?";
+  if (turn.deciderId === "self") return `Why did ${protagonistSex === "f" ? "she" : "he"} choose this?`;
+  const name = turn.decidedBy.replace(/'s choice$/i, "");
+  return `Why did ${name} choose this?`;
 }
 
 function ChangeModal({
-  decision,
-  entryTitle,
-  entryYear,
-  personName,
-  sex,
+  entry,
+  personSex,
   onClose,
   onChoose,
   busy,
 }: {
-  decision: ChronicleDecision;
-  entryTitle: string;
-  entryYear: number;
-  personName: string;
-  sex: "f" | "m";
+  entry: ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> };
+  personSex: "f" | "m";
   onClose: () => void;
   onChoose: (optionId: string) => void;
   busy: boolean;
 }) {
   const [showNumbers, setShowNumbers] = useState(false);
-  // Round 7, second addendum (ui-ux-handoff.md §8): "select first, then confirm" — clicking an
-  // alternative no longer fires the rewrite immediately; it arms a single "Rewrite from here"
-  // button, so a stray click can't accidentally rewrite a life.
+  // "select first, then confirm" (ui-ux-handoff.md §8): clicking an alternative arms a single
+  // "Rewrite from here" button rather than firing the rewrite immediately, so a stray click can't
+  // accidentally rewrite a life.
   const [selected, setSelected] = useState<string | null>(null);
-  const choice = isChoiceDecision(decision);
-  const subject = sex === "f" ? "She" : "He";
-  const chosenLabel = decision.options.find((o) => o.id === decision.chosen)?.label ?? decision.chosen;
-  const others = decision.options.filter((o) => o.id !== decision.chosen);
-  // Round 8 fix (decision 033): the modal title is ALWAYS the event's own third-person narrative
-  // title ("Liora sought an apprenticeship elsewhere"), never Jev's first-person prompt ("I am
-  // getting old enough to think about what I'll make of myself. What calls to me?") — that prompt
-  // text is what Jev itself was asked, an implementation detail, not something the reader should
-  // ever see. `entryTitle` (already third-person, e.g. "Sought an apprenticeship elsewhere") only
-  // needs the person's name prefixed and its first letter lowered to read as one sentence.
-  const header = `${personName} ${lowerFirst(entryTitle)}.`;
+  const { turn } = entry;
 
   return (
     <div className="cw-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.97, y: 8 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className="cw-modal-card cw-sheet-on-mobile"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="cw-modal-kicker">Change this moment</div>
-        <h2>{header}</h2>
+      <motion.div initial={{ opacity: 0, scale: 0.97, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }} className="cw-modal-card cw-sheet-on-mobile" onClick={(e) => e.stopPropagation()}>
+        <div className="cw-modal-kicker">{turn.decidedBy}</div>
+        {/* The timeline itself renders `entry.title` bare (it's already a complete narrative
+            heading, with its own subject — the protagonist, an NPC, or nobody for a chance event)
+            — the modal reuses it as-is rather than re-deriving a sentence, which previously
+            prefixed the protagonist's name even onto a title that was already about someone
+            else ("Elin Marrow Tomas Vell chooses who to court" — a real bug caught live). */}
+        <h2>{entry.title}</h2>
 
-        {/* Round 7, second addendum (§8): "What happened: ✓ …" / "Other possibilities: ○ …", never
-            "current life" / "rewrite from here" tags — narrative language, no UI jargon. */}
         <p style={{ marginBottom: 6, fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13, color: "var(--cw-muted)" }}>What happened:</p>
         <div className="cw-options" style={{ marginBottom: 16 }}>
           <div className="cw-option-btn cw-current" style={{ cursor: "default" }}>
-            <span>✓ {chosenLabel}</span>
+            <span>✓ {turn.chosen.label}</span>
           </div>
         </div>
 
         <p style={{ marginBottom: 6, fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13, color: "var(--cw-muted)" }}>Other possibilities:</p>
         <div className="cw-options">
-          {others.map((o) => (
-            <button key={o.id} type="button" disabled={busy} onClick={() => setSelected(o.id)} className={`cw-option-btn${selected === o.id ? " cw-selected" : ""}`}>
+          {turn.alternatives.map((o) => (
+            <button key={o.optionId} type="button" disabled={busy} onClick={() => setSelected(o.optionId)} className={`cw-option-btn${selected === o.optionId ? " cw-selected" : ""}`}>
               <span>○ {o.label}</span>
             </button>
           ))}
         </div>
 
-        <p style={{ margin: "16px 0 0", color: "var(--cw-muted)", font: "15px/1.6 Georgia, serif" }}>Everything after {entryYear} will be simulated again.</p>
+        <p style={{ margin: "16px 0 0", color: "var(--cw-muted)", font: "15px/1.6 Georgia, serif" }}>Everything after {entry.year} will be simulated again.</p>
 
         <div className="cw-modal-actions">
           <button type="button" onClick={onClose}>
@@ -229,14 +94,14 @@ function ChangeModal({
         </div>
 
         <details className="cw-why" open={showNumbers} onToggle={(e) => setShowNumbers((e.target as HTMLDetailsElement).open)}>
-          <summary>{choice ? `Why did ${subject.toLowerCase()} choose this?` : "Why did this happen?"}</summary>
-          <p>{describeChance(decision, subject)}</p>
-          {showNumbers && (
+          <summary>{whyQuestion(turn, personSex)}</summary>
+          <p>{turn.whyPhrase}</p>
+          {showNumbers && turn.probabilities && (
             <ul style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 12, color: "var(--cw-muted)" }}>
-              {decision.options.map((o) => (
-                <li key={o.id} style={{ display: "flex", justifyContent: "space-between" }}>
+              {[turn.chosen, ...turn.alternatives].map((o) => (
+                <li key={o.optionId} style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>{o.label}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round((decision.final[o.id] ?? 0) * 100)}%</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round((turn.probabilities?.[o.optionId] ?? 0) * 100)}%</span>
                 </li>
               ))}
             </ul>
@@ -247,20 +112,14 @@ function ChangeModal({
   );
 }
 
-interface StreamedTurn {
-  readonly eventId: string;
-  readonly year: number;
-  readonly label: string;
-}
-
 interface RewriteState {
   readonly phase: "A" | "B" | "C";
+  readonly divergenceEntryId: string;
   readonly divergenceYear: number;
   readonly originalLabel: string;
   readonly newLabel: string;
   readonly tickYear: number;
-  readonly population: number;
-  readonly streamed: readonly StreamedTurn[];
+  readonly streamed: readonly ChronicleEntry[];
 }
 
 function sleep(ms: number): Promise<void> {
@@ -270,92 +129,69 @@ function sleep(ms: number): Promise<void> {
 export function Chronicle({ initial }: { initial: ChronicleData }) {
   const router = useRouter();
   const [data, setData] = useState(initial);
-  const [openDecision, setOpenDecision] = useState<ChronicleEntry | null>(null);
+  const [openEntry, setOpenEntry] = useState<(ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> }) | null>(null);
   const [rewrite, setRewrite] = useState<RewriteState | null>(null);
   const [rewriteError, setRewriteError] = useState<string | null>(null);
-  const [ghostNote, setGhostNote] = useState<{ year: number; original: string } | null>(null);
-  // Round 8 fix (decision 033, §12): sparse "In the original life, ..." notes on the FIRST couple
-  // of new entries after the divergence, derived by diffing against the pre-rewrite chronicle
-  // (already in hand — no extra fetch needed, since it's this same person's own prior branch).
-  const [diffGhosts, setDiffGhosts] = useState<ReadonlyMap<number, string>>(new Map());
+  const [ghosts, setGhosts] = useState<Readonly<Record<string, string>>>({});
   const [justInked, setJustInked] = useState(false);
-  const [peopleDrawerOpen, setPeopleDrawerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const reduceMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const [openPersonId, setOpenPersonId] = useState<string | null>(null);
+  const reduceMotion = prefersReducedMotion();
 
-  const p = data.person;
+  const p = data.protagonist;
   const divergenceYear = rewrite?.divergenceYear ?? null;
 
   async function applyChoice(optionId: string): Promise<void> {
-    if (!openDecision?.decision) return;
-    const decision = openDecision.decision;
-    const year = openDecision.year;
-    const originalLabel = decision.options.find((o) => o.id === decision.chosen)?.label ?? decision.chosen;
-    const newLabel = decision.options.find((o) => o.id === optionId)?.label ?? optionId;
-    const preRewriteData = data; // the "parent branch" for this person, for §12's diff ghosts
+    if (!openEntry) return;
+    const entry = openEntry;
+    const originalLabel = entry.turn.chosen.label;
+    const newLabel = [entry.turn.chosen, ...entry.turn.alternatives].find((o) => o.optionId === optionId)?.label ?? optionId;
     setRewriteError(null);
-    setOpenDecision(null);
-    setGhostNote(null);
-    setDiffGhosts(new Map());
+    setOpenEntry(null);
+    setGhosts({});
 
     // Phase A (§10.A): mark the divergence — ORIGINAL/NEW, held for a beat so it registers.
-    setRewrite({ phase: "A", divergenceYear: year, originalLabel, newLabel, tickYear: year, population: 0, streamed: [] });
-    document.getElementById(`event-${openDecision.eventId}`)?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    setRewrite({ phase: "A", divergenceEntryId: entry.id, divergenceYear: entry.year, originalLabel, newLabel, tickYear: entry.year, streamed: [] });
+    document.getElementById(`event-${entry.id}`)?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
     await sleep(reduceMotion ? 200 : 1600);
 
-    // Phase B (§10.B): invalidate the future — staggered fade/blur/desaturate/collapse, driven by
-    // the `.cw-rewriting` class + `divergenceYear` (see the timeline render below).
+    // Phase B (§10.B): invalidate the future — staggered fade/blur/desaturate, via `.cw-rewriting`.
     setRewrite((r) => (r ? { ...r, phase: "B" } : r));
     await sleep(reduceMotion ? 100 : 900);
 
-    // Phase C/D (§10.C/D): stream. Each tick's `newDecisions` for THIS person becomes a
-    // provisional streamed line immediately — real, per-tick entries, not a wait-then-swap.
+    // Phase C/D (§10.C/D): stream. Each tick's entries for this person are inked in immediately.
     setRewrite((r) => (r ? { ...r, phase: "C" } : r));
     try {
-      let newBranchId: string | undefined;
-      await streamSSE(`/api/worlds/${data.worldId}/edit/stream`, { branchId: data.branchId, override: { decisionId: decision.id, optionId } }, (event, payload) => {
-        if (event === "tick") {
-          const d = payload as { year: number; population: number; newDecisions?: { id: string; personId: string; options: { id: string; label: string }[]; chosen: string; resultingEventIds: string[] }[] };
-          const mine = (d.newDecisions ?? []).filter((dec) => dec.personId === p.id && dec.resultingEventIds.length > 0);
-          const newTurns: StreamedTurn[] = mine.map((dec) => ({ eventId: dec.id, year: d.year, label: dec.options.find((o) => o.id === dec.chosen)?.label ?? dec.chosen }));
-          setRewrite((r) => (r ? { ...r, tickYear: d.year, population: d.population, streamed: [...r.streamed, ...newTurns] } : r));
-        } else if (event === "done") {
-          newBranchId = (payload as { branchId: string }).branchId;
-        } else if (event === "error") {
-          throw new Error((payload as { message: string }).message);
+      let finished = false;
+      await rewriteStream(data.lifeId, { branchId: data.branchId, decisionId: entry.turn.decisionId, optionId }, (event: LifeStreamEvent) => {
+        if (event.type === "tick") {
+          setRewrite((r) => (r ? { ...r, tickYear: event.year, streamed: [...r.streamed, ...event.entries] } : r));
+        } else if (event.type === "done") {
+          finished = true;
+          setData(event.chronicle);
+          setGhosts(event.ghosts ?? {});
+          setJustInked(true);
+          setTimeout(() => setJustInked(false), 1200);
+          // North star item 7, "stay on the same page": sync the address bar via the raw History
+          // API, never `router.replace`/`router.push`. Next's App Router observes the History API
+          // globally, so routing this through Next would re-trigger the URL-keyed loader in
+          // `/life/[lifeId]/page.tsx` and refetch from the plain GET endpoint — which doesn't
+          // carry `ghosts` — silently overwriting the in-memory state this handler just set. The
+          // loader only ever reads the branch it was mounted with (see its own comment); every
+          // later branch change, from a rewrite or from `switchBranch` below, updates this
+          // component's own state directly and treats the URL as write-only.
+          window.history.replaceState(null, "", `/life/${event.chronicle.lifeId}?branch=${event.chronicle.branchId}`);
+          // §11, scroll anchoring: the divergence entry's own id can change (it's a different
+          // event in the new branch), so re-anchor by YEAR rather than the top of the biography.
+          setTimeout(() => {
+            const divergenceEntry = event.chronicle.entries.find((e) => e.year === entry.year);
+            if (divergenceEntry) document.getElementById(`event-${divergenceEntry.id}`)?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+          }, 100);
+        } else if (event.type === "error") {
+          throw new Error(event.message);
         }
       });
-
-      if (newBranchId) {
-        const res = await fetch(`/api/worlds/${data.worldId}/people/${p.id}?branchId=${newBranchId}`);
-        if (!res.ok) throw new Error("Couldn't load the rewritten life.");
-        const fresh = (await res.json()) as ChronicleData;
-
-        // §12 diff ghosts: for each of the first few NEW entries strictly after the divergence
-        // year, look for what USED to be at that same year in the pre-rewrite chronicle — if it's
-        // a genuinely different moment, note it. Sparse: capped at 2, and skipped where the years
-        // don't line up closely (±1), so this never turns into a full comparison view.
-        const ghosts = new Map<number, string>();
-        for (const entry of fresh.timeline) {
-          if (entry.year <= year || ghosts.size >= 2) continue;
-          const wasEntry = preRewriteData.timeline.find((e) => Math.abs(e.year - entry.year) <= 1 && e.eventId !== entry.eventId && e.title !== entry.title);
-          if (wasEntry) ghosts.set(entry.year, `In the original life, ${lowerFirst(wasEntry.title)} (${wasEntry.year}).`);
-        }
-        setDiffGhosts(ghosts);
-
-        setData(fresh);
-        setGhostNote({ year, original: originalLabel });
-        setJustInked(true);
-        setTimeout(() => setJustInked(false), 1200);
-        router.replace(`/world/${data.worldId}/person/${p.id}?branch=${newBranchId}`, { scroll: false });
-        // §11, "preserve scroll position": the divergence entry's own event id changed (it's a
-        // different event in the new branch), so re-anchor by YEAR — never dump the reader back
-        // at the top of a 30-entry biography.
-        setTimeout(() => {
-          const divergenceEntry = fresh.timeline.find((e) => e.year === year);
-          if (divergenceEntry) document.getElementById(`event-${divergenceEntry.eventId}`)?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
-        }, 100);
-      }
+      if (!finished) throw new Error("The rewrite didn't complete.");
     } catch (err) {
       setRewriteError(err instanceof Error ? err.message : "The rewrite failed.");
     } finally {
@@ -363,32 +199,51 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
     }
   }
 
-  function switchPerson(personId: string): void {
-    router.push(`/world/${data.worldId}/person/${personId}?branch=${data.branchId}`);
+  function reopenLastTurn(): void {
+    const last = [...data.entries].reverse().find((e) => e.turn);
+    if (last?.turn) setOpenEntry(last as ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> });
   }
 
-  // Death closure (§28): prefer a spouse, then a child, for "View <name>'s life".
-  const closureLink = data.relationships.find((r) => r.relation === "husband" || r.relation === "wife") ?? data.relationships.find((r) => r.relation === "son" || r.relation === "daughter");
+  /**
+   * Switches to a different branch of THIS SAME life in place, exactly like the end of a rewrite
+   * (fetch, `setData`, sync the address bar) — never `router.push`/`router.replace`. Next's App
+   * Router observes the History API globally (even a raw `history.replaceState` call), so routing
+   * a branch change through it remounts the URL-keyed loader in `/life/[lifeId]/page.tsx` and
+   * silently discards this component's own in-memory state (`ghosts`, in particular — a real bug
+   * caught live: after a rewrite settled correctly, `router.replace` would re-fetch the branch a
+   * moment later from the plain GET endpoint, which doesn't carry `ghosts`, wiping them out).
+   */
+  async function switchBranch(branchId: string): Promise<void> {
+    setHistoryOpen(false);
+    if (branchId === data.branchId || rewrite) return;
+    setOpenEntry(null);
+    setRewriteError(null);
+    try {
+      const fresh = await getChronicle(data.lifeId, branchId);
+      setData(fresh);
+      setGhosts({});
+      window.history.replaceState(null, "", `/life/${fresh.lifeId}?branch=${fresh.branchId}`);
+    } catch (err) {
+      setRewriteError(err instanceof Error ? err.message : "Couldn't load that branch.");
+    }
+  }
 
-  const keyTurns = [data.timeline[0], ...data.timeline.filter((e) => e.isKeyMoment), data.timeline[data.timeline.length - 1]]
-    .filter((e, i, arr): e is ChronicleEntry => !!e && arr.findIndex((x) => x?.eventId === e.eventId) === i)
-    .slice(0, 5);
+  const isDead = typeof p.deathYear === "number";
+  const afterDeathPronoun = p.sex === "f" ? "her" : "his";
 
   return (
     <div className="cw-app">
       <header className="cw-topbar">
-        <button type="button" className="cw-brand" onClick={() => router.push(`/world/${data.worldId}?branch=${data.branchId}`)}>
+        <button type="button" className="cw-brand" onClick={() => router.push("/lives")}>
           <span className="cw-mark">∞</span> LIFELINES
         </button>
         <div className="cw-top-actions">
-          <button type="button" onClick={() => setPeopleDrawerOpen(true)}>
-            People
-          </button>
-          <Link href={`/world/${data.worldId}/town?branch=${data.branchId}`}>{data.townName}</Link>
           <button type="button" onClick={() => setHistoryOpen(true)}>
-            History
+            History ▾
           </button>
-          <Link href={`/world/${data.worldId}?branch=${data.branchId}`}>Tapestry</Link>
+          <button type="button" onClick={() => router.push("/")}>
+            New life
+          </button>
           <ThemeToggle />
         </div>
       </header>
@@ -397,14 +252,13 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
         <aside className="cw-left">
           <div className="cw-rail-label">People in this life</div>
           <div className="cw-cast">
-            {data.relationships.slice(0, 8).map((r) => (
-              <button key={r.personId} type="button" className="cw-person-link" onClick={() => switchPerson(r.personId)}>
-                {r.name}
-                <small>{r.relation}</small>
+            {data.cast.map((c) => (
+              <button key={c.personId} type="button" className="cw-person-link" onClick={() => setOpenPersonId(c.personId)}>
+                {c.name}
+                <small>{c.relation}</small>
               </button>
             ))}
           </div>
-          <div className="cw-chapter">Every name in the chronicle can become the center of the story.</div>
         </aside>
 
         <article className="cw-chronicle" id="chronicle">
@@ -412,36 +266,32 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
             <div className="cw-eyebrow">A life already lived</div>
             <h1 className="cw-h1">{p.name}</h1>
             <div className="cw-years">
-              {p.birthYear} — {p.deathYear ?? "living"}
+              {p.birthYear} — {isDead ? p.deathYear : "living"}
             </div>
-            <EndingParagraph summary={data.lifeSummary} />
+            <p className="cw-ending">
+              <EntryProse prose={data.summary} links={data.summaryLinks} onOpenPerson={setOpenPersonId} />
+            </p>
           </section>
 
-          {rewriteError && (
-            <p style={{ margin: "16px 70px 0", color: "var(--cw-accent)", fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13 }}>{rewriteError}</p>
-          )}
+          {rewriteError && <p style={{ margin: "16px 70px 0", color: "var(--cw-accent)", fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13 }}>{rewriteError}</p>}
 
-          {/* Round 7, second addendum (§32, accessibility): a real ordered list, one <li> per
-              life event, not just a visual sequence of <article>s — a screen reader announces
-              "list, N items" and lets a reader jump by item, which a bare sequence of headings
-              doesn't give for free. */}
           <ol className="cw-timeline" style={{ listStyle: "none", margin: 0 }}>
-            {data.timeline.map((entry, i) => {
-              // Phase A (§10.A) shows the ORIGINAL/NEW block on the divergence entry itself and
-              // leaves everything else alone; phase B/C is when the FUTURE actually blurs away.
-              const isDivergenceEntry = rewrite !== null && entry.year === divergenceYear;
+            {data.entries.map((entry, i) => {
+              const isDivergenceEntry = rewrite !== null && entry.id === rewrite.divergenceEntryId;
               const isFuture = rewrite !== null && rewrite.phase !== "A" && divergenceYear !== null && entry.year > divergenceYear;
-              const isChangedNow = ghostNote !== null && entry.year === ghostNote.year;
-              const isNewbornNow = justInked && divergenceYear === null && ghostNote !== null && entry.year >= ghostNote.year;
-              const diffGhost = diffGhosts.get(entry.year);
+              const isNewbornNow = justInked && ghosts[entry.id] !== undefined;
+              const ghostNote = ghosts[entry.id];
               return (
                 <li
-                  key={entry.eventId}
-                  id={`event-${entry.eventId}`}
-                  className={`cw-event${isFuture ? " cw-rewriting" : ""}${isChangedNow ? " cw-changed" : ""}${isNewbornNow ? " cw-newborn" : ""}`}
+                  key={entry.id}
+                  id={`event-${entry.id}`}
+                  className={`cw-event${isFuture ? " cw-rewriting" : ""}${isNewbornNow ? " cw-newborn" : ""}`}
                   style={isFuture ? { transitionDelay: reduceMotion ? "0ms" : `${i * 20}ms` } : isNewbornNow ? { animationDelay: `${Math.min(i, 10) * 60}ms` } : undefined}
                 >
-                  <div className="cw-year">{entry.year}</div>
+                  <div className="cw-year">
+                    {entry.year}
+                    {entry.endYear ? `–${entry.endYear}` : ""}
+                  </div>
                   <div className="cw-event-content">
                     {isDivergenceEntry && rewrite.phase === "A" ? (
                       <div className="cw-divergence">
@@ -459,45 +309,37 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
                       <>
                         <h2 className="cw-event-title">{entry.title}</h2>
                         <p className="cw-event-text">
-                          <EntryProse prose={entry.prose} people={data.relationships} onNavigate={switchPerson} />
+                          <EntryProse prose={entry.prose} links={entry.links} onOpenPerson={setOpenPersonId} />
                         </p>
 
-                        {/* Round 8 fix (decision 033, "three event levels"): a turn is only
-                            rendered as editable at all when it clears the bar (a real Jev decision
-                            with live alternatives, or a chance event whose alternative was
-                            genuinely plausible or surprising) — below that, it's just an
-                            ordinary/significant event with no affordance at all. */}
-                        {entry.decision && entry.decision.options.length > 1 && isRealTurn(entry.decision) && (
+                        {/* Three event levels (ui-ux-handoff.md §7): only a level-3 turn ever gets
+                            the "chosen" tag and "change what happened" — the contract guarantees
+                            `turn` is present on level 3 only. */}
+                        {entry.turn && (
                           <div className="cw-decision">
-                            <span className="cw-chosen">{chosenTag(entry.decision.options.find((o) => o.id === entry.decision!.chosen)?.label ?? entry.decision.chosen, p.name, p.sex)}</span>
-                            <button type="button" className="cw-change-btn" disabled={!!rewrite} onClick={() => setOpenDecision(entry)}>
+                            <span className="cw-chosen">{entry.turn.chosen.label}</span>
+                            <button type="button" className="cw-change-btn" disabled={!!rewrite} onClick={() => setOpenEntry(entry as ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> })}>
                               ◇ change what happened
                             </button>
                           </div>
                         )}
 
-                        {entry.causes.length > 0 && (
+                        {entry.cause && (
                           <div className="cw-cause">
-                            {entry.causes.map((c, ci) => (
-                              <span key={c.eventId}>
-                                {ci > 0 && "; "}
-                                {"↳ "}
-                                {c.inThisLife ? (
-                                  <a href={`#event-${c.eventId}`} className="cw-cause-link">
-                                    Follows {c.phrase} ({c.year})
-                                  </a>
-                                ) : (
-                                  <>
-                                    Follows {c.phrase} ({c.year})
-                                  </>
-                                )}
-                              </span>
-                            ))}
+                            {"↳ "}
+                            {entry.cause.entryId ? (
+                              <a href={`#event-${entry.cause.entryId}`} className="cw-cause-link">
+                                Follows {entry.cause.phrase} ({entry.cause.year})
+                              </a>
+                            ) : (
+                              <>
+                                Follows {entry.cause.phrase} ({entry.cause.year})
+                              </>
+                            )}
                           </div>
                         )}
 
-                        {isChangedNow && <div className="cw-ghost-note">Original history: {ghostNote.original}</div>}
-                        {!isChangedNow && diffGhost && <div className="cw-ghost-note">{diffGhost}</div>}
+                        {ghostNote && <div className="cw-ghost-note">{ghostNote}</div>}
                       </>
                     )}
                   </div>
@@ -505,9 +347,8 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
               );
             })}
 
-            {/* Phase C/D (§10.C/D): ghost year placeholders for unwritten years, then each
-                streamed turn for THIS person inked in as its tick arrives — never a wait-then-
-                swap-the-whole-page. */}
+            {/* Phase C/D: ghost year placeholders for unwritten years, then each streamed entry
+                inked in as its tick arrives — never a wait-then-swap. */}
             {rewrite && rewrite.phase === "C" && (
               <>
                 {Array.from({ length: Math.min(3, Math.max(0, rewrite.tickYear - rewrite.divergenceYear - rewrite.streamed.length)) }, (_, gi) => (
@@ -519,11 +360,17 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
                   </li>
                 ))}
                 {rewrite.streamed.map((s, si) => (
-                  <li key={s.eventId} className="cw-event cw-newborn" style={{ animationDelay: `${si * 80}ms` }}>
+                  // Keyed distinctly from `data.entries`' own keys below (`stream-` prefix): once
+                  // the rewrite settles, the final chronicle re-uses these same entry ids, and a
+                  // shared key across the two sibling lists confused React's reconciliation into
+                  // leaving this stale provisional line in the DOM instead of replacing it — a
+                  // real bug caught live (screenshotting phase D still showed the italicized
+                  // placeholder text instead of the finished, fully-narrated entry).
+                  <li key={`stream-${s.id}`} className="cw-event cw-newborn" style={{ animationDelay: `${si * 80}ms` }}>
                     <div className="cw-year">{s.year}</div>
                     <div className="cw-event-content">
                       <p className="cw-event-text" style={{ fontStyle: "italic" }}>
-                        {s.label}
+                        {s.title}
                       </p>
                     </div>
                   </li>
@@ -532,30 +379,27 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
             )}
           </ol>
 
-          {/* Round 7, second addendum (§28): death closes the biography with a clear ending mark
-              and a way forward, instead of just trailing off after the last entry. */}
-          {p.deathYear !== undefined && (
+          {isDead && (
             <section className="cw-timeline" style={{ paddingTop: 0, textAlign: "center" }}>
               <div style={{ margin: "0 auto 18px", color: "var(--cw-accent)", font: "600 12px/1.2 var(--font-inter), Inter, sans-serif", letterSpacing: "0.16em" }}>◆ END OF LIFE</div>
+              {data.epilogue.length > 0 && (
+                <div style={{ maxWidth: 620, margin: "0 auto 24px", textAlign: "left" }}>
+                  <div className="cw-rail-label" style={{ marginBottom: 8 }}>
+                    After {afterDeathPronoun} death
+                  </div>
+                  {data.epilogue.map((line, i) => (
+                    <p key={i} className="cw-event-text" style={{ marginBottom: 8 }}>
+                      <EntryProse prose={line} links={data.summaryLinks} onOpenPerson={setOpenPersonId} />
+                    </p>
+                  ))}
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "center", gap: 18, flexWrap: "wrap", fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13 }}>
-                {closureLink && (
-                  <button type="button" onClick={() => switchPerson(closureLink.personId)} className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }}>
-                    View {closureLink.name.split(" ")[0]}&apos;s life
-                  </button>
-                )}
-                <Link href={`/world/${data.worldId}?branch=${data.branchId}`} className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }}>
-                  Return to {data.townName}
-                </Link>
-                <button
-                  type="button"
-                  className="cw-change-btn"
-                  style={{ borderColor: "var(--cw-rule)" }}
-                  onClick={() => {
-                    const last = [...data.timeline].reverse().find((e) => e.decision && e.decision.options.length > 1 && isRealTurn(e.decision));
-                    if (last) setOpenDecision(last);
-                  }}
-                >
+                <button type="button" className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }} onClick={reopenLastTurn}>
                   Change an earlier moment
+                </button>
+                <button type="button" className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }} onClick={() => router.push("/")}>
+                  Begin a new life
                 </button>
               </div>
             </section>
@@ -565,12 +409,17 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
         <aside className="cw-right">
           <div className="cw-rail-label">This history</div>
           <div className="cw-branch-box">
-            <div className="cw-branch-name">{humanizeBranchLabel(data.currentBranch.forkYear)}</div>
-            <div className="cw-branch-sub">{data.currentBranch.forkYear ? `Changed at ${data.currentBranch.forkYear}. The original life still exists as another branch.` : "The life that was first simulated."}</div>
+            <div className="cw-branch-name">{data.branches.find((b) => b.branchId === data.branchId)?.label ?? "Original life"}</div>
             <div className="cw-branch-list">
-              {keyTurns.map((t) => (
-                <button key={t.eventId} type="button" className={`cw-branch-item${divergenceYear === t.year ? " cw-active" : ""}`} onClick={() => document.getElementById(`event-${t.eventId}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>
-                  {t.year} · {t.title}
+              {data.branches.map((b) => (
+                <button
+                  key={b.branchId}
+                  type="button"
+                  className={`cw-branch-item${b.branchId === data.branchId ? " cw-active" : ""}`}
+                  onClick={() => switchBranch(b.branchId)}
+                >
+                  {b.label}
+                  {b.forkYear ? ` (${b.forkYear})` : ""}
                 </button>
               ))}
             </div>
@@ -583,73 +432,39 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
         <div className="cw-regen">
           <span className="cw-regen-dot" />
           <span>
-            Rewriting {p.name.split(" ")[0]}&apos;s life from {rewrite.divergenceYear}&hellip; now at {rewrite.tickYear} ({rewrite.population} living)
+            Rewriting {p.name.split(" ")[0]}&apos;s life from {rewrite.divergenceYear}&hellip; now at {rewrite.tickYear}
           </span>
         </div>
       )}
 
       <AnimatePresence>
-        {openDecision?.decision && (
-          <ChangeModal
-            decision={openDecision.decision}
-            entryTitle={openDecision.title}
-            entryYear={openDecision.year}
-            personName={p.name}
-            sex={p.sex}
-            onClose={() => setOpenDecision(null)}
-            onChoose={applyChoice}
-            busy={!!rewrite}
-          />
-        )}
+        {openEntry && <ChangeModal entry={openEntry} personSex={p.sex} onClose={() => setOpenEntry(null)} onChoose={applyChoice} busy={!!rewrite} />}
       </AnimatePresence>
 
       <AnimatePresence>
-        {peopleDrawerOpen && (
-          <PeopleDrawer worldId={data.worldId} branchId={data.branchId} townName={data.townName} relationships={data.relationships} onClose={() => setPeopleDrawerOpen(false)} onNavigate={switchPerson} />
+        {historyOpen && (
+          <HistoryDrawer lifeId={data.lifeId} branches={data.branches} onClose={() => setHistoryOpen(false)} onNavigate={switchBranch} />
         )}
-        {historyOpen && <HistoryDrawer data={data} personId={p.id} onClose={() => setHistoryOpen(false)} />}
+        {openPersonId && <PersonSheet key={openPersonId} lifeId={data.lifeId} branchId={data.branchId} personId={openPersonId} onClose={() => setOpenPersonId(null)} />}
       </AnimatePresence>
     </div>
   );
 }
 
-function EntryProse({ prose, people, onNavigate }: { prose: string; people: readonly ChronicleRelationship[]; onNavigate: (personId: string) => void }) {
-  // Every named person in the prose becomes a link that switches the protagonist (handoff: "Every
-  // named person in the biography should be navigable") — matched against this life's own
-  // relationship list, which already carries id+name, no extra parsing/NLP needed.
-  const known = [...people].sort((a, b) => b.name.length - a.name.length);
-  if (known.length === 0) return <>{prose}</>;
-
-  const parts: (string | { name: string; personId: string })[] = [prose];
-  for (const person of known) {
-    const next: typeof parts = [];
-    for (const part of parts) {
-      if (typeof part !== "string") {
-        next.push(part);
-        continue;
-      }
-      const segments = part.split(person.name);
-      segments.forEach((seg, i) => {
-        if (i > 0) next.push({ name: person.name, personId: person.personId });
-        if (seg) next.push(seg);
-      });
-    }
-    parts.length = 0;
-    parts.push(...next);
-  }
-
+function EntryProse({ prose, links, onOpenPerson }: { prose: string; links: ChronicleData["summaryLinks"]; onOpenPerson: (personId: string) => void }) {
+  const parts = parseProseMarkers(prose, links);
   return (
     <>
       {parts.map((part, i) =>
-        typeof part === "string" ? (
-          <span key={i}>{part}</span>
+        part.kind === "text" ? (
+          <span key={i}>{part.text}</span>
         ) : (
           <a
             key={i}
             href="#"
             onClick={(e) => {
               e.preventDefault();
-              onNavigate(part.personId);
+              onOpenPerson(part.personId);
             }}
           >
             {part.name}
@@ -660,63 +475,27 @@ function EntryProse({ prose, people, onNavigate }: { prose: string; people: read
   );
 }
 
-function PeopleDrawer({
-  worldId,
-  branchId,
-  townName,
-  relationships,
-  onClose,
-  onNavigate,
-}: {
-  worldId: string;
-  branchId: string;
-  townName: string;
-  relationships: readonly ChronicleRelationship[];
-  onClose: () => void;
-  onNavigate: (personId: string) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const filtered = relationships.filter((r) => r.name.toLowerCase().includes(query.toLowerCase()));
-  void worldId;
-  void branchId;
+function HistoryDrawer({ branches, onClose, onNavigate }: { lifeId: string; branches: ChronicleData["branches"]; onClose: () => void; onNavigate: (branchId: string) => void }) {
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="cw-drawer-backdrop" onClick={onClose} />
       <motion.div initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ duration: 0.25, ease: "easeOut" }} className="cw-drawer-panel">
-        <div className="cw-modal-kicker">{townName}</div>
-        <h2>People</h2>
-        <input className="cw-drawer-search" placeholder="Find a life…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        {filtered.map((r) => (
+        <div className="cw-modal-kicker">History</div>
+        <h2>This history</h2>
+        {branches.map((b) => (
           <button
-            key={r.personId}
+            key={b.branchId}
             type="button"
             className="cw-drawer-person"
+            style={{ display: "block", width: "100%" }}
             onClick={() => {
-              onNavigate(r.personId);
+              onNavigate(b.branchId);
               onClose();
             }}
           >
-            {r.name}
-            <small>{r.relation}</small>
+            {b.label}
+            {b.forkYear ? <small>Changed in {b.forkYear}</small> : <small>The life that was first simulated.</small>}
           </button>
-        ))}
-        {filtered.length === 0 && <p style={{ color: "#8e98a7", fontSize: 13, marginTop: 12 }}>No one found.</p>}
-      </motion.div>
-    </>
-  );
-}
-
-function HistoryDrawer({ data, personId, onClose }: { data: ChronicleData; personId: string; onClose: () => void }) {
-  return (
-    <>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="cw-drawer-backdrop" onClick={onClose} />
-      <motion.div initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ duration: 0.25, ease: "easeOut" }} className="cw-drawer-panel">
-        <div className="cw-modal-kicker">Branches</div>
-        <h2>History</h2>
-        {data.branches.map((b) => (
-          <Link key={b.id} href={`/world/${data.worldId}/person/${personId}?branch=${b.id}`} className="cw-drawer-person" style={{ display: "block" }} onClick={onClose}>
-            {humanizeBranchLabel(b.forkYear)}
-          </Link>
         ))}
       </motion.div>
     </>

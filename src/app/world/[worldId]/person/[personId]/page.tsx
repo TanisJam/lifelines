@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Chronicle } from "@/components/chronicle";
+import { LegacyChronicle } from "@/components/legacy-chronicle";
 import { getChronicleData } from "@/server/chronicle-data";
 
 /**
@@ -15,5 +15,5 @@ export default async function PersonPage({ params, searchParams }: { params: Pro
   const result = await getChronicleData(worldId, personId, branchId);
   if ("error" in result) notFound();
 
-  return <Chronicle initial={result.data} />;
+  return <LegacyChronicle initial={result.data} />;
 }
