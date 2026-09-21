@@ -4,7 +4,7 @@ import { ForkError, getRestoreSnapshot } from "@/domain/fork";
 import { simulate } from "@/domain/simulate";
 import type { Override } from "@/domain/types";
 import { validateOverride } from "@/domain/validate-override";
-import { activeEngineName, getDecisionMaker } from "@/server/decision-engine";
+import { activeEngineName, decisionMakerRunStats, getDecisionMaker, snapshotDecisionMakerStats } from "@/server/decision-engine";
 import { buildLifeChronicle } from "@/server/life-chronicle";
 import { getLife, getLifeBranch, newLifeBranchId, registerLifeBranch } from "@/server/life-store";
 import { sseResponse } from "@/server/sse";
@@ -77,6 +77,10 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
     const divergence: LifeStreamEvent = { type: "divergence", entryId, year: forkYear, originalLabel, newLabel };
     send("divergence", divergence);
 
+    // Round 12 (decision 045): see stream/route.ts's identical note — `decisionMaker` is a
+    // process-wide singleton, so its stats are cumulative across every life/rewrite; snapshot
+    // before/after this ONE run so the reported numbers are this rewrite's alone.
+    const statsBefore = snapshotDecisionMakerStats(decisionMaker);
     const report = await simulate(life.config, restoreSnapshot.people, restoreSnapshot.events, {
       decisionMaker,
       engineSource,
@@ -120,12 +124,12 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
       ghosts[entry.id] = `In the original life, ${oldLabel.charAt(0).toLowerCase()}${oldLabel.slice(1)}.`;
     }
 
-    const adapterStats = decisionMaker.getStats?.();
+    const runStats = decisionMakerRunStats(decisionMaker, statsBefore);
     const done: LifeStreamEvent = {
       type: "done",
       chronicle,
       ghosts,
-      stats: { jevCalls: report.decisionCalls, cacheHits: adapterStats?.cacheHits ?? 0, wallTimeMs: report.wallTimeMs },
+      stats: { jevCalls: report.decisionCalls, cacheHits: runStats.cacheHits, wallTimeMs: report.wallTimeMs, jevRequests: runStats.jevRequests, jevQuestions: runStats.jevQuestions, inputTokens: runStats.inputTokens, estimatedUsd: runStats.estimatedUsd },
     };
     send("done", done);
   });

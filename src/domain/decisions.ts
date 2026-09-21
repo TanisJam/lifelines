@@ -98,18 +98,33 @@ export interface PersonYearBatch {
   readonly year: number;
   /** Paid once per request: mind/portrait plus year context (age, place, household, job, season, town events, recent vignettes). */
   readonly self: Readonly<Record<string, JsonValue>>;
-  /** Every ELIGIBLE candidate this year, keyed by `DecisionQuestion.id`. Code decided eligibility; Jev decides occurrence and response. */
+  /** Every ELIGIBLE candidate this year, keyed by `DecisionQuestion.id`. Code decided eligibility; Jev decides which one (if any) actually happens, and how everyone responds. */
   readonly situations: Readonly<Record<string, PersonYearSituation>>;
+  /**
+   * Round 12 (decision 045): whether `personId` is the protagonist — tells the adapter whether to
+   * offer a `"nothing"` option in the event-selection Choice (see `PersonYearResult.selection`).
+   * The protagonist never gets `"nothing"`: exactly one situation is selected for them every year
+   * they have any eligible candidate (their `D1` daily-life candidate always rides along, so that's
+   * never an empty set), which is what structurally guarantees their chronicle never has a silent
+   * year — no separate fallback mechanism needed. Everyone else CAN come up empty in a given year.
+   */
+  readonly isProtagonist: boolean;
 }
 
 /** A `DecisionMaker`'s answer to a whole `PersonYearBatch`, keyed by the same situation ids. */
 export interface PersonYearResult {
-  /** Probability each situation actually happens to this person this year (a Noul per candidate, per decision 044). */
-  readonly occurrence: Readonly<Record<string, number>>;
-  /** Speculative response distribution for EVERY situation (asked whether or not it occurs) — the caller only consumes the ones that occurred. */
+  /**
+   * Round 12 (decision 045, superseding round 11's per-candidate occurrence Noul): ONE joint
+   * event-selection Choice, judged across every eligible `situations` id at once (plus `"nothing"`
+   * for a non-protagonist batch) — "of everything that could happen to this person this year, which
+   * is most likely?". The domain engine samples this distribution itself with Gumbel-max, keyed
+   * `(seed, personId, year, "event-pick")`, exactly like every other decision (a DecisionMaker never
+   * rolls dice, per the port's own contract below) — this field is Jev's JUDGMENT, not the sampled
+   * outcome. Replaces N independent occurrence judgments with one coherent choice among alternatives.
+   */
+  readonly selection: Readonly<Record<string, number>>;
+  /** Speculative response distribution for EVERY situation (asked whether or not it's the one selected) — the caller only consumes the response for whichever situation `selection` ends up sampling. */
   readonly response: Readonly<Record<string, Distribution>>;
-  /** Optional narrative significance per situation, in [0, 1], folded into the same request when the adapter supports it. */
-  readonly significance?: Readonly<Record<string, number>>;
 }
 
 /**
@@ -145,6 +160,8 @@ export interface DecisionMakerStats {
   /** Cumulative input tokens across all real (non-cached) calls, if the adapter tracks it (round 4: "measure the input tokens per call if the SDK exposes usage"). */
   inputTokens?: number;
   outputTokens?: number;
+  /** Round 12 (decision 045): cumulative individual questions asked across all real calls — e.g. one `decideYear` request asks one `pick` Choice plus one `resp:<id>` Choice per eligible situation, so a single request can carry several questions. Distinct from `calls` (HTTP requests); used to report per-life `jevQuestions` (see `contracts/life.ts`'s `done` event `stats`). */
+  questions?: number;
 }
 
 /**
@@ -210,12 +227,13 @@ export interface DecisionRecord {
   /** What was actually sampled from: `jevRaw` when `source === "jev"`, `prior` otherwise, or a one-option certainty when `source === "forced"`. */
   readonly final: Distribution;
   /**
-   * Round 11 (decision 044): how likely this situation was to happen to this person at all this
-   * year, per the batch's occurrence Noul — independent of `final` (which is about WHAT they'd do
-   * IF it happened). Present only when the answering adapter reported one (`decideYear`'s
-   * `occurrence` map); absent for a forced decision, or when the legacy per-candidate `decide()`
-   * fallback was used. Surfaced in the chronicle so "Why this happened" can distinguish "this was
-   * likely to happen this year" from "this was unlikely to happen at all".
+   * How likely this was to be what happened this year, among the alternatives — round 12 (decision
+   * 045)'s joint event-selection Choice's normalized share for the SELECTED candidate (independent
+   * of `final`, which is about WHAT they'd do IF it happened). Present only on the one situation a
+   * person-year's `selection` actually picked; absent for every other candidate that year, for a
+   * forced decision, or when the legacy per-candidate `decide()` fallback was used (no selection
+   * data at all). Surfaced in the chronicle so "Why this happened" can distinguish "this was the
+   * clear pick this year" from "this narrowly beat the alternatives".
    */
   readonly occurrenceProbability?: number;
   /** Gumbel noise per option id, keyed by (seed, personId, year, kind, optionId). Empty for a forced decision (nothing was sampled). */

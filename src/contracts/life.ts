@@ -51,7 +51,7 @@ export interface Turn {
   readonly whyPhrase: string;
   /** Optional numbers shown under whyPhrase. Keys are optionIds. */
   readonly probabilities?: Readonly<Record<string, number>>;
-  /** Round 11 (decision 044): how likely this situation was to happen at all this year (independent of `probabilities`, which is about which option won GIVEN it happened) — lets "Why this happened" say "this was likely to happen this year" or "this was unlikely to happen at all". Absent when the deciding call didn't report one (a forced decision, or the legacy per-candidate path). */
+  /** How likely this was to be what happened this year, among the alternatives (round 12, decision 045's joint event-selection Choice's normalized share for the selected candidate) — independent of `probabilities`, which is about which option won GIVEN it happened. Absent when the deciding call didn't report one (a forced decision, or the legacy per-candidate path). */
   readonly occurrenceProbability?: number;
 }
 
@@ -144,6 +144,18 @@ export type LifeStreamEvent =
       readonly chronicle: Chronicle;
       /** Rewrite only: sparse ghost annotations keyed by new entry id ("In the original life, …"). */
       readonly ghosts?: Readonly<Record<string, string>>;
-      readonly stats: { readonly jevCalls: number; readonly cacheHits: number; readonly wallTimeMs: number };
+      readonly stats: {
+        readonly jevCalls: number;
+        readonly cacheHits: number;
+        readonly wallTimeMs: number;
+        /** Round 12 (decision 045): real (non-cached) DecisionMaker requests made for THIS life alone — a before/after delta around the simulation, never the adapter's process-cumulative counter (the adapter instance is shared across every life in the process, see `server/decision-engine.ts`). */
+        readonly jevRequests?: number;
+        /** Individual Noul/Choice/Score questions asked across this life's `jevRequests` (a batched `decideYear` request carries several) — same per-life delta discipline as `jevRequests`. */
+        readonly jevQuestions?: number;
+        /** Input tokens consumed by this life's own requests only (delta, not cumulative). */
+        readonly inputTokens?: number;
+        /** `inputTokens * 0.042 / 1_000_000` — this life's own estimated cost in USD from input tokens alone. */
+        readonly estimatedUsd?: number;
+      };
     }
   | { readonly type: "error"; readonly message: string };

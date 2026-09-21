@@ -1,7 +1,7 @@
 import path from "node:path";
 import { JevDecisionMaker } from "@/adapters/decision/jev-decision-maker";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
-import type { DecisionMaker } from "@/domain/decisions";
+import type { DecisionMaker, DecisionMakerStats } from "@/domain/decisions";
 
 /**
  * Chooses the DecisionMaker adapter for the whole process. Server-only:
@@ -36,4 +36,33 @@ export function getDecisionMaker(): DecisionMaker {
 
 export function activeEngineName(): "jev" | "rules" {
   return getDecisionMaker() instanceof RuleDecisionMaker ? "rules" : "jev";
+}
+
+/** $/input-token, per decision 045's `estimatedUsd` field (see `contracts/life.ts`'s `done` event `stats`). */
+const USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
+
+/** Round 12 (decision 045): per-life Jev usage stats. The `getDecisionMaker()` instance is shared across the whole process (see the `globalThis` note above), so its own `getStats()` counters are CUMULATIVE across every life ever simulated in this process — never report them directly. Instead snapshot `getStats()` immediately before and after a single simulation run and report the DELTA, which is what's actually attributable to that one life. */
+export interface LifeRunStats {
+  readonly cacheHits: number;
+  readonly jevRequests?: number;
+  readonly jevQuestions?: number;
+  readonly inputTokens?: number;
+  readonly estimatedUsd?: number;
+}
+
+/** Call once immediately before the `simulate()`/fork call whose stats will be reported. */
+export function snapshotDecisionMakerStats(decisionMaker: DecisionMaker): DecisionMakerStats | undefined {
+  return decisionMaker.getStats?.();
+}
+
+/** Call once immediately after the run, with the `before` snapshot from `snapshotDecisionMakerStats` — returns THIS RUN's delta, never the adapter's raw cumulative counters. */
+export function decisionMakerRunStats(decisionMaker: DecisionMaker, before: DecisionMakerStats | undefined): LifeRunStats {
+  const after = decisionMaker.getStats?.();
+  if (!after) return { cacheHits: 0 };
+  const cacheHits = after.cacheHits - (before?.cacheHits ?? 0);
+  const jevRequests = after.calls - (before?.calls ?? 0);
+  const jevQuestions = after.questions !== undefined ? after.questions - (before?.questions ?? 0) : undefined;
+  const inputTokens = after.inputTokens !== undefined ? after.inputTokens - (before?.inputTokens ?? 0) : undefined;
+  const estimatedUsd = inputTokens !== undefined ? inputTokens * USD_PER_INPUT_TOKEN : undefined;
+  return { cacheHits, jevRequests, jevQuestions, inputTokens, estimatedUsd };
 }

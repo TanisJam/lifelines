@@ -1,4 +1,4 @@
-import { TypeSafeClient, choice, noul, score, type ChoiceCriteria, type Fetch, type Questions } from "@typesafe-ai/sdk";
+import { TypeSafeClient, choice, score, type ChoiceCriteria, type Fetch, type Questions } from "@typesafe-ai/sdk";
 import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution, PersonYearBatch, PersonYearResult } from "@/domain/decisions";
 import type { JsonValue } from "@/domain/types";
 import { VIGNETTE_OPTION_DESCRIPTIONS } from "@/domain/vignettes";
@@ -139,14 +139,18 @@ const SIGNIFICANCE_CRITERIA = [
 ] as const;
 
 /**
- * How likely `situations.<id>` is to actually happen to this person THIS year — asked as a Noul
- * alongside every candidate's speculative response (round 11, decision 044). Framed as "in a
- * typical year" per the same decision's occurrence-calibration note: an unframed "how likely is
- * this" question measured as inflated (see docs/findings.md), so the base-rate framing lives in
- * the question wording, never as a code-side weight on the answer (decision 016 still holds).
+ * Round 12 (decision 045, superseding round 11's per-candidate occurrence Noul): ONE joint
+ * event-selection Choice per person-year, asked once alongside every candidate's speculative
+ * response — "of everything that COULD happen to this person this year, which is most likely to
+ * actually happen?" — rather than N independent "how likely is this one, in isolation" judgments.
+ * A non-protagonist batch also gets a `"nothing"` option (an ordinary, uneventful year); the
+ * protagonist never does, so something is always selected for them (see
+ * `PersonYearBatch.isProtagonist`'s doc comment for why that's the whole guarantee mechanism now).
  */
-function occurrenceInstructions(kind: DecisionQuestion["kind"], situationKey: string): string {
-  return `In a typical year of an ordinary life like this one, how likely is it that \`${situationKey}\` (a "${kind}" situation) actually happens to this person THIS year — not eventually, not in general, but in the specific year given by \`year\`? Most individual situations do NOT happen in most years; answer for the base rate of a year like this one, then adjust for anything about this person or their circumstances that makes it more or less likely than usual.`;
+function pickInstructions(isProtagonist: boolean): string {
+  const base =
+    "You are the person in 'self' — read self.mind and self.portrait for who you are. `situations` lists every situation that COULD plausibly happen to you this specific year (see `year`); each option below names one of them. Given who you are, your circumstances, and everything about this year, which single situation is most likely to actually happen to you — not which one you'd most want, but which one a typical year like this genuinely produces?";
+  return isProtagonist ? base : `${base} If none of them are likely enough for this particular year, choose "nothing": an ordinary year in which nothing notable happens.`;
 }
 
 /** ~64k tokens/request hard cap (docs/findings.md); requests are split before reaching this so the shared `self` state and every situation's questions fit with headroom. */
@@ -206,6 +210,8 @@ export class JevDecisionMaker implements DecisionMaker {
   private wallTimeMs = 0;
   private inputTokens = 0;
   private outputTokens = 0;
+  /** Round 12 (decision 045): individual Noul/Choice/Score questions asked across every REAL (non-cached) call — a batched `decideYear` request usually carries several. */
+  private questions = 0;
 
   constructor(options: JevDecisionMakerOptions = {}) {
     this.client = new TypeSafeClient({
@@ -239,6 +245,7 @@ export class JevDecisionMaker implements DecisionMaker {
     }
 
     this.calls += 1;
+    this.questions += 1;
     const started = Date.now();
 
     const result = await this.client.systemOne({
@@ -258,34 +265,49 @@ export class JevDecisionMaker implements DecisionMaker {
   }
 
   /**
-   * Round 11 (decision 044): answers every eligible situation for one person's one year in a
-   * single `systemOne` request (a Noul occurrence + a speculative Choice response per candidate,
-   * plus an optional significance Score) — the state (`batch.self`) is paid for once instead of
-   * once per candidate. Splits into multiple requests (still one person-year's worth of situations,
-   * sent sequentially through the same rate limiter) only if the estimated size would exceed
-   * `JEV_YEAR_TOKEN_BUDGET`; merges the results back into one `PersonYearResult`.
+   * Round 11 (decision 044) / round 12 (decision 045): answers every eligible situation for one
+   * person's one year in a single `systemOne` request — a speculative Choice response per candidate,
+   * plus ONE joint event-selection Choice across all of them (`pick`, see `pickInstructions`) — the
+   * state (`batch.self`) is paid for once instead of once per candidate. Splits into multiple
+   * requests (still one person-year's worth of situations, sent sequentially through the same rate
+   * limiter) only if the estimated size would exceed `JEV_YEAR_TOKEN_BUDGET`; merges the results
+   * back into one `PersonYearResult`. The `pick` question needs every situation's criteria to choose
+   * among, so it always rides in the FIRST chunk only (a genuine mid-batch split is rare — see
+   * `JEV_YEAR_TOKEN_BUDGET` — and criteria text alone, not `state.situations`, is what the model
+   * needs to weigh an option, so a candidate whose own detail state landed in a LATER chunk is still
+   * a valid, fully-described `pick` option in the first).
    */
   async decideYear(batch: PersonYearBatch): Promise<PersonYearResult> {
     const situationIds = Object.keys(batch.situations);
-    if (situationIds.length === 0) return { occurrence: {}, response: {} };
+    if (situationIds.length === 0) return { selection: {}, response: {} };
 
     const chunks = this.splitByTokenBudget(batch, situationIds);
-    const chunkResults = await Promise.all(chunks.map((ids) => this.decideYearChunk(batch, ids)));
+    const chunkResults = await Promise.all(chunks.map((ids, i) => this.decideYearChunk(batch, ids, i === 0)));
 
-    const occurrence: Record<string, number> = {};
+    const selection: Record<string, number> = {};
     const response: Record<string, Distribution> = {};
-    const significance: Record<string, number> = {};
     for (const result of chunkResults) {
-      Object.assign(occurrence, result.occurrence);
+      Object.assign(selection, result.selection);
       Object.assign(response, result.response);
-      if (result.significance) Object.assign(significance, result.significance);
     }
-    return { occurrence, response, significance };
+    return { selection, response };
   }
 
-  /** Greedily groups situation ids so each group's estimated tokens (shared `self` + its own situations/questions) stays under `JEV_YEAR_TOKEN_BUDGET`. A single situation that alone exceeds the budget still gets its own group (never dropped). */
+  /** The `pick` Choice's criteria: every situation's own description, plus `"nothing"` for a non-protagonist batch (see `pickInstructions`). Shared between `decideYearChunk` (to actually ask it) and `splitByTokenBudget` (to size it into the token estimate, since it always rides in chunk 0 regardless of how situations themselves are split). */
+  private pickCriteria(batch: PersonYearBatch): ChoiceCriteria {
+    const criteria: ChoiceCriteria = {};
+    for (const [id, situation] of Object.entries(batch.situations)) {
+      const situationState = situation.question.state as Record<string, JsonValue>;
+      const situationInfo = situationState.situation as Record<string, JsonValue> | undefined;
+      criteria[id] = typeof situationInfo?.question === "string" ? situationInfo.question : `A "${situation.kind}" situation.`;
+    }
+    if (!batch.isProtagonist) criteria.nothing = "An ordinary, uneventful year: nothing notable happens.";
+    return criteria;
+  }
+
+  /** Greedily groups situation ids so each group's estimated tokens (shared `self` + `pick` criteria + its own situations/questions) stays under `JEV_YEAR_TOKEN_BUDGET`. A single situation that alone exceeds the budget still gets its own group (never dropped). */
   private splitByTokenBudget(batch: PersonYearBatch, situationIds: readonly string[]): string[][] {
-    const selfTokens = estimateTokens(batch.self);
+    const selfTokens = estimateTokens(batch.self) + estimateTokens(this.pickCriteria(batch));
     const groups: string[][] = [];
     let current: string[] = [];
     let currentTokens = selfTokens;
@@ -305,7 +327,7 @@ export class JevDecisionMaker implements DecisionMaker {
     return groups;
   }
 
-  private async decideYearChunk(batch: PersonYearBatch, situationIds: readonly string[]): Promise<PersonYearResult> {
+  private async decideYearChunk(batch: PersonYearBatch, situationIds: readonly string[], includeSelection: boolean): Promise<PersonYearResult> {
     const situationsState: Record<string, JsonValue> = {};
     const questions: Questions = {};
 
@@ -324,13 +346,12 @@ export class JevDecisionMaker implements DecisionMaker {
       const criteria: ChoiceCriteria = {};
       for (const option of situation.question.options) criteria[option] = describeOption(situation.kind, option);
 
-      questions[`occ:${id}`] = noul(occurrenceInstructions(situation.kind, `situations.${id}`));
       questions[`resp:${id}`] = choice(DECISION_INSTRUCTIONS[situation.kind], criteria);
-      questions[`sig:${id}`] = score(`How significant is \`situations.${id}\` (IF it happens) to this person's life story and the town's history?`, SIGNIFICANCE_CRITERIA);
     }
+    if (includeSelection) questions.pick = choice(pickInstructions(batch.isProtagonist), this.pickCriteria(batch));
 
     const state: Record<string, JsonValue> = { self: batch.self, year: batch.year, situations: situationsState };
-    const key = decisionCacheKey(`year:${batch.personId}:${batch.year}:${situationIds.slice().sort().join(",")}`, { state, model: this.model });
+    const key = decisionCacheKey(`year:${batch.personId}:${batch.year}:${situationIds.slice().sort().join(",")}:${includeSelection}`, { state, model: this.model });
     const cached = this.yearCache.get(key);
     if (cached) {
       this.cacheHits += 1;
@@ -338,6 +359,7 @@ export class JevDecisionMaker implements DecisionMaker {
     }
 
     this.calls += 1;
+    this.questions += Object.keys(questions).length;
     await this.rateLimiter.acquire();
     const started = Date.now();
     const result = await this.client.systemOne({ state, questions, model: this.model });
@@ -345,17 +367,13 @@ export class JevDecisionMaker implements DecisionMaker {
     this.inputTokens += result.usage.input_tokens;
     this.outputTokens += result.usage.output_tokens;
 
-    const occurrence: Record<string, number> = {};
     const response: Record<string, Distribution> = {};
-    const significance: Record<string, number> = {};
     for (const id of situationIds) {
-      occurrence[id] = (result.answers[`occ:${id}`] as { noul: number }).noul;
       response[id] = (result.answers[`resp:${id}`] as { probabilities: Distribution }).probabilities;
-      const sig = result.answers[`sig:${id}`] as { score: number } | undefined;
-      if (sig) significance[id] = sig.score / (SIGNIFICANCE_CRITERIA.length - 1);
     }
+    const selection: Record<string, number> = includeSelection ? ((result.answers.pick as { probabilities: Distribution }).probabilities as Record<string, number>) : {};
 
-    const personYearResult: PersonYearResult = { occurrence, response, significance };
+    const personYearResult: PersonYearResult = { selection, response };
     this.yearCache.set(key, personYearResult);
     this.yearCache.flush();
     return personYearResult;
@@ -370,6 +388,7 @@ export class JevDecisionMaker implements DecisionMaker {
     }
 
     this.calls += 1;
+    this.questions += 1;
     const started = Date.now();
     const result = await this.client.systemOne({
       state: { event: input.summary, ...input.state },
@@ -385,6 +404,6 @@ export class JevDecisionMaker implements DecisionMaker {
   }
 
   getStats(): DecisionMakerStats {
-    return { calls: this.calls, cacheHits: this.cacheHits, wallTimeMs: this.wallTimeMs, inputTokens: this.inputTokens, outputTokens: this.outputTokens };
+    return { calls: this.calls, cacheHits: this.cacheHits, wallTimeMs: this.wallTimeMs, inputTokens: this.inputTokens, outputTokens: this.outputTokens, questions: this.questions };
   }
 }

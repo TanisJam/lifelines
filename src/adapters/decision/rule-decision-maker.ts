@@ -3,16 +3,19 @@ import { normalizeDistribution } from "@/domain/rng";
 import { ruleDistribution } from "@/domain/rule-heuristics";
 
 /**
- * Deterministic occurrence heuristic for the rules engine's `decideYear` (round 11, decision 044).
- * No AI call, so this can't ask "how likely is this" — instead it treats every eligible candidate
- * as near-certain to occur once code has already gated it into the candidate pool (`gatherCandidatesForYear`'s
- * eligibility checks do the real filtering for the rules engine), except `D1` (the daily-life
- * filler), which gets a lower, tunable base rate so it reads as a genuine fallback candidate rather
- * than something that fires every single year in tests.
+ * Deterministic event-selection weight for the rules engine's `decideYear` (round 12, decision 045,
+ * superseding round 11's per-candidate occurrence heuristic). No AI call, so this can't judge "which
+ * of these is most likely" the way Jev's event-selection Choice does — instead it hands out a flat,
+ * tunable relative weight per kind (raw, not normalized: `sampleGumbelMax`/`normalizeDistribution`
+ * handle that). `D1` (the daily-life filler) gets a lower weight so it reads as a genuine "nothing
+ * else came up" candidate rather than always outscoring every real social situation in tests.
  */
-function ruleOccurrence(kind: DecisionQuestion["kind"]): number {
+function ruleSelectionWeight(kind: DecisionQuestion["kind"]): number {
   return kind === "D1" ? 0.3 : 0.85;
 }
+
+/** Weight for the synthetic `"nothing"` option offered to every non-protagonist person-year (round 12, decision 045) — moderate, so an NPC's quiet years and eventful years are both common, not one or the other. */
+const NOTHING_WEIGHT = 0.7;
 
 /**
  * Deterministic heuristic weights. No network calls, no randomness of its
@@ -31,16 +34,17 @@ export class RuleDecisionMaker implements DecisionMaker {
     return ruleDistribution(question);
   }
 
-  /** Round 11 (decision 044): the batched equivalent of `decide()` — answers every situation in one pass, no network, fully deterministic. */
+  /** Round 11 (decision 044) / round 12 (decision 045): the batched equivalent of `decide()` — answers every situation in one pass, no network, fully deterministic. `selection` carries raw weights (per `ruleSelectionWeight`/`NOTHING_WEIGHT`); `simulate.ts` samples it with Gumbel-max exactly like the real Jev path, never special-cased here. */
   async decideYear(batch: PersonYearBatch): Promise<PersonYearResult> {
     this.calls += 1;
-    const occurrence: Record<string, number> = {};
+    const selection: Record<string, number> = {};
     const response: Record<string, Distribution> = {};
     for (const [id, situation] of Object.entries(batch.situations)) {
       response[id] = normalizeDistribution(ruleDistribution(situation.question) as Record<string, number>);
-      occurrence[id] = ruleOccurrence(situation.kind);
+      selection[id] = ruleSelectionWeight(situation.kind);
     }
-    return { occurrence, response };
+    if (!batch.isProtagonist && Object.keys(selection).length > 0) selection.nothing = NOTHING_WEIGHT;
+    return { selection, response };
   }
 
   getStats(): DecisionMakerStats {

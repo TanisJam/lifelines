@@ -4,11 +4,12 @@ import { JevDecisionMaker } from "./jev-decision-maker";
 
 const BASE_STATE = { name: "Mira", age: 30, job: "healer" };
 
-function makeBatch(id: string, personId = "p1", year = 1524): PersonYearBatch {
+function makeBatch(id: string, personId = "p1", year = 1524, isProtagonist = false): PersonYearBatch {
   return {
     personId,
     year,
     self: BASE_STATE,
+    isProtagonist,
     situations: {
       [id]: { kind: "Y1", question: { id, kind: "Y1", personId, year, state: { self: BASE_STATE, situation: { code: "Y1", question: "Do I encourage it?" }, town: "Oakhaven", year }, options: ["encourage", "decline", "wait"] } },
     },
@@ -19,9 +20,8 @@ function makeBatch(id: string, personId = "p1", year = 1524): PersonYearBatch {
 function fakeAnswers(questionNames: readonly string[]): Record<string, unknown> {
   const answers: Record<string, unknown> = {};
   for (const name of questionNames) {
-    if (name.startsWith("occ:")) answers[name] = { type: "noul", noul: 0.4 };
+    if (name === "pick") answers[name] = { type: "choice", choice: "Y1:p001::p002:1524", confidence: 0.8, probabilities: { "Y1:p001::p002:1524": 0.6, nothing: 0.4 } };
     else if (name.startsWith("resp:")) answers[name] = { type: "choice", choice: "encourage", confidence: 0.8, probabilities: { encourage: 0.5, decline: 0.2, wait: 0.3 } };
-    else if (name.startsWith("sig:")) answers[name] = { type: "score", score: 1, confidence: 0.7, legend: {}, probabilities: {} };
   }
   return answers;
 }
@@ -54,7 +54,7 @@ describe("JevDecisionMaker.decideYear", () => {
     const batch = makeBatch("Y1:p001::p002:1524");
     const result = await maker.decideYear(batch);
     expect(calls.length).toBe(1);
-    expect(result.occurrence["Y1:p001::p002:1524"]).toBeCloseTo(0.4);
+    expect(result.selection["Y1:p001::p002:1524"]).toBeCloseTo(0.6);
     expect(result.response["Y1:p001::p002:1524"]).toEqual({ encourage: 0.5, decline: 0.2, wait: 0.3 });
   });
 
@@ -85,6 +85,7 @@ describe("JevDecisionMaker.decideYear", () => {
       personId: "p1",
       year: 1524,
       self: BASE_STATE,
+      isProtagonist: false,
       situations: {
         small: { kind: "Y1", question: { id: "small", kind: "Y1", personId: "p1", year: 1524, state: { self: BASE_STATE, situation: { code: "Y1" }, town: "Oakhaven", year: 1524 }, options: ["encourage", "decline"] } },
         huge: { kind: "Y1", question: { id: "huge", kind: "Y1", personId: "p1", year: 1524, state: { self: BASE_STATE, situation: { code: "Y1", note: hugeText }, town: "Oakhaven", year: 1524 }, options: ["encourage", "decline"] } },

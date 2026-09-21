@@ -69,7 +69,8 @@ describe("situation triggers (gatherCandidatesForYear)", () => {
     const father = makePerson("p007", { birthYear: 1473, sex: "m", spouseId: "p006" });
     const people = { p006: mother, p007: father };
 
-    // Run several years so the probabilistic gate has a chance to fire at least once.
+    // Eligibility is deterministic (round 12, decision 045) — a married woman in her fertile window
+    // is eligible every year, so this should already be true from year one.
     let sawA2 = false;
     for (let year = 1500; year < 1520; year++) {
       const candidates = gatherCandidatesForYear(year, people, [], "test-seed");

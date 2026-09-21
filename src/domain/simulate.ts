@@ -25,8 +25,10 @@ const DEFAULT_YEAR_BATCH_CONCURRENCY = 64;
  * one way. Below this, a "did nothing happen" record for every person,
  * every year, would dwarf the actually-interesting decisions (see decision
  * 007). Applies to biology decisions (illness, death, immigration); social
- * decisions are always recorded once asked, since the code-level gates
- * that precede them already filter out near-certain "no" years.
+ * decisions are always recorded once asked, since (round 12, decision 045)
+ * eligibility is now the only code-side filter — Jev's per-person-year
+ * event-selection Choice, not a code-level probability gate, decides which
+ * eligible candidate (if any) actually happens.
  */
 const RECORD_THRESHOLD = 0.05;
 
@@ -321,10 +323,11 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     candidates.push({ decisionId: `immigration:world:${year}`, kind: "immigration", personId: "world", options: ["arrive", "no-arrival"] });
   }
 
-  // Social decisions: gathered the same way as before — code-level
-  // probability GATES (not themselves recorded as decisions) decide
-  // whether a real decision is even asked this year, so the call budget
-  // stays bounded as the town's population compounds across generations.
+  // Social decisions: eligibility is PURE (age, marital status, place, relationships, cooldowns,
+  // caps — round 12, decision 045; superseded the old code-level probability GATES this comment
+  // used to describe). Jev's per-person-year event-selection Choice, not code, decides whether an
+  // eligible candidate is the one that actually happens; `LIFE_DECISION_BUDGET` below still bounds
+  // call volume for the general village as the town's population compounds across generations.
   const aliveNonMoved = Object.values(people)
     .filter((p) => p.deathYear === undefined && !p.away && !hasMovedAway(events, p.id))
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -336,28 +339,27 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
 
     // Y1 Courtship offer. Age-appropriate matching: try a tight window first
     // (within 10 years) and only widen if nobody eligible is nearby in age.
+    // Round 12 (decision 045): the old `seekChance`/`seekDraw` code-side probability gate is gone —
+    // eligibility here is purely deterministic (age, unmarried, no active romance, a real partner on
+    // hand); Jev's per-person-year event-selection Choice decides whether this actually happens.
     if (isAdult(age) && age <= 65 && !person.spouseId && activeRomancePair(events, person.id) === undefined) {
-      const seekChance = 0.32 + (person.mind.facets.lovePropensity >= 60 ? 0.15 : 0) + (person.mind.facets.gregariousness <= 35 ? -0.1 : 0) + (person.mind.facets.gregariousness >= 65 ? 0.08 : 0);
-      const seekDraw = keyedDraw(seed, person.id, year, "seeking-partner");
-      if (seekDraw < Math.max(0.02, seekChance)) {
-        const eligible = (maxAgeGap: number) =>
-          aliveNonMoved.find(
-            (candidate) =>
-              candidate.id !== person.id &&
-              candidate.sex !== person.sex &&
-              !candidate.spouseId &&
-              !claimedPartners.has(candidate.id) &&
-              !isRelated(person, candidate) &&
-              isAdult(ageInYear(candidate.birthYear, year)) &&
-              activeRomancePair(events, candidate.id) === undefined &&
-              Math.abs(ageInYear(candidate.birthYear, year) - age) <= maxAgeGap,
-          );
-        const partner = eligible(10) ?? eligible(20) ?? eligible(40);
-        if (partner) {
-          claimedPartners.add(partner.id);
-          claimedPartners.add(person.id);
-          candidates.push({ decisionId: `Y1:${pairKey(person.id, partner.id)}:${year}`, kind: "Y1", personId: person.id, partnerId: partner.id, options: ["encourage", "decline", "wait"] });
-        }
+      const eligible = (maxAgeGap: number) =>
+        aliveNonMoved.find(
+          (candidate) =>
+            candidate.id !== person.id &&
+            candidate.sex !== person.sex &&
+            !candidate.spouseId &&
+            !claimedPartners.has(candidate.id) &&
+            !isRelated(person, candidate) &&
+            isAdult(ageInYear(candidate.birthYear, year)) &&
+            activeRomancePair(events, candidate.id) === undefined &&
+            Math.abs(ageInYear(candidate.birthYear, year) - age) <= maxAgeGap,
+        );
+      const partner = eligible(10) ?? eligible(20) ?? eligible(40);
+      if (partner) {
+        claimedPartners.add(partner.id);
+        claimedPartners.add(person.id);
+        candidates.push({ decisionId: `Y1:${pairKey(person.id, partner.id)}:${year}`, kind: "Y1", personId: person.id, partnerId: partner.id, options: ["encourage", "decline", "wait"] });
       }
     }
 
@@ -370,8 +372,10 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       const romanceEvent = eventsFor(events, person.id)
         .filter((e) => e.kind === "romance" && e.actors.includes(romancePartnerId))
         .sort((a, b) => b.year - a.year)[0];
-      const reconsiderDraw = keyedDraw(seed, person.id, year, "marry-reconsider");
-      if (romanceEvent && year - romanceEvent.year >= 1 && (year === romanceEvent.year + 1 || reconsiderDraw < 0.55)) {
+      // Round 12 (decision 045): eligible every year from one year after the romance began, not
+      // just the anniversary year plus a probabilistic `reconsiderDraw` — deterministic eligibility
+      // only; Jev's event-selection Choice decides whether the proposal actually comes up this year.
+      if (romanceEvent && year - romanceEvent.year >= 1) {
         candidates.push({
           decisionId: `A1:${pairKey(person.id, romancePartnerId)}:${year}`,
           kind: "A1",
@@ -404,38 +408,38 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // change, not an answer weight: a still-childless couple close to the end of the fertility
     // window is asked MORE often (code deciding when a decision is a real crossroads), not answered
     // differently.
+    // Round 12 (decision 045): the old density-damped `gateChance`/`gateDraw` code-side probability
+    // gate is gone — every married woman in her fertile window is eligible every year (deterministic:
+    // sex, spouse alive, fertile age); Jev's event-selection Choice decides whether this is the year.
     if (person.sex === "f" && person.spouseId && isFertileAge(age, "f")) {
       const spouse = people[person.spouseId];
       if (spouse && spouse.deathYear === undefined) {
         const existingChildren = Object.values(people).filter((c) => c.motherId === person.id).length;
         const fertileYearsLeft = Math.max(0, 45 - age);
-        const densityFactor = livingIds.length > 34 ? Math.max(0.3, 1 - (livingIds.length - 34) * 0.04) : 1;
-        const urgencyBoost = existingChildren === 0 && fertileYearsLeft <= 8 ? 0.2 : 0;
-        const gateChance = Math.max(0.06, (0.4 - existingChildren * 0.06) * densityFactor + urgencyBoost);
-        const gateDraw = keyedDraw(seed, person.id, year, "child-gate");
-        if (gateDraw < gateChance) {
-          candidates.push({
-            decisionId: `A2:${pairKey(person.id, person.spouseId)}:${year}`,
-            kind: "A2",
-            personId: person.id,
-            partnerId: person.spouseId,
-            options: ["try", "wait", "refuse"],
-            extra: { existingChildren, fertileYearsLeft },
-          });
-        }
+        candidates.push({
+          decisionId: `A2:${pairKey(person.id, person.spouseId)}:${year}`,
+          kind: "A2",
+          personId: person.id,
+          partnerId: person.spouseId,
+          options: ["try", "wait", "refuse"],
+          extra: { existingChildren, fertileYearsLeft },
+        });
       }
     }
 
-    // Y4 First grudge: a hot-tempered or envious (high anger/greed facet) person occasionally clashes with an unrelated townsperson.
+    // Y4 First grudge: a hot-tempered or envious (high anger/greed facet) ADULT occasionally clashes
+    // with an unrelated townsperson. Round 12 (decision 045): the old `feudDraw` code-side gate is
+    // gone — eligible every year the deterministic conditions hold; Jev's event-selection decides.
+    // `isAdult(age)` is a round 12 addition too: the old 5% `feudDraw` made this so rare that a
+    // clashing infant/child (the facet checks alone never excluded them) never actually surfaced in
+    // practice, but unconditional eligibility exposed it immediately (a 1-year-old getting a "feud"
+    // the same year they died — see `life-chronicle.test.ts`'s "death is always last" contract).
     const pastRivals = feudPairHistory(events, person.id);
-    if ((person.mind.facets.anger >= 65 || person.mind.facets.greed >= 65) && activeFeudPair(events, person.id) === undefined && pastRivals.size < MAX_FEUD_PAIRS_PER_LIFE) {
-      const feudDraw = keyedDraw(seed, person.id, year, "feud-gate");
-      if (feudDraw < 0.05) {
-        const rival = aliveNonMoved.find(
-          (c) => c.id !== person.id && c.job === person.job && !isRelated(person, c) && activeFeudPair(events, c.id) === undefined && !pastRivals.has(c.id) && feudPairHistory(events, c.id).size < MAX_FEUD_PAIRS_PER_LIFE,
-        );
-        if (rival) candidates.push({ decisionId: `Y4:${pairKey(person.id, rival.id)}:${year}`, kind: "Y4", personId: person.id, partnerId: rival.id, options: ["confront", "forgive", "nurse-it"] });
-      }
+    if (isAdult(age) && (person.mind.facets.anger >= 65 || person.mind.facets.greed >= 65) && activeFeudPair(events, person.id) === undefined && pastRivals.size < MAX_FEUD_PAIRS_PER_LIFE) {
+      const rival = aliveNonMoved.find(
+        (c) => c.id !== person.id && c.job === person.job && !isRelated(person, c) && isAdult(ageInYear(c.birthYear, year)) && activeFeudPair(events, c.id) === undefined && !pastRivals.has(c.id) && feudPairHistory(events, c.id).size < MAX_FEUD_PAIRS_PER_LIFE,
+      );
+      if (rival) candidates.push({ decisionId: `Y4:${pairKey(person.id, rival.id)}:${year}`, kind: "Y4", personId: person.id, partnerId: rival.id, options: ["confront", "forgive", "nurse-it"] });
     }
 
     // A6 Rivalry escalates: a grudge that's been running at least two years.
@@ -446,23 +450,19 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       const feudEvents = events.filter((e) => e.kind === "feud" && e.actors.includes(person.id) && e.actors.includes(feudPartnerId)).sort((a, b) => a.year - b.year);
       const feudEvent = feudEvents[feudEvents.length - 1];
       const originalYear = feudEvents[0]?.year;
-      const reconcileReconsiderDraw = keyedDraw(seed, person.id, year, "reconcile-reconsider");
       const withinEpisodeBudget = feudEvents.length < FEUD_EPISODE_CAP && originalYear !== undefined && year - originalYear <= FEUD_EPISODE_WINDOW_YEARS;
-      if (feudEvent && withinEpisodeBudget && year - feudEvent.year >= 3 && (year === feudEvent.year + 3 || reconcileReconsiderDraw < 0.3)) {
+      // Round 12 (decision 045): eligible every year from 3 years after the last feud event, not
+      // just the anniversary year plus a probabilistic `reconcileReconsiderDraw` — deterministic
+      // eligibility only; Jev's event-selection Choice decides whether it comes up this year.
+      if (feudEvent && withinEpisodeBudget && year - feudEvent.year >= 3) {
         candidates.push({ decisionId: `A6:${pairKey(person.id, feudPartnerId)}:${year}`, kind: "A6", personId: person.id, partnerId: feudPartnerId, options: ["reconcile", "feud", "sabotage"] });
       }
     }
 
-    // Y3 Leave or stay.
+    // Y3 Leave or stay. Round 12 (decision 045): the old `moveChance`/`moveDraw` code-side gate is
+    // gone — eligible every year of adulthood (deterministic); Jev's event-selection decides.
     if (isAdult(age)) {
-      const recentBreakup = recentUnresolvedBreakup(events, person.id, year, 3);
-      const restlessBonus = person.mind.facets.curiosity >= 65 || person.mind.values.independence >= 20 ? 0.06 : 0;
-      const breakupBonus = recentBreakup ? 0.05 : 0;
-      const moveChance = 0.015 + restlessBonus + breakupBonus;
-      const moveDraw = keyedDraw(seed, person.id, year, "move-gate");
-      if (moveDraw < moveChance) {
-        candidates.push({ decisionId: `Y3:${person.id}:${year}`, kind: "Y3", personId: person.id, options: ["leave", "stay"] });
-      }
+      candidates.push({ decisionId: `Y3:${person.id}:${year}`, kind: "Y3", personId: person.id, options: ["leave", "stay"] });
     }
 
     // A8 Dream check: round 6 fix (decision 028, "A8 is re-asked for almost everyone every 5
@@ -526,26 +526,23 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       candidates.push({ decisionId: `C3:${person.id}:${year}`, kind: "C3", personId: person.id, options: ["follow-trade", "apprentice-elsewhere", "drift"] });
     }
 
-    // O2 Old grudge: a grudge relationship that's lingered into old age, surfaced occasionally rather than every year.
+    // O2 Old grudge: a grudge relationship that's lingered into old age. Round 12 (decision 045):
+    // the old `grudgeDraw` code-side gate is gone — eligible every year once old age + a lingering
+    // grudge hold (deterministic); Jev's event-selection Choice decides whether it surfaces.
     if (age >= 60) {
       const oldGrudge = person.mind.relationships.find((r) => r.bond === "grudge" && r.strength <= -40);
       if (oldGrudge) {
-        const grudgeDraw = keyedDraw(seed, person.id, year, "old-grudge-gate");
-        if (grudgeDraw < 0.1) {
-          candidates.push({ decisionId: `O2:${pairKey(person.id, oldGrudge.personId)}:${year}`, kind: "O2", personId: person.id, partnerId: oldGrudge.personId, options: ["reconcile", "take-to-grave"] });
-        }
+        candidates.push({ decisionId: `O2:${pairKey(person.id, oldGrudge.personId)}:${year}`, kind: "O2", personId: person.id, partnerId: oldGrudge.personId, options: ["reconcile", "take-to-grave"] });
       }
     }
 
     // O4 Facing death: a reckoning with mortality in old age. Simplified from the spec's literal
     // "terminal illness" trigger (that fires the same year illness/death is decided, which this
     // pure/pre-biology candidate pass can't see yet — the same ordering issue as C2 above) to "old
-    // age, occasionally" — disclosed as a scoping simplification in decision 025.
+    // age, occasionally" — disclosed as a scoping simplification in decision 025. Round 12 (decision
+    // 045): the old `mortalityDraw` code-side gate is gone — eligible every year of old age.
     if (age >= 75) {
-      const mortalityDraw = keyedDraw(seed, person.id, year, "facing-death-gate");
-      if (mortalityDraw < 0.08) {
-        candidates.push({ decisionId: `O4:${person.id}:${year}`, kind: "O4", personId: person.id, options: ["peace", "regret", "last-wish"] });
-      }
+      candidates.push({ decisionId: `O4:${person.id}:${year}`, kind: "O4", personId: person.id, options: ["peace", "regret", "last-wish"] });
     }
 
     // --- Protagonist-only extended catalog (round 9, decision 035) ---------
@@ -572,67 +569,57 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         candidates.push({ decisionId: `Y2:${person.id}:${year}`, kind: "Y2", personId: person.id, options: ["pursue-the-dream", "stay-practical"] });
       }
 
-      // Y5 Close friendship: without an existing friend bond. Decision 040: widened from age
-      // 14-30/0.06 — a stayed protagonist's chronicle measured thin (richness-stats.ts), and a
-      // friendship is exactly the kind of low-stakes, high-frequency situation that should be
-      // common across a whole adult life, not just youth. Trigger-rate only, per decision 016.
+      // Y5 Close friendship: without an existing friend bond. Round 12 (decision 045): the old
+      // `friendDraw` code-side gate is gone — eligible every year the deterministic conditions hold
+      // (age band, no existing friend, a real candidate on hand); Jev's event-selection decides.
       if (age >= 14 && age <= 50 && !person.mind.relationships.some((r) => r.bond === "friend")) {
-        const friendDraw = keyedDraw(seed, person.id, year, "friendship-gate");
-        if (friendDraw < 0.1) {
-          const candidate = aliveNonMoved.find((c) => c.id !== person.id && !isRelated(person, c) && Math.abs(ageInYear(c.birthYear, year) - age) <= 8);
-          if (candidate) candidates.push({ decisionId: `Y5:${pairKey(person.id, candidate.id)}:${year}`, kind: "Y5", personId: person.id, partnerId: candidate.id, options: ["open-up", "keep-distance"] });
-        }
+        const candidate = aliveNonMoved.find((c) => c.id !== person.id && !isRelated(person, c) && Math.abs(ageInYear(c.birthYear, year) - age) <= 8);
+        if (candidate) candidates.push({ decisionId: `Y5:${pairKey(person.id, candidate.id)}:${year}`, kind: "Y5", personId: person.id, partnerId: candidate.id, options: ["open-up", "keep-distance"] });
       }
 
-      // A4 Betrayal discovered: rare, while married.
+      // A4 Betrayal discovered: while married. Round 12 (decision 045): the old `betrayalDraw`
+      // code-side gate is gone — eligible every year the marriage stands.
       if (isAdult(age) && person.spouseId && people[person.spouseId] && isAlive(people[person.spouseId]!, year)) {
-        const betrayalDraw = keyedDraw(seed, person.id, year, "betrayal-gate");
-        if (betrayalDraw < 0.015) candidates.push({ decisionId: `A4:${pairKey(person.id, person.spouseId)}:${year}`, kind: "A4", personId: person.id, partnerId: person.spouseId, options: ["confront", "forgive", "leave", "revenge"] });
+        candidates.push({ decisionId: `A4:${pairKey(person.id, person.spouseId)}:${year}`, kind: "A4", personId: person.id, partnerId: person.spouseId, options: ["confront", "forgive", "leave", "revenge"] });
       }
 
-      // A7 Crisis of faith: high faith value, after a recent hardship.
+      // A7 Crisis of faith: high faith value, after a recent hardship. Round 12 (decision 045): the
+      // old `faithDraw` code-side gate is gone — eligible whenever the deterministic hardship window holds.
       if (isAdult(age) && person.mind.values.faith >= 20) {
         const recentHardship = eventsFor(events, person.id).some((e) => e.year >= year - 2 && e.year < year && (e.kind === "illness" || e.kind === "feud" || e.kind === "breakdown"));
-        if (recentHardship) {
-          const faithDraw = keyedDraw(seed, person.id, year, "faith-crisis-gate");
-          if (faithDraw < 0.18) candidates.push({ decisionId: `A7:${person.id}:${year}`, kind: "A7", personId: person.id, options: ["double-down", "lose-faith", "seek-another-path"] });
-        }
+        if (recentHardship) candidates.push({ decisionId: `A7:${person.id}:${year}`, kind: "A7", personId: person.id, options: ["double-down", "lose-faith", "seek-another-path"] });
       }
 
-      // A9 Affair temptation: married and unhappy (low mood).
+      // A9 Affair temptation: married and unhappy (low mood). Round 12 (decision 045): the old
+      // `affairDraw` code-side gate is gone — eligible every year the mood/marriage conditions hold.
       if (isAdult(age) && person.spouseId && computeMood(person.mind) <= -10) {
-        const affairDraw = keyedDraw(seed, person.id, year, "affair-gate");
-        if (affairDraw < 0.08) candidates.push({ decisionId: `A9:${person.id}:${year}`, kind: "A9", personId: person.id, partnerId: person.spouseId, options: ["resist", "pursue"] });
+        candidates.push({ decisionId: `A9:${person.id}:${year}`, kind: "A9", personId: person.id, partnerId: person.spouseId, options: ["resist", "pursue"] });
       }
 
-      // A10 Mentor: skilled and established, with a youth nearby.
+      // A10 Mentor: skilled and established, with a youth nearby. Round 12 (decision 045): the old
+      // `mentorDraw` code-side gate is gone — eligible every year a real apprentice candidate is on hand.
       if (age >= 35 && person.job !== "none") {
-        const mentorDraw = keyedDraw(seed, person.id, year, "mentor-gate");
-        if (mentorDraw < 0.05) {
-          const apprentice = aliveNonMoved.find((c) => c.id !== person.id && !isRelated(person, c) && ageInYear(c.birthYear, year) >= 14 && ageInYear(c.birthYear, year) <= 20);
-          if (apprentice) candidates.push({ decisionId: `A10:${pairKey(person.id, apprentice.id)}:${year}`, kind: "A10", personId: person.id, partnerId: apprentice.id, options: ["take-an-apprentice", "decline"] });
-        }
+        const apprentice = aliveNonMoved.find((c) => c.id !== person.id && !isRelated(person, c) && ageInYear(c.birthYear, year) >= 14 && ageInYear(c.birthYear, year) <= 20);
+        if (apprentice) candidates.push({ decisionId: `A10:${pairKey(person.id, apprentice.id)}:${year}`, kind: "A10", personId: person.id, partnerId: apprentice.id, options: ["take-an-apprentice", "decline"] });
       }
 
       // O1 Inheritance: old, with living heirs. `extra.quarrel` when there's more than one heir.
+      // Round 12 (decision 045): the old `inheritanceDraw` code-side gate is gone.
       if (age >= 70) {
         const heirs = Object.values(people).filter((c) => (c.motherId === person.id || c.fatherId === person.id) && c.deathYear === undefined);
-        if (heirs.length > 0) {
-          const inheritanceDraw = keyedDraw(seed, person.id, year, "inheritance-gate");
-          if (inheritanceDraw < 0.15) candidates.push({ decisionId: `O1:${person.id}:${year}`, kind: "O1", personId: person.id, options: ["eldest", "favorite", "split", "town"], extra: { heirs: heirs.length, quarrel: heirs.length >= 2 } });
-        }
+        if (heirs.length > 0) candidates.push({ decisionId: `O1:${person.id}:${year}`, kind: "O1", personId: person.id, options: ["eldest", "favorite", "split", "town"], extra: { heirs: heirs.length, quarrel: heirs.length >= 2 } });
       }
 
-      // O3 Legacy: old, with a dream that never came true.
+      // O3 Legacy: old, with a dream that never came true. Round 12 (decision 045): the old
+      // `legacyDraw` code-side gate is gone — eligible every year the deterministic conditions hold.
       if (age >= 65 && person.mind.dream.status !== "realized") {
-        const legacyDraw = keyedDraw(seed, person.id, year, "legacy-gate");
-        if (legacyDraw < 0.15) candidates.push({ decisionId: `O3:${person.id}:${year}`, kind: "O3", personId: person.id, options: ["last-attempt", "pass-it-on", "make-peace-with-it"] });
+        candidates.push({ decisionId: `O3:${person.id}:${year}`, kind: "O3", personId: person.id, options: ["last-attempt", "pass-it-on", "make-peace-with-it"] });
       }
 
-      // PIL1 Pilgrimage: a real pull of faith, in adulthood.
+      // PIL1 Pilgrimage: a real pull of faith, in adulthood. Round 12 (decision 045): the old
+      // `pilgrimageDraw` code-side gate is gone — eligible every year the deterministic conditions hold.
       if (age >= 20 && age <= 55 && person.mind.values.faith >= 15) {
-        const pilgrimageDraw = keyedDraw(seed, person.id, year, "pilgrimage-gate");
-        if (pilgrimageDraw < 0.04) candidates.push({ decisionId: `PIL1:${person.id}:${year}`, kind: "PIL1", personId: person.id, options: ["go", "stay"] });
+        candidates.push({ decisionId: `PIL1:${person.id}:${year}`, kind: "PIL1", personId: person.id, options: ["go", "stay"] });
       }
     }
   }
@@ -674,13 +661,11 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         candidates.push({ decisionId: `away-arrival:${protagonist.id}:${year}`, kind: "away-arrival", personId: protagonist.id, options: ["arrive", "no-arrival"] });
       }
 
-      // Y1/A1 Courtship and marriage, with whoever's on hand in the away cast.
+      // Y1/A1 Courtship and marriage, with whoever's on hand in the away cast. Round 12 (decision
+      // 045): the old `seekDraw` code-side gate is gone — eligible whenever a real suitor is on hand.
       if (isAdult(age) && age <= 65 && !protagonist.spouseId && activeRomancePair(events, protagonist.id) === undefined) {
         const suitor = awayCast.find((c) => c.sex !== protagonist.sex && !c.spouseId && isAdult(ageInYear(c.birthYear, year)) && activeRomancePair(events, c.id) === undefined);
-        if (suitor) {
-          const seekDraw = keyedDraw(seed, protagonist.id, year, "away-seeking-partner");
-          if (seekDraw < 0.5) candidates.push({ decisionId: `Y1:${pairKey(protagonist.id, suitor.id)}:${year}`, kind: "Y1", personId: protagonist.id, partnerId: suitor.id, options: ["encourage", "decline", "wait"] });
-        }
+        if (suitor) candidates.push({ decisionId: `Y1:${pairKey(protagonist.id, suitor.id)}:${year}`, kind: "Y1", personId: protagonist.id, partnerId: suitor.id, options: ["encourage", "decline", "wait"] });
       }
       const awayRomancePartnerId = activeRomancePair(events, protagonist.id);
       if (awayRomancePartnerId && people[awayRomancePartnerId] && isAlive(people[awayRomancePartnerId]!, year)) {
@@ -700,7 +685,8 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       }
 
       // A2 Have a child, once married — asked via whichever of the couple is the mother, exactly
-      // like the home loop's own "asked via the mother" rule.
+      // like the home loop's own "asked via the mother" rule. Round 12 (decision 045): the old
+      // `gateDraw` code-side gate is gone — eligible every year the fertility window holds.
       const awaySpouse = protagonist.spouseId ? people[protagonist.spouseId] : undefined;
       if (awaySpouse && awaySpouse.deathYear === undefined) {
         const mother = protagonist.sex === "f" ? protagonist : awaySpouse;
@@ -708,38 +694,32 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         const motherAge = ageInYear(mother.birthYear, year);
         if (isFertileAge(motherAge, "f")) {
           const existingChildren = Object.values(people).filter((c) => c.motherId === mother.id).length;
-          const gateDraw = keyedDraw(seed, mother.id, year, "away-child-gate");
-          if (gateDraw < Math.max(0.06, 0.4 - existingChildren * 0.06)) {
-            candidates.push({
-              decisionId: `A2:${pairKey(mother.id, father.id)}:${year}`,
-              kind: "A2",
-              personId: mother.id,
-              partnerId: father.id,
-              options: ["try", "wait", "refuse"],
-              extra: { existingChildren, fertileYearsLeft: Math.max(0, 45 - motherAge) },
-            });
-          }
+          candidates.push({
+            decisionId: `A2:${pairKey(mother.id, father.id)}:${year}`,
+            kind: "A2",
+            personId: mother.id,
+            partnerId: father.id,
+            options: ["try", "wait", "refuse"],
+            extra: { existingChildren, fertileYearsLeft: Math.max(0, 45 - motherAge) },
+          });
         }
       }
 
-      // Y5 Close friendship, with whoever's on hand in the away cast.
+      // Y5 Close friendship, with whoever's on hand in the away cast. Round 12 (decision 045): the
+      // old `friendDraw` code-side gate is gone — eligible whenever a real friend candidate is on hand.
       if (age >= 14 && age <= 60 && !protagonist.mind.relationships.some((r) => r.bond === "friend")) {
-        const friendDraw = keyedDraw(seed, protagonist.id, year, "away-friendship-gate");
-        if (friendDraw < 0.1) {
-          const friend = awayCast.find((c) => c.id !== protagonist.id);
-          if (friend) candidates.push({ decisionId: `Y5:${pairKey(protagonist.id, friend.id)}:${year}`, kind: "Y5", personId: protagonist.id, partnerId: friend.id, options: ["open-up", "keep-distance"] });
-        }
+        const friend = awayCast.find((c) => c.id !== protagonist.id);
+        if (friend) candidates.push({ decisionId: `Y5:${pairKey(protagonist.id, friend.id)}:${year}`, kind: "Y5", personId: protagonist.id, partnerId: friend.id, options: ["open-up", "keep-distance"] });
       }
 
       // A7 Crisis of faith, A8 dream check, A9 affair temptation, A11 breakdown, O1/O3/O4 old age,
       // PIL1 pilgrimage — every one of these is already self-contained (own mind/events/spouseId),
-      // not a home-village lookup, so the exact home trigger applies unchanged away from home.
+      // not a home-village lookup, so the exact home trigger applies unchanged away from home. Round
+      // 12 (decision 045): the old `faithDraw` code-side gate is gone — eligible whenever the
+      // deterministic hardship window holds.
       if (isAdult(age) && protagonist.mind.values.faith >= 20) {
         const recentHardship = eventsFor(events, protagonist.id).some((e) => e.year >= year - 2 && e.year < year && (e.kind === "illness" || e.kind === "feud" || e.kind === "breakdown"));
-        if (recentHardship) {
-          const faithDraw = keyedDraw(seed, protagonist.id, year, "away-faith-crisis-gate");
-          if (faithDraw < 0.12) candidates.push({ decisionId: `A7:${protagonist.id}:${year}`, kind: "A7", personId: protagonist.id, options: ["double-down", "lose-faith", "seek-another-path"] });
-        }
+        if (recentHardship) candidates.push({ decisionId: `A7:${protagonist.id}:${year}`, kind: "A7", personId: protagonist.id, options: ["double-down", "lose-faith", "seek-another-path"] });
       }
       if (isAdult(age) && protagonist.mind.dream.status === "pursuing") {
         const milestone = age % 10 === 0;
@@ -760,9 +740,9 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
           });
         }
       }
+      // Round 12 (decision 045): the old `affairDraw` code-side gate is gone.
       if (isAdult(age) && protagonist.spouseId && computeMood(protagonist.mind) <= -10) {
-        const affairDraw = keyedDraw(seed, protagonist.id, year, "away-affair-gate");
-        if (affairDraw < 0.05) candidates.push({ decisionId: `A9:${protagonist.id}:${year}`, kind: "A9", personId: protagonist.id, partnerId: protagonist.spouseId, options: ["resist", "pursue"] });
+        candidates.push({ decisionId: `A9:${protagonist.id}:${year}`, kind: "A9", personId: protagonist.id, partnerId: protagonist.spouseId, options: ["resist", "pursue"] });
       }
       if (protagonist.mind.stress >= 75) {
         const breakdownKind =
@@ -773,24 +753,19 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
               : "withdrawal";
         candidates.push({ decisionId: `A11:${protagonist.id}:${year}`, kind: "A11", personId: protagonist.id, options: ["give-in", "master-it"], breakdownKind });
       }
+      // Round 12 (decision 045): the old `inheritanceDraw`/`legacyDraw`/`mortalityDraw`/`pilgrimageDraw` code-side gates are all gone below.
       if (age >= 70) {
         const heirs = Object.values(people).filter((c) => (c.motherId === protagonist.id || c.fatherId === protagonist.id) && c.deathYear === undefined);
-        if (heirs.length > 0) {
-          const inheritanceDraw = keyedDraw(seed, protagonist.id, year, "away-inheritance-gate");
-          if (inheritanceDraw < 0.1) candidates.push({ decisionId: `O1:${protagonist.id}:${year}`, kind: "O1", personId: protagonist.id, options: ["eldest", "favorite", "split", "town"], extra: { heirs: heirs.length, quarrel: heirs.length >= 2 } });
-        }
+        if (heirs.length > 0) candidates.push({ decisionId: `O1:${protagonist.id}:${year}`, kind: "O1", personId: protagonist.id, options: ["eldest", "favorite", "split", "town"], extra: { heirs: heirs.length, quarrel: heirs.length >= 2 } });
       }
       if (age >= 65 && protagonist.mind.dream.status !== "realized") {
-        const legacyDraw = keyedDraw(seed, protagonist.id, year, "away-legacy-gate");
-        if (legacyDraw < 0.1) candidates.push({ decisionId: `O3:${protagonist.id}:${year}`, kind: "O3", personId: protagonist.id, options: ["last-attempt", "pass-it-on", "make-peace-with-it"] });
+        candidates.push({ decisionId: `O3:${protagonist.id}:${year}`, kind: "O3", personId: protagonist.id, options: ["last-attempt", "pass-it-on", "make-peace-with-it"] });
       }
       if (age >= 75) {
-        const mortalityDraw = keyedDraw(seed, protagonist.id, year, "away-facing-death-gate");
-        if (mortalityDraw < 0.08) candidates.push({ decisionId: `O4:${protagonist.id}:${year}`, kind: "O4", personId: protagonist.id, options: ["peace", "regret", "last-wish"] });
+        candidates.push({ decisionId: `O4:${protagonist.id}:${year}`, kind: "O4", personId: protagonist.id, options: ["peace", "regret", "last-wish"] });
       }
       if (age >= 20 && age <= 55 && protagonist.mind.values.faith >= 15) {
-        const pilgrimageDraw = keyedDraw(seed, protagonist.id, year, "away-pilgrimage-gate");
-        if (pilgrimageDraw < 0.04) candidates.push({ decisionId: `PIL1:${protagonist.id}:${year}`, kind: "PIL1", personId: protagonist.id, options: ["go", "stay"] });
+        candidates.push({ decisionId: `PIL1:${protagonist.id}:${year}`, kind: "PIL1", personId: protagonist.id, options: ["go", "stay"] });
       }
 
       // C2, reused: news of a parent's death reaching the away protagonist a year later — the
@@ -1366,7 +1341,7 @@ export async function simulate(
     // D1 is excluded here even though it's in `SOCIAL_KINDS` (used for `validate-override.ts`'s
     // reconstruction, round 10 decision 043) — it has its own dedicated call site below
     // (`resolveDailyLifeVignette`, gated on "no event yet this year"), never the generic per-kind loop.
-    const socialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind) && c.kind !== "D1");
+    let socialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind) && c.kind !== "D1");
 
     // Town event (decision 025): pushed once here, at most once per year, deterministically —
     // `townEventForYear` is the exact same pure function `gatherCandidatesForYear` used to decide
@@ -1496,6 +1471,15 @@ export async function simulate(
       if (descriptor.kind === "death" && !hasMovedAway(events, descriptor.personId)) school(events, people, descriptor.personId, year);
     }
 
+    // Round 12 (decision 045): `socialCandidates` was gathered BEFORE biology ran this year, so it
+    // can still name someone (as `personId` or `partnerId`) who biology just killed above — with the
+    // old code-side probability gates, that coincidence was rare enough to never surface; with
+    // eligibility now unconditional, it happened routinely (a person "confronting a rival" or
+    // "dividing their inheritance" the same year they died — see the `life-chronicle.test.ts`
+    // "death is always the LAST entry" contract this broke). A decision about someone who is no
+    // longer alive by the time it would be applied is dropped here rather than asked at all.
+    socialCandidates = socialCandidates.filter((c) => people[c.personId]?.deathYear === undefined && (!c.partnerId || people[c.partnerId]?.deathYear === undefined));
+
     // --- Social decisions: batch per person-year, then apply -----------------------------------
     // Round 11 (decision 044): one Jev request per person per year, not one per candidate. Every
     // candidate a person faces this year (their `socialCandidates`, plus their `D1` daily-life
@@ -1554,12 +1538,30 @@ export async function simulate(
       const personIds = Array.from(batchesByPerson.keys());
       await mapWithConcurrency(personIds, yearBatchConcurrency, async (personId) => {
         const situations = batchesByPerson.get(personId)!;
+        const situationIds = Object.keys(situations);
         const self = personSummary(people[personId]!, year, people);
-        const result = await options.decisionMaker.decideYear!({ personId, year, self, situations });
-        for (const id of Object.keys(situations)) {
+        const isProtagonist = personId === options.protagonistId;
+        const result = await options.decisionMaker.decideYear!({ personId, year, self, situations, isProtagonist });
+
+        // Jev (or RuleDecisionMaker's offline equivalent) only JUDGES the joint event-selection
+        // distribution — the domain engine samples it itself with Gumbel-max, exactly like every
+        // other decision (a DecisionMaker never rolls dice), keyed `(seed, personId, year,
+        // "event-pick")` so it's deterministic and reproducible across identical-seed runs/forks.
+        let selectedId: string | undefined;
+        let normalizedSelection: Record<string, number> | undefined;
+        if (situationIds.length > 0 && Object.keys(result.selection).length > 0) {
+          normalizedSelection = normalizeDistribution(result.selection as Record<string, number>);
+          const sample = sampleGumbelMax(normalizedSelection, seed, personId, year, "event-pick");
+          if (sample.chosen !== "nothing") selectedId = sample.chosen;
+        }
+
+        for (const id of situationIds) {
           const jevRaw = result.response[id];
           if (!jevRaw) continue;
-          const occurrenceProbability = result.occurrence[id];
+          // Round 12 (decision 045): only the SELECTED situation carries an `occurrenceProbability`
+          // (its normalized share of the selection distribution) — every other candidate this
+          // person-year stays undefined, same as a forced decision or the legacy fallback below.
+          const occurrenceProbability = id === selectedId ? normalizedSelection![id] : undefined;
           resultByDecisionId.set(
             id,
             options.engineSource === "jev" ? { jevRaw, final: jevRaw, source: "jev", occurrenceProbability } : { prior: jevRaw, final: jevRaw, source: "rules", occurrenceProbability },
@@ -1616,10 +1618,23 @@ export async function simulate(
         surprise = isSurprise(final, chosen);
       }
 
+      // Round 12 (decision 045): whether this candidate is the one that actually happens this
+      // person-year. `resolved[i]?.occurrenceProbability` is set ONLY on the situation id that
+      // person's event-selection Choice picked (see the batch-resolution loop above) — so
+      // "occurrence data was reported, and it names ME" is exactly what "occurs" should mean. A
+      // forced decision always occurs (the user picked it); a candidate that never went through the
+      // joint selection at all (a legacy non-`decideYear` adapter, or the `LIFE_DECISION_BUDGET`
+      // rules-heuristic throttle) has no selection signal to withhold occurrence on, so it applies
+      // unconditionally, exactly as it did before decision 044/045 introduced selection at all.
+      const occurrenceProbability = resolved[i]?.occurrenceProbability;
+      const wentThroughSelection = batchable && !forced && !fallbackFlags[i];
+      const occurs = !!forced || !wentThroughSelection || occurrenceProbability !== undefined;
+
       const options: DecisionOption[] = descriptor.options.map((id) => ({ id, label: optionLabel(descriptor.kind, id, person.name, partner?.name, descriptor.opportunityJob, person.sex) }));
       const resultingEventIds: string[] = [];
       const causes: string[] = [];
 
+      if (occurs) {
       switch (descriptor.kind) {
         case "Y1": {
           if (chosen === "encourage" && !person.spouseId && !partner!.spouseId) {
@@ -2078,6 +2093,7 @@ export async function simulate(
           break;
         }
       }
+      }
 
       decisions.push({
         id: descriptor.decisionId,
@@ -2097,18 +2113,23 @@ export async function simulate(
         source,
         causes,
         resultingEventIds,
-        occurrenceProbability: resolved[i]?.occurrenceProbability,
+        occurrenceProbability,
       });
     }
 
     // "At least one entry per year" (round 10, decision 042): if the protagonist ends this year
-    // with no event of their own — every other situation this year either didn't fire, or fired
-    // but resolved to "nothing happens" (e.g. A1's "delay") — present one everyday-life vignette so
-    // the chronicle never has a silent year. Checked AFTER biology and social resolution above (not
-    // at candidate-gathering time), since only the actual outcome, not the mere presence of a
-    // candidate, determines whether a year is genuinely quiet. Superseds the old period-summary
-    // rule for the protagonist (see `life-chronicle.ts`) — with every year covered, a "quiet years
-    // passed" gap can no longer occur for them.
+    // with no event of their own — every other situation this year either wasn't the one selected,
+    // or was selected but resolved to "nothing happens" (e.g. A1's "delay") — present one
+    // everyday-life vignette so the chronicle never has a silent year. Checked AFTER biology and
+    // social resolution above (not at candidate-gathering time), since only the actual outcome, not
+    // the mere presence of a candidate, determines whether a year is genuinely quiet. `D1` itself
+    // never goes through the round 12 (decision 045) event-selection gate that the OTHER social
+    // candidates now do — it's asked in the SAME batch (paid for once) but resolved here,
+    // unconditionally, exactly like round 10-11's D1-anchored guarantee, since its vignette outcomes
+    // always produce a real event and it's the one candidate that must never come up empty. What's
+    // NEW this round: the candidates it's backstopping for now got a real, Jev-judged, occurrence-
+    // weighted joint selection instead of N independent code-gated coin flips, so D1 fires less
+    // often in practice — but the mechanism guaranteeing it fires when needed is unchanged.
     if (options.protagonistId) {
       const protagonist = people[options.protagonistId];
       if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
