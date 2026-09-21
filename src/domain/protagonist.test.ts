@@ -134,6 +134,34 @@ describe("protagonist-centric simulation (round 9, decision 034/035)", () => {
     }
     expect(sawLevyWithoutProtagonistId).toBe(false);
   });
+
+  it("a D1 (daily-life vignette) decision validates and forks like any other decision (round 10, decision 043)", async () => {
+    const { config, report } = stopped;
+    const d1Decision = report.result.decisions.find((d) => d.kind === "D1" && (d.personId === "protagonist" || d.partnerId === "protagonist"));
+    expect(d1Decision).toBeDefined();
+
+    const snapshot = report.snapshots.get(d1Decision!.year - 1)!;
+    const otherOption = d1Decision!.options.find((o) => o.id !== d1Decision!.chosen)!.id;
+    const override: Override = { id: "ov-d1-fork", decisionId: d1Decision!.id, optionId: otherOption };
+
+    // This is the bug (round 10, decision 042's disclosed gap): before the fix, `gatherCandidatesForYear`
+    // had no knowledge of `D1` at all, so this always failed with "no such decision".
+    const validation = validateOverride(override, snapshot.people, snapshot.events, config.seed, config, "protagonist");
+    expect(validation.ok).toBe(true);
+
+    const forked = await forkWorld(report.snapshots, override, new RuleDecisionMaker(), "rules", config, undefined, "protagonist");
+
+    // The life before the fork year is unchanged: every event that happened earlier is untouched.
+    const preForkOriginal = report.result.events.filter((e) => e.year < d1Decision!.year);
+    const preForkForked = forked.result.events.filter((e) => e.year < d1Decision!.year);
+    expect(preForkForked).toEqual(preForkOriginal);
+
+    // The D1 outcome itself changed to the forced option.
+    const forkedD1 = forked.result.decisions.find((d) => d.id === d1Decision!.id);
+    expect(forkedD1).toBeDefined();
+    expect(forkedD1!.chosen).toBe(otherOption);
+    expect(forkedD1!.chosen).not.toBe(d1Decision!.chosen);
+  });
 });
 
 describe("away catalog (round 10, decision 040) — leaving home is no longer a dead end", () => {

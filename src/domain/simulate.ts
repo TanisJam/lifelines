@@ -10,7 +10,7 @@ import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistributi
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
 import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type JsonValue, type Job, type Override, type Person, type Sex, type SimulationResult, type Trait, type WorldConfig, type YearSnapshot } from "./types";
-import { getVignette, pickVignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
+import { getVignette, pickVignette, type Vignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
 import { pickJob, pickTraits } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
@@ -838,6 +838,23 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     }
   }
 
+  // D1 daily-life vignette (round 10, decision 043): the real simulation only asks this AFTER every
+  // other decision for the year has resolved with no event to show for it (see
+  // `resolveDailyLifeVignette`'s doc comment) — that "was the year otherwise quiet" fact isn't known
+  // at candidate-gathering time. Still listed here, unconditionally for a living, already-born
+  // protagonist, using the exact same pure descriptor builder `resolveDailyLifeVignette` uses, so
+  // `validate-override.ts` can reconstruct a `D1:<protagonistId>:<year>` candidate to validate a
+  // rewrite against — `feast-day`'s universal eligibility means this is never a false negative.
+  // Excluded from `socialCandidates` below (its own dedicated call site already handles it) so it's
+  // never double-resolved.
+  if (protagonistId) {
+    const protagonist = people[protagonistId];
+    if (protagonist && protagonist.deathYear === undefined && year >= protagonist.birthYear) {
+      const { descriptor } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEvent);
+      candidates.push(descriptor);
+    }
+  }
+
   candidates.sort((a, b) => (a.personId === b.personId ? a.kind.localeCompare(b.kind) : a.personId.localeCompare(b.personId)));
   return candidates;
 }
@@ -1023,6 +1040,37 @@ const D1_OPTION_LABELS: Readonly<Record<string, string>> = {
   "teach-briskly": "pushes through the lesson briskly",
   "push-through": "pushes through the aches",
   rest: "rests instead",
+  // Round 10, decision 043: age-appropriate additions (early childhood, childhood, youth).
+  "watch-the-night": "sits up watching over the cradle",
+  "trust-it-passes": "trusts the fever will pass",
+  "make-much-of-it": "makes much of the first step",
+  "note-it-quietly": "notes it quietly",
+  "make-room-gladly": "makes room gladly for the new sibling",
+  "mind-the-fuss": "minds the fuss over the new sibling",
+  "forbid-wandering": "forbids wandering after that",
+  "let-the-world-stay-wide": "lets the world stay wide",
+  "let-them-stay-up": "lets the child stay up for the festival",
+  "send-them-to-bed": "sends the child to bed early",
+  "pitch-in": "pitches in properly",
+  "slip-off-to-play": "slips off to play",
+  "keep-it": "keeps the secret",
+  "let-it-slip": "lets the secret slip",
+  "take-it-to-heart": "takes the scolding to heart",
+  "shrug-it-off": "shrugs off the scolding",
+  "feed-it": "feeds the stray dog",
+  "chase-it-off": "chases the stray dog off",
+  "throw-the-first-punch": "throws the first punch",
+  "walk-away": "walks away from the fight",
+  "fetch-without-complaint": "fetches the water without complaint",
+  "grumble-about-it": "grumbles about the walk to the well",
+  "take-the-floor": "takes the floor to dance",
+  "watch-from-the-edge": "watches from the edge of the feast",
+  "go-through-with-it": "goes through with the dare",
+  "back-down": "backs down from the dare",
+  "work-hard-to-impress": "works hard to impress the master",
+  "keep-to-the-minimum": "keeps to the minimum asked",
+  "hold-my-ground": "holds ground over the future",
+  "back-down-for-peace": "backs down for the sake of peace",
 };
 
 function buildQuestion(descriptor: CandidateDescriptor, year: number, config: WorldConfig, people: Record<string, Person>): DecisionQuestion {
@@ -1104,6 +1152,57 @@ function relationshipTargetId(target: VignetteRelationshipTarget, person: Person
 }
 
 /**
+ * The pure `D1` candidate-building step: given a protagonist and year, deterministically picks the
+ * eligible vignette (keyed RNG) and returns its `CandidateDescriptor` alongside the vignette itself.
+ * Shared by `resolveDailyLifeVignette` (the real per-year call site, below) AND
+ * `gatherCandidatesForYear` (round 10, decision 043 — `validate-override.ts` needs to be able to
+ * reconstruct a `D1:<protagonistId>:<year>` candidate too, so a rewrite of a `D1` decision validates
+ * the same way any other decision does), so the two can never disagree about which vignette a given
+ * protagonist-year would offer.
+ */
+function buildDailyLifeVignetteDescriptor(
+  protagonist: Person,
+  year: number,
+  seed: string,
+  people: Readonly<Record<string, Person>>,
+  events: readonly Event[],
+  townEventType: TownEventType | undefined,
+): { descriptor: CandidateDescriptor; vignette: Vignette; deciderId: string } {
+  const ctx: VignetteContext = {
+    age: ageInYear(protagonist.birthYear, year),
+    away: hasMovedAway(events, protagonist.id),
+    job: protagonist.job,
+    hasSpouse: !!protagonist.spouseId,
+    hasChild: livingChildId(people, protagonist) !== undefined,
+    hasLivingParent: relationshipTargetId("parent", protagonist, people) !== undefined,
+    hasLivingSibling: livingSiblingId(people, protagonist) !== undefined,
+    season: seasonFor(seed, protagonist.id, year, "D1"),
+    townEventType,
+  };
+  // Round 10, decision 043: excludes any vignette this same life used within the last 5 years —
+  // deterministic (based on the actual event log, not a re-roll), and dropped rather than leaving
+  // the year empty if every eligible vignette was recently used.
+  const recentIds = new Set(
+    events.filter((e) => e.kind === "vignette" && e.actors.includes(protagonist.id) && e.year >= year - 5 && e.year < year).map((e) => e.payload.vignette as string),
+  );
+  const vignette = pickVignette(seed, protagonist.id, year, ctx, recentIds);
+  const options = Object.keys(vignette.outcomes);
+  const decisionId = `D1:${protagonist.id}:${year}`;
+  // An infant/toddler can't make this call themselves (decision 043) — attributed to a living parent
+  // instead, same preference (mother, then father) `AP1`'s "other person's decision" already uses.
+  const deciderId = vignette.decidedByParent ? (relationshipTargetId("parent", protagonist, people) ?? protagonist.id) : protagonist.id;
+  const descriptor: CandidateDescriptor = {
+    decisionId,
+    kind: "D1",
+    personId: deciderId,
+    ...(deciderId !== protagonist.id ? { partnerId: protagonist.id } : {}),
+    options,
+    extra: { vignette: vignette.id },
+  };
+  return { descriptor, vignette, deciderId };
+}
+
+/**
  * "At least one entry per year" (round 10, decision 042): called once per year, ONLY when the
  * protagonist produced zero events of their own that year (checked by the caller, after every
  * other biology/social decision for the year has already resolved) — presents ONE everyday-life
@@ -1124,21 +1223,10 @@ async function resolveDailyLifeVignette(
   engineSource: "jev" | "rules",
   overrides: readonly Override[],
 ): Promise<{ decision: DecisionRecord; wasRealCall: boolean }> {
-  const ctx: VignetteContext = {
-    age: ageInYear(protagonist.birthYear, year),
-    away: hasMovedAway(events, protagonist.id),
-    job: protagonist.job,
-    hasSpouse: !!protagonist.spouseId,
-    hasChild: livingChildId(people, protagonist) !== undefined,
-    hasLivingParent: relationshipTargetId("parent", protagonist, people) !== undefined,
-    hasLivingSibling: livingSiblingId(people, protagonist) !== undefined,
-    season: seasonFor(seed, protagonist.id, year, "D1"),
-    townEventType,
-  };
-  const vignette = pickVignette(seed, protagonist.id, year, ctx);
-  const options = Object.keys(vignette.outcomes);
-  const decisionId = `D1:${protagonist.id}:${year}`;
-  const descriptor: CandidateDescriptor = { decisionId, kind: "D1", personId: protagonist.id, options, extra: { vignette: vignette.id } };
+  const { descriptor, vignette, deciderId } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType);
+  const options = descriptor.options;
+  const decisionId = descriptor.decisionId;
+  const decider = people[deciderId] ?? protagonist;
   const question = buildQuestion(descriptor, year, config, people);
   const forced = overrideFor(overrides, decisionId);
 
@@ -1173,8 +1261,12 @@ async function resolveDailyLifeVignette(
   }
 
   const outcome = vignette.outcomes[chosen]!;
+  // An infant/toddler vignette (decision 043) is still lived by the protagonist — the thought, the
+  // memory, the relationship nudge all still land on their mind — only `deciderId` (below) credits
+  // the parent who actually made the call, same split `AP1` already makes.
   const cause = outcome.cause(protagonist.name, config.town.name);
-  const event = pushEvent(events, year, "vignette", [protagonist.id], { vignette: vignette.id, outcome: chosen }, []);
+  const actors = deciderId !== protagonist.id ? [deciderId, protagonist.id] : [protagonist.id];
+  const event = pushEvent(events, year, "vignette", actors, { vignette: vignette.id, outcome: chosen }, []);
   pushThought(protagonist.mind, outcome.emotion, cause, outcome.intensity, outcome.duration, year, outcome.facet as Facet | undefined);
   if (outcome.memorable) addMemory(seed, protagonist.id, year, protagonist.mind, cause, outcome.emotion);
   if (outcome.relationshipTarget) {
@@ -1183,10 +1275,11 @@ async function resolveDailyLifeVignette(
     if (target) updateRelationship(protagonist.mind, target.id, target.mind.values, outcome.relationshipDelta ?? 10);
   }
 
-  const decisionOptions: DecisionOption[] = options.map((id) => ({ id, label: optionLabel("D1", id, protagonist.name) }));
+  const decisionOptions: DecisionOption[] = options.map((id) => ({ id, label: optionLabel("D1", id, decider.name) }));
   const decision: DecisionRecord = {
     id: decisionId,
-    personId: protagonist.id,
+    personId: deciderId,
+    partnerId: descriptor.partnerId,
     year,
     kind: "D1",
     question: vignette.question(config.town.name),
@@ -1254,7 +1347,10 @@ export async function simulate(
 
     const candidates = gatherCandidatesForYear(year, people, events, seed, options.protagonistId);
     const biologyCandidates = candidates.filter((c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy" || c.kind === "away-arrival" || c.kind === "return");
-    const socialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind));
+    // D1 is excluded here even though it's in `SOCIAL_KINDS` (used for `validate-override.ts`'s
+    // reconstruction, round 10 decision 043) — it has its own dedicated call site below
+    // (`resolveDailyLifeVignette`, gated on "no event yet this year"), never the generic per-kind loop.
+    const socialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind) && c.kind !== "D1");
 
     // Town event (decision 025): pushed once here, at most once per year, deterministically —
     // `townEventForYear` is the exact same pure function `gatherCandidatesForYear` used to decide
