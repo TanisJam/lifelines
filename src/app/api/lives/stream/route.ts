@@ -1,6 +1,6 @@
 import type { ChronicleEntry, CreateLifeRequest, LifeSex, LifeStreamEvent } from "@/contracts/life";
 import { simulate } from "@/domain/simulate";
-import { generateWorld } from "@/domain/worldgen";
+import { generateWorld, resolveProtagonistSex } from "@/domain/worldgen";
 import { activeEngineName, getDecisionMaker } from "@/server/decision-engine";
 import { buildLifeChronicle } from "@/server/life-chronicle";
 import { newLifeBranchId, newLifeId, registerLife } from "@/server/life-store";
@@ -44,12 +44,19 @@ export async function POST(request: Request): Promise<Response> {
   const seed = body.seed?.trim() || randomSeed();
   const startYear = START_YEAR;
   const endYear = startYear + MAX_LIFESPAN_YEARS;
-  const { config, people, events } = generateWorld({ seed, townName: body.villageName?.trim() || undefined, startYear, endYear, protagonist: { name, sex } });
-  const protagonist = people.protagonist;
-  if (!protagonist) return errorResponse("Failed to generate the protagonist.", 500);
 
   const decisionMaker = getDecisionMaker();
   const engineSource = activeEngineName();
+
+  // "Let fate decide" (decision 041): resolve "random" to a concrete sex via the DecisionMaker
+  // BEFORE the world (and the protagonist's own PersonMind) exists, rather than a name-blind coin
+  // flip — see `resolveProtagonistSex`.
+  const resolvedSex: LifeSex = sex === "random" ? await resolveProtagonistSex(decisionMaker, seed, name, startYear) : sex;
+
+  const { config, people, events } = generateWorld({ seed, townName: body.villageName?.trim() || undefined, startYear, endYear, protagonist: { name, sex: resolvedSex } });
+  const protagonist = people.protagonist;
+  if (!protagonist) return errorResponse("Failed to generate the protagonist.", 500);
+
   const lifeId = newLifeId();
   const branchId = newLifeBranchId();
 

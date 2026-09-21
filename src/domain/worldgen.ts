@@ -1,6 +1,7 @@
+import type { DecisionMaker, DecisionQuestion } from "./decisions";
 import { makeEventId } from "./events";
 import { createMind, VALUES, type ValueName } from "./mind";
-import { keyedRng } from "./rng";
+import { keyedRng, sampleGumbelMax } from "./rng";
 import { pickUniqueName } from "./names";
 import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type Job, type JsonValue, type Person, type Sex, type Trait, type WorldConfig } from "./types";
 
@@ -28,6 +29,34 @@ function estimateMarriageYear(seed: string, mother: Person, father: Person, chil
   const hi = Math.max(lo, mustBeMarriedBy);
   const rng = keyedRng(seed, mother.id, startYear, "marriage-year-backfill");
   return lo + Math.floor(rng() * (hi - lo + 1));
+}
+
+/**
+ * "Let fate decide" (round 10, decision 041): rather than a code-side keyed
+ * coin flip blind to the name, asks the DecisionMaker (kind `SEX1`) whether
+ * a name like this, in a medieval European village, is more likely a girl or
+ * a boy — then samples that distribution with the same keyed Gumbel-max
+ * helper every other decision uses, keyed by (seed, "protagonist",
+ * startYear, "SEX1") so a re-run with the same seed and name is
+ * deterministic. Called BEFORE `generateWorld` (there is no protagonist, and
+ * no `PersonMind`, yet) — the question id is content-derived from the
+ * (lowercased) name alone, so it's cached across runs regardless of seed. A
+ * clearly gendered name then almost always gets the expected sex under Jev;
+ * an ambiguous one is a real coin flip. Never recorded as a `DecisionRecord`
+ * — the birth stays immutable and un-forkable, same as before this change.
+ */
+export async function resolveProtagonistSex(decisionMaker: DecisionMaker, seed: string, name: string, startYear: number): Promise<Sex> {
+  const question: DecisionQuestion = {
+    id: `sex1:${name.trim().toLowerCase()}`,
+    kind: "SEX1",
+    personId: "protagonist",
+    year: startYear,
+    state: { name, setting: "a medieval European village, around 1500" },
+    options: ["f", "m"],
+  };
+  const distribution = await decisionMaker.decide(question);
+  const { chosen } = sampleGumbelMax(distribution, seed, "protagonist", startYear, "SEX1");
+  return chosen as Sex;
 }
 
 export interface GenerateWorldOptions {

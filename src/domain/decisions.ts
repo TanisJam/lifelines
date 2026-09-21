@@ -18,7 +18,11 @@ import type { JsonValue } from "./types";
  * alone (see `simulate.ts#gatherCandidatesForYear`'s `protagonistId` parameter) — NPCs keep the
  * original 14-kind catalog, so town-wide call volume is unaffected. `"levy"` (the lord's demand)
  * is a biology-style kind, like `"illness"`/`"death"` — code alone decides whether it happens; it
- * never reaches a `DecisionMaker`.
+ * never reaches a `DecisionMaker`. Round 10 (decision 041) adds `SEX1` — "let fate decide" for a
+ * newborn protagonist's sex, asked once before the world is even generated, never recorded as a
+ * chronicle turn. Round 10 (decision 042) adds `D1` — one generic "everyday life" situation kind,
+ * parameterized by a `vignette` id in its state, used to guarantee the protagonist at least one
+ * chronicle entry per year of their life.
  */
 export type DecisionKind =
   | "Y1"
@@ -46,7 +50,9 @@ export type DecisionKind =
   | "O1"
   | "O3"
   | "AP1"
-  | "PIL1";
+  | "PIL1"
+  | "SEX1"
+  | "D1";
 
 /**
  * One question posed to a DecisionMaker. `id` is a stable, content-derived

@@ -203,6 +203,25 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
       const go = clamp01(0.3 + (f(selfValues, "faith", 0)) / 120 + (f(self, "curiosity") - 50) / 200);
       return { go, stay: clamp01(1 - go) };
     }
+    case "SEX1": {
+      // The rules engine has no opinion on a name's gendering — a real coin flip either way.
+      return { f: 0.5, m: 0.5 };
+    }
+    case "D1": {
+      // Generic everyday-life situation: a uniform-ish spread over whatever 2-3 options this
+      // vignette offers, with a very slight lean toward the situation's own "options[0]" (usually
+      // the more active/generous choice) via self.altruism, matching the mild self-consistency the
+      // other rule branches show without inventing a fake per-vignette model.
+      const options = question.options;
+      const lean = clamp01(0.4 + (f(self, "altruism") - 50) / 250);
+      if (options.length === 0) return {};
+      const rest = Math.max(0.02, 1 - lean) / Math.max(1, options.length - 1);
+      const distribution: Record<string, number> = {};
+      options.forEach((option, index) => {
+        distribution[option] = index === 0 ? lean : rest;
+      });
+      return distribution;
+    }
     default:
       return question.options.reduce<Record<string, number>>((acc, option) => ({ ...acc, [option]: 1 }), {});
   }

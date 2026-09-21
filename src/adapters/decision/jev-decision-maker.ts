@@ -1,6 +1,7 @@
 import { TypeSafeClient, choice, score, type ChoiceCriteria } from "@typesafe-ai/sdk";
 import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution } from "@/domain/decisions";
 import type { JsonValue } from "@/domain/types";
+import { VIGNETTE_OPTION_DESCRIPTIONS } from "@/domain/vignettes";
 import { decisionCacheKey, FileBackedCache } from "./cache";
 
 /**
@@ -49,6 +50,8 @@ const DECISION_INSTRUCTIONS: Record<DecisionQuestion["kind"], string> = {
   O3: "You are the person in 'self', old, with a dream you never realized. Given your perseverance and your values around family, do you make one last attempt at it, pass it on to someone else, or make peace with letting it go?",
   AP1: "You are the person in 'self', a parent, deciding your child's future. ('partner' is your child.) Given your values around tradition and your own ambition for them, do you apprentice them to your own trade, send them elsewhere to apprentice, or keep them at home a while longer?",
   PIL1: "You are the person in 'self'. You've long felt the pull of a pilgrimage. Given your faith and your curiosity, and your ties at home, do you go, or stay?",
+  SEX1: "Given this name as used in a medieval European village, is the newborn more likely a girl or a boy?",
+  D1: "You are the person in 'self', living an ordinary year of your life — read self.mind and self.portrait for who you are, and situation.vignette/situation.question for the everyday moment you're facing. Given your personality, values, mood, and circumstances, what do you do?",
 };
 
 const OPTION_DESCRIPTIONS: Record<string, string> = {
@@ -122,6 +125,9 @@ function describeOption(kind: DecisionQuestion["kind"], option: string): string 
   if (kind === "A3" && option === "seize") return "I seize the opportunity and take up the new role.";
   if (kind === "A10" && option === "decline") return "I decline to take on an apprentice.";
   if (kind === "A4" && option === "leave") return "I leave them over it.";
+  if (kind === "SEX1" && option === "f") return "Given this name, the newborn is more likely a girl.";
+  if (kind === "SEX1" && option === "m") return "Given this name, the newborn is more likely a boy.";
+  if (kind === "D1") return VIGNETTE_OPTION_DESCRIPTIONS[option] ?? OPTION_DESCRIPTIONS[option] ?? `I choose "${option}".`;
   return OPTION_DESCRIPTIONS[option] ?? `I choose "${option}".`;
 }
 
