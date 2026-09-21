@@ -645,6 +645,83 @@ body {
   margin-top: 2px;
 }
 
+/* Round 9 (decision 041): the read-only person side sheet, opened from a `{{personId}}` link or
+ * the cast rail. There is no protagonist switch anymore — reuses the drawer's dark chrome, but
+ * anchored to the right on desktop instead of the left, and becomes a bottom sheet on mobile
+ * (the JS decides which, matching the change modal's own `.cw-sheet-on-mobile` breakpoint). */
+.cw-person-sheet-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(380px, 92vw);
+  background: var(--cw-dark);
+  color: #e6ded0;
+  padding: 26px 22px;
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.28);
+  z-index: 81;
+  overflow-y: auto;
+  font-family: var(--font-inter), Inter, sans-serif;
+}
+.cw-person-sheet-panel.cw-sheet-bottom {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-height: 80vh;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.28);
+}
+.cw-person-sheet-panel h2 {
+  font: 32px Georgia, serif;
+  margin: 6px 0 4px;
+}
+.cw-sheet-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border: 0;
+  background: transparent;
+  color: #ded5c8;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.cw-sheet-job {
+  color: #8e98a7;
+  font-size: 13px;
+  margin: 4px 0 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.cw-sheet-blurb {
+  color: #ded5c8;
+  font: 15px/1.6 Georgia, serif;
+  margin: 0 0 20px;
+}
+.cw-sheet-moments {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.cw-sheet-moments li {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  color: #ded5c8;
+  border-top: 1px solid #2c323a;
+  padding-top: 10px;
+}
+.cw-sheet-moments li span {
+  color: #8e98a7;
+  min-width: 42px;
+  flex-shrink: 0;
+}
+
 .cw-modal-backdrop {
   position: fixed;
   inset: 0;
