@@ -43,6 +43,13 @@ export interface Person {
   readonly fatherId?: string;
   /** True for the initial cast generated at world creation. */
   readonly founder: boolean;
+  /**
+   * True only for a lightweight newcomer met in the place the protagonist settled after leaving
+   * home (decision 040) — a suitor, spouse, friend, or child born away. Excluded from the general
+   * village's own illness/death/courtship pools (`gatherCandidatesForYear`) so they never marry or
+   * die independently of the protagonist's own away-catalog situations.
+   */
+  readonly away?: true;
   /** The DF-inspired inner-life model (round 4, docs/mind-model.md). Every person has one; Jev reads it, code writes it. */
   mind: PersonMind;
 }

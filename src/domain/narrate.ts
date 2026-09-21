@@ -166,7 +166,16 @@ export function narrateEvent(event: Event, people: Readonly<Record<string, Perso
       // present, is the other party the reflection concerns.
       const note = String(event.payload.note ?? "");
       const other = typeof event.payload.otherName === "string" ? event.payload.otherName : "them";
-      return REFLECTION_NARRATION[note]?.(A, other) ?? `${A} sat with their thoughts.`;
+      const base = REFLECTION_NARRATION[note]?.(A, other) ?? `${A} sat with their thoughts.`;
+      // Decision 040: a parent's death reaching the away protagonist reads as news from home, not
+      // something witnessed firsthand — same grieve/harden/lean-on-family sentence, framed first.
+      if (event.payload.awayNews === true) {
+        const relative = typeof event.payload.relative === "string" ? event.payload.relative : "parent";
+        const subjectSex = a ? people[a]?.sex : undefined;
+        const pronoun = subjectSex ? possessiveLower(subjectSex) : "their";
+        return `Word came from ${townName} that ${pronoun} ${relative} had died. ${base}`;
+      }
+      return base;
     }
     case "levy":
       return pick(seed, event, [`The lord levied heavily against ${townName}, and ${A} felt it.`, `The lord's collectors came through ${townName} that year, and ${A} paid the price.`]);

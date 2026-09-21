@@ -1,11 +1,11 @@
 import { ageInYear, deathProbabilityAtAge, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
 import { mapWithConcurrency } from "./concurrency";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution } from "./decisions";
-import { activeFeudPair, activeRomancePair, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
+import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, pushThought, renderPortrait, updateRelationship } from "./mind";
 import { determineDeathCause, protagonistMortalityBonus } from "./mortality";
-import { FEMALE_NAMES, MALE_NAMES, pickName } from "./names";
+import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
 import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type JsonValue, type Job, type Override, type Person, type Sex, type SimulationResult, type Trait, type WorldConfig, type YearSnapshot } from "./types";
@@ -24,6 +24,23 @@ const DEFAULT_CONCURRENCY_LIMIT = 8;
  * that precede them already filter out near-certain "no" years.
  */
 const RECORD_THRESHOLD = 0.05;
+
+/** The kind of settlement a protagonist who leaves home might settle in (decision 040). */
+const SETTLEMENT_KINDS = ["market town", "port town", "city"] as const;
+
+/**
+ * Deterministically names the place a protagonist settles after leaving home (decision 040) —
+ * keyed by seed + the year they left, reusing the `SURNAMES` pool (already town-name-shaped) so
+ * no new name list is needed. `full` is the one-time introduction ("Millbrook, a market town");
+ * `name` alone is used for every later reference.
+ */
+function pickAwayDestination(seed: string, year: number): { name: string; kind: string; full: string } {
+  const nameIdx = Math.floor(keyedDraw(seed, "away-destination", year, "name") * SURNAMES.length);
+  const kindIdx = Math.floor(keyedDraw(seed, "away-destination", year, "kind") * SETTLEMENT_KINDS.length);
+  const name = SURNAMES[nameIdx]!;
+  const kind = SETTLEMENT_KINDS[kindIdx]!;
+  return { name, kind, full: `${name}, a ${kind}` };
+}
 
 export interface SimulateOptions {
   readonly decisionMaker: DecisionMaker;
@@ -261,8 +278,11 @@ function baseIllnessChance(age: number): number {
 function gatherCandidatesForYear(year: number, people: Readonly<Record<string, Person>>, events: readonly Event[], seed: string, protagonistId?: string): CandidateDescriptor[] {
   const candidates: CandidateDescriptor[] = [];
 
+  // Lightweight away-NPCs (decision 040) are narrative props for the protagonist's own away
+  // catalog below, not full villagers — they never face their own illness/death/immigration-cap
+  // accounting, and never turn up as a match for anyone else's courtship.
   const livingIds = Object.values(people)
-    .filter((p) => p.deathYear === undefined)
+    .filter((p) => p.deathYear === undefined && !p.away)
     .map((p) => p.id)
     .sort();
 
@@ -299,7 +319,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
   // whether a real decision is even asked this year, so the call budget
   // stays bounded as the town's population compounds across generations.
   const aliveNonMoved = Object.values(people)
-    .filter((p) => p.deathYear === undefined && !hasMovedAway(events, p.id))
+    .filter((p) => p.deathYear === undefined && !p.away && !hasMovedAway(events, p.id))
     .sort((a, b) => a.id.localeCompare(b.id));
 
   const claimedPartners = new Set<string>();
@@ -545,10 +565,13 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         candidates.push({ decisionId: `Y2:${person.id}:${year}`, kind: "Y2", personId: person.id, options: ["pursue-the-dream", "stay-practical"] });
       }
 
-      // Y5 Close friendship: while young and without an existing friend bond.
-      if (age >= 14 && age <= 30 && !person.mind.relationships.some((r) => r.bond === "friend")) {
+      // Y5 Close friendship: without an existing friend bond. Decision 040: widened from age
+      // 14-30/0.06 — a stayed protagonist's chronicle measured thin (richness-stats.ts), and a
+      // friendship is exactly the kind of low-stakes, high-frequency situation that should be
+      // common across a whole adult life, not just youth. Trigger-rate only, per decision 016.
+      if (age >= 14 && age <= 50 && !person.mind.relationships.some((r) => r.bond === "friend")) {
         const friendDraw = keyedDraw(seed, person.id, year, "friendship-gate");
-        if (friendDraw < 0.06) {
+        if (friendDraw < 0.1) {
           const candidate = aliveNonMoved.find((c) => c.id !== person.id && !isRelated(person, c) && Math.abs(ageInYear(c.birthYear, year) - age) <= 8);
           if (candidate) candidates.push({ decisionId: `Y5:${pairKey(person.id, candidate.id)}:${year}`, kind: "Y5", personId: person.id, partnerId: candidate.id, options: ["open-up", "keep-distance"] });
         }
@@ -565,14 +588,14 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         const recentHardship = eventsFor(events, person.id).some((e) => e.year >= year - 2 && e.year < year && (e.kind === "illness" || e.kind === "feud" || e.kind === "breakdown"));
         if (recentHardship) {
           const faithDraw = keyedDraw(seed, person.id, year, "faith-crisis-gate");
-          if (faithDraw < 0.12) candidates.push({ decisionId: `A7:${person.id}:${year}`, kind: "A7", personId: person.id, options: ["double-down", "lose-faith", "seek-another-path"] });
+          if (faithDraw < 0.18) candidates.push({ decisionId: `A7:${person.id}:${year}`, kind: "A7", personId: person.id, options: ["double-down", "lose-faith", "seek-another-path"] });
         }
       }
 
       // A9 Affair temptation: married and unhappy (low mood).
       if (isAdult(age) && person.spouseId && computeMood(person.mind) <= -10) {
         const affairDraw = keyedDraw(seed, person.id, year, "affair-gate");
-        if (affairDraw < 0.05) candidates.push({ decisionId: `A9:${person.id}:${year}`, kind: "A9", personId: person.id, partnerId: person.spouseId, options: ["resist", "pursue"] });
+        if (affairDraw < 0.08) candidates.push({ decisionId: `A9:${person.id}:${year}`, kind: "A9", personId: person.id, partnerId: person.spouseId, options: ["resist", "pursue"] });
       }
 
       // A10 Mentor: skilled and established, with a youth nearby.
@@ -589,20 +612,204 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         const heirs = Object.values(people).filter((c) => (c.motherId === person.id || c.fatherId === person.id) && c.deathYear === undefined);
         if (heirs.length > 0) {
           const inheritanceDraw = keyedDraw(seed, person.id, year, "inheritance-gate");
-          if (inheritanceDraw < 0.1) candidates.push({ decisionId: `O1:${person.id}:${year}`, kind: "O1", personId: person.id, options: ["eldest", "favorite", "split", "town"], extra: { heirs: heirs.length, quarrel: heirs.length >= 2 } });
+          if (inheritanceDraw < 0.15) candidates.push({ decisionId: `O1:${person.id}:${year}`, kind: "O1", personId: person.id, options: ["eldest", "favorite", "split", "town"], extra: { heirs: heirs.length, quarrel: heirs.length >= 2 } });
         }
       }
 
       // O3 Legacy: old, with a dream that never came true.
       if (age >= 65 && person.mind.dream.status !== "realized") {
         const legacyDraw = keyedDraw(seed, person.id, year, "legacy-gate");
-        if (legacyDraw < 0.1) candidates.push({ decisionId: `O3:${person.id}:${year}`, kind: "O3", personId: person.id, options: ["last-attempt", "pass-it-on", "make-peace-with-it"] });
+        if (legacyDraw < 0.15) candidates.push({ decisionId: `O3:${person.id}:${year}`, kind: "O3", personId: person.id, options: ["last-attempt", "pass-it-on", "make-peace-with-it"] });
       }
 
       // PIL1 Pilgrimage: a real pull of faith, in adulthood.
       if (age >= 20 && age <= 55 && person.mind.values.faith >= 15) {
         const pilgrimageDraw = keyedDraw(seed, person.id, year, "pilgrimage-gate");
         if (pilgrimageDraw < 0.04) candidates.push({ decisionId: `PIL1:${person.id}:${year}`, kind: "PIL1", personId: person.id, options: ["go", "stay"] });
+      }
+    }
+  }
+
+  // --- Away catalog (round 10, decision 040) ------------------------------
+  // The loop above is built from `aliveNonMoved`, which — by construction — excludes anyone who
+  // moved away, protagonist included. Without this block, leaving home was a dead end: the
+  // protagonist stopped receiving situations entirely, which is exactly the bug this closes. The
+  // away protagonist's partners are a separate, lightweight cast met in the new place (`away:
+  // true` on `Person`, ids `away-<year>-...`, see `spawnAwayPerson`) — never the home village's
+  // own population — so this is gathered here rather than by just admitting the protagonist back
+  // into `aliveNonMoved` above. Reuses the SAME `DecisionKind`s as home life (Y1/A1 courtship and
+  // marriage, A2 children, A3 work, Y5 friendship, A7 faith, A8 dream, A9 temptation, A11
+  // breakdown, O1/O3/O4 old age, PIL1, C2 for news from home) — zero new prompts/heuristics to
+  // maintain, per decision 016's ban on code-side weights on Jev answers.
+  if (protagonistId) {
+    const protagonist = people[protagonistId];
+    if (protagonist && protagonist.deathYear === undefined && hasMovedAway(events, protagonistId)) {
+      const age = ageInYear(protagonist.birthYear, year);
+      const awaySince = awayMoveYear(events, protagonistId);
+      const awayCast = Object.values(people).filter((p) => p.away === true);
+
+      // Work: same cadence as A3 at home, plus one extra roll the year after arriving — settling
+      // into a livelihood in the new place is the first thing that actually happens there.
+      if (isWorkingAge(age) && (age === 16 || (age - 16) % 20 === 0 || (awaySince !== undefined && year === awaySince + 1))) {
+        const lastJobEvent = eventsFor(events, protagonist.id)
+          .filter((e) => e.kind === "job")
+          .sort((a, b) => b.year - a.year)[0];
+        const yearsInCurrentJob = lastJobEvent ? year - lastJobEvent.year : age - 16;
+        const alternatives = JOB_POOL.filter((j) => j !== protagonist.job && j !== "none");
+        const opportunity = alternatives[Math.floor(keyedDraw(seed, protagonist.id, year, "away-opportunity-job") * alternatives.length)] ?? protagonist.job;
+        candidates.push({ decisionId: `A3:${protagonist.id}:${year}`, kind: "A3", personId: protagonist.id, options: ["seize", "pass", "ignore"], opportunityJob: opportunity, extra: { yearsInCurrentJob, currentJob: protagonist.job } });
+      }
+
+      // A newcomer arrives in the away cast — code-rolled, like immigration, and resolved in the
+      // SAME biology pass (before social `buildQuestion` runs), so a real Person already exists to
+      // reference by id in Y1/Y5 below the very same year. Kept to a small standing cast (<2).
+      if (awayCast.length < 2) {
+        candidates.push({ decisionId: `away-arrival:${protagonist.id}:${year}`, kind: "away-arrival", personId: protagonist.id, options: ["arrive", "no-arrival"] });
+      }
+
+      // Y1/A1 Courtship and marriage, with whoever's on hand in the away cast.
+      if (isAdult(age) && age <= 65 && !protagonist.spouseId && activeRomancePair(events, protagonist.id) === undefined) {
+        const suitor = awayCast.find((c) => c.sex !== protagonist.sex && !c.spouseId && isAdult(ageInYear(c.birthYear, year)) && activeRomancePair(events, c.id) === undefined);
+        if (suitor) {
+          const seekDraw = keyedDraw(seed, protagonist.id, year, "away-seeking-partner");
+          if (seekDraw < 0.5) candidates.push({ decisionId: `Y1:${pairKey(protagonist.id, suitor.id)}:${year}`, kind: "Y1", personId: protagonist.id, partnerId: suitor.id, options: ["encourage", "decline", "wait"] });
+        }
+      }
+      const awayRomancePartnerId = activeRomancePair(events, protagonist.id);
+      if (awayRomancePartnerId && people[awayRomancePartnerId] && isAlive(people[awayRomancePartnerId]!, year)) {
+        const romanceEvent = eventsFor(events, protagonist.id)
+          .filter((e) => e.kind === "romance" && e.actors.includes(awayRomancePartnerId))
+          .sort((a, b) => b.year - a.year)[0];
+        if (romanceEvent && year - romanceEvent.year >= 1) {
+          candidates.push({
+            decisionId: `A1:${pairKey(protagonist.id, awayRomancePartnerId)}:${year}`,
+            kind: "A1",
+            personId: protagonist.id,
+            partnerId: awayRomancePartnerId,
+            options: ["propose", "delay", "end-it"],
+            extra: { courtshipYears: year - romanceEvent.year },
+          });
+        }
+      }
+
+      // A2 Have a child, once married — asked via whichever of the couple is the mother, exactly
+      // like the home loop's own "asked via the mother" rule.
+      const awaySpouse = protagonist.spouseId ? people[protagonist.spouseId] : undefined;
+      if (awaySpouse && awaySpouse.deathYear === undefined) {
+        const mother = protagonist.sex === "f" ? protagonist : awaySpouse;
+        const father = protagonist.sex === "f" ? awaySpouse : protagonist;
+        const motherAge = ageInYear(mother.birthYear, year);
+        if (isFertileAge(motherAge, "f")) {
+          const existingChildren = Object.values(people).filter((c) => c.motherId === mother.id).length;
+          const gateDraw = keyedDraw(seed, mother.id, year, "away-child-gate");
+          if (gateDraw < Math.max(0.06, 0.4 - existingChildren * 0.06)) {
+            candidates.push({
+              decisionId: `A2:${pairKey(mother.id, father.id)}:${year}`,
+              kind: "A2",
+              personId: mother.id,
+              partnerId: father.id,
+              options: ["try", "wait", "refuse"],
+              extra: { existingChildren, fertileYearsLeft: Math.max(0, 45 - motherAge) },
+            });
+          }
+        }
+      }
+
+      // Y5 Close friendship, with whoever's on hand in the away cast.
+      if (age >= 14 && age <= 60 && !protagonist.mind.relationships.some((r) => r.bond === "friend")) {
+        const friendDraw = keyedDraw(seed, protagonist.id, year, "away-friendship-gate");
+        if (friendDraw < 0.1) {
+          const friend = awayCast.find((c) => c.id !== protagonist.id);
+          if (friend) candidates.push({ decisionId: `Y5:${pairKey(protagonist.id, friend.id)}:${year}`, kind: "Y5", personId: protagonist.id, partnerId: friend.id, options: ["open-up", "keep-distance"] });
+        }
+      }
+
+      // A7 Crisis of faith, A8 dream check, A9 affair temptation, A11 breakdown, O1/O3/O4 old age,
+      // PIL1 pilgrimage — every one of these is already self-contained (own mind/events/spouseId),
+      // not a home-village lookup, so the exact home trigger applies unchanged away from home.
+      if (isAdult(age) && protagonist.mind.values.faith >= 20) {
+        const recentHardship = eventsFor(events, protagonist.id).some((e) => e.year >= year - 2 && e.year < year && (e.kind === "illness" || e.kind === "feud" || e.kind === "breakdown"));
+        if (recentHardship) {
+          const faithDraw = keyedDraw(seed, protagonist.id, year, "away-faith-crisis-gate");
+          if (faithDraw < 0.12) candidates.push({ decisionId: `A7:${protagonist.id}:${year}`, kind: "A7", personId: protagonist.id, options: ["double-down", "lose-faith", "seek-another-path"] });
+        }
+      }
+      if (isAdult(age) && protagonist.mind.dream.status === "pursuing") {
+        const milestone = age % 10 === 0;
+        const setback = computeMood(protagonist.mind) <= -25;
+        const relatedKinds = DREAM_RELATED_EVENT_KINDS[protagonist.mind.dream.goal];
+        const recentRelatedEvent = eventsFor(events, protagonist.id)
+          .filter((e) => e.year >= year - 2 && e.year < year && relatedKinds.includes(e.kind))
+          .sort((a, b) => b.year - a.year)[0];
+        const hasRealCause = setback || !!recentRelatedEvent;
+        if (milestone || hasRealCause) {
+          const dreamChangeCause = setback ? "a hard stretch" : recentRelatedEvent ? dreamChangeCauseFor(recentRelatedEvent, protagonist.id) : undefined;
+          candidates.push({
+            decisionId: `A8:${protagonist.id}:${year}`,
+            kind: "A8",
+            personId: protagonist.id,
+            options: hasRealCause ? ["push-harder", "adjust-it", "abandon-it"] : ["push-harder", "abandon-it"],
+            extra: dreamChangeCause ? { dreamChangeCause } : undefined,
+          });
+        }
+      }
+      if (isAdult(age) && protagonist.spouseId && computeMood(protagonist.mind) <= -10) {
+        const affairDraw = keyedDraw(seed, protagonist.id, year, "away-affair-gate");
+        if (affairDraw < 0.05) candidates.push({ decisionId: `A9:${protagonist.id}:${year}`, kind: "A9", personId: protagonist.id, partnerId: protagonist.spouseId, options: ["resist", "pursue"] });
+      }
+      if (protagonist.mind.stress >= 75) {
+        const breakdownKind =
+          protagonist.mind.facets.anger >= protagonist.mind.facets.anxiety && protagonist.mind.facets.anger >= 100 - protagonist.mind.facets.perseverance
+            ? "rage"
+            : protagonist.mind.facets.anxiety >= 100 - protagonist.mind.facets.perseverance
+              ? "despair"
+              : "withdrawal";
+        candidates.push({ decisionId: `A11:${protagonist.id}:${year}`, kind: "A11", personId: protagonist.id, options: ["give-in", "master-it"], breakdownKind });
+      }
+      if (age >= 70) {
+        const heirs = Object.values(people).filter((c) => (c.motherId === protagonist.id || c.fatherId === protagonist.id) && c.deathYear === undefined);
+        if (heirs.length > 0) {
+          const inheritanceDraw = keyedDraw(seed, protagonist.id, year, "away-inheritance-gate");
+          if (inheritanceDraw < 0.1) candidates.push({ decisionId: `O1:${protagonist.id}:${year}`, kind: "O1", personId: protagonist.id, options: ["eldest", "favorite", "split", "town"], extra: { heirs: heirs.length, quarrel: heirs.length >= 2 } });
+        }
+      }
+      if (age >= 65 && protagonist.mind.dream.status !== "realized") {
+        const legacyDraw = keyedDraw(seed, protagonist.id, year, "away-legacy-gate");
+        if (legacyDraw < 0.1) candidates.push({ decisionId: `O3:${protagonist.id}:${year}`, kind: "O3", personId: protagonist.id, options: ["last-attempt", "pass-it-on", "make-peace-with-it"] });
+      }
+      if (age >= 75) {
+        const mortalityDraw = keyedDraw(seed, protagonist.id, year, "away-facing-death-gate");
+        if (mortalityDraw < 0.08) candidates.push({ decisionId: `O4:${protagonist.id}:${year}`, kind: "O4", personId: protagonist.id, options: ["peace", "regret", "last-wish"] });
+      }
+      if (age >= 20 && age <= 55 && protagonist.mind.values.faith >= 15) {
+        const pilgrimageDraw = keyedDraw(seed, protagonist.id, year, "away-pilgrimage-gate");
+        if (pilgrimageDraw < 0.04) candidates.push({ decisionId: `PIL1:${protagonist.id}:${year}`, kind: "PIL1", personId: protagonist.id, options: ["go", "stay"] });
+      }
+
+      // C2, reused: news of a parent's death reaching the away protagonist a year later — the
+      // exact same grieve-openly/harden/lean-on-family options, only the trigger (any age, while
+      // away) differs from home C2's "still a minor" gate. `extra.awayNews` flags the prose to
+      // frame it as word reaching them from afar rather than a death they witnessed firsthand.
+      for (const parentId of [protagonist.motherId, protagonist.fatherId]) {
+        const parent = parentId ? people[parentId] : undefined;
+        if (parent && parent.deathYear === year - 1) {
+          candidates.push({
+            decisionId: `C2:${pairKey(protagonist.id, parentId!)}:${year}`,
+            kind: "C2",
+            personId: protagonist.id,
+            partnerId: parentId,
+            options: ["grieve-openly", "harden", "cling-to-other-parent"],
+            extra: { awayNews: true, relative: parentId === protagonist.motherId ? "mother" : "father" },
+          });
+        }
+      }
+
+      // Return home: code-rolled, like immigration/levy — not a real DecisionMaker question, since
+      // it's a small yearly chance rather than a considered choice. Offered every year from three
+      // years after leaving; resolving to "return" pushes a fresh `move` event with `away: false`,
+      // which is all `hasMovedAway` needs to see them as home again from next year on.
+      if (awaySince !== undefined && year - awaySince >= 3) {
+        candidates.push({ decisionId: `return:${protagonist.id}:${year}`, kind: "return", personId: protagonist.id, options: ["return", "stay"] });
       }
     }
   }
@@ -838,6 +1045,7 @@ async function resolveSocialDecision(question: DecisionQuestion, decisionMaker: 
 function biologyDistribution(kind: string, p: number): Distribution {
   if (kind === "illness") return { illness: p, healthy: 1 - p };
   if (kind === "death") return { die: p, survive: 1 - p };
+  if (kind === "return") return { return: p, stay: 1 - p };
   return { arrive: p, "no-arrival": 1 - p };
 }
 
@@ -882,7 +1090,7 @@ export async function simulate(
     }
 
     const candidates = gatherCandidatesForYear(year, people, events, seed, options.protagonistId);
-    const biologyCandidates = candidates.filter((c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy");
+    const biologyCandidates = candidates.filter((c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy" || c.kind === "away-arrival" || c.kind === "return");
     const socialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind));
 
     // Town event (decision 025): pushed once here, at most once per year, deterministically —
@@ -968,6 +1176,31 @@ export async function simulate(
         }
         record = { ...record, resultingEventIds };
         if (record.chosen === "impose" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+      } else if (descriptor.kind === "away-arrival") {
+        // A lightweight newcomer joining the away cast (decision 040) — code-rolled, exactly like
+        // immigration, and resolved here (before social `buildQuestion` runs) so a real Person
+        // already exists for the SAME year's Y1/Y5 candidates to reference by id.
+        const p = 0.4;
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name);
+        const resultingEventIds: string[] = [];
+        if (record.chosen === "arrive") {
+          const newPerson = spawnAwayPerson(seed, year, people);
+          people[newPerson.id] = newPerson;
+        }
+        record = { ...record, resultingEventIds };
+        if (record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+      } else if (descriptor.kind === "return") {
+        // Returning home (decision 040) — a small yearly chance, not a considered choice, so it's
+        // code-rolled like immigration/levy rather than sent to a DecisionMaker.
+        const p = 0.08;
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name);
+        const resultingEventIds: string[] = [];
+        if (record.chosen === "return") {
+          const event = pushEvent(events, year, "move", [descriptor.personId], { away: false, returned: true, destination: config.town.name }, []);
+          resultingEventIds.push(event.id);
+        }
+        record = { ...record, resultingEventIds };
+        if (record.chosen === "return" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
       } else {
         const p = 0.05;
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, config.town.name, config.town.name);
@@ -1116,7 +1349,11 @@ export async function simulate(
           if (chosen === "try") {
             const marriageEvent = events.filter((e) => e.kind === "marriage" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
             if (marriageEvent) causes.push(marriageEvent.id);
-            const child = spawnChild(seed, year, person, partner!, people);
+            let child = spawnChild(seed, year, person, partner!, people);
+            // A child born to an away couple (decision 040) is itself part of the lightweight away
+            // cast, not a home villager — otherwise they'd wrongly enter the home village's own
+            // illness/death/courtship pools despite never having set foot in it.
+            if (person.away || partner!.away) child = { ...child, away: true };
             people[child.id] = child;
             const childEvent = pushEvent(events, year, "child", [person.id, partner!.id], { childId: child.id }, causes);
             const birthEvent = pushEvent(events, year, "birth", [child.id, person.id, partner!.id], {}, [childEvent.id]);
@@ -1182,10 +1419,15 @@ export async function simulate(
           if (chosen === "leave") {
             const breakup = recentUnresolvedBreakup(events, person.id, year, 3);
             if (breakup) causes.push(breakup.id);
-            const event = pushEvent(events, year, "move", [person.id], { away: true, destination: "a distant town" }, causes);
+            // Decision 040: a real, deterministically-named destination (keyed by seed + year, so
+            // a fork that changes an earlier decision but not this one still lands in the same
+            // place) instead of the old placeholder "a distant town" — the protagonist keeps
+            // living a real life there, not falling off the edge of the story.
+            const dest = pickAwayDestination(seed, year);
+            const event = pushEvent(events, year, "move", [person.id], { away: true, destination: dest.full }, causes);
             resultingEventIds.push(event.id);
-            pushThought(person.mind, "hope", "leaving home for a distant town", 40, 3, year, "curiosity");
-            addMemory(seed, person.id, year, person.mind, `left for a distant town in ${year}`, "hope");
+            pushThought(person.mind, "hope", `leaving home for ${dest.name}`, 40, 3, year, "curiosity");
+            addMemory(seed, person.id, year, person.mind, `left for ${dest.name} in ${year}`, "hope");
             if (person.spouseId) {
               const spouse = people[person.spouseId];
               if (spouse) pushThought(spouse.mind, "loneliness", `being left behind by ${person.name}`, 50, 4, year, "anxiety", person.id);
@@ -1277,7 +1519,11 @@ export async function simulate(
             const otherParent = otherParentId ? people[otherParentId] : undefined;
             if (otherParent && otherParent.deathYear === undefined) updateRelationship(person.mind, otherParent.id, otherParent.mind.values, 25, "kin");
           }
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
+          // Decision 040: when this fires for the away protagonist (`extra.awayNews`), the prose
+          // frames it as word reaching them from afar rather than a death they witnessed firsthand.
+          const awayNews = descriptor.extra?.awayNews === true;
+          const relative = typeof descriptor.extra?.relative === "string" ? descriptor.extra.relative : undefined;
+          const event = pushEvent(events, year, "reflection", [person.id], { note, ...(awayNews ? { awayNews: true, relative: relative ?? "parent" } : {}) }, []);
           resultingEventIds.push(event.id);
           break;
         }
@@ -1610,6 +1856,24 @@ function spawnImmigrant(seed: string, year: number, people: Readonly<Record<stri
   const job = pickJob(keyedRng(seed, newId, year, "job"));
   const mind = createMind(seed, newId, birthYear, []);
   return { id: newId, name, sex, birthYear, traits, job, founder: false, mind };
+}
+
+/** A lightweight newcomer met in the protagonist's away catalog (decision 040) — deterministic and content-derived (`away-<year>`), same shape as `spawnImmigrant`, tagged `away: true` so it never joins the home village's own pools. */
+function spawnAwayPerson(seed: string, year: number, people: Readonly<Record<string, Person>>): Person {
+  const newId = `away-${year}`;
+  const sex: Sex = keyedRng(seed, newId, year, "sex")() < 0.5 ? "f" : "m";
+  const age = 16 + Math.floor(keyedRng(seed, newId, year, "age")() * 20); // 16-35
+  const birthYear = year - age;
+  const nameIndex = Math.floor(keyedRng(seed, newId, year, "name")() * 20);
+  const surnameIndex = Math.floor(keyedRng(seed, newId, year, "surname")() * 20);
+  const surname = pickName(sex, 0, surnameIndex).split(" ")[1]!;
+  const existingNames = new Set(Object.values(people).map((p) => p.name));
+  const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
+  const name = `${first} ${surname}`;
+  const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
+  const job = pickJob(keyedRng(seed, newId, year, "job"));
+  const mind = createMind(seed, newId, birthYear, []);
+  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, away: true };
 }
 
 function spawnChild(seed: string, year: number, mother: Person, father: Person, people: Readonly<Record<string, Person>>): Person {

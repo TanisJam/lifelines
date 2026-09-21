@@ -101,6 +101,13 @@ export function hasMovedAway(events: readonly Event[], personId: string): boolea
   return last.payload.away === true;
 }
 
+/** The year the person's most recent move-away event happened, or undefined if they never left (or have since returned). */
+export function awayMoveYear(events: readonly Event[], personId: string): number | undefined {
+  const moves = events.filter((e) => e.kind === "move" && e.actors.includes(personId)).sort((a, b) => b.year - a.year);
+  const last = moves[0];
+  return last && last.payload.away === true ? last.year : undefined;
+}
+
 /** Alive *during* `year` means not-yet-processed-for-death this year: died-this-year people are still processed up to their death event. */
 export function isAlive(person: Person, year: number): boolean {
   return person.deathYear === undefined || person.deathYear >= year;
