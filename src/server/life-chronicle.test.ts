@@ -200,9 +200,28 @@ describe("buildLifeChronicle — NPC-decided turns are labeled (fixture)", () =>
         expect(period.level).toBe(1);
         expect(period.endYear).toBeDefined();
         expect(period.endYear!).toBeGreaterThan(period.year);
+        // Decision 040: a period title is a narrative label ("Youth in Ashford", "Years at the
+        // forge in Ashford"), never the bare "1519–1580" year range this round's bug report flagged.
+        expect(period.title).not.toMatch(/^\d+[–-]\d+$/);
       }
     } finally {
       deleteLife(life.id);
+    }
+  });
+
+  it("period titles are never a bare year range, across many real simulated lives (decision 040)", async () => {
+    for (let i = 0; i < 8; i++) {
+      const { life, result } = await buildRealChronicle(`period-title-${i}`);
+      try {
+        expect(result.data).toBeDefined();
+        const periods = result.data!.entries.filter((e) => e.kind === "period");
+        for (const period of periods) {
+          expect(period.title).not.toMatch(/^\d+[–-]\d+$/);
+          expect(period.title.length).toBeGreaterThan(0);
+        }
+      } finally {
+        deleteLife(life.id);
+      }
     }
   });
 });

@@ -135,3 +135,42 @@ describe("protagonist-centric simulation (round 9, decision 034/035)", () => {
     expect(sawLevyWithoutProtagonistId).toBe(false);
   });
 });
+
+describe("away catalog (round 10, decision 040) — leaving home is no longer a dead end", () => {
+  it("gatherCandidatesForYear keeps offering the away protagonist real situations, not just illness/death", () => {
+    const seed = "away-candidates";
+    const protagonist: Person = { id: "protagonist", name: "Testa", sex: "f", birthYear: 1500, traits: [], job: "farmer", founder: true, mind: createMind(seed, "protagonist", 1500) };
+    const people = { protagonist };
+    const moveEvent = { id: "ev-1520-move-protagonist-0", year: 1520, kind: "move" as const, actors: ["protagonist"], payload: { away: true, destination: "Millbrook, a market town" }, causes: [] };
+
+    const candidates = gatherCandidatesForYear(1521, people, [moveEvent], seed, "protagonist");
+    const protagonistCandidates = candidates.filter((c) => c.personId === "protagonist");
+    // Still mortal while away (decision log: a moved-away person must not become immortal)...
+    expect(protagonistCandidates.some((c) => c.kind === "death")).toBe(true);
+    // ...but ALSO gets a real away-catalog situation, unlike before this round when leaving town
+    // removed the protagonist from `aliveNonMoved` and so from every social candidate entirely.
+    expect(protagonistCandidates.some((c) => c.kind !== "death" && c.kind !== "illness")).toBe(true);
+
+    // The home village's own courtship/apprenticeship pools never see the away protagonist again.
+    const withoutMove = gatherCandidatesForYear(1521, people, [], seed, "protagonist");
+    expect(withoutMove.some((c) => c.kind === "death")).toBe(true);
+  });
+
+  it("a full simulated life that leaves home keeps producing real (non-illness/death) events well after departure", async () => {
+    // Leaving is a probabilistic Y3 roll — try a handful of seeds until one actually departs.
+    let leaveYear: number | undefined;
+    let report: SimulateReport | undefined;
+    for (let i = 0; i < 20 && leaveYear === undefined; i++) {
+      const { config, people, events } = protagonistWorld(`proto-away-${i}`);
+      const attempt = await simulate(config, people, events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: "protagonist" });
+      const leave = attempt.result.events.find((e) => e.kind === "move" && e.actors[0] === "protagonist" && e.payload.away === true);
+      if (leave) {
+        leaveYear = leave.year;
+        report = attempt;
+      }
+    }
+    expect(leaveYear).toBeDefined();
+    const eventsAfterLeaving = report!.result.events.filter((e) => e.year > leaveYear! && e.actors.includes("protagonist") && e.kind !== "illness" && e.kind !== "death");
+    expect(eventsAfterLeaving.length).toBeGreaterThan(2);
+  });
+});
