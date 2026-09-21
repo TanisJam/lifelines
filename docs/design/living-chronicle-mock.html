@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lifelines — A Life Already Lived</title>
+<style>
+  :root{
+    --paper:#efe7d8;
+    --paper-deep:#e6dcc9;
+    --ink:#26231f;
+    --muted:#7b7369;
+    --faint:#b5aa99;
+    --rule:#c9bda9;
+    --accent:#8e413d;
+    --accent-soft:#cfa59e;
+    --gold:#9a7a49;
+    --ghost:#9aa0a8;
+    --dark:#121418;
+    --dark2:#1b1f25;
+    --white:#fbf8f1;
+    --shadow:0 24px 60px rgba(50,38,24,.12);
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    color:var(--ink);
+    background:
+      radial-gradient(circle at 20% 0%, rgba(255,255,255,.7), transparent 28%),
+      linear-gradient(180deg,#e9decc,#e2d5c1 60%,#ddd0bb);
+    font:16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  body:before{
+    content:"";
+    position:fixed; inset:0; pointer-events:none; z-index:100;
+    opacity:.12;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(70,52,32,.15) 0 1px, transparent 1.2px),
+      radial-gradient(circle at 80% 70%, rgba(70,52,32,.11) 0 1px, transparent 1.2px);
+    background-size:17px 17px, 23px 23px;
+    mix-blend-mode:multiply;
+  }
+
+  button,input{font:inherit}
+  button{cursor:pointer}
+
+  .app{
+    min-height:100vh;
+    display:grid;
+    grid-template-rows:auto 1fr;
+  }
+
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:20px;
+    padding:14px 22px;
+    color:#e7dfd1;
+    background:rgba(18,20,24,.92);
+    border-bottom:1px solid rgba(255,255,255,.08);
+    backdrop-filter:blur(12px);
+  }
+  .brand{
+    display:flex; align-items:center; gap:12px;
+    font-family:Georgia, "Times New Roman", serif;
+    letter-spacing:.08em;
+    font-size:17px;
+  }
+  .mark{
+    width:28px;height:28px;border:1px solid #b69a6d;border-radius:50%;
+    display:grid;place-items:center;color:#d7bd8c;font-size:14px;
+  }
+  .top-actions{display:flex;gap:8px;align-items:center}
+  .top-actions button{
+    border:1px solid rgba(255,255,255,.11);
+    color:#ddd4c7; background:#1a1d22;
+    border-radius:999px; padding:7px 11px;
+  }
+  .top-actions button:hover{background:#232831}
+
+  .page{
+    width:min(100%,1460px);
+    margin:0 auto;
+    display:grid;
+    grid-template-columns:220px minmax(0,820px) 260px;
+    gap:34px;
+    padding:38px 26px 90px;
+  }
+
+  .left, .right{
+    position:sticky; top:78px; align-self:start;
+  }
+
+  .left{
+    color:#5f584f;
+    padding-top:126px;
+  }
+  .left .label,.right .label{
+    text-transform:uppercase; letter-spacing:.18em;
+    font-size:10px; color:#958b7d;
+    margin-bottom:10px;
+  }
+  .cast{
+    display:grid; gap:5px;
+  }
+  .person-link{
+    border:0;background:transparent;padding:6px 0;text-align:left;
+    color:#5d554c;
+  }
+  .person-link:hover{color:#1f1c19}
+  .person-link small{
+    display:block;color:#9a9185;font-size:11px;margin-top:1px
+  }
+  .chapter{
+    margin-top:26px;
+    padding-top:14px;border-top:1px solid #cfc2ae;
+    font-family:Georgia,serif;font-style:italic;color:#7f7467;
+    font-size:13px;
+  }
+
+  .chronicle{
+    background:linear-gradient(180deg,var(--paper),#eee4d3);
+    border:1px solid #d4c6b0;
+    box-shadow:var(--shadow);
+    min-height:1200px;
+    position:relative;
+  }
+
+  .hero{
+    padding:58px 70px 48px;
+    text-align:center;
+    border-bottom:1px solid var(--rule);
+    position:relative;
+    overflow:hidden;
+  }
+  .hero:before{
+    content:"";
+    position:absolute; left:40px; right:40px; top:22px; height:1px;
+    background:linear-gradient(90deg,transparent,#bcae98,transparent);
+  }
+  .eyebrow{
+    color:#8a7d6b; text-transform:uppercase;
+    letter-spacing:.2em; font-size:11px;
+  }
+  h1{
+    font:500 clamp(42px,6vw,74px)/1 Georgia,serif;
+    margin:12px 0 8px;
+    letter-spacing:-.03em;
+  }
+  .years{
+    font:italic 18px Georgia,serif;color:#786b5b;
+  }
+  .ending{
+    width:min(100%,560px); margin:28px auto 0;
+    font:18px/1.75 Georgia,serif;
+    color:#3f3932;
+  }
+  .ending strong{font-weight:500;color:#2b2621}
+
+  .timeline{
+    padding:36px 70px 90px;
+  }
+
+  .event{
+    position:relative;
+    display:grid;
+    grid-template-columns:84px 1fr;
+    gap:28px;
+    padding:25px 0 28px;
+    border-bottom:1px solid rgba(157,141,119,.33);
+    transition:opacity .35s ease, transform .35s ease, filter .35s ease;
+  }
+  .event:last-child{border-bottom:0}
+  .event .year{
+    font:24px Georgia,serif;
+    color:#7f705e;
+    padding-top:1px;
+    position:relative;
+  }
+  .event .year:after{
+    content:"";
+    position:absolute; right:-17px; top:10px;
+    width:8px;height:8px;border-radius:50%;
+    background:#ece1cf;border:1px solid #aa9678;
+  }
+
+  .event-content{
+    position:relative;
+    min-width:0;
+  }
+  .event-title{
+    font:500 23px/1.28 Georgia,serif;
+    margin:0 0 8px;
+    color:#29251f;
+  }
+  .event-text{
+    margin:0;
+    font:16px/1.72 Georgia,serif;
+    color:#51493f;
+  }
+  .event-text a{
+    color:#6b463f;
+    text-decoration:none;
+    border-bottom:1px solid #c7a69f;
+  }
+  .event-text a:hover{color:#8e413d}
+
+  .decision{
+    margin-top:15px;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  .decision .chosen{
+    display:inline-flex;align-items:center;gap:8px;
+    color:#5f2f2e;
+    font:600 12px/1.2 Inter,sans-serif;
+    text-transform:uppercase;letter-spacing:.13em;
+  }
+  .decision .chosen:before{
+    content:"◆"; color:var(--accent); font-size:10px;
+  }
+  .change-btn{
+    border:0;background:transparent;color:#7a6554;
+    font-size:12px;padding:4px 0;
+    border-bottom:1px solid #bca98f;
+  }
+  .change-btn:hover{color:#8e413d;border-color:#8e413d}
+
+  .cause{
+    margin-top:12px;
+    color:#8a8177;
+    font-size:12px;
+  }
+  .cause button{
+    border:0;background:transparent;padding:0;color:#8a635e;
+    text-decoration:underline;text-decoration-color:#c5aba6;
+  }
+
+  .ghost-note{
+    display:none;
+    margin-top:12px;
+    padding-left:14px;
+    border-left:1px solid #aeb2b7;
+    color:#858b92;
+    font:italic 13px Georgia,serif;
+  }
+  .event.changed .ghost-note{display:block}
+  .event.changed{
+    background:linear-gradient(90deg,rgba(142,65,61,.055),transparent 65%);
+  }
+  .event.rewriting{
+    opacity:.18;
+    filter:blur(1px);
+    transform:translateY(6px);
+  }
+  .event.newborn{
+    animation:inkIn .75s ease both;
+  }
+  @keyframes inkIn{
+    from{opacity:0;transform:translateY(10px);filter:blur(2px)}
+    to{opacity:1;transform:none;filter:none}
+  }
+
+  .right{
+    padding-top:126px;
+  }
+  .branch-box{
+    border-left:1px solid #c9bca8;
+    padding-left:18px;
+  }
+  .branch-name{
+    font:18px Georgia,serif;
+    margin-bottom:7px;
+  }
+  .branch-sub{
+    color:#8a8074;font-size:12px;
+    line-height:1.5;
+  }
+  .branch-list{
+    margin-top:18px;
+    display:grid;gap:10px;
+  }
+  .branch-item{
+    font-size:12px;color:#675f56;
+    padding-left:12px;position:relative;
+  }
+  .branch-item:before{
+    content:"";position:absolute;left:0;top:8px;width:4px;height:4px;border-radius:50%;
+    background:#9d8770;
+  }
+  .branch-item.active{color:#3d342c}
+  .branch-item.active:before{background:#8e413d}
+
+  .footer-note{
+    margin-top:28px;
+    color:#91867a;
+    font:italic 13px Georgia,serif;
+  }
+
+  .drawer{
+    position:fixed; inset:0; z-index:80;
+    display:none;
+  }
+  .drawer.open{display:block}
+  .drawer-backdrop{
+    position:absolute; inset:0; background:rgba(18,19,22,.4); backdrop-filter:blur(3px);
+  }
+  .drawer-panel{
+    position:absolute;left:0;top:0;bottom:0;width:min(380px,88vw);
+    background:#14171c;color:#e6ded0;padding:22px;
+    box-shadow:20px 0 60px rgba(0,0,0,.28);
+  }
+  .drawer-panel h2{
+    font:34px Georgia,serif;margin:8px 0 20px;
+  }
+  .drawer-search{
+    width:100%;border:1px solid #333944;background:#1c2026;color:#eee6da;
+    border-radius:8px;padding:10px 12px;margin-bottom:14px;
+  }
+  .drawer-person{
+    width:100%;text-align:left;border:0;border-top:1px solid #2c323a;
+    background:transparent;color:#ded5c8;padding:13px 4px;
+  }
+  .drawer-person small{display:block;color:#8e98a7;margin-top:2px}
+
+  .modal{
+    position:fixed; inset:0; z-index:90;
+    display:none; place-items:center;
+    padding:20px;
+  }
+  .modal.open{display:grid}
+  .modal-backdrop{
+    position:absolute;inset:0;background:rgba(17,18,21,.68);backdrop-filter:blur(5px)
+  }
+  .modal-card{
+    position:relative;
+    width:min(680px,96vw);
+    background:#f0e7d8;color:#29251f;
+    border:1px solid #cdbc9f;
+    box-shadow:0 30px 90px rgba(0,0,0,.35);
+    padding:28px;
+  }
+  .modal-kicker{
+    text-transform:uppercase;letter-spacing:.16em;font-size:10px;color:#8d8172
+  }
+  .modal-card h2{
+    margin:7px 0 5px;font:36px/1.1 Georgia,serif
+  }
+  .modal-card p{
+    margin:0 0 20px;color:#665d53;font:15px/1.6 Georgia,serif
+  }
+  .options{display:grid;gap:8px}
+  .option-btn{
+    text-align:left;border:1px solid #cbbca4;background:#f5edde;color:#332d26;
+    padding:13px 14px;
+    display:flex;justify-content:space-between;gap:18px;align-items:center;
+  }
+  .option-btn:hover{border-color:#8e413d;background:#f8f0e2}
+  .option-btn.current{
+    border-color:#9f8f78;background:#e6dac7;color:#756a5e
+  }
+  .option-btn .tag{
+    font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#9d7a73
+  }
+  .modal-actions{
+    margin-top:18px;display:flex;justify-content:space-between;gap:10px;align-items:center
+  }
+  .modal-actions button{
+    border:0;background:transparent;color:#756b60;padding:6px 0
+  }
+
+  .regen{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+    z-index:120;
+    background:#16191e;color:#efe6d8;
+    padding:11px 16px;border:1px solid #303640;
+    border-radius:999px;box-shadow:0 16px 40px rgba(0,0,0,.28);
+    display:none;gap:10px;align-items:center;
+    font-size:12px;letter-spacing:.04em;
+  }
+  .regen.show{display:flex}
+  .regen-dot{
+    width:8px;height:8px;border-radius:50%;background:#b99562;
+    animation:blink 1s infinite
+  }
+  @keyframes blink{50%{opacity:.25}}
+
+  .fork-divider{
+    display:none;
+    margin:8px 0 12px 112px;
+    color:#8b5b54;
+    font:italic 12px Georgia,serif;
+    letter-spacing:.06em;
+  }
+  .fork-divider.show{display:block}
+
+  @media (max-width:1050px){
+    .page{grid-template-columns:minmax(0,820px);justify-content:center}
+    .left,.right{display:none}
+  }
+  @media (max-width:720px){
+    .topbar{padding:11px 12px}
+    .top-actions button:nth-child(2){display:none}
+    .page{padding:18px 10px 60px}
+    .hero{padding:44px 24px 36px}
+    .timeline{padding:22px 22px 60px}
+    .event{grid-template-columns:60px 1fr;gap:18px}
+    .event .year{font-size:20px}
+    .event-title{font-size:20px}
+    .event-text{font-size:15px}
+    .fork-divider{margin-left:78px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="mark">∞</span> LIFELINES</div>
+    <div class="top-actions">
+      <button id="peopleBtn">People</button>
+      <button id="worldBtn">Ravenford</button>
+      <button id="branchBtn">History</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <aside class="left">
+      <div class="label">People in this life</div>
+      <div class="cast">
+        <button class="person-link" data-person="Tomas Vell">Tomas Vell<small>husband</small></button>
+        <button class="person-link" data-person="Elin Marek">Elin Marek<small>daughter</small></button>
+        <button class="person-link" data-person="Elias Ashwell">Elias Ashwell<small>father</small></button>
+        <button class="person-link" data-person="Jon Calder">Jon Calder<small>friend</small></button>
+        <button class="person-link" data-person="Beatrice Marek">Beatrice Marek<small>rival</small></button>
+      </div>
+      <div class="chapter">Every name in the chronicle can become the center of the story.</div>
+    </aside>
+
+    <article class="chronicle" id="chronicle">
+      <section class="hero">
+        <div class="eyebrow">A life already lived</div>
+        <h1 id="personName">Mara Ashwell</h1>
+        <div class="years" id="personYears">1498 — 1558</div>
+        <p class="ending" id="ending">
+          Mara Ashwell died at sixty in Ravenford, surrounded by her children.
+          She had spent most of her life as a healer and <strong>never permanently left the town where she was born.</strong>
+        </p>
+      </section>
+
+      <section class="timeline" id="timeline"></section>
+    </article>
+
+    <aside class="right">
+      <div class="label">This history</div>
+      <div class="branch-box">
+        <div class="branch-name" id="branchName">Original life</div>
+        <div class="branch-sub" id="branchSub">The life that was first simulated.</div>
+        <div class="branch-list">
+          <div class="branch-item active">1498 · Mara is born</div>
+          <div class="branch-item">1514 · She stays</div>
+          <div class="branch-item">1518 · She marries Aldric</div>
+          <div class="branch-item">1558 · She dies</div>
+        </div>
+        <div class="footer-note">Change any turn and everything after it can be rewritten.</div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="drawer-backdrop"></div>
+  <div class="drawer-panel">
+    <div class="modal-kicker">Ravenford</div>
+    <h2>People</h2>
+    <input class="drawer-search" placeholder="Find a life…" />
+    <button class="drawer-person" data-person="Mara Ashwell">Mara Ashwell<small>1498 — 1558 · healer</small></button>
+    <button class="drawer-person" data-person="Tomas Vell">Tomas Vell<small>1495 — 1549 · woodworker</small></button>
+    <button class="drawer-person" data-person="Jon Calder">Jon Calder<small>1492 — 1537 · miller</small></button>
+    <button class="drawer-person" data-person="Elin Marek">Elin Marek<small>1519 — 1582 · teacher</small></button>
+    <button class="drawer-person" data-person="Beatrice Marek">Beatrice Marek<small>1501 — 1571 · trader</small></button>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-backdrop"></div>
+  <div class="modal-card">
+    <div class="modal-kicker">Change this moment</div>
+    <h2 id="modalTitle">A choice in her life</h2>
+    <p id="modalText">Choose what happened instead. Everything after this point will be regenerated.</p>
+    <div class="options" id="options"></div>
+    <div class="modal-actions">
+      <button id="cancelBtn">Cancel</button>
+      <span style="font-size:11px;color:#9a9084">The previous life remains available as a branch.</span>
+    </div>
+  </div>
+</div>
+
+<div class="regen" id="regen"><span class="regen-dot"></span><span id="regenText">Rewriting Mara's life from 1514…</span></div>
+
+<script>
+const people = {
+  "Mara Ashwell":{
+    years:"1498 — 1558",
+    ending:`Mara Ashwell died at sixty in Ravenford, surrounded by her children. She had spent most of her life as a healer and <strong>never permanently left the town where she was born.</strong>`,
+    events:[
+      {year:1498,title:"Mara Ashwell is born",text:`Mara is born during the winter storm that destroys Ravenford's northern bridge. She is the second child of <a href="#" data-person="Elias Ashwell">Elias Ashwell</a> and Anne Ashwell.`},
+      {year:1506,title:"Her mother dies",text:`Anne Ashwell dies after a long illness. Mara remains in the family home with her father and older brother.`},
+      {year:1512,title:"She meets Tomas Vell",text:`At the autumn fair, Mara meets <a href="#" data-person="Tomas Vell">Tomas Vell</a>, a young woodworker who arrived in Ravenford only days earlier.`},
+      {year:1514,title:"Tomas asks her to leave Ravenford with him",text:`Tomas plans to travel east and asks Mara to go with him.`,decision:{
+        chosen:"She stays in Ravenford",
+        options:[
+          "She stays in Ravenford",
+          "She leaves with Tomas",
+          "She asks Tomas to stay",
+          "She ends the relationship"
+        ],
+        alt:{
+          "She leaves with Tomas":[
+            {year:1515,title:"Mara leaves Ravenford",text:`Mara departs before sunrise with <a href="#" data-person="Tomas Vell">Tomas</a>. Her father does not come to the road to say goodbye.`},
+            {year:1516,title:"They arrive in Bellhaven",text:`Tomas finds work in a shipwright's yard. Mara begins helping an elderly apothecary near the harbor.`},
+            {year:1518,title:"Mara gives birth to Elin",text:`Their first child, <a href="#" data-person="Elin Marek">Elin</a>, is born in Bellhaven during a summer heatwave.`},
+            {year:1520,title:"Her father dies in Ravenford",text:`News reaches Mara six weeks late. She does not return for the funeral.`},
+            {year:1527,title:"Mara opens a small healing room",text:`What began as informal help for dockworkers becomes a modest practice of her own.`},
+            {year:1549,title:"Tomas dies after a shipyard accident",text:`Mara remains in Bellhaven after his death. She never again lives in Ravenford.`},
+            {year:1561,title:"Mara dies in Bellhaven",text:`She dies at sixty-three in the upstairs room above the healing house she built.`}
+          ],
+          "She asks Tomas to stay":[
+            {year:1515,title:"Tomas remains in Ravenford",text:`He accepts, reluctantly. The decision quietly changes the course of both of their lives.`},
+            {year:1517,title:"They marry",text:`Mara and Tomas marry in a small winter ceremony.`},
+            {year:1519,title:"Elin is born",text:`Their first daughter is born in Ravenford.`},
+            {year:1523,title:"Tomas grows restless",text:`He begins taking longer work trips and spends less time at home.`},
+            {year:1525,title:"Tomas leaves alone",text:`He departs for Bellhaven after an argument and never permanently returns.`},
+            {year:1531,title:"Mara becomes the town healer",text:`She takes over the practice of an aging midwife and herbalist.`},
+            {year:1557,title:"Mara dies in Ravenford",text:`She dies quietly after a winter fever.`}
+          ],
+          "She ends the relationship":[
+            {year:1515,title:"Tomas leaves Ravenford alone",text:`Their correspondence lasts less than a year.`},
+            {year:1518,title:"Mara marries Aldric Marek",text:`She marries <a href="#" data-person="Beatrice Marek">Aldric Marek</a>, whom she has known since childhood.`},
+            {year:1519,title:"Elin is born",text:`Their daughter <a href="#" data-person="Elin Marek">Elin</a> is born the following spring.`},
+            {year:1527,title:"Mara begins treating townspeople",text:`Her knowledge of herbs turns into work people rely on.`},
+            {year:1558,title:"Mara dies in Ravenford",text:`She dies at sixty, surrounded by family.`}
+          ]
+        }
+      }},
+      {year:1515,title:"Tomas leaves Ravenford alone",text:`Tomas departs east in early spring. Mara watches his cart disappear beyond the northern road.`},
+      {year:1518,title:"Mara marries Aldric Marek",text:`She marries Aldric, a cooper she has known since childhood.`,decision:{
+        chosen:"She marries Aldric",
+        options:["She marries Aldric","She refuses the proposal","They postpone the wedding"],
+        alt:{
+          "She refuses the proposal":[
+            {year:1519,title:"Mara remains unmarried",text:`She moves into a small room above the apothecary where she has begun working.`},
+            {year:1524,title:"She takes over the apothecary",text:`Its owner dies without children and leaves the business to Mara.`},
+            {year:1533,title:"Mara becomes guardian to her niece",text:`Her brother dies unexpectedly, leaving a nine-year-old daughter.`},
+            {year:1564,title:"Mara dies in Ravenford",text:`She dies after a long illness, remembered by generations of families she treated.`}
+          ],
+          "They postpone the wedding":[
+            {year:1520,title:"Aldric leaves for military work",text:`The wedding is delayed again when Aldric takes a lucrative contract away from Ravenford.`},
+            {year:1522,title:"Their engagement ends",text:`Neither writes the other after winter.`},
+            {year:1526,title:"Mara joins the healer Oda",text:`She becomes Oda's assistant and eventually her successor.`},
+            {year:1560,title:"Mara dies in Ravenford",text:`She dies after treating the town through two major epidemics.`}
+          ]
+        }
+      }},
+      {year:1519,title:"Elin is born",text:`Mara gives birth to <a href="#" data-person="Elin Marek">Elin</a> during a cold spring. Aldric stays beside her through the night.`},
+      {year:1527,title:"Mara becomes Ravenford's healer",text:`After years of informal work, Mara begins treating families from across the town.`},
+      {year:1537,title:"Jon Calder dies in the mill fire",text:`Her old friend <a href="#" data-person="Jon Calder">Jon Calder</a> dies when the east mill burns. Mara treats three survivors but cannot save him.`},
+      {year:1543,title:"Elin leaves home",text:`After months of arguments, Elin leaves Ravenford with a traveling teacher.`,cause:"This follows Mara forbidding Elin's relationship the year before."},
+      {year:1558,title:"Mara dies",text:`Mara dies at sixty after a short illness. Elin returns to Ravenford in time to see her once more.`}
+    ]
+  },
+
+  "Tomas Vell":{
+    years:"1495 — 1549",
+    ending:`Tomas Vell died far from the town where he had first met Mara. He spent much of his adult life moving between workshops, roads and ports.`,
+    events:[
+      {year:1495,title:"Tomas Vell is born",text:`Tomas is born in a riverside village two days east of Ravenford.`},
+      {year:1512,title:"He arrives in Ravenford",text:`Looking for work, Tomas reaches Ravenford during the autumn fair and meets <a href="#" data-person="Mara Ashwell">Mara Ashwell</a>.`},
+      {year:1514,title:"He asks Mara to leave with him",text:`Mara refuses. Tomas delays his departure until spring.`},
+      {year:1515,title:"He leaves Ravenford",text:`He travels east alone.`},
+      {year:1549,title:"Tomas dies",text:`He dies after an accident in a Bellhaven shipyard.`}
+    ]
+  },
+
+  "Jon Calder":{
+    years:"1492 — 1537",
+    ending:`Jon Calder died at forty-five in the Ravenford mill fire. The event was remembered for decades because three others survived.`,
+    events:[
+      {year:1492,title:"Jon Calder is born",text:`Jon is born into a milling family in Ravenford.`},
+      {year:1504,title:"He begins working at the east mill",text:`At twelve, Jon starts helping his father before sunrise each day.`},
+      {year:1510,title:"He befriends Mara Ashwell",text:`Jon becomes a close friend of <a href="#" data-person="Mara Ashwell">Mara Ashwell</a>.`},
+      {year:1537,title:"The mill burns",text:`A lamp falls in the east mill. Jon dies while trying to lead two workers outside.`}
+    ]
+  },
+
+  "Elin Marek":{
+    years:"1519 — 1582",
+    ending:`Elin Marek outlived both parents and spent the last decades of her life teaching children in three different towns.`,
+    events:[
+      {year:1519,title:"Elin is born",text:`Elin is born to <a href="#" data-person="Mara Ashwell">Mara Ashwell</a> and Aldric Marek.`},
+      {year:1543,title:"She leaves Ravenford",text:`After months of conflict with her mother, Elin leaves with a traveling teacher.`},
+      {year:1549,title:"She begins teaching",text:`Elin is hired to teach the children of merchants in Bellhaven.`},
+      {year:1582,title:"Elin dies",text:`She dies at sixty-three after a long winter illness.`}
+    ]
+  },
+
+  "Elias Ashwell":{
+    years:"1469 — 1520",
+    ending:`Elias Ashwell died in Ravenford at fifty-one. He never reconciled himself to the idea of his children leaving the town.`,
+    events:[
+      {year:1469,title:"Elias is born",text:`Elias is born in Ravenford.`},
+      {year:1498,title:"Mara is born",text:`His daughter <a href="#" data-person="Mara Ashwell">Mara</a> is born during a winter storm.`},
+      {year:1520,title:"Elias dies",text:`He dies after a sudden fever.`}
+    ]
+  },
+
+  "Beatrice Marek":{
+    years:"1501 — 1571",
+    ending:`Beatrice Marek became one of Ravenford's most successful traders and spent much of her later life in open rivalry with Mara Ashwell.`,
+    events:[
+      {year:1501,title:"Beatrice is born",text:`Beatrice is born to the Marek family.`},
+      {year:1521,title:"She begins trading independently",text:`She starts buying wool and selling finished cloth beyond Ravenford.`},
+      {year:1530,title:"Her dispute with Mara begins",text:`A disagreement over payment for medicine grows into a long-running feud with <a href="#" data-person="Mara Ashwell">Mara Ashwell</a>.`},
+      {year:1571,title:"Beatrice dies",text:`She dies wealthy, with two caravans still operating in her name.`}
+    ]
+  }
+};
+
+let currentPerson="Mara Ashwell";
+let currentEvents=structuredClone(people[currentPerson].events);
+let activeDecisionIndex=null;
+let originalTail=null;
+let currentBranch="Original life";
+
+const timeline=document.getElementById("timeline");
+const modal=document.getElementById("modal");
+const options=document.getElementById("options");
+const drawer=document.getElementById("drawer");
+const regen=document.getElementById("regen");
+
+function renderPerson(name){
+  currentPerson=name;
+  const p=people[name] || people["Mara Ashwell"];
+  currentEvents=structuredClone(p.events);
+  currentBranch="Original life";
+  originalTail=null;
+  document.getElementById("personName").textContent=name;
+  document.getElementById("personYears").textContent=p.years;
+  document.getElementById("ending").innerHTML=p.ending;
+  document.getElementById("branchName").textContent="Original life";
+  document.getElementById("branchSub").textContent="The life that was first simulated.";
+  renderTimeline();
+  drawer.classList.remove("open");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function renderTimeline(newFrom=null){
+  timeline.innerHTML="";
+  currentEvents.forEach((ev,i)=>{
+    const row=document.createElement("article");
+    row.className="event"+(newFrom!==null && i>=newFrom?" newborn":"");
+    row.dataset.index=i;
+    row.innerHTML=`
+      <div class="year">${ev.year}</div>
+      <div class="event-content">
+        <h2 class="event-title">${ev.title}</h2>
+        <p class="event-text">${ev.text}</p>
+        ${ev.decision ? `
+          <div class="decision">
+            <span class="chosen">${ev.decision.chosen}</span>
+            <button class="change-btn" data-change="${i}">change what happened</button>
+          </div>` : ""}
+        ${ev.cause ? `<div class="cause">↳ ${ev.cause}</div>` : ""}
+        ${ev.ghost ? `<div class="ghost-note">Original history: ${ev.ghost}</div>` : ""}
+      </div>`;
+    timeline.appendChild(row);
+  });
+
+  timeline.querySelectorAll("[data-person]").forEach(a=>{
+    a.addEventListener("click",e=>{
+      e.preventDefault(); renderPerson(a.dataset.person);
+    });
+  });
+  timeline.querySelectorAll("[data-change]").forEach(btn=>{
+    btn.addEventListener("click",()=>openDecision(+btn.dataset.change));
+  });
+}
+
+function openDecision(index){
+  activeDecisionIndex=index;
+  const ev=currentEvents[index];
+  document.getElementById("modalTitle").textContent=ev.title;
+  document.getElementById("modalText").textContent="Choose what happened instead. Everything after this point will be simulated again.";
+  options.innerHTML="";
+  ev.decision.options.forEach(opt=>{
+    const b=document.createElement("button");
+    b.className="option-btn"+(opt===ev.decision.chosen?" current":"");
+    b.innerHTML=`<span>${opt}</span><span class="tag">${opt===ev.decision.chosen?"current life":"rewrite from here"}</span>`;
+    if(opt!==ev.decision.chosen){
+      b.addEventListener("click",()=>rewriteLife(index,opt));
+    }
+    options.appendChild(b);
+  });
+  modal.classList.add("open");
+}
+
+function rewriteLife(index,choice){
+  const ev=currentEvents[index];
+  const replacement=ev.decision.alt?.[choice];
+  if(!replacement) return;
+
+  const existingRows=[...timeline.querySelectorAll(".event")];
+  existingRows.slice(index+1).forEach((el,j)=>setTimeout(()=>el.classList.add("rewriting"),j*70));
+
+  modal.classList.remove("open");
+  regen.classList.add("show");
+  document.getElementById("regenText").textContent=`Rewriting ${currentPerson.split(" ")[0]}'s life from ${ev.year}…`;
+
+  originalTail=currentEvents.slice(index+1);
+  const changedEvent=structuredClone(ev);
+  const previous=changedEvent.decision.chosen;
+  changedEvent.decision.chosen=choice;
+  changedEvent.ghost=previous;
+
+  setTimeout(()=>{
+    const newTail=structuredClone(replacement);
+    currentEvents=[...currentEvents.slice(0,index),changedEvent,...newTail];
+
+    const p=people[currentPerson];
+    const last=currentEvents[currentEvents.length-1];
+    document.getElementById("personYears").textContent=`${p.years.split("—")[0].trim()} — ${last.year}`;
+    document.getElementById("ending").innerHTML=`This is no longer the life first written for ${currentPerson}. <strong>Everything after ${ev.year} has changed.</strong>`;
+
+    currentBranch=`Branch from ${ev.year}`;
+    document.getElementById("branchName").textContent=currentBranch;
+    document.getElementById("branchSub").textContent=`Changed at ${ev.year}: ${choice}. The original life still exists as another branch.`;
+
+    renderTimeline(index);
+    const changedRow=timeline.querySelector(`.event[data-index="${index}"]`);
+    changedRow?.classList.add("changed");
+    regen.classList.remove("show");
+
+    setTimeout(()=>{
+      changedRow?.scrollIntoView({behavior:"smooth",block:"center"});
+    },100);
+  },1300);
+}
+
+document.getElementById("peopleBtn").onclick=()=>drawer.classList.add("open");
+drawer.querySelector(".drawer-backdrop").onclick=()=>drawer.classList.remove("open");
+drawer.querySelectorAll("[data-person]").forEach(btn=>{
+  btn.onclick=()=>renderPerson(btn.dataset.person);
+});
+document.querySelectorAll(".person-link").forEach(btn=>{
+  btn.onclick=()=>renderPerson(btn.dataset.person);
+});
+document.getElementById("cancelBtn").onclick=()=>modal.classList.remove("open");
+modal.querySelector(".modal-backdrop").onclick=()=>modal.classList.remove("open");
+
+document.getElementById("branchBtn").onclick=()=>{
+  alert(currentBranch==="Original life"
+    ? "This is the original simulated life. Change any decision to create an alternate branch."
+    : `${currentBranch}\n\nThe original timeline is preserved. In the product, this button would open the branch history.`);
+};
+document.getElementById("worldBtn").onclick=()=>{
+  alert("World view is secondary in this concept. The primary experience stays centered on a single person's completed life.");
+};
+
+renderPerson("Mara Ashwell");
+</script>
+</body>
+</html>
