@@ -478,3 +478,24 @@ World creation and two forks against the running `:3000` dev server with `DECISI
 ## 2026-09-21 — Rules-engine smoke run
 
 19 people, 118 events and 180 decisions in 34ms. The full API flow works: create, biography, "why?", edit, diff.
+
+## 2026-09-21 — Round 11 (decision 044): partial live verification, budget-scoped
+
+Implemented `decideYear` batching (one Jev request per person per year, occurrence + speculative
+response + optional significance in one call, rate limiter, widened retry, request splitting,
+cache keyed by state+questions+model). `pnpm typecheck`/`pnpm test` (138 passing)/`pnpm lint` all
+clean; new unit/integration tests cover batching, caching, retry, splitting, the protagonist
+guarantee, and multiple same-year events (see decision 044's "Verified" section).
+
+**Not completed this round, disclosed:** the full same-seed before/after live comparison (seed
+`batch-1`, name `Lucía`, previous commit `d3fe03c` vs this round's change) and the `/rewrite`
+cache-reuse live measurement, both specified in this round's brief. One live smoke test was run
+against the new code (`POST /api/lives/stream`, seed `batch-1`, `Lucía`) to confirm the server
+starts and streams without error post-refactor: the `start` event arrived correctly
+(`Stonebridge`, born 1500), and the server log showed the request still in flight, still healthy,
+past 60s (no crash, no error) when this round's tool budget ran out before the life finished
+streaming and before a second (pre-refactor, worktree-based) run could be captured for comparison.
+**Occurrence-inflation measurement (brief point 7) was not performed** for the same reason — no
+"events per year per person" count was collected this round. Both are the natural first things to
+run in the next round, before further building on this batching change, given decision 044 already
+discloses that `occurrence` isn't yet load-bearing for triggering the general candidate catalog.
