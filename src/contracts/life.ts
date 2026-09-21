@@ -51,6 +51,8 @@ export interface Turn {
   readonly whyPhrase: string;
   /** Optional numbers shown under whyPhrase. Keys are optionIds. */
   readonly probabilities?: Readonly<Record<string, number>>;
+  /** Round 11 (decision 044): how likely this situation was to happen at all this year (independent of `probabilities`, which is about which option won GIVEN it happened) — lets "Why this happened" say "this was likely to happen this year" or "this was unlikely to happen at all". Absent when the deciding call didn't report one (a forced decision, or the legacy per-candidate path). */
+  readonly occurrenceProbability?: number;
 }
 
 export interface ChronicleEntry {

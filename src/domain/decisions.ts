@@ -75,6 +75,44 @@ export interface DecisionQuestion {
 export type Distribution<Option extends string = string> = Readonly<Record<Option, number>>;
 
 /**
+ * Round 11 (decision 044, "one Jev request per person per year"): one situation offered to a
+ * single person this year, bundled with every other eligible situation into a single
+ * `PersonYearBatch`. `question` is the SAME `DecisionQuestion` `buildQuestion` already builds for
+ * the per-candidate path — its `state` still carries the situation-specific facts (partner brief,
+ * `extra`) even though `self`/`town`/`year` are now paid for once at the batch level instead of
+ * once per situation.
+ */
+export interface PersonYearSituation {
+  readonly kind: DecisionKind;
+  readonly question: DecisionQuestion;
+}
+
+/**
+ * Everything ONE person faces in ONE simulated year, gathered so a `DecisionMaker` can answer it
+ * with a single request instead of one request per candidate (docs/findings.md "Jev throughput
+ * limits": the mind/portrait state is paid once per request, so bundling every eligible situation
+ * into one request pays for it once per person-year instead of once per situation).
+ */
+export interface PersonYearBatch {
+  readonly personId: string;
+  readonly year: number;
+  /** Paid once per request: mind/portrait plus year context (age, place, household, job, season, town events, recent vignettes). */
+  readonly self: Readonly<Record<string, JsonValue>>;
+  /** Every ELIGIBLE candidate this year, keyed by `DecisionQuestion.id`. Code decided eligibility; Jev decides occurrence and response. */
+  readonly situations: Readonly<Record<string, PersonYearSituation>>;
+}
+
+/** A `DecisionMaker`'s answer to a whole `PersonYearBatch`, keyed by the same situation ids. */
+export interface PersonYearResult {
+  /** Probability each situation actually happens to this person this year (a Noul per candidate, per decision 044). */
+  readonly occurrence: Readonly<Record<string, number>>;
+  /** Speculative response distribution for EVERY situation (asked whether or not it occurs) — the caller only consumes the ones that occurred. */
+  readonly response: Readonly<Record<string, Distribution>>;
+  /** Optional narrative significance per situation, in [0, 1], folded into the same request when the adapter supports it. */
+  readonly significance?: Readonly<Record<string, number>>;
+}
+
+/**
  * The port. The domain engine samples the returned distribution itself with
  * the keyed RNG (see `rng.ts`) — a DecisionMaker never rolls dice, it only
  * judges likelihoods. That split is what keeps re-simulation reproducible:
@@ -82,6 +120,13 @@ export type Distribution<Option extends string = string> = Readonly<Record<Optio
  */
 export interface DecisionMaker {
   decide(question: DecisionQuestion): Promise<Distribution>;
+  /**
+   * Round 11 (decision 044): answers every eligible situation for one person's one year in a
+   * single request. Optional so a minimal test double implementing only `decide()` keeps working —
+   * `simulate.ts` falls back to one `decide()` call per candidate when an adapter omits this.
+   * `RuleDecisionMaker` and `JevDecisionMaker` both implement it.
+   */
+  decideYear?(batch: PersonYearBatch): Promise<PersonYearResult>;
   /**
    * Optional: score the narrative significance of an already-decided event,
    * in [0, 1]. Used for story sifting (highlighting key moments). Adapters
@@ -164,6 +209,15 @@ export interface DecisionRecord {
   readonly prior?: Distribution;
   /** What was actually sampled from: `jevRaw` when `source === "jev"`, `prior` otherwise, or a one-option certainty when `source === "forced"`. */
   readonly final: Distribution;
+  /**
+   * Round 11 (decision 044): how likely this situation was to happen to this person at all this
+   * year, per the batch's occurrence Noul — independent of `final` (which is about WHAT they'd do
+   * IF it happened). Present only when the answering adapter reported one (`decideYear`'s
+   * `occurrence` map); absent for a forced decision, or when the legacy per-candidate `decide()`
+   * fallback was used. Surfaced in the chronicle so "Why this happened" can distinguish "this was
+   * likely to happen this year" from "this was unlikely to happen at all".
+   */
+  readonly occurrenceProbability?: number;
   /** Gumbel noise per option id, keyed by (seed, personId, year, kind, optionId). Empty for a forced decision (nothing was sampled). */
   readonly noise: Readonly<Record<string, number>>;
   readonly chosen: string;

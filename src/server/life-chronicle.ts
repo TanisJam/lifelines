@@ -62,6 +62,7 @@ function buildTurn(decision: DecisionRecord, people: Readonly<Record<string, Per
     alternatives,
     whyPhrase: whyPhraseFor(decision, deciderId, people, protagonistSex),
     probabilities: decision.final,
+    occurrenceProbability: decision.occurrenceProbability,
   };
 }
 

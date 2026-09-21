@@ -1,8 +1,9 @@
-import { TypeSafeClient, choice, score, type ChoiceCriteria } from "@typesafe-ai/sdk";
-import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution } from "@/domain/decisions";
+import { TypeSafeClient, choice, noul, score, type ChoiceCriteria, type Fetch, type Questions } from "@typesafe-ai/sdk";
+import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution, PersonYearBatch, PersonYearResult } from "@/domain/decisions";
 import type { JsonValue } from "@/domain/types";
 import { VIGNETTE_OPTION_DESCRIPTIONS } from "@/domain/vignettes";
 import { decisionCacheKey, FileBackedCache } from "./cache";
+import { DEFAULT_BURST, DEFAULT_RATE_PER_SECOND, TokenBucket } from "./rate-limiter";
 
 /**
  * A pinned, concrete model version rather than the `jev-latest` alias.
@@ -137,11 +138,38 @@ const SIGNIFICANCE_CRITERIA = [
   "A defining, pivotal moment — the kind of thing legends are told about — that reshaped this person's life or the town's history.",
 ] as const;
 
+/**
+ * How likely `situations.<id>` is to actually happen to this person THIS year — asked as a Noul
+ * alongside every candidate's speculative response (round 11, decision 044). Framed as "in a
+ * typical year" per the same decision's occurrence-calibration note: an unframed "how likely is
+ * this" question measured as inflated (see docs/findings.md), so the base-rate framing lives in
+ * the question wording, never as a code-side weight on the answer (decision 016 still holds).
+ */
+function occurrenceInstructions(kind: DecisionQuestion["kind"], situationKey: string): string {
+  return `In a typical year of an ordinary life like this one, how likely is it that \`${situationKey}\` (a "${kind}" situation) actually happens to this person THIS year — not eventually, not in general, but in the specific year given by \`year\`? Most individual situations do NOT happen in most years; answer for the base rate of a year like this one, then adjust for anything about this person or their circumstances that makes it more or less likely than usual.`;
+}
+
+/** ~64k tokens/request hard cap (docs/findings.md); requests are split before reaching this so the shared `self` state and every situation's questions fit with headroom. */
+export const JEV_YEAR_TOKEN_BUDGET = 55_000;
+
+/** Rough token estimate (~4 chars/token) for splitting a person-year batch before it's sent — not exact, just conservative enough to stay under `JEV_YEAR_TOKEN_BUDGET`. */
+export function estimateTokens(value: unknown): number {
+  return Math.ceil(JSON.stringify(value).length / 4);
+}
+
 export interface JevDecisionMakerOptions {
   readonly apiKey?: string;
   readonly model?: string;
   /** Path to a JSON file for cross-run cache persistence. Omit to keep the cache purely in-memory. */
   readonly cacheFilePath?: string;
+  /** Custom `fetch` implementation, passed straight through to `TypeSafeClient` — used by tests to fake the HTTP layer. */
+  readonly fetch?: Fetch;
+  /** Sustained requests/second for the token-bucket limiter in front of every Jev call. Default 18 (docs/findings.md: sustained limit is 1,200 req/min). */
+  readonly rateLimitPerSecond?: number;
+  /** Burst capacity for the rate limiter. Default 100 (docs/findings.md: 200 parallel requests burst fine; kept a bit under that). */
+  readonly rateLimitBurst?: number;
+  /** Retries after the initial attempt for 429/529/timeout, with exponential backoff and jitter. The SDK itself implements this (`RetryPolicy`); default here just widens it beyond the SDK's conservative default of 2. */
+  readonly maxRetries?: number;
 }
 
 /**
@@ -171,6 +199,8 @@ export class JevDecisionMaker implements DecisionMaker {
   private readonly model: string;
   private readonly cache: FileBackedCache<Distribution>;
   private readonly significanceCache: FileBackedCache<number>;
+  private readonly yearCache: FileBackedCache<PersonYearResult>;
+  private readonly rateLimiter: TokenBucket;
   private calls = 0;
   private cacheHits = 0;
   private wallTimeMs = 0;
@@ -178,10 +208,21 @@ export class JevDecisionMaker implements DecisionMaker {
   private outputTokens = 0;
 
   constructor(options: JevDecisionMakerOptions = {}) {
-    this.client = new TypeSafeClient({ apiKey: options.apiKey, timeout: 20000 });
+    this.client = new TypeSafeClient({
+      apiKey: options.apiKey,
+      timeout: 20000,
+      fetch: options.fetch,
+      // The SDK's own RetryPolicy already covers 429/529/timeout with exponential backoff + jitter
+      // (docs/findings.md: "on 429/529, retry with exponential backoff") — widened here beyond its
+      // default of 2 retries, since a batched person-year request is more expensive to lose than a
+      // single-question one.
+      retry: { maxRetries: options.maxRetries ?? 6, backoffInitialMs: 500, backoffMaxMs: 20000, backoffJitter: 0.3 },
+    });
     this.model = options.model ?? process.env.TYPESAFE_MODEL ?? DEFAULT_JEV_MODEL;
     this.cache = new FileBackedCache<Distribution>(options.cacheFilePath);
     this.significanceCache = new FileBackedCache<number>(options.cacheFilePath ? `${options.cacheFilePath}.significance.json` : undefined);
+    this.yearCache = new FileBackedCache<PersonYearResult>(options.cacheFilePath ? `${options.cacheFilePath}.year.json` : undefined);
+    this.rateLimiter = new TokenBucket({ ratePerSecond: options.rateLimitPerSecond ?? DEFAULT_RATE_PER_SECOND, burst: options.rateLimitBurst ?? DEFAULT_BURST });
   }
 
   async decide(question: DecisionQuestion): Promise<Distribution> {
@@ -214,6 +255,110 @@ export class JevDecisionMaker implements DecisionMaker {
     this.cache.set(key, rawDistribution);
     this.cache.flush();
     return rawDistribution;
+  }
+
+  /**
+   * Round 11 (decision 044): answers every eligible situation for one person's one year in a
+   * single `systemOne` request (a Noul occurrence + a speculative Choice response per candidate,
+   * plus an optional significance Score) — the state (`batch.self`) is paid for once instead of
+   * once per candidate. Splits into multiple requests (still one person-year's worth of situations,
+   * sent sequentially through the same rate limiter) only if the estimated size would exceed
+   * `JEV_YEAR_TOKEN_BUDGET`; merges the results back into one `PersonYearResult`.
+   */
+  async decideYear(batch: PersonYearBatch): Promise<PersonYearResult> {
+    const situationIds = Object.keys(batch.situations);
+    if (situationIds.length === 0) return { occurrence: {}, response: {} };
+
+    const chunks = this.splitByTokenBudget(batch, situationIds);
+    const chunkResults = await Promise.all(chunks.map((ids) => this.decideYearChunk(batch, ids)));
+
+    const occurrence: Record<string, number> = {};
+    const response: Record<string, Distribution> = {};
+    const significance: Record<string, number> = {};
+    for (const result of chunkResults) {
+      Object.assign(occurrence, result.occurrence);
+      Object.assign(response, result.response);
+      if (result.significance) Object.assign(significance, result.significance);
+    }
+    return { occurrence, response, significance };
+  }
+
+  /** Greedily groups situation ids so each group's estimated tokens (shared `self` + its own situations/questions) stays under `JEV_YEAR_TOKEN_BUDGET`. A single situation that alone exceeds the budget still gets its own group (never dropped). */
+  private splitByTokenBudget(batch: PersonYearBatch, situationIds: readonly string[]): string[][] {
+    const selfTokens = estimateTokens(batch.self);
+    const groups: string[][] = [];
+    let current: string[] = [];
+    let currentTokens = selfTokens;
+
+    for (const id of situationIds) {
+      const situation = batch.situations[id]!;
+      const entryTokens = estimateTokens({ kind: situation.kind, state: situation.question.state, options: situation.question.options });
+      if (current.length > 0 && currentTokens + entryTokens > JEV_YEAR_TOKEN_BUDGET) {
+        groups.push(current);
+        current = [];
+        currentTokens = selfTokens;
+      }
+      current.push(id);
+      currentTokens += entryTokens;
+    }
+    if (current.length > 0) groups.push(current);
+    return groups;
+  }
+
+  private async decideYearChunk(batch: PersonYearBatch, situationIds: readonly string[]): Promise<PersonYearResult> {
+    const situationsState: Record<string, JsonValue> = {};
+    const questions: Questions = {};
+
+    for (const id of situationIds) {
+      const situation = batch.situations[id]!;
+      // `question.state` already carries `self`/`town`/`year` per-candidate (from `buildQuestion`,
+      // shared with the legacy per-candidate `decide()` path) — those are promoted to the batch
+      // level instead (paid once), so only the situation-specific rest (the situation description,
+      // and any `partner`/`suitor`/`rival` brief) rides in `situations.<id>`.
+      const situationState: Record<string, JsonValue> = { ...(situation.question.state as Record<string, JsonValue>) };
+      delete situationState.self;
+      delete situationState.town;
+      delete situationState.year;
+      situationsState[id] = situationState;
+
+      const criteria: ChoiceCriteria = {};
+      for (const option of situation.question.options) criteria[option] = describeOption(situation.kind, option);
+
+      questions[`occ:${id}`] = noul(occurrenceInstructions(situation.kind, `situations.${id}`));
+      questions[`resp:${id}`] = choice(DECISION_INSTRUCTIONS[situation.kind], criteria);
+      questions[`sig:${id}`] = score(`How significant is \`situations.${id}\` (IF it happens) to this person's life story and the town's history?`, SIGNIFICANCE_CRITERIA);
+    }
+
+    const state: Record<string, JsonValue> = { self: batch.self, year: batch.year, situations: situationsState };
+    const key = decisionCacheKey(`year:${batch.personId}:${batch.year}:${situationIds.slice().sort().join(",")}`, { state, model: this.model });
+    const cached = this.yearCache.get(key);
+    if (cached) {
+      this.cacheHits += 1;
+      return cached;
+    }
+
+    this.calls += 1;
+    await this.rateLimiter.acquire();
+    const started = Date.now();
+    const result = await this.client.systemOne({ state, questions, model: this.model });
+    this.wallTimeMs += Date.now() - started;
+    this.inputTokens += result.usage.input_tokens;
+    this.outputTokens += result.usage.output_tokens;
+
+    const occurrence: Record<string, number> = {};
+    const response: Record<string, Distribution> = {};
+    const significance: Record<string, number> = {};
+    for (const id of situationIds) {
+      occurrence[id] = (result.answers[`occ:${id}`] as { noul: number }).noul;
+      response[id] = (result.answers[`resp:${id}`] as { probabilities: Distribution }).probabilities;
+      const sig = result.answers[`sig:${id}`] as { score: number } | undefined;
+      if (sig) significance[id] = sig.score / (SIGNIFICANCE_CRITERIA.length - 1);
+    }
+
+    const personYearResult: PersonYearResult = { occurrence, response, significance };
+    this.yearCache.set(key, personYearResult);
+    this.yearCache.flush();
+    return personYearResult;
   }
 
   async significance(input: { readonly summary: string; readonly state: Readonly<Record<string, JsonValue>> }): Promise<number> {

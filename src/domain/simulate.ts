@@ -1,6 +1,6 @@
 import { ageInYear, deathProbabilityAtAge, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
 import { mapWithConcurrency } from "./concurrency";
-import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution } from "./decisions";
+import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
@@ -14,6 +14,9 @@ import { getVignette, pickVignette, type Vignette, type VignetteContext, type Vi
 import { pickJob, pickTraits } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
+
+/** Round 11 (decision 044): how many people's person-year batches to request in parallel within a single simulated year. Distinct from `DEFAULT_CONCURRENCY_LIMIT` (biology/legacy per-candidate calls) — this is the fan-out width across people, throttled further by the adapter's own rate limiter. */
+const DEFAULT_YEAR_BATCH_CONCURRENCY = 64;
 
 /**
  * A decision gets persisted into the log if it produced a real outcome, OR
@@ -50,6 +53,8 @@ export interface SimulateOptions {
   readonly engineSource: "jev" | "rules";
   readonly overrides?: readonly Override[];
   readonly concurrencyLimit?: number;
+  /** Round 11 (decision 044): how many people's person-year `decideYear` batches to request in parallel within one simulated year. Default 64. */
+  readonly yearBatchConcurrency?: number;
   /** Continue an existing run from this year instead of `config.startYear` (used by fork). */
   readonly fromYear?: number;
   readonly onYearComplete?: (snapshot: YearSnapshot) => void;
@@ -1110,6 +1115,8 @@ interface ResolvedDecision {
   readonly prior?: Distribution;
   readonly final: Distribution;
   readonly source: DecisionSource;
+  /** Round 11 (decision 044): how likely `decideYear`'s batch said this situation was to happen this year. Absent for the legacy per-candidate `decide()` path, which asks no occurrence question. */
+  readonly occurrenceProbability?: number;
 }
 
 /**
@@ -1222,6 +1229,8 @@ async function resolveDailyLifeVignette(
   decisionMaker: DecisionMaker,
   engineSource: "jev" | "rules",
   overrides: readonly Override[],
+  /** Round 11 (decision 044): a result already fetched as part of the decider's per-person-year batch — when present, no extra `DecisionMaker` call is made here at all. */
+  preFetched?: ResolvedDecision,
 ): Promise<{ decision: DecisionRecord; wasRealCall: boolean }> {
   const { descriptor, vignette, deciderId } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType);
   const options = descriptor.options;
@@ -1233,6 +1242,7 @@ async function resolveDailyLifeVignette(
   let final: Distribution;
   let jevRaw: Distribution | undefined;
   let prior: Distribution | undefined;
+  let occurrenceProbability: number | undefined;
   let source: DecisionSource;
   let chosen: string;
   let noise: Record<string, number> = {};
@@ -1247,10 +1257,14 @@ async function resolveDailyLifeVignette(
     fragility = NOT_FRAGILE;
     surprise = false;
   } else {
-    const result = await resolveSocialDecision(question, decisionMaker, engineSource);
-    wasRealCall = engineSource === "jev";
+    // Already answered as part of this person's batched `decideYear` request this year — no extra
+    // call. Otherwise (a legacy adapter without `decideYear`, or a caller that didn't prefetch),
+    // fall back to one dedicated `decide()` call, exactly as before decision 044.
+    const result = preFetched ?? (await resolveSocialDecision(question, decisionMaker, engineSource));
+    wasRealCall = !preFetched && engineSource === "jev";
     jevRaw = result.jevRaw;
     prior = result.prior;
+    occurrenceProbability = result.occurrenceProbability;
     final = result.final;
     source = result.source;
     const sample = sampleGumbelMax(final as Record<string, number>, seed, protagonist.id, year, "D1");
@@ -1294,6 +1308,7 @@ async function resolveDailyLifeVignette(
     source,
     causes: [],
     resultingEventIds: [event.id],
+    occurrenceProbability,
   };
   return { decision, wasRealCall };
 }
@@ -1326,6 +1341,7 @@ export async function simulate(
   const decisions: DecisionRecord[] = [];
   const overrides = options.overrides ?? [];
   const concurrencyLimit = options.concurrencyLimit ?? DEFAULT_CONCURRENCY_LIMIT;
+  const yearBatchConcurrency = options.yearBatchConcurrency ?? DEFAULT_YEAR_BATCH_CONCURRENCY;
   const seed = config.seed;
   const snapshots = new Map<number, YearSnapshot>();
   let decisionCalls = 0;
@@ -1480,7 +1496,11 @@ export async function simulate(
       if (descriptor.kind === "death" && !hasMovedAway(events, descriptor.personId)) school(events, people, descriptor.personId, year);
     }
 
-    // --- Social decisions: gather -> concurrent decide -> apply -------------
+    // --- Social decisions: batch per person-year, then apply -----------------------------------
+    // Round 11 (decision 044): one Jev request per person per year, not one per candidate. Every
+    // candidate a person faces this year (their `socialCandidates`, plus their `D1` daily-life
+    // candidate if they're the protagonist — see below) is bundled into a single `PersonYearBatch`
+    // and answered with a single `decideYear` call, so the mind/portrait state is paid for once.
     const questions = socialCandidates.map((c) => buildQuestion(c, year, config, people));
     const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.decisionId));
     // Budget priority (round 9, decision 037): once the running total of REAL DecisionMaker calls
@@ -1493,7 +1513,64 @@ export async function simulate(
       const aboutProtagonist = c.personId === options.protagonistId || c.partnerId === options.protagonistId;
       return !aboutProtagonist && decisionCalls >= LIFE_DECISION_BUDGET;
     });
-    decisionCalls += questions.filter((_, i) => !forcedFlags[i] && !fallbackFlags[i]).length;
+
+    // The protagonist's `D1` daily-life candidate (round 10, decisions 042/043) rides along in the
+    // SAME per-person batch as their other social candidates this year — speculative fan-out
+    // (docs.typesafe.ai/patterns/fan-out.md): asked every year regardless of whether it turns out
+    // to be needed, consumed only if the year is otherwise quiet (see the guarantee block below).
+    // Kept out of `socialCandidates` itself (unchanged from decision 043) so it's never
+    // double-resolved through the generic per-kind loop below.
+    let d1: { readonly descriptor: CandidateDescriptor; readonly question: DecisionQuestion } | undefined;
+    if (options.protagonistId && !overrideFor(overrides, `D1:${options.protagonistId}:${year}`)) {
+      const protagonist = people[options.protagonistId];
+      if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
+        const { descriptor } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEvent);
+        d1 = { descriptor, question: buildQuestion(descriptor, year, config, people) };
+      }
+    }
+
+    const batchable = typeof options.decisionMaker.decideYear === "function";
+    const resultByDecisionId = new Map<string, ResolvedDecision>();
+
+    if (batchable) {
+      const batchesByPerson = new Map<string, Record<string, PersonYearSituation>>();
+      for (let i = 0; i < socialCandidates.length; i++) {
+        if (forcedFlags[i] || fallbackFlags[i]) continue;
+        const c = socialCandidates[i]!;
+        const situations = batchesByPerson.get(c.personId) ?? {};
+        situations[c.decisionId] = { kind: c.kind as DecisionQuestion["kind"], question: questions[i]! };
+        batchesByPerson.set(c.personId, situations);
+      }
+      if (d1) {
+        const situations = batchesByPerson.get(d1.descriptor.personId) ?? {};
+        situations[d1.descriptor.decisionId] = { kind: "D1", question: d1.question };
+        batchesByPerson.set(d1.descriptor.personId, situations);
+      }
+
+      // One real request per person-year batch (not per situation) — this replaces the old
+      // per-candidate accounting below, which counted every social candidate as its own call.
+      decisionCalls += batchesByPerson.size;
+
+      const personIds = Array.from(batchesByPerson.keys());
+      await mapWithConcurrency(personIds, yearBatchConcurrency, async (personId) => {
+        const situations = batchesByPerson.get(personId)!;
+        const self = personSummary(people[personId]!, year, people);
+        const result = await options.decisionMaker.decideYear!({ personId, year, self, situations });
+        for (const id of Object.keys(situations)) {
+          const jevRaw = result.response[id];
+          if (!jevRaw) continue;
+          const occurrenceProbability = result.occurrence[id];
+          resultByDecisionId.set(
+            id,
+            options.engineSource === "jev" ? { jevRaw, final: jevRaw, source: "jev", occurrenceProbability } : { prior: jevRaw, final: jevRaw, source: "rules", occurrenceProbability },
+          );
+        }
+      });
+    } else {
+      // Legacy fallback: an adapter that doesn't implement `decideYear` (e.g. a minimal test
+      // double) still gets one `decide()` call per candidate, exactly as before decision 044.
+      decisionCalls += questions.filter((_, i) => !forcedFlags[i] && !fallbackFlags[i]).length;
+    }
 
     const resolved = await mapWithConcurrency(questions, concurrencyLimit, async (q, i) => {
       if (forcedFlags[i]) return undefined; // forced: never ask the DecisionMaker
@@ -1501,6 +1578,7 @@ export async function simulate(
         const prior = normalizeDistribution(ruleDistribution(q) as Record<string, number>);
         return { prior, final: prior, source: "rules" as DecisionSource };
       }
+      if (batchable) return resultByDecisionId.get(q.id);
       return resolveSocialDecision(q, options.decisionMaker, options.engineSource);
     });
 
@@ -2019,6 +2097,7 @@ export async function simulate(
         source,
         causes,
         resultingEventIds,
+        occurrenceProbability: resolved[i]?.occurrenceProbability,
       });
     }
 
@@ -2035,7 +2114,8 @@ export async function simulate(
       if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
         const hasOwnEventThisYear = events.some((e) => e.year === year && e.actors.includes(protagonist.id));
         if (!hasOwnEventThisYear) {
-          const { decision: d1Decision, wasRealCall } = await resolveDailyLifeVignette(protagonist, year, seed, config, people, events, townEvent, options.decisionMaker, options.engineSource, overrides);
+          const preFetched = d1 ? resultByDecisionId.get(d1.descriptor.decisionId) : undefined;
+          const { decision: d1Decision, wasRealCall } = await resolveDailyLifeVignette(protagonist, year, seed, config, people, events, townEvent, options.decisionMaker, options.engineSource, overrides, preFetched);
           decisions.push(d1Decision);
           if (wasRealCall) decisionCalls += 1;
         }
