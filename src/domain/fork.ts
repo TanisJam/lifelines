@@ -36,8 +36,9 @@ export async function forkWorld(
   engineSource: "jev" | "rules",
   baseConfig: { readonly seed: string; readonly startYear: number; readonly endYear: number; readonly town: { readonly name: string } },
   concurrencyLimit?: number,
+  protagonistId?: string,
 ): Promise<SimulateReport> {
   const snapshot = getRestoreSnapshot(snapshots, override);
   const fromYear = decisionYear(override.decisionId);
-  return simulate(baseConfig, snapshot.people, snapshot.events, { decisionMaker, engineSource, overrides: [override], fromYear, concurrencyLimit });
+  return simulate(baseConfig, snapshot.people, snapshot.events, { decisionMaker, engineSource, overrides: [override], fromYear, concurrencyLimit, protagonistId });
 }

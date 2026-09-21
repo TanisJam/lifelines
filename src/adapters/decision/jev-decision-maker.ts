@@ -37,6 +37,18 @@ const DECISION_INSTRUCTIONS: Record<DecisionQuestion["kind"], string> = {
   O4: "You are the person in 'self', old and facing death. Given your values, your perseverance, and what your life has actually held, how do you meet it?",
   A5: "You are the person in 'self' — read self.mind and self.portrait. Something has happened to the whole town (see 'situation.question'). Given your altruism, your greed, and your courage, what do you do?",
   C3: "You are the person in 'self', a young person on the edge of adulthood — read self.mind and self.portrait. It's time to think about what you'll make of yourself. Given your curiosity, your independence, your values, and your family's trade, what calls to you?",
+  C1: "You are the person in 'self', a child — read self.mind and self.portrait. A sibling close to you in age is rivalling you for attention. Given your temperament, do you compete with them, bond with them, or withdraw?",
+  C4: "You are the person in 'self', a child — read self.mind and self.portrait. A quick-tempered peer has been bullying you. Given your bravery and your trust in adults, do you fight back, endure it, or tell an elder?",
+  Y2: "You are the person in 'self'. Your dream and your current trade are pulling in different directions. Given your ambition, your values around craft, and your practical circumstances, do you pursue the dream, or stay practical?",
+  Y5: "You are the person in 'self'. You've spent enough time with someone that a real friendship could form. Given your gregariousness and trust, do you open up to them or keep your distance?",
+  A4: "You are the person in 'self'. You have just discovered a betrayal — a spouse's affair, or a partner's theft (see 'situation.question'). Given your temperament, your values, and how much you trusted them, how do you respond?",
+  A7: "You are the person in 'self'. A run of bad outcomes has shaken your faith (self.mind.values.faith). Given your values and your perseverance, do you double down on your faith, lose it, or seek another path?",
+  A9: "You are the person in 'self', in an unhappy marriage. You feel a real attraction to someone else. Given your love propensity and your values around law and tradition, do you resist it or pursue it?",
+  A10: "You are the person in 'self', skilled at your trade, with a capable young person nearby who could use a mentor. Given your altruism and your values around craft, do you take them on as an apprentice, or decline?",
+  O1: "You are the person in 'self', old, with property and living heirs. Given your values around family and tradition, and your altruism toward the town, how do you divide your inheritance — to the eldest, to a favorite, split evenly, or to the town itself?",
+  O3: "You are the person in 'self', old, with a dream you never realized. Given your perseverance and your values around family, do you make one last attempt at it, pass it on to someone else, or make peace with letting it go?",
+  AP1: "You are the person in 'self', a parent, deciding your child's future. ('partner' is your child.) Given your values around tradition and your own ambition for them, do you apprentice them to your own trade, send them elsewhere to apprentice, or keep them at home a while longer?",
+  PIL1: "You are the person in 'self'. You've long felt the pull of a pilgrimage. Given your faith and your curiosity, and your ties at home, do you go, or stay?",
 };
 
 const OPTION_DESCRIPTIONS: Record<string, string> = {
@@ -53,6 +65,7 @@ const OPTION_DESCRIPTIONS: Record<string, string> = {
   confront: "I confront them about it, openly.",
   forgive: "I let it go and forgive them.",
   "nurse-it": "I say nothing, but I don't forget it either.",
+  revenge: "I seek revenge.",
   reconcile: "I make peace and end the feud.",
   feud: "The feud continues as it has.",
   sabotage: "I work against them quietly, to settle the score.",
@@ -76,10 +89,39 @@ const OPTION_DESCRIPTIONS: Record<string, string> = {
   "last-wish": "I hold onto one last wish.",
   flee: "I keep clear of it and look after my own.",
   profit: "I look for an advantage in it.",
+  compete: "I compete with them for attention.",
+  bond: "I bond with them instead of competing.",
+  withdraw: "I withdraw rather than deal with it.",
+  "fight-back": "I fight back.",
+  endure: "I endure it quietly.",
+  "tell-an-elder": "I tell an elder about it.",
+  "pursue-the-dream": "I pursue my dream, whatever the cost to my trade.",
+  "stay-practical": "I stay practical and keep to my trade.",
+  "open-up": "I open up to them.",
+  "keep-distance": "I keep my distance.",
+  "double-down": "I double down on my faith.",
+  "lose-faith": "I lose my faith.",
+  "seek-another-path": "I seek another path entirely.",
+  resist: "I resist the temptation.",
+  pursue: "I pursue it.",
+  "take-an-apprentice": "I take them on as an apprentice.",
+  eldest: "I leave everything to the eldest.",
+  favorite: "I leave everything to my favorite.",
+  split: "I split it evenly.",
+  town: "I leave it to the town.",
+  "last-attempt": "I make one last attempt at it.",
+  "pass-it-on": "I pass it on to someone else.",
+  "make-peace-with-it": "I make peace with letting it go.",
+  "apprentice-own-trade": "I apprentice them to my own trade.",
+  "send-away": "I send them elsewhere to apprentice.",
+  "keep-home": "I keep them at home a while longer.",
+  go: "I go.",
 };
 
 function describeOption(kind: DecisionQuestion["kind"], option: string): string {
   if (kind === "A3" && option === "seize") return "I seize the opportunity and take up the new role.";
+  if (kind === "A10" && option === "decline") return "I decline to take on an apprentice.";
+  if (kind === "A4" && option === "leave") return "I leave them over it.";
   return OPTION_DESCRIPTIONS[option] ?? `I choose "${option}".`;
 }
 

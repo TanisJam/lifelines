@@ -11,11 +11,42 @@ import type { JsonValue } from "./types";
  * courtship through career, conflict, dreams and breakdowns. Round 5
  * (decision 025) adds C2 (losing a parent), A5 (town crisis) and O2/O4
  * (old grudge / facing death). Round 6 (decision 030) adds C3 (early
- * calling), filling in a childhood gap. Still not implemented: C1, C4, Y2,
- * Y5, A4, A7, A9, A10, O1, O3 — see decisions 025/030 for the scoping
- * rationale.
+ * calling), filling in a childhood gap. Round 9 (decision 035, the single-life pivot) fills in
+ * the rest of the mind-model.md catalog — C1, C4, Y2, Y5, A4, A7, A9, A10, O1, O3 — plus two
+ * protagonist-only situations not in the original catalog: `AP1` (a parent's apprenticeship
+ * choice) and `PIL1` (a pilgrimage). Every kind in this second batch is gated to the protagonist
+ * alone (see `simulate.ts#gatherCandidatesForYear`'s `protagonistId` parameter) — NPCs keep the
+ * original 14-kind catalog, so town-wide call volume is unaffected. `"levy"` (the lord's demand)
+ * is a biology-style kind, like `"illness"`/`"death"` — code alone decides whether it happens; it
+ * never reaches a `DecisionMaker`.
  */
-export type DecisionKind = "Y1" | "A1" | "A2" | "A3" | "Y3" | "Y4" | "A6" | "A8" | "A11" | "C2" | "O2" | "O4" | "A5" | "C3";
+export type DecisionKind =
+  | "Y1"
+  | "A1"
+  | "A2"
+  | "A3"
+  | "Y3"
+  | "Y4"
+  | "A6"
+  | "A8"
+  | "A11"
+  | "C2"
+  | "O2"
+  | "O4"
+  | "A5"
+  | "C3"
+  | "C1"
+  | "C4"
+  | "Y2"
+  | "Y5"
+  | "A4"
+  | "A7"
+  | "A9"
+  | "A10"
+  | "O1"
+  | "O3"
+  | "AP1"
+  | "PIL1";
 
 /**
  * One question posed to a DecisionMaker. `id` is a stable, content-derived
@@ -107,8 +138,16 @@ export interface DecisionRecord {
   /** Content-derived, stable across forks: `<kind>:<personId-or-pairKey-or-"world">:<year>`. */
   readonly id: string;
   readonly personId: string;
+  /**
+   * Round 9 (decision 035): the other person involved, when there is one (a suitor, a rival, a
+   * parent making a choice ABOUT someone else, etc). Lets a chronicle builder find every decision
+   * that shaped a given person's life, not just the ones they made themselves — e.g. `AP1`
+   * (a parent's apprenticeship choice) has `personId` = the parent and `partnerId` = the child it
+   * was decided about.
+   */
+  readonly partnerId?: string;
   readonly year: number;
-  /** A `DecisionKind`, or a biology kind: "illness" | "death" | "immigration". */
+  /** A `DecisionKind`, or a biology kind: "illness" | "death" | "immigration" | "levy". */
   readonly kind: string;
   /** Human-readable, e.g. "Does Cressida start a romance with Garrick?". */
   readonly question: string;

@@ -139,6 +139,70 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
       const master = clamp01(0.3 + (f(self, "perseverance") - 50) / 150 - (f(self, "stressVulnerability") - 50) / 200);
       return { "master-it": master, "give-in": clamp01(1 - master) };
     }
+    case "C1": {
+      const compete = clamp01(0.3 + (f(self, "anger") - 50) / 150 + (f(self, "greed") - 50) / 250);
+      const withdraw = clamp01((f(self, "anxiety") - 50) / 200);
+      const bond = Math.max(0.02, 1 - compete - withdraw);
+      return { compete, bond, withdraw };
+    }
+    case "C4": {
+      const fightBack = clamp01(0.3 + (f(self, "anger") - 50) / 150 + (f(self, "bravery") - 50) / 200);
+      const tellElder = clamp01(0.25 + (f(self, "trust") - 50) / 200);
+      const endure = Math.max(0.02, 1 - fightBack - tellElder);
+      return { "fight-back": fightBack, endure, "tell-an-elder": tellElder };
+    }
+    case "Y2": {
+      const pursue = clamp01(0.35 + (f(self, "ambition") - 50) / 150 + (f(selfValues, "craft", 0)) / 150);
+      return { "pursue-the-dream": pursue, "stay-practical": clamp01(1 - pursue) };
+    }
+    case "Y5": {
+      const openUp = clamp01(0.4 + (f(self, "gregariousness") - 50) / 150 + (f(self, "trust") - 50) / 200);
+      return { "open-up": openUp, "keep-distance": clamp01(1 - openUp) };
+    }
+    case "A4": {
+      const revenge = clamp01(0.15 + (f(self, "anger") - 50) / 150);
+      const leave = clamp01(0.2 + (50 - f(self, "trust")) / 150);
+      const forgive = clamp01(0.2 + (f(self, "altruism") - 50) / 150);
+      const confront = Math.max(0.02, 1 - revenge - leave - forgive);
+      return { confront, forgive, leave, revenge };
+    }
+    case "A7": {
+      const doubleDown = clamp01(0.35 + (f(selfValues, "faith", 0)) / 100 + (f(self, "perseverance") - 50) / 200);
+      const loseFaith = clamp01((50 - f(selfValues, "faith", 0) - 50) / -150);
+      const seekOther = Math.max(0.02, 1 - doubleDown - loseFaith);
+      return { "double-down": doubleDown, "lose-faith": clamp01(loseFaith), "seek-another-path": seekOther };
+    }
+    case "A9": {
+      const pursue = clamp01(0.15 + (f(self, "lovePropensity") - 50) / 150 - (f(selfValues, "law", 0)) / 150 - (f(selfValues, "tradition", 0)) / 200);
+      return { resist: clamp01(1 - pursue), pursue };
+    }
+    case "A10": {
+      const takeApprentice = clamp01(0.4 + (f(self, "altruism") - 50) / 150 + (f(selfValues, "craft", 0)) / 150);
+      return { "take-an-apprentice": takeApprentice, decline: clamp01(1 - takeApprentice) };
+    }
+    case "O1": {
+      const eldest = clamp01(0.3 + (f(selfValues, "tradition", 0)) / 150);
+      const town = clamp01(0.15 + (f(self, "altruism") - 50) / 200);
+      const split = clamp01(0.25 + (f(selfValues, "family", 0)) / 200);
+      const favorite = Math.max(0.02, 1 - eldest - town - split);
+      return { eldest, favorite, split, town };
+    }
+    case "O3": {
+      const lastAttempt = clamp01(0.25 + (f(self, "perseverance") - 50) / 150);
+      const passOn = clamp01(0.35 + (f(selfValues, "family", 0)) / 150);
+      const makePeace = Math.max(0.02, 1 - lastAttempt - passOn);
+      return { "last-attempt": lastAttempt, "pass-it-on": passOn, "make-peace-with-it": makePeace };
+    }
+    case "AP1": {
+      const ownTrade = clamp01(0.4 + (f(selfValues, "tradition", 0)) / 150);
+      const sendAway = clamp01(0.25 + (f(self, "ambition") - 50) / 200);
+      const keepHome = Math.max(0.02, 1 - ownTrade - sendAway);
+      return { "apprentice-own-trade": ownTrade, "send-away": sendAway, "keep-home": keepHome };
+    }
+    case "PIL1": {
+      const go = clamp01(0.3 + (f(selfValues, "faith", 0)) / 120 + (f(self, "curiosity") - 50) / 200);
+      return { go, stay: clamp01(1 - go) };
+    }
     default:
       return question.options.reduce<Record<string, number>>((acc, option) => ({ ...acc, [option]: 1 }), {});
   }

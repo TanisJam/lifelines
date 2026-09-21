@@ -4,6 +4,7 @@ import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, D
 import { activeFeudPair, activeRomancePair, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, pushThought, renderPortrait, updateRelationship } from "./mind";
+import { determineDeathCause, protagonistMortalityBonus } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName } from "./names";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
@@ -33,7 +34,20 @@ export interface SimulateOptions {
   /** Continue an existing run from this year instead of `config.startYear` (used by fork). */
   readonly fromYear?: number;
   readonly onYearComplete?: (snapshot: YearSnapshot) => void;
+  /**
+   * Round 9 (decision 034, the single-life pivot). When set:
+   *  - the extended, protagonist-only situation catalog (C1, C4, Y2, Y5, A4, A7, A9, A10, O1, O3,
+   *    AP1, PIL1, the lord's levy) is gated on, purely additive — with no `protagonistId`, this
+   *    option has ZERO effect on candidate gathering, resolution or output, so every existing
+   *    `/api/worlds` endpoint and test keeps its exact byte-for-byte behavior.
+   *  - the yearly loop stops once this person has a `deathYear` (their life is what's being told).
+   *  - this person's own social decisions are never diverted to the budget fallback below.
+   */
+  readonly protagonistId?: string;
 }
+
+/** Round 9: a decision call budget for a single life (see docs/decisions.md 037). Once the running total of REAL DecisionMaker calls for this run reaches this, any further social decision NOT about the protagonist is resolved with the deterministic rule heuristic instead of calling `decisionMaker` — the protagonist's own decisions (and decisions about them) are never throttled. */
+export const LIFE_DECISION_BUDGET = 2000;
 
 export interface SimulateReport {
   readonly result: SimulationResult;
@@ -244,7 +258,7 @@ function baseIllnessChance(age: number): number {
  * deterministic given `seed` + state, so re-deriving them here always
  * agrees with the real run.
  */
-function gatherCandidatesForYear(year: number, people: Readonly<Record<string, Person>>, events: readonly Event[], seed: string): CandidateDescriptor[] {
+function gatherCandidatesForYear(year: number, people: Readonly<Record<string, Person>>, events: readonly Event[], seed: string, protagonistId?: string): CandidateDescriptor[] {
   const candidates: CandidateDescriptor[] = [];
 
   const livingIds = Object.values(people)
@@ -263,6 +277,16 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // A moved-away person still faces mortality (see decision log: they
     // must not become immortal), just not illness or social decisions.
     candidates.push({ decisionId: `death:${id}:${year}`, kind: "death", personId: id, options: ["die", "survive"] });
+  }
+
+  // The lord's levy (round 9, decision 035): a rare, code-rolled world happening, exactly like
+  // "illness"/"death" — never asked of a DecisionMaker. Gated to the protagonist alone (see the
+  // SimulateOptions doc comment): it never touches the general village simulation.
+  if (protagonistId) {
+    const protagonist = people[protagonistId];
+    if (protagonist && protagonist.deathYear === undefined && !hasMovedAway(events, protagonistId) && ageInYear(protagonist.birthYear, year) >= 16) {
+      candidates.push({ decisionId: `levy:${protagonistId}:${year}`, kind: "levy", personId: protagonistId, options: ["impose", "spare"] });
+    }
   }
 
   // Immigration: one world-level decision opportunity per year, capped once the town is comfortably sized.
@@ -496,6 +520,104 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         candidates.push({ decisionId: `O4:${person.id}:${year}`, kind: "O4", personId: person.id, options: ["peace", "regret", "last-wish"] });
       }
     }
+
+    // --- Protagonist-only extended catalog (round 9, decision 035) ---------
+    // Fills in the rest of mind-model.md's situation catalog, plus two protagonist-specific
+    // situations (AP1, PIL1). Gated to the protagonist alone so the rest of the town keeps the
+    // original 14-kind catalog and its exact existing call volume/output.
+    if (protagonistId && person.id === protagonistId) {
+      // C1 Sibling rivalry: a sibling within 3 years of age, around school age.
+      if (age === 6) {
+        const sibling = aliveNonMoved.find(
+          (c) => c.id !== person.id && ((c.motherId && c.motherId === person.motherId) || (c.fatherId && c.fatherId === person.fatherId)) && Math.abs(ageInYear(c.birthYear, year) - age) <= 3,
+        );
+        if (sibling) candidates.push({ decisionId: `C1:${pairKey(person.id, sibling.id)}:${year}`, kind: "C1", personId: person.id, partnerId: sibling.id, options: ["compete", "bond", "withdraw"] });
+      }
+
+      // C4 A bully: an anger-prone peer close in age.
+      if (age === 9) {
+        const bully = aliveNonMoved.find((c) => c.id !== person.id && !isRelated(person, c) && Math.abs(ageInYear(c.birthYear, year) - age) <= 3 && c.mind.facets.anger >= 70);
+        if (bully) candidates.push({ decisionId: `C4:${pairKey(person.id, bully.id)}:${year}`, kind: "C4", personId: person.id, partnerId: bully.id, options: ["fight-back", "endure", "tell-an-elder"] });
+      }
+
+      // Y2 Trade vs. dream: once, in early adulthood, while still pursuing the dream.
+      if (age === 20 && person.mind.dream.status === "pursuing") {
+        candidates.push({ decisionId: `Y2:${person.id}:${year}`, kind: "Y2", personId: person.id, options: ["pursue-the-dream", "stay-practical"] });
+      }
+
+      // Y5 Close friendship: while young and without an existing friend bond.
+      if (age >= 14 && age <= 30 && !person.mind.relationships.some((r) => r.bond === "friend")) {
+        const friendDraw = keyedDraw(seed, person.id, year, "friendship-gate");
+        if (friendDraw < 0.06) {
+          const candidate = aliveNonMoved.find((c) => c.id !== person.id && !isRelated(person, c) && Math.abs(ageInYear(c.birthYear, year) - age) <= 8);
+          if (candidate) candidates.push({ decisionId: `Y5:${pairKey(person.id, candidate.id)}:${year}`, kind: "Y5", personId: person.id, partnerId: candidate.id, options: ["open-up", "keep-distance"] });
+        }
+      }
+
+      // A4 Betrayal discovered: rare, while married.
+      if (isAdult(age) && person.spouseId && people[person.spouseId] && isAlive(people[person.spouseId]!, year)) {
+        const betrayalDraw = keyedDraw(seed, person.id, year, "betrayal-gate");
+        if (betrayalDraw < 0.015) candidates.push({ decisionId: `A4:${pairKey(person.id, person.spouseId)}:${year}`, kind: "A4", personId: person.id, partnerId: person.spouseId, options: ["confront", "forgive", "leave", "revenge"] });
+      }
+
+      // A7 Crisis of faith: high faith value, after a recent hardship.
+      if (isAdult(age) && person.mind.values.faith >= 20) {
+        const recentHardship = eventsFor(events, person.id).some((e) => e.year >= year - 2 && e.year < year && (e.kind === "illness" || e.kind === "feud" || e.kind === "breakdown"));
+        if (recentHardship) {
+          const faithDraw = keyedDraw(seed, person.id, year, "faith-crisis-gate");
+          if (faithDraw < 0.12) candidates.push({ decisionId: `A7:${person.id}:${year}`, kind: "A7", personId: person.id, options: ["double-down", "lose-faith", "seek-another-path"] });
+        }
+      }
+
+      // A9 Affair temptation: married and unhappy (low mood).
+      if (isAdult(age) && person.spouseId && computeMood(person.mind) <= -10) {
+        const affairDraw = keyedDraw(seed, person.id, year, "affair-gate");
+        if (affairDraw < 0.05) candidates.push({ decisionId: `A9:${person.id}:${year}`, kind: "A9", personId: person.id, partnerId: person.spouseId, options: ["resist", "pursue"] });
+      }
+
+      // A10 Mentor: skilled and established, with a youth nearby.
+      if (age >= 35 && person.job !== "none") {
+        const mentorDraw = keyedDraw(seed, person.id, year, "mentor-gate");
+        if (mentorDraw < 0.05) {
+          const apprentice = aliveNonMoved.find((c) => c.id !== person.id && !isRelated(person, c) && ageInYear(c.birthYear, year) >= 14 && ageInYear(c.birthYear, year) <= 20);
+          if (apprentice) candidates.push({ decisionId: `A10:${pairKey(person.id, apprentice.id)}:${year}`, kind: "A10", personId: person.id, partnerId: apprentice.id, options: ["take-an-apprentice", "decline"] });
+        }
+      }
+
+      // O1 Inheritance: old, with living heirs. `extra.quarrel` when there's more than one heir.
+      if (age >= 70) {
+        const heirs = Object.values(people).filter((c) => (c.motherId === person.id || c.fatherId === person.id) && c.deathYear === undefined);
+        if (heirs.length > 0) {
+          const inheritanceDraw = keyedDraw(seed, person.id, year, "inheritance-gate");
+          if (inheritanceDraw < 0.1) candidates.push({ decisionId: `O1:${person.id}:${year}`, kind: "O1", personId: person.id, options: ["eldest", "favorite", "split", "town"], extra: { heirs: heirs.length, quarrel: heirs.length >= 2 } });
+        }
+      }
+
+      // O3 Legacy: old, with a dream that never came true.
+      if (age >= 65 && person.mind.dream.status !== "realized") {
+        const legacyDraw = keyedDraw(seed, person.id, year, "legacy-gate");
+        if (legacyDraw < 0.1) candidates.push({ decisionId: `O3:${person.id}:${year}`, kind: "O3", personId: person.id, options: ["last-attempt", "pass-it-on", "make-peace-with-it"] });
+      }
+
+      // PIL1 Pilgrimage: a real pull of faith, in adulthood.
+      if (age >= 20 && age <= 55 && person.mind.values.faith >= 15) {
+        const pilgrimageDraw = keyedDraw(seed, person.id, year, "pilgrimage-gate");
+        if (pilgrimageDraw < 0.04) candidates.push({ decisionId: `PIL1:${person.id}:${year}`, kind: "PIL1", personId: person.id, options: ["go", "stay"] });
+      }
+    }
+  }
+
+  // AP1 Apprenticeship offer (round 9, decision 035): a parent's choice ABOUT the protagonist — an
+  // "other person's decision" turn in the protagonist's own chronicle (`decidedBy` the parent, not
+  // the protagonist). Fires once, at age 10 (two years before the protagonist's own C3 "early
+  // calling"), if a living parent is on hand to make it.
+  if (protagonistId) {
+    const protagonist = people[protagonistId];
+    if (protagonist && protagonist.deathYear === undefined && ageInYear(protagonist.birthYear, year) === 10) {
+      const parentId = [protagonist.fatherId, protagonist.motherId].find((id) => id && people[id] && people[id]!.deathYear === undefined);
+      const parent = parentId ? people[parentId] : undefined;
+      if (parent) candidates.push({ decisionId: `AP1:${pairKey(parent.id, protagonist.id)}:${year}`, kind: "AP1", personId: parent.id, partnerId: protagonist.id, options: ["apprentice-own-trade", "send-away", "keep-home"] });
+    }
   }
 
   // A5 Town crisis: a rare world-level event presents the SAME situation to every adult in town.
@@ -561,6 +683,32 @@ function optionLabel(kind: string, optionId: string, selfName: string, otherName
       return optionId === "die" ? `${selfName} dies` : `${selfName} survives`;
     case "immigration":
       return optionId === "arrive" ? "A newcomer arrives" : "No one arrives";
+    case "levy":
+      return optionId === "impose" ? "The lord imposes a levy" : "The lord spares the village";
+    case "C1":
+      return optionId === "compete" ? `${selfName} competes with ${otherName ?? "the sibling"} for attention` : optionId === "bond" ? `${selfName} bonds with ${otherName ?? "the sibling"} instead` : `${selfName} withdraws`;
+    case "C4":
+      return optionId === "fight-back" ? `${selfName} fights back` : optionId === "endure" ? `${selfName} endures it` : `${selfName} tells an elder`;
+    case "Y2":
+      return optionId === "pursue-the-dream" ? `${selfName} pursues ${their} dream over ${their} trade` : `${selfName} stays practical`;
+    case "Y5":
+      return optionId === "open-up" ? `${selfName} opens up to ${otherName ?? "them"}` : `${selfName} keeps ${their} distance`;
+    case "A4":
+      return optionId === "confront" ? `${selfName} confronts ${otherName ?? "them"} over the betrayal` : optionId === "forgive" ? `${selfName} forgives ${otherName ?? "them"}` : optionId === "leave" ? `${selfName} leaves ${otherName ?? "them"}` : `${selfName} seeks revenge`;
+    case "A7":
+      return optionId === "double-down" ? `${selfName} doubles down on ${their} faith` : optionId === "lose-faith" ? `${selfName} loses ${their} faith` : `${selfName} seeks another path`;
+    case "A9":
+      return optionId === "resist" ? `${selfName} resists the temptation` : `${selfName} pursues the affair`;
+    case "A10":
+      return optionId === "take-an-apprentice" ? `${selfName} takes ${otherName ?? "a youth"} on as an apprentice` : `${selfName} declines to take an apprentice`;
+    case "O1":
+      return optionId === "eldest" ? `${selfName} leaves everything to the eldest` : optionId === "favorite" ? `${selfName} leaves everything to a favorite` : optionId === "split" ? `${selfName} splits the inheritance evenly` : `${selfName} leaves it to the town`;
+    case "O3":
+      return optionId === "last-attempt" ? `${selfName} makes one last attempt at ${their} dream` : optionId === "pass-it-on" ? `${selfName} passes ${their} dream on` : `${selfName} makes peace with letting it go`;
+    case "AP1":
+      return optionId === "apprentice-own-trade" ? `${selfName} apprentices ${otherName ?? "them"} to ${their} own trade` : optionId === "send-away" ? `${selfName} sends ${otherName ?? "them"} elsewhere to apprentice` : `${selfName} keeps ${otherName ?? "them"} at home a while longer`;
+    case "PIL1":
+      return optionId === "go" ? `${selfName} sets out on pilgrimage` : `${selfName} stays home`;
     default:
       return optionId;
   }
@@ -603,12 +751,38 @@ function questionText(kind: string, otherName?: string, townName?: string, oppor
       return `Do I survive this year?`;
     case "immigration":
       return `Does a newcomer arrive in ${townName ?? "town"} this year?`;
+    case "levy":
+      return `Does the lord levy against ${townName ?? "the village"} this year?`;
+    case "C1":
+      return `${otherName ?? "My sibling"} keeps drawing the attention I want. What do I do?`;
+    case "C4":
+      return `${otherName ?? "A peer"} keeps bullying me. What do I do?`;
+    case "Y2":
+      return `My dream and my trade pull in different directions. What do I do?`;
+    case "Y5":
+      return `${otherName ?? "Someone"} and I have grown close. Do I open up to them?`;
+    case "A4":
+      return `I have discovered a betrayal. How do I respond?`;
+    case "A7":
+      return `My faith has been shaken. What do I do?`;
+    case "A9":
+      return `I feel a pull toward someone who isn't my spouse. What do I do?`;
+    case "A10":
+      return `${otherName ?? "A young person"} nearby could use a mentor. Do I take them on?`;
+    case "O1":
+      return `I am old, with property to leave behind. How do I divide it?`;
+    case "O3":
+      return `My dream was never realized. What do I do with what's left of it?`;
+    case "AP1":
+      return `${otherName ?? "My child"} is old enough for a trade. What do I decide for them?`;
+    case "PIL1":
+      return `I have long felt the pull of a pilgrimage. Do I go?`;
     default:
       return `What do I do (${kind})?`;
   }
 }
 
-const SOCIAL_KINDS = new Set(["Y1", "A1", "A2", "A3", "Y3", "Y4", "A6", "A8", "A11", "C2", "O2", "O4", "A5", "C3"]);
+const SOCIAL_KINDS = new Set(["Y1", "A1", "A2", "A3", "Y3", "Y4", "A6", "A8", "A11", "C2", "O2", "O4", "A5", "C3", "C1", "C4", "Y2", "Y5", "A4", "A7", "A9", "A10", "O1", "O3", "AP1", "PIL1"]);
 
 function buildQuestion(descriptor: CandidateDescriptor, year: number, config: WorldConfig, people: Record<string, Person>): DecisionQuestion {
   const person = people[descriptor.personId]!;
@@ -707,8 +881,8 @@ export async function simulate(
       if (person.deathYear === undefined) decayMindForYear(person.mind);
     }
 
-    const candidates = gatherCandidatesForYear(year, people, events, seed);
-    const biologyCandidates = candidates.filter((c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration");
+    const candidates = gatherCandidatesForYear(year, people, events, seed, options.protagonistId);
+    const biologyCandidates = candidates.filter((c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy");
     const socialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind));
 
     // Town event (decision 025): pushed once here, at most once per year, deterministically —
@@ -754,12 +928,29 @@ export async function simulate(
         const person = people[descriptor.personId]!;
         const age = ageInYear(person.birthYear, year);
         const illnessEvent = illnessResultByPerson.get(descriptor.personId);
-        const p = illnessEvent ? Math.min(0.9, deathProbabilityAtAge(age) * 3 * hardshipMultiplier) : Math.min(0.9, deathProbabilityAtAge(age) * hardshipMultiplier);
+        let p = illnessEvent ? Math.min(0.9, deathProbabilityAtAge(age) * 3 * hardshipMultiplier) : Math.min(0.9, deathProbabilityAtAge(age) * hardshipMultiplier);
+        // Round 9 (decision 035): the protagonist's mortality gets extra, cause-varied risk on top
+        // of the village-wide actuarial curve above — see mortality.ts. Purely additive to `p`, and
+        // gated to `descriptor.personId === options.protagonistId`, so every other person in town
+        // (and the whole village when no protagonist is set) is completely unaffected.
+        const isProtagonist = descriptor.personId === options.protagonistId;
+        const hasActiveFeud = isProtagonist && activeFeudPair(events, person.id) !== undefined;
+        const recentChildbirth = isProtagonist && person.sex === "f" && events.some((e) => e.kind === "birth" && e.year === year - 1 && (e.actors[1] === person.id || e.actors[2] === person.id));
+        const mortalityContext = { age, sex: person.sex, hadIllness: !!illnessEvent, townEventType: townEvent, hasActiveFeud, recentChildbirth };
+        if (isProtagonist) p = Math.min(0.95, p + protagonistMortalityBonus(mortalityContext));
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, person.name, config.town.name);
         const resultingEventIds: string[] = [];
         if (record.chosen === "die") {
           person.deathYear = year;
-          const deathEvent = pushEvent(events, year, "death", [descriptor.personId], { age, awayFromTown: hasMovedAway(events, descriptor.personId) }, illnessEvent ? [illnessEvent.id] : []);
+          const cause = isProtagonist ? determineDeathCause(mortalityContext) : undefined;
+          const deathEvent = pushEvent(
+            events,
+            year,
+            "death",
+            [descriptor.personId],
+            { age, awayFromTown: hasMovedAway(events, descriptor.personId), ...(cause ? { cause } : {}) },
+            illnessEvent ? [illnessEvent.id] : [],
+          );
           resultingEventIds.push(deathEvent.id);
         } else if (illnessEvent) {
           (illnessEvent.payload as Record<string, JsonValue>).recovered = true;
@@ -767,6 +958,16 @@ export async function simulate(
         const deathCauses = [...(illnessEvent ? [illnessEvent.id] : []), ...(hardshipMultiplier > 1 && townEventId ? [townEventId] : [])];
         record = { ...record, causes: deathCauses, resultingEventIds };
         if (record.chosen === "die" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+      } else if (descriptor.kind === "levy") {
+        const p = 0.045 * (townEvent === "famine" ? 1.4 : 1);
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name);
+        const resultingEventIds: string[] = [];
+        if (record.chosen === "impose") {
+          const event = pushEvent(events, year, "levy", [descriptor.personId], {}, []);
+          resultingEventIds.push(event.id);
+        }
+        record = { ...record, resultingEventIds };
+        if (record.chosen === "impose" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
       } else {
         const p = 0.05;
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, config.town.name, config.town.name);
@@ -790,10 +991,24 @@ export async function simulate(
     // --- Social decisions: gather -> concurrent decide -> apply -------------
     const questions = socialCandidates.map((c) => buildQuestion(c, year, config, people));
     const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.decisionId));
-    decisionCalls += questions.filter((_, i) => !forcedFlags[i]).length;
+    // Budget priority (round 9, decision 037): once the running total of REAL DecisionMaker calls
+    // hits LIFE_DECISION_BUDGET, any further social decision NOT about the protagonist is answered
+    // with the deterministic rule heuristic instead — the protagonist's own decisions, and
+    // decisions ABOUT them (like AP1), are never throttled. No-op (always false) with no
+    // `protagonistId`, so the general village simulation is unaffected.
+    const fallbackFlags = socialCandidates.map((c, i) => {
+      if (forcedFlags[i] || !options.protagonistId) return false;
+      const aboutProtagonist = c.personId === options.protagonistId || c.partnerId === options.protagonistId;
+      return !aboutProtagonist && decisionCalls >= LIFE_DECISION_BUDGET;
+    });
+    decisionCalls += questions.filter((_, i) => !forcedFlags[i] && !fallbackFlags[i]).length;
 
     const resolved = await mapWithConcurrency(questions, concurrencyLimit, async (q, i) => {
       if (forcedFlags[i]) return undefined; // forced: never ask the DecisionMaker
+      if (fallbackFlags[i]) {
+        const prior = normalizeDistribution(ruleDistribution(q) as Record<string, number>);
+        return { prior, final: prior, source: "rules" as DecisionSource };
+      }
       return resolveSocialDecision(q, options.decisionMaker, options.engineSource);
     });
 
@@ -1140,11 +1355,151 @@ export async function simulate(
           }
           break;
         }
+        // --- Protagonist-only extended catalog (round 9, decision 035) -----
+        case "C1": {
+          const note = chosen === "compete" ? "competed-with-sibling" : chosen === "bond" ? "bonded-with-sibling" : "withdrew-from-sibling";
+          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "compete") {
+            pushThought(person.mind, "anger", `competing with ${partner!.name} for attention`, 30, 3, year, "anger", partner!.id);
+            updateRelationship(person.mind, partner!.id, partner!.mind.values, -10, "rival");
+          } else if (chosen === "bond") {
+            pushThought(person.mind, "contentment", `bonding with ${partner!.name}`, 30, 3, year, "gregariousness", partner!.id);
+            updateRelationship(person.mind, partner!.id, partner!.mind.values, 25, "friend");
+          } else {
+            pushThought(person.mind, "loneliness", "withdrawing at home", 25, 3, year, "anxiety");
+          }
+          break;
+        }
+        case "C4": {
+          const note = chosen === "fight-back" ? "fought-back-against-bully" : chosen === "endure" ? "endured-the-bully" : "told-an-elder";
+          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "fight-back") pushThought(person.mind, "anger", `standing up to ${partner!.name}`, 40, 3, year, "bravery", partner!.id);
+          else if (chosen === "tell-an-elder") pushThought(person.mind, "relief", "telling an elder about the bullying", 25, 2, year, "trust");
+          else pushThought(person.mind, "anxiety", `enduring ${partner!.name}'s bullying`, 35, 4, year, "stressVulnerability", partner!.id);
+          break;
+        }
+        case "Y2": {
+          const note = chosen === "pursue-the-dream" ? "pursued-the-dream-over-trade" : "stayed-practical";
+          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "pursue-the-dream") pushThought(person.mind, "hope", "choosing the dream over the trade", 35, 3, year, "ambition");
+          else pushThought(person.mind, "contentment", "choosing the trade over the dream, for now", 25, 3, year, "perseverance");
+          break;
+        }
+        case "Y5": {
+          const note = chosen === "open-up" ? "opened-up-to-a-friend" : "kept-their-distance";
+          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "open-up") {
+            pushThought(person.mind, "contentment", `opening up to ${partner!.name}`, 30, 3, year, "gregariousness", partner!.id);
+            addMemory(seed, person.id, year, person.mind, `became close friends with ${partner!.name} in ${year}`, "contentment", partner!.id);
+            updateRelationship(person.mind, partner!.id, partner!.mind.values, 35, "friend");
+          } else {
+            pushThought(person.mind, "loneliness", `keeping ${partner!.name} at a distance`, 20, 2, year);
+          }
+          break;
+        }
+        case "A4": {
+          const note =
+            chosen === "confront" ? "confronted-the-betrayal" : chosen === "forgive" ? "forgave-the-betrayal" : chosen === "leave" ? "left-over-the-betrayal" : "sought-revenge-for-the-betrayal";
+          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
+          resultingEventIds.push(event.id);
+          pushThought(person.mind, "betrayal", `discovering ${partner!.name}'s betrayal`, 70, 6, year, "trust", partner!.id);
+          addMemory(seed, person.id, year, person.mind, `discovered ${partner!.name}'s betrayal in ${year}`, "betrayal", partner!.id);
+          if (chosen === "leave") {
+            person.spouseId = undefined;
+            partner!.spouseId = undefined;
+            const breakupEvent = pushEvent(events, year, "breakup", [person.id, partner!.id], {}, [event.id]);
+            resultingEventIds.push(breakupEvent.id);
+            updateRelationship(person.mind, partner!.id, partner!.mind.values, -60, "grudge");
+          } else if (chosen === "revenge") {
+            updateRelationship(person.mind, partner!.id, partner!.mind.values, -50, "grudge");
+          } else if (chosen === "forgive") {
+            updateRelationship(person.mind, partner!.id, partner!.mind.values, -10);
+          } else {
+            updateRelationship(person.mind, partner!.id, partner!.mind.values, -20, "grudge");
+          }
+          break;
+        }
+        case "A7": {
+          const note = chosen === "double-down" ? "doubled-down-on-faith" : chosen === "lose-faith" ? "lost-their-faith" : "sought-another-path";
+          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "double-down") pushThought(person.mind, "hope", "holding fast to faith", 35, 4, year, "perseverance");
+          else if (chosen === "lose-faith") pushThought(person.mind, "despair", "losing faith", 45, 5, year, "anxiety");
+          else pushThought(person.mind, "hope", "seeking another path entirely", 30, 3, year, "curiosity");
+          break;
+        }
+        case "A9": {
+          const note = chosen === "resist" ? "resisted-temptation" : "pursued-an-affair";
+          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "resist") pushThought(person.mind, "pride", "resisting the temptation", 30, 3, year, "perseverance");
+          else {
+            pushThought(person.mind, "shame", "giving in to temptation", 50, 6, year, "stressVulnerability");
+            const core = addMemory(seed, person.id, year, person.mind, `gave in to temptation in ${year}`, "shame");
+            if (core) applyCoreMemoryShift(seed, person.id, year, person.mind, "trust", -1);
+          }
+          break;
+        }
+        case "A10": {
+          const note = chosen === "take-an-apprentice" ? "took-an-apprentice" : "declined-to-mentor";
+          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "take-an-apprentice") {
+            pushThought(person.mind, "pride", `taking ${partner!.name} on as an apprentice`, 35, 4, year, "altruism", partner!.id);
+            updateRelationship(person.mind, partner!.id, partner!.mind.values, 30, "friend");
+          } else {
+            pushThought(person.mind, "contentment", "declining to take on an apprentice", 15, 2, year);
+          }
+          break;
+        }
+        case "O1": {
+          const note =
+            chosen === "eldest" ? "divided-inheritance-eldest" : chosen === "favorite" ? "divided-inheritance-favorite" : chosen === "split" ? "split-inheritance" : "inheritance-to-town";
+          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
+          resultingEventIds.push(event.id);
+          pushThought(person.mind, "contentment", "settling how the inheritance will fall", 30, 3, year, "perseverance");
+          break;
+        }
+        case "O3": {
+          const note = chosen === "last-attempt" ? "last-attempt-at-dream" : chosen === "pass-it-on" ? "passed-on-dream" : "made-peace-with-unrealized-dream";
+          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "make-peace-with-it") person.mind.dream.status = "abandoned";
+          pushThought(person.mind, chosen === "last-attempt" ? "hope" : "contentment", `reckoning with the old dream of ${dreamGerund(person.mind.dream.goal)}`, 30, 4, year, "perseverance");
+          break;
+        }
+        case "AP1": {
+          const note = chosen === "apprentice-own-trade" ? "apprenticed-to-family-trade" : chosen === "send-away" ? "sent-away-to-apprentice" : "kept-at-home";
+          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
+          resultingEventIds.push(event.id);
+          pushThought(partner!.mind, "hope", `${person.name}'s decision about ${partner!.sex === "f" ? "her" : "his"} future`, 25, 4, year, "ambition", person.id);
+          if (chosen === "apprentice-own-trade" && person.job !== "none") {
+            addMemory(seed, partner!.id, year, partner!.mind, `was apprenticed to the family trade of ${person.job} in ${year}`, "hope", person.id);
+          }
+          break;
+        }
+        case "PIL1": {
+          const note = chosen === "go" ? "went-on-pilgrimage" : "stayed-home-from-pilgrimage";
+          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
+          resultingEventIds.push(event.id);
+          if (chosen === "go") {
+            pushThought(person.mind, "hope", "setting out on pilgrimage", 35, 4, year, "curiosity");
+            addMemory(seed, person.id, year, person.mind, `went on pilgrimage in ${year}`, "hope");
+          } else {
+            pushThought(person.mind, "longing", "feeling the pull of a pilgrimage not taken", 20, 2, year);
+          }
+          break;
+        }
       }
 
       decisions.push({
         id: descriptor.decisionId,
         personId: descriptor.personId,
+        partnerId: descriptor.partnerId,
         year,
         kind: descriptor.kind,
         question: questionText(descriptor.kind, partner?.name, config.town.name, descriptor.opportunityJob, descriptor.breakdownKind, descriptor.townEventType),
@@ -1165,6 +1520,12 @@ export async function simulate(
     const snapshot: YearSnapshot = { year, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) };
     snapshots.set(year, snapshot);
     options.onYearComplete?.(snapshot);
+
+    // Round 9 (decision 034, the single-life pivot): the simulation stops the year the protagonist
+    // dies — their life is what's being told, and the contract's death-is-always-a-turn/fork-to-
+    // continue mechanic only makes sense as the LAST year, not an arbitrary mid-run one. No-op with
+    // no `protagonistId` (the general village simulation always runs the full configured span).
+    if (options.protagonistId && people[options.protagonistId]?.deathYear !== undefined) break;
   }
 
   return {
