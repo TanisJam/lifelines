@@ -50,7 +50,7 @@ const DECISION_INSTRUCTIONS: Record<DecisionQuestion["kind"], string> = {
   O3: "You are the person in 'self', old, with a dream you never realized. Given your perseverance and your values around family, do you make one last attempt at it, pass it on to someone else, or make peace with letting it go?",
   AP1: "You are the person in 'self', a parent, deciding your child's future. ('partner' is your child.) Given your values around tradition and your own ambition for them, do you apprentice them to your own trade, send them elsewhere to apprentice, or keep them at home a while longer?",
   PIL1: "You are the person in 'self'. You've long felt the pull of a pilgrimage. Given your faith and your curiosity, and your ties at home, do you go, or stay?",
-  SEX1: "Given this name as used in a medieval European village, is the newborn more likely a girl or a boy?",
+  SEX1: "The newborn's given name is `name`. Considering how this given name is conventionally used, is a child with this name a girl or a boy?",
   D1: "You are the person in 'self', living an ordinary year of your life — read self.mind and self.portrait for who you are, and situation.vignette/situation.question for the everyday moment you're facing. Given your personality, values, mood, and circumstances, what do you do?",
 };
 
@@ -125,8 +125,8 @@ function describeOption(kind: DecisionQuestion["kind"], option: string): string 
   if (kind === "A3" && option === "seize") return "I seize the opportunity and take up the new role.";
   if (kind === "A10" && option === "decline") return "I decline to take on an apprentice.";
   if (kind === "A4" && option === "leave") return "I leave them over it.";
-  if (kind === "SEX1" && option === "f") return "Given this name, the newborn is more likely a girl.";
-  if (kind === "SEX1" && option === "m") return "Given this name, the newborn is more likely a boy.";
+  if (kind === "SEX1" && option === "f") return "`name` is a girl's name: it is conventionally given to girls.";
+  if (kind === "SEX1" && option === "m") return "`name` is a boy's name: it is conventionally given to boys.";
   if (kind === "D1") return VIGNETTE_OPTION_DESCRIPTIONS[option] ?? OPTION_DESCRIPTIONS[option] ?? `I choose "${option}".`;
   return OPTION_DESCRIPTIONS[option] ?? `I choose "${option}".`;
 }
@@ -185,7 +185,12 @@ export class JevDecisionMaker implements DecisionMaker {
   }
 
   async decide(question: DecisionQuestion): Promise<Distribution> {
-    const key = decisionCacheKey(question.id, question.state);
+    const criteria: ChoiceCriteria = {};
+    for (const option of question.options) criteria[option] = describeOption(question.kind, option);
+
+    // The prompt (instructions + criteria) and model are part of the key: rewording a question
+    // must not keep serving answers that were given to the old wording.
+    const key = decisionCacheKey(question.id, { state: question.state, instructions: DECISION_INSTRUCTIONS[question.kind], criteria, model: this.model });
     const cached = this.cache.get(key);
     if (cached) {
       this.cacheHits += 1;
@@ -194,9 +199,6 @@ export class JevDecisionMaker implements DecisionMaker {
 
     this.calls += 1;
     const started = Date.now();
-
-    const criteria: ChoiceCriteria = {};
-    for (const option of question.options) criteria[option] = describeOption(question.kind, option);
 
     const result = await this.client.systemOne({
       state: question.state,
