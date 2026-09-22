@@ -250,4 +250,58 @@ describe("protagonist event-selection is a genuine Gumbel-max SAMPLE, not argmax
     expect(winners(report1.result.decisions)).toEqual(winners(report2.result.decisions));
     expect(winners(report1.result.decisions).length).toBeGreaterThan(0);
   });
+
+  it("hierarchical vignette selection is deterministic given the seed: identical re-runs pick the exact same vignette (and outcome) every year", async () => {
+    const world1 = protagonistWorld("hier-determinism");
+    const world2 = protagonistWorld("hier-determinism");
+    const report1 = await simulate(world1.config, world1.people, world1.events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: PROTAGONIST_ID });
+    const report2 = await simulate(world2.config, world2.people, world2.events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: PROTAGONIST_ID });
+
+    const vignettes = (events: typeof report1.result.events) => events.filter((e) => e.kind === "vignette").map((e) => `${e.year}:${e.payload.vignette}:${e.payload.outcome}`);
+    expect(vignettes(report1.result.events)).toEqual(vignettes(report2.result.events));
+    expect(vignettes(report1.result.events).length).toBeGreaterThan(0);
+  });
+});
+
+describe("hierarchical event selection (decision 046) — the vignette-pick is consumed only when 'everyday' wins the top-level pick", () => {
+  /**
+   * Deterministically alternates the top-level pick by year parity: even years put ALL weight on
+   * the aggregate `"everyday"` option, odd years put it on the real (non-D1) candidates instead —
+   * `vignetteSelection` always favors the same (alphabetically first) vignette candidate regardless,
+   * so a wrong-year consumption (using the vignette-pick winner on an ODD year, when a real situation
+   * won instead) would be easy to catch as a spurious `occurrenceProbability` on that year's `D1`.
+   */
+  class AlternatingDecisionMaker implements DecisionMaker {
+    async decide(question: DecisionQuestion): Promise<Distribution> {
+      return normalizeDistribution(Object.fromEntries(question.options.map((o) => [o, 1])));
+    }
+
+    async decideYear(batch: PersonYearBatch): Promise<PersonYearResult> {
+      const response = uniformResponse(batch.situations);
+      const d1Ids = Object.keys(batch.situations)
+        .filter((id) => batch.situations[id]!.kind === "D1")
+        .sort();
+      const nonD1Ids = Object.keys(batch.situations).filter((id) => batch.situations[id]!.kind !== "D1");
+      const vignetteSelection: Record<string, number> = {};
+      for (const id of d1Ids) vignetteSelection[id] = id === d1Ids[0] ? 1 : 1e-9;
+      const wantsEveryday = batch.year % 2 === 0;
+      const selection: Record<string, number> = {};
+      if (wantsEveryday && d1Ids.length > 0) selection.everyday = 1;
+      else for (const id of nonD1Ids) selection[id] = 1;
+      return { selection, vignetteSelection, response };
+    }
+
+    getStats(): DecisionMakerStats {
+      return { calls: 0, cacheHits: 0, wallTimeMs: 0 };
+    }
+  }
+
+  it("only sets occurrenceProbability on a D1 decision in years the top-level pick actually chose 'everyday'", async () => {
+    const { config, people, events } = protagonistWorld("hier-consume-1");
+    const report = await simulate(config, people, events, { decisionMaker: new AlternatingDecisionMaker(), engineSource: "jev", protagonistId: PROTAGONIST_ID });
+    const d1Decisions = report.result.decisions.filter((d) => d.kind === "D1");
+    const withOccurrence = d1Decisions.filter((d) => d.occurrenceProbability !== undefined);
+    expect(withOccurrence.length).toBeGreaterThan(0); // "everyday" did win at least one (even) year
+    for (const d of withOccurrence) expect(d.year % 2).toBe(0);
+  });
 });

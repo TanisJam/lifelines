@@ -16,11 +16,34 @@ function makeBatch(id: string, personId = "p1", year = 1524, isProtagonist = fal
   };
 }
 
+const D1_ID = "D1:p1:1524:feast-day";
+
+/** A batch with one real life situation (Y1) AND one `D1` daily-life vignette candidate — the shape `pickCriteria`/`vignetteCriteria` (decision 046) need to split. */
+function makeBatchWithVignette(personId = "p1", year = 1524, isProtagonist = true): PersonYearBatch {
+  return {
+    personId,
+    year,
+    self: BASE_STATE,
+    isProtagonist,
+    situations: {
+      "Y1:p001::p002:1524": {
+        kind: "Y1",
+        question: { id: "Y1:p001::p002:1524", kind: "Y1", personId, year, state: { self: BASE_STATE, situation: { code: "Y1", question: "Do I encourage it?" }, town: "Oakhaven", year }, options: ["encourage", "decline", "wait"] },
+      },
+      [D1_ID]: {
+        kind: "D1",
+        question: { id: D1_ID, kind: "D1", personId, year, state: { self: BASE_STATE, situation: { code: "D1", question: "It's a feast day. Do I join in?" }, town: "Oakhaven", year }, options: ["join-in", "keep-to-self"] },
+      },
+    },
+  };
+}
+
 /** Fake systemOne answers: one for every question name the request actually asked. */
 function fakeAnswers(questionNames: readonly string[]): Record<string, unknown> {
   const answers: Record<string, unknown> = {};
   for (const name of questionNames) {
-    if (name === "pick") answers[name] = { type: "choice", choice: "Y1:p001::p002:1524", confidence: 0.8, probabilities: { "Y1:p001::p002:1524": 0.6, nothing: 0.4 } };
+    if (name === "pick") answers[name] = { type: "choice", choice: "Y1:p001::p002:1524", confidence: 0.8, probabilities: { "Y1:p001::p002:1524": 0.4, everyday: 0.6, nothing: 0 } };
+    else if (name === "vignettePick") answers[name] = { type: "choice", choice: D1_ID, confidence: 0.8, probabilities: { [D1_ID]: 1 } };
     else if (name.startsWith("resp:")) answers[name] = { type: "choice", choice: "encourage", confidence: 0.8, probabilities: { encourage: 0.5, decline: 0.2, wait: 0.3 } };
   }
   return answers;
@@ -54,7 +77,7 @@ describe("JevDecisionMaker.decideYear", () => {
     const batch = makeBatch("Y1:p001::p002:1524");
     const result = await maker.decideYear(batch);
     expect(calls.length).toBe(1);
-    expect(result.selection["Y1:p001::p002:1524"]).toBeCloseTo(0.6);
+    expect(result.selection["Y1:p001::p002:1524"]).toBeCloseTo(0.4);
     expect(result.response["Y1:p001::p002:1524"]).toEqual({ encourage: 0.5, decline: 0.2, wait: 0.3 });
   });
 
@@ -94,5 +117,35 @@ describe("JevDecisionMaker.decideYear", () => {
     const result = await maker.decideYear(batch);
     expect(calls.length).toBe(2);
     expect(Object.keys(result.response).sort()).toEqual(["huge", "small"]);
+  });
+
+  it("hierarchical event selection (decision 046): the top-level `pick` gets ONE aggregate 'everyday' option for every D1 vignette candidate, not one option per vignette, plus a separate `vignettePick` Choice", async () => {
+    const { fetch, calls } = fakeFetch();
+    const maker = new JevDecisionMaker({ apiKey: "test", fetch });
+    const batch = makeBatchWithVignette();
+    const result = await maker.decideYear(batch);
+
+    expect(calls.length).toBe(1);
+    const questions = (calls[0]!.body as { questions: Record<string, { criteria?: Record<string, unknown> }> }).questions;
+    // The D1 candidate's raw decision id never appears as its own `pick` option...
+    expect(Object.keys(questions.pick!.criteria!)).not.toContain(D1_ID);
+    // ...exactly one aggregate "everyday" option stands in for it instead.
+    expect(Object.keys(questions.pick!.criteria!)).toContain("everyday");
+    expect(Object.keys(questions.pick!.criteria!).filter((k) => k === "everyday")).toHaveLength(1);
+    // The vignette itself is only judged in the separate, nested `vignettePick` Choice.
+    expect(Object.keys(questions.vignettePick!.criteria!)).toEqual([D1_ID]);
+
+    expect(result.selection.everyday).toBeCloseTo(0.6);
+    expect(result.selection[D1_ID]).toBeUndefined();
+    expect(result.vignetteSelection![D1_ID]).toBeCloseTo(1);
+  });
+
+  it("asks no `vignettePick` Choice when a batch has no D1 candidates", async () => {
+    const { fetch, calls } = fakeFetch();
+    const maker = new JevDecisionMaker({ apiKey: "test", fetch });
+    const result = await maker.decideYear(makeBatch("Y1:p001::p002:1524"));
+    const questions = (calls[0]!.body as { questions: Record<string, unknown> }).questions;
+    expect(questions.vignettePick).toBeUndefined();
+    expect(result.vignetteSelection).toEqual({});
   });
 });
