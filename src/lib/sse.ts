@@ -1,3 +1,5 @@
+import { resolveGuardedResponseError } from "@/lib/guard-error";
+
 /**
  * Consumes a POST `text/event-stream` response. Browsers' built-in
  * `EventSource` only supports GET, so a POST-driven stream (world creation
@@ -11,10 +13,7 @@ export async function streamSSE(url: string, body: unknown, onEvent: (event: str
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed (${res.status})`);
-  }
+  if (!res.ok || !res.body) throw await resolveGuardedResponseError(res);
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

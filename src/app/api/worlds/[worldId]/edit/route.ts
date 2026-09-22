@@ -4,7 +4,8 @@ import { diffBranches } from "@/domain/diff";
 import { ForkError, forkWorld, getRestoreSnapshot } from "@/domain/fork";
 import type { Override } from "@/domain/types";
 import { validateOverride } from "@/domain/validate-override";
-import { activeEngineName, getDecisionMaker } from "@/server/decision-engine";
+import { guardSimulation } from "@/server/abuse-guard";
+import { activeEngineName } from "@/server/decision-engine";
 import { addBranch, getBranch, getWorld } from "@/server/world-store";
 
 export const runtime = "nodejs";
@@ -17,6 +18,7 @@ interface EditBody {
     decisionId?: string;
     optionId?: string;
   };
+  turnstileToken?: string;
 }
 
 function buildOverride(body: NonNullable<EditBody["override"]>): Override | { error: string } {
@@ -26,7 +28,7 @@ function buildOverride(body: NonNullable<EditBody["override"]>): Override | { er
   return { id: `ov${overrideCounter}-${Date.now().toString(36)}`, decisionId: body.decisionId, optionId: body.optionId };
 }
 
-export async function POST(request: Request, context: { params: Promise<{ worldId: string }> }): Promise<NextResponse> {
+export async function POST(request: Request, context: { params: Promise<{ worldId: string }> }): Promise<NextResponse | Response> {
   const { worldId } = await context.params;
   const world = getWorld(worldId);
   if (!world) return NextResponse.json({ error: "World not found." }, { status: 404 });
@@ -55,7 +57,10 @@ export async function POST(request: Request, context: { params: Promise<{ worldI
   const validation = validateOverride(override, restoreSnapshot.people, restoreSnapshot.events, world.config.seed, world.config);
   if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 });
 
-  const decisionMaker = getDecisionMaker();
+  // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work starts.
+  const guard = await guardSimulation(request, body);
+  if (guard instanceof Response) return guard;
+  const { decisionMaker } = guard.engine;
   const engineSource = activeEngineName();
   const forkYear = decisionYear(override.decisionId);
 

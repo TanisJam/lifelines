@@ -5,7 +5,7 @@ import { ForkError, getRestoreSnapshot } from "@/domain/fork";
 import { simulate } from "@/domain/simulate";
 import type { Override } from "@/domain/types";
 import { validateOverride } from "@/domain/validate-override";
-import { activeEngineName, getDecisionMaker } from "@/server/decision-engine";
+import { guardSimulation } from "@/server/abuse-guard";
 import { sseResponse } from "@/server/sse";
 import { addBranch, getBranch, getWorld } from "@/server/world-store";
 
@@ -16,6 +16,7 @@ let overrideCounter = 0;
 interface EditBody {
   branchId?: string;
   override?: { decisionId?: string; optionId?: string };
+  turnstileToken?: string;
 }
 
 /**
@@ -49,8 +50,11 @@ export async function POST(request: Request, context: { params: Promise<{ worldI
   const validation = validateOverride(override, restoreSnapshot.people, restoreSnapshot.events, world.config.seed, world.config);
   if (!validation.ok) return new Response(JSON.stringify({ error: validation.error }), { status: 400 });
 
-  const decisionMaker = getDecisionMaker();
-  const engineSource = activeEngineName();
+  // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work or the SSE
+  // stream starts.
+  const guard = await guardSimulation(request, body);
+  if (guard instanceof Response) return guard;
+  const { decisionMaker, engineSource } = guard.engine;
   const forkYear = decisionYear(override.decisionId);
 
   return sseResponse(async (send) => {

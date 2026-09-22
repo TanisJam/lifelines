@@ -16,6 +16,8 @@ export interface CreateLifeRequest {
   readonly villageName?: string;
   /** Decision 059: the reader's locale, for the chronicle this request's `done` event carries — defaults to `"en"` when omitted. Never affects simulation or the Jev-facing decision text, only the narrated prose/title/summary built afterward. */
   readonly lang?: string;
+  /** Abuse protection: the Cloudflare Turnstile token from the create-life form's widget. Ignored when Turnstile isn't configured server-side (see `src/server/turnstile.ts`). */
+  readonly turnstileToken?: string;
 }
 
 /** POST /api/lives/:lifeId/rewrite/stream request body. */
@@ -25,6 +27,8 @@ export interface RewriteRequest {
   readonly optionId: string;
   /** Decision 059: same meaning as `CreateLifeRequest.lang`. */
   readonly lang?: string;
+  /** Abuse protection: same meaning as `CreateLifeRequest.turnstileToken`. */
+  readonly turnstileToken?: string;
 }
 
 /** A person linked from prose. Prose marks links as `{{personId}}`; `links` resolves them. */

@@ -7,11 +7,14 @@ import type { Chronicle as ChronicleData, ChronicleEntry, LifeStreamEvent } from
 import type { Dictionary } from "@/i18n/dictionary";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/get-dictionary";
+import { guardErrorMessage } from "@/lib/guard-error";
 import { getChronicle, rewriteStream } from "@/lib/life-client";
 import { parseProseMarkers } from "@/lib/prose-markers";
+import { useTurnstileSiteKey } from "@/lib/turnstile-client";
 import { prefersReducedMotion } from "@/lib/viewport";
 import { PersonSheet } from "@/components/person-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import { CheckCircleIcon, ChevronRightIcon, LeafGlyph, SprigDivider, SunEmblem, VineCorner } from "@/components/ornaments";
 
 /**
@@ -41,6 +44,9 @@ function ChangeModal({
   onClose,
   onChoose,
   busy,
+  turnstileSiteKey,
+  turnstileToken,
+  onTurnstileToken,
 }: {
   entry: ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> };
   personSex: "f" | "m";
@@ -48,6 +54,9 @@ function ChangeModal({
   onClose: () => void;
   onChoose: (optionId: string) => void;
   busy: boolean;
+  turnstileSiteKey: string | null;
+  turnstileToken: string | null;
+  onTurnstileToken: (token: string | null) => void;
 }) {
   const [showNumbers, setShowNumbers] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -85,7 +94,13 @@ function ChangeModal({
           ))}
         </div>
 
-        <button type="button" className="cw-primary-btn" disabled={!selected || busy} onClick={() => selected && onChoose(selected)}>
+        {turnstileSiteKey && (
+          <div className="cw-turnstile" style={{ display: "flex", justifyContent: "center", margin: "12px 0" }}>
+            <TurnstileWidget siteKey={turnstileSiteKey} onToken={onTurnstileToken} />
+          </div>
+        )}
+
+        <button type="button" className="cw-primary-btn" disabled={!selected || busy || (!!turnstileSiteKey && !turnstileToken)} onClick={() => selected && onChoose(selected)}>
           {busy ? dict.chronicle.modal.rewriting : dict.chronicle.modal.applyThisChange}
         </button>
 
@@ -143,6 +158,8 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [openPersonId, setOpenPersonId] = useState<string | null>(null);
   const reduceMotion = prefersReducedMotion();
+  const turnstileSiteKey = useTurnstileSiteKey();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const p = data.protagonist;
   const divergenceYear = rewrite?.divergenceYear ?? null;
@@ -172,7 +189,7 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
     setRewrite((r) => (r ? { ...r, phase: "C" } : r));
     try {
       let finished = false;
-      await rewriteStream(data.lifeId, { branchId: data.branchId, decisionId: entry.turn.decisionId, optionId, lang }, (event: LifeStreamEvent) => {
+      await rewriteStream(data.lifeId, { branchId: data.branchId, decisionId: entry.turn.decisionId, optionId, lang, turnstileToken: turnstileToken ?? undefined }, (event: LifeStreamEvent) => {
         if (event.type === "tick") {
           setRewrite((r) => (r ? { ...r, tickYear: event.year, streamed: [...r.streamed, ...event.entries] } : r));
         } else if (event.type === "done") {
@@ -202,9 +219,10 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
       });
       if (!finished) throw new Error(dict.chronicle.rewriteIncomplete);
     } catch (err) {
-      setRewriteError(err instanceof Error ? err.message : dict.chronicle.rewriteFailed);
+      setRewriteError(guardErrorMessage(err, dict, dict.chronicle.rewriteFailed));
     } finally {
       setRewrite(null);
+      setTurnstileToken(null);
     }
   }
 
@@ -460,7 +478,19 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
       )}
 
       <AnimatePresence>
-        {openEntry && <ChangeModal entry={openEntry} personSex={p.sex} dict={dict} onClose={() => setOpenEntry(null)} onChoose={applyChoice} busy={!!rewrite} />}
+        {openEntry && (
+          <ChangeModal
+            entry={openEntry}
+            personSex={p.sex}
+            dict={dict}
+            onClose={() => setOpenEntry(null)}
+            onChoose={applyChoice}
+            busy={!!rewrite}
+            turnstileSiteKey={turnstileSiteKey}
+            turnstileToken={turnstileToken}
+            onTurnstileToken={setTurnstileToken}
+          />
+        )}
       </AnimatePresence>
 
       <AnimatePresence>

@@ -5,7 +5,8 @@ import { isLocale } from "@/domain/locale";
 import { simulate } from "@/domain/simulate";
 import type { Override } from "@/domain/types";
 import { validateOverride } from "@/domain/validate-override";
-import { activeEngineName, decisionMakerRunStats, getDecisionMaker, snapshotDecisionMakerStats } from "@/server/decision-engine";
+import { guardSimulation } from "@/server/abuse-guard";
+import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
 import { buildLifeChronicle } from "@/server/life-chronicle";
 import { getLife, getLifeBranch, newLifeBranchId, registerLifeBranch } from "@/server/life-store";
 import { sseResponse } from "@/server/sse";
@@ -61,8 +62,10 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
   const newLabel = newOption.label;
   const entryId = originalDecision.resultingEventIds[0] ?? override.decisionId;
 
-  const decisionMaker = getDecisionMaker();
-  const engineSource = activeEngineName();
+  // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work starts.
+  const guard = await guardSimulation(request, body);
+  if (guard instanceof Response) return guard;
+  const { decisionMaker, engineSource } = guard.engine;
   const forkYear = decisionYear(override.decisionId);
   const newBranchId = newLifeBranchId();
 

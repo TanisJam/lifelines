@@ -42,6 +42,13 @@ export const en = {
     writtenKicker: "A life, written",
     writingKicker: (name: string) => `Writing the life of ${name}…`,
   },
+  /** Abuse protection (rate limiting, Turnstile) — shared across every form that starts a simulation, via `src/lib/guard-error.ts#guardErrorMessage`. */
+  guard: {
+    rateLimited: (retryIn: string) => `Too many lives written from this connection recently. Try again in ${retryIn}.`,
+    verificationFailed: "We couldn't verify you're human. Please try the challenge again.",
+    retrySeconds: (n: number) => `${n} second${n === 1 ? "" : "s"}`,
+    retryMinutes: (n: number) => `${n} minute${n === 1 ? "" : "s"}`,
+  },
   lives: {
     kicker: "Every life written so far",
     title: "Your lives",

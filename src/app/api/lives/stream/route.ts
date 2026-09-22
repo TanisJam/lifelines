@@ -2,7 +2,8 @@ import type { ChronicleEntry, CreateLifeRequest, LifeSex, LifeStreamEvent } from
 import { isLocale } from "@/domain/locale";
 import { simulate } from "@/domain/simulate";
 import { generateWorld, resolveProtagonistSex } from "@/domain/worldgen";
-import { activeEngineName, decisionMakerRunStats, getDecisionMaker, snapshotDecisionMakerStats } from "@/server/decision-engine";
+import { guardSimulation } from "@/server/abuse-guard";
+import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
 import { buildLifeChronicle } from "@/server/life-chronicle";
 import { newLifeBranchId, newLifeId, registerLife } from "@/server/life-store";
 import { sseResponse } from "@/server/sse";
@@ -42,13 +43,17 @@ export async function POST(request: Request): Promise<Response> {
   const sex = body.sex;
   if (sex !== "f" && sex !== "m" && sex !== "random") return errorResponse('"sex" must be "f", "m" or "random".');
 
+  // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work starts —
+  // validated above only checks cheap, purely local input shape, so a malformed request never
+  // costs the caller a rate-limit slot.
+  const guard = await guardSimulation(request, body);
+  if (guard instanceof Response) return guard;
+  const { decisionMaker, engineSource } = guard.engine;
+
   const seed = body.seed?.trim() || randomSeed();
   const startYear = START_YEAR;
   const endYear = startYear + MAX_LIFESPAN_YEARS;
   const locale = body.lang && isLocale(body.lang) ? body.lang : "en";
-
-  const decisionMaker = getDecisionMaker();
-  const engineSource = activeEngineName();
 
   // "Let fate decide" (decision 041): resolve "random" to a concrete sex via the DecisionMaker
   // BEFORE the world (and the protagonist's own PersonMind) exists, rather than a name-blind coin

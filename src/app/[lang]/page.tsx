@@ -4,9 +4,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { LifeSex, LifeStreamEvent } from "@/contracts/life";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/get-dictionary";
+import { guardErrorMessage } from "@/lib/guard-error";
 import { createLifeStream, getLives } from "@/lib/life-client";
+import { useTurnstileSiteKey } from "@/lib/turnstile-client";
 
 function randomVillageName(): string {
   const syllables = ["mor", "ash", "vel", "thorn", "wyn", "gale", "bram", "rook", "fen", "lark", "myr", "dusk", "combe", "hollow", "mere"];
@@ -49,6 +52,8 @@ export default function HomePage() {
   const [recentTitles, setRecentTitles] = useState<string[]>([]);
   const [done, setDone] = useState<{ name: string; birthYear: number; deathYear: number } | null>(null);
   const [hasLives, setHasLives] = useState(false);
+  const turnstileSiteKey = useTurnstileSiteKey();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   useEffect(() => {
     getLives(lang)
@@ -71,7 +76,7 @@ export default function HomePage() {
     try {
       let landedLifeId = "";
       let landedBranchId = "";
-      await createLifeStream({ name: name.trim(), sex, villageName: villageName.trim() || undefined, lang }, (event: LifeStreamEvent) => {
+      await createLifeStream({ name: name.trim(), sex, villageName: villageName.trim() || undefined, lang, turnstileToken: turnstileToken ?? undefined }, (event: LifeStreamEvent) => {
         if (event.type === "start") {
           setProtagonistName(event.protagonist.name);
           setYear(event.protagonist.birthYear);
@@ -92,7 +97,7 @@ export default function HomePage() {
         router.push(`/${lang}/life/${landedLifeId}?branch=${landedBranchId}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(guardErrorMessage(err, dict, "Something went wrong."));
       setStage("form");
     }
   }
@@ -193,10 +198,17 @@ export default function HomePage() {
           )}
         </div>
 
+        {turnstileSiteKey && (
+          <div className="flex justify-center">
+            <TurnstileWidget siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+          </div>
+        )}
+
         <button
           type="button"
           onClick={write}
-          className="min-h-11 w-full cursor-pointer rounded-md bg-brass px-4 py-2.5 font-label text-sm uppercase tracking-widest text-background transition-opacity hover:opacity-90"
+          disabled={!!turnstileSiteKey && !turnstileToken}
+          className="min-h-11 w-full cursor-pointer rounded-md bg-brass px-4 py-2.5 font-label text-sm uppercase tracking-widest text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {dict.home.submit}
         </button>

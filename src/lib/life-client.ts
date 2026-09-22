@@ -9,6 +9,7 @@
  */
 
 import type { Chronicle, CreateLifeRequest, LifeListItem, LifeStreamEvent, PersonSheet, RewriteRequest } from "@/contracts/life";
+import { resolveGuardedResponseError } from "@/lib/guard-error";
 
 export type LifeStreamHandler = (event: LifeStreamEvent) => void;
 
@@ -54,7 +55,7 @@ async function consumeStream(url: string, body: unknown, onEvent: LifeStreamHand
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok || !res.body) throw new Error(await readErrorMessage(res));
+  if (!res.ok || !res.body) throw await resolveGuardedResponseError(res);
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

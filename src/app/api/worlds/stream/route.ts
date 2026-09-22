@@ -1,7 +1,7 @@
 import type { DecisionRecord } from "@/domain/decisions";
 import { simulate } from "@/domain/simulate";
 import { generateWorld } from "@/domain/worldgen";
-import { activeEngineName, getDecisionMaker } from "@/server/decision-engine";
+import { guardSimulation } from "@/server/abuse-guard";
 import { pickRichPerson } from "@/server/rich-person";
 import { sseResponse } from "@/server/sse";
 import { createWorld } from "@/server/world-store";
@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 interface CreateWorldBody {
   seed?: string;
   townName?: string;
+  turnstileToken?: string;
 }
 
 function randomSeed(): string {
@@ -33,10 +34,14 @@ export async function POST(request: Request): Promise<Response> {
     // Empty body is fine — we'll randomize the seed.
   }
 
+  // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work or the SSE
+  // stream starts.
+  const guard = await guardSimulation(request, body);
+  if (guard instanceof Response) return guard;
+  const { decisionMaker, engineSource } = guard.engine;
+
   const seed = body.seed?.trim() || randomSeed();
   const { config, people, events: seedEvents } = generateWorld({ seed, townName: body.townName });
-  const decisionMaker = getDecisionMaker();
-  const engineSource = activeEngineName();
 
   return sseResponse(async (send) => {
     send("start", { config, peopleCount: Object.keys(people).length });

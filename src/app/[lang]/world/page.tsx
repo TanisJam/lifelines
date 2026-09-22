@@ -2,8 +2,12 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 import type { Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/get-dictionary";
+import { guardErrorMessage } from "@/lib/guard-error";
 import { streamSSE } from "@/lib/sse";
+import { useTurnstileSiteKey } from "@/lib/turnstile-client";
 
 function randomSeedWord(): string {
   const syllables = ["mor", "ash", "vel", "thorn", "wyn", "gale", "bram", "rook", "fen", "lark", "myr", "dusk"];
@@ -34,6 +38,7 @@ function shortLines(newDecisions: readonly StreamedDecision[]): string[] {
 export default function LegacyWorldPage() {
   const router = useRouter();
   const { lang } = useParams<{ lang: Locale }>();
+  const dict = getDictionary(lang);
   const [seed, setSeed] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +46,8 @@ export default function LegacyWorldPage() {
   const [year, setYear] = useState<number | null>(null);
   const [population, setPopulation] = useState<number | null>(null);
   const [recentLines, setRecentLines] = useState<string[]>([]);
+  const turnstileSiteKey = useTurnstileSiteKey();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   async function foundTown(): Promise<void> {
     setLoading(true);
@@ -48,7 +55,7 @@ export default function LegacyWorldPage() {
     setTownName(null);
     setRecentLines([]);
     try {
-      await streamSSE("/api/worlds/stream", { seed: seed.trim() || undefined }, (event, data) => {
+      await streamSSE("/api/worlds/stream", { seed: seed.trim() || undefined, turnstileToken: turnstileToken ?? undefined }, (event, data) => {
         if (event === "start") {
           const d = data as { peopleCount: number; config: { town: { name: string } } };
           setTownName(d.config.town.name);
@@ -67,7 +74,7 @@ export default function LegacyWorldPage() {
         }
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(guardErrorMessage(err, dict, "Something went wrong."));
       setLoading(false);
     }
   }
@@ -126,10 +133,16 @@ export default function LegacyWorldPage() {
         </div>
         <p className="text-xs text-muted-foreground">The same seed always founds the identical town — the simulation is fully deterministic.</p>
 
+        {turnstileSiteKey && (
+          <div className="flex justify-center">
+            <TurnstileWidget siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+          </div>
+        )}
+
         <button
           type="button"
           onClick={foundTown}
-          disabled={loading}
+          disabled={loading || (!!turnstileSiteKey && !turnstileToken)}
           className="min-h-11 w-full cursor-pointer rounded-md bg-brass px-4 py-2.5 font-label text-sm uppercase tracking-widest text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? "Founding..." : "Found this town"}

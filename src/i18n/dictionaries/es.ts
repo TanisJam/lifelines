@@ -37,6 +37,12 @@ export const es: Dictionary = {
     writtenKicker: "Una vida, escrita",
     writingKicker: (name: string) => `Escribiendo la vida de ${name}…`,
   },
+  guard: {
+    rateLimited: (retryIn: string) => `Se han escrito demasiadas vidas desde esta conexión hace poco. Vuelve a intentarlo en ${retryIn}.`,
+    verificationFailed: "No pudimos verificar que eres humano. Por favor, intenta la verificación de nuevo.",
+    retrySeconds: (n: number) => `${n} segundo${n === 1 ? "" : "s"}`,
+    retryMinutes: (n: number) => `${n} minuto${n === 1 ? "" : "s"}`,
+  },
   lives: {
     kicker: "Cada vida escrita hasta ahora",
     title: "Tus vidas",

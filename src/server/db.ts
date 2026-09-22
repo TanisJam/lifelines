@@ -89,7 +89,28 @@ function createSchema(db: DatabaseSync): void {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_world_branches_world_id ON world_branches(world_id);
+
+    -- Abuse protection (per-IP rate limiting on simulation-triggering endpoints): one row per
+    -- allowed attempt, so a sliding window can be computed by counting/pruning rows younger than
+    -- the window instead of maintaining separate hour/day counters that could drift out of sync.
+    -- See src/server/ip-rate-limit.ts.
+    CREATE TABLE IF NOT EXISTS ip_rate_limit_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ip TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ip_rate_limit_events_ip_created_at ON ip_rate_limit_events(ip, created_at);
   `);
+}
+
+/**
+ * Parses an env var as a positive integer, falling back to `fallback` for anything unset,
+ * non-numeric, or non-positive. Shared by every module that reads a configurable limit from the
+ * environment (see `storeCacheSize` above, `ip-rate-limit.ts`, `turnstile.ts`).
+ */
+export function envInt(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  return Number.isInteger(raw) && raw > 0 ? raw : fallback;
 }
 
 /** Opens (creating the directory and schema if needed) a SQLite DB at `filePath`, in WAL mode. Exported so tests can point it at a temp file — never the real `DATA_DIR`. */
