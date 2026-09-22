@@ -4,7 +4,7 @@ import { classMortalityMultiplier } from "./actuarial";
 import { indexEventsById, walkCauses } from "./causality";
 import { forkWorld } from "./fork";
 import { createMind } from "./mind";
-import { canMarry, eligibleForAnotherChild, gatherCandidatesForYear, simulate, townEventMortalityMultiplier } from "./simulate";
+import { canMarry, drainSimulation, eligibleForAnotherChild, gatherCandidatesForYear, simulate, SimulationAbortedError, simulateYears, townEventMortalityMultiplier, type YearTick } from "./simulate";
 import type { Event, Override, Person, SocialClass } from "./types";
 import { generateWorld } from "./worldgen";
 
@@ -48,6 +48,71 @@ describe("determinism", () => {
     const reportB = await run("birch");
 
     expect(reportA.result.events.length === reportB.result.events.length && JSON.stringify(reportA.result.people) === JSON.stringify(reportB.result.people)).toBe(false);
+  });
+});
+
+describe("incremental-simulation: simulateYears/drainSimulation", () => {
+  it("draining the generator year-by-year produces output identical to batch simulate() for the same seed", async () => {
+    const { config, people } = testWorld("acorn");
+
+    const batch = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+
+    const ticks: YearTick[] = [];
+    const drained = await drainSimulation(simulateYears(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" }), (tick) => {
+      ticks.push(tick);
+    });
+
+    expect(drained.result.people).toEqual(batch.result.people);
+    expect(drained.result.events).toEqual(batch.result.events);
+    expect(drained.result.decisions).toEqual(batch.result.decisions);
+    // Every simulated year (config.startYear..config.endYear) produced exactly one tick, in order.
+    expect(ticks.map((t) => t.year)).toEqual(Array.from({ length: config.endYear - config.startYear + 1 }, (_, i) => config.startYear + i));
+  });
+
+  it("resumes from a restored snapshot year without re-simulating prior years", async () => {
+    const { config, people } = testWorld("cedar");
+    const base = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+
+    const fromYear = config.startYear + 5;
+    const restore = base.snapshots.get(fromYear - 1)!;
+
+    const generator = simulateYears(config, restore.people, restore.events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", fromYear });
+    const first = await generator.next();
+    expect(first.done).toBe(false);
+    expect((first.value as YearTick).year).toBe(fromYear);
+
+    let step = first;
+    while (!step.done) step = await generator.next();
+    const resumed = step.value;
+
+    // The resumed run only ever recorded snapshots from fromYear-1 onward — proof it never
+    // re-simulated (or re-snapshotted) anything before the restored year. `people`/`events` (the
+    // actual simulated state) at the seed year are byte-identical to the restored snapshot; the
+    // seed's own `decisions` list starts fresh for the new branch, same as `simulate()` always did.
+    expect(Math.min(...resumed.snapshots.keys())).toBe(fromYear - 1);
+    expect(resumed.snapshots.get(fromYear - 1)?.people).toEqual(restore.people);
+    expect(resumed.snapshots.get(fromYear - 1)?.events).toEqual(restore.events);
+  });
+
+  it("a client disconnect (AbortSignal) stops draining and throws SimulationAbortedError instead of returning a report", async () => {
+    const { config, people } = testWorld("acorn");
+    const controller = new AbortController();
+    let ticksSeen = 0;
+
+    const generator = simulateYears(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    await expect(
+      drainSimulation(
+        generator,
+        () => {
+          ticksSeen += 1;
+          if (ticksSeen === 3) controller.abort();
+        },
+        controller.signal,
+      ),
+    ).rejects.toThrow(SimulationAbortedError);
+
+    // Draining stopped as soon as the signal was observed aborted — never advanced to a 4th year.
+    expect(ticksSeen).toBe(3);
   });
 });
 

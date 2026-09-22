@@ -62,7 +62,6 @@ export interface SimulateOptions {
   readonly yearBatchConcurrency?: number;
   /** Continue an existing run from this year instead of `config.startYear` (used by fork). */
   readonly fromYear?: number;
-  readonly onYearComplete?: (snapshot: YearSnapshot) => void;
   /**
    * Round 9 (decision 034, the single-life pivot). When set:
    *  - the extended, protagonist-only situation catalog (C1, C4, Y2, Y5, A4, A7, A9, A10, O1, O3,
@@ -83,6 +82,41 @@ export interface SimulateReport {
   readonly snapshots: ReadonlyMap<number, YearSnapshot>;
   readonly wallTimeMs: number;
   readonly decisionCalls: number;
+}
+
+/** Incremental-simulation capability: one `simulateYears()` yield — the year just finished, and its full snapshot (people/events/decisions up to and including that year). */
+export interface YearTick {
+  readonly year: number;
+  readonly snapshot: YearSnapshot;
+}
+
+/** Thrown by `drainSimulation` when the caller's `signal` is aborted mid-run (design decision: a disconnected SSE client stops the simulation and never persists a branch). */
+export class SimulationAbortedError extends Error {
+  constructor() {
+    super("Simulation aborted.");
+    this.name = "SimulationAbortedError";
+  }
+}
+
+/**
+ * Drains a `simulateYears()` generator to completion, returning its final `SimulateReport`.
+ * `onYear` (if given) is called once per yielded `YearTick`, in order — the SSE routes use it to
+ * build and send a provisional tick as each year finishes, rather than replaying the whole life
+ * after the fact (design decision 8/9). `signal` (if given and aborted) stops draining early and
+ * throws `SimulationAbortedError` instead of returning a report, so the caller never persists a
+ * partial branch for a client that has already disconnected.
+ */
+export async function drainSimulation(
+  generator: AsyncGenerator<YearTick, SimulateReport>,
+  onYear?: (tick: YearTick) => void | Promise<void>,
+  signal?: AbortSignal,
+): Promise<SimulateReport> {
+  for (;;) {
+    if (signal?.aborted) throw new SimulationAbortedError();
+    const step = await generator.next();
+    if (step.done) return step.value;
+    await onYear?.(step.value);
+  }
 }
 
 function pushEvent(events: Event[], year: number, kind: EventKind, actors: readonly string[], payload: Record<string, JsonValue>, causes: readonly string[]): Event {
@@ -1928,12 +1962,12 @@ function biologyDistribution(kind: string, p: number): Distribution {
  * optionId), so the same seed + same state always yields the same outcome,
  * and a generic `Override` can force any specific decision's option.
  */
-export async function simulate(
+export async function* simulateYears(
   config: WorldConfig,
   initialPeople: Readonly<Record<string, Person>>,
   initialEvents: readonly Event[],
   options: SimulateOptions,
-): Promise<SimulateReport> {
+): AsyncGenerator<YearTick, SimulateReport> {
   const started = Date.now();
   const people: Record<string, Person> = structuredClone(initialPeople as Record<string, Person>);
   const events: Event[] = structuredClone(initialEvents as Event[]);
@@ -2977,7 +3011,7 @@ export async function simulate(
 
     const snapshot: YearSnapshot = { year, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) };
     snapshots.set(year, snapshot);
-    options.onYearComplete?.(snapshot);
+    yield { year, snapshot };
 
     // Round 9 (decision 034, the single-life pivot): the simulation stops the year the protagonist
     // dies — their life is what's being told, and the contract's death-is-always-a-turn/fork-to-
@@ -2992,6 +3026,21 @@ export async function simulate(
     wallTimeMs: Date.now() - started,
     decisionCalls,
   };
+}
+
+/**
+ * Batch entry point — every one of `simulate()`'s ~17 existing callers keeps calling this exactly
+ * as before (design decision 8: "the generator returns `SimulateReport`; `drainSimulation`
+ * captures it"). It's now a thin wrapper: `simulateYears()` does the actual work, one year at a
+ * time; this just drains it without a tick callback.
+ */
+export async function simulate(
+  config: WorldConfig,
+  initialPeople: Readonly<Record<string, Person>>,
+  initialEvents: readonly Event[],
+  options: SimulateOptions,
+): Promise<SimulateReport> {
+  return drainSimulation(simulateYears(config, initialPeople, initialEvents, options));
 }
 
 function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p: number, seed: string, forced: Override | undefined, selfName: string, townName: string, minted: MintedId): DecisionRecord {
