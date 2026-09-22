@@ -9,6 +9,7 @@ import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createM
 import type { Locale } from "./locale";
 import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
+import { FALLBACK_CLASS } from "./period/classes";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
@@ -255,10 +256,19 @@ const MIN_MARRIAGE_AGE: Readonly<Record<SocialClass, Readonly<Record<Sex, number
   gentry: { f: 17, m: 22 },
 };
 
-/** The earliest age `person` is eligible to marry this year, by their class and sex — never below the canon-law absolute minimum. */
+/**
+ * The earliest age `person` is eligible to marry this year, by their class and sex — never below
+ * the canon-law absolute minimum. Defensive `?? FALLBACK_CLASS` (decision 063 follow-up, CRITICAL
+ * fix): `MIN_MARRIAGE_AGE[socialClass]` should never actually miss (`SimulationResult`/`YearSnapshot`
+ * are read through `period/classes.ts`'s remap functions before reaching here) but that remap lives
+ * across a `decompressJson<T>`-cast boundary TypeScript can't verify at runtime — a lookup miss
+ * degrades to `FALLBACK_CLASS` instead of throwing, matching the design's "hazard lookup never
+ * throws" principle.
+ */
 function minMarriageAge(person: Person): number {
   const socialClass = person.socialClass ?? "cottar";
-  return Math.max(MIN_MARRIAGE_AGE[socialClass][person.sex], CANON_MINIMUM_MARRIAGE_AGE[person.sex]);
+  const ages = MIN_MARRIAGE_AGE[socialClass] ?? MIN_MARRIAGE_AGE[FALLBACK_CLASS];
+  return Math.max(ages[person.sex], CANON_MINIMUM_MARRIAGE_AGE[person.sex]);
 }
 
 /**
@@ -528,8 +538,9 @@ const LEVY_CLASS_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
   gentry: 0.4,
 };
 
+/** Defensive `?? FALLBACK_CLASS` — same rationale as `minMarriageAge` above (decision 063 follow-up). */
 function levyClassMultiplier(socialClass: SocialClass): number {
-  return LEVY_CLASS_MULTIPLIER[socialClass];
+  return LEVY_CLASS_MULTIPLIER[socialClass] ?? LEVY_CLASS_MULTIPLIER[FALLBACK_CLASS];
 }
 
 /**

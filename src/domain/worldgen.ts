@@ -2,6 +2,7 @@ import type { DecisionMaker, DecisionQuestion } from "./decisions";
 import { makeEventId } from "./events";
 import { createMind, VALUES, type ValueName } from "./mind";
 import { pickUniqueName } from "./names";
+import { FALLBACK_CLASS } from "./period/classes";
 import { isLiterate } from "./period/literacy";
 import { keyedRng, sampleGumbelMax } from "./rng";
 import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type Job, type JsonValue, type Person, type Sex, type SocialClass, type Trait, type WorldConfig } from "./types";
@@ -125,9 +126,13 @@ export const JOB_POOL_BY_CLASS: Readonly<Record<SocialClass, readonly Job[]>> = 
   gentry: ["landholder"],
 };
 
-/** A random job from `socialClass`'s own pool — the class-bound replacement for the old flat `pickJob`. */
+/**
+ * A random job from `socialClass`'s own pool — the class-bound replacement for the old flat
+ * `pickJob`. Defensive `?? JOB_POOL_BY_CLASS[FALLBACK_CLASS]` (decision 063 follow-up, CRITICAL fix)
+ * — same rationale as `simulate.ts#minMarriageAge`/`actuarial.ts#classMortalityMultiplier`.
+ */
 export function pickJobForClass(socialClass: SocialClass, rng: () => number): Job {
-  const pool = JOB_POOL_BY_CLASS[socialClass];
+  const pool = JOB_POOL_BY_CLASS[socialClass] ?? JOB_POOL_BY_CLASS[FALLBACK_CLASS];
   return pool[Math.floor(rng() * pool.length)]!;
 }
 

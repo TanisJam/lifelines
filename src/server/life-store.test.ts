@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
+import { getRestoreSnapshot } from "@/domain/fork";
 import { simulate } from "@/domain/simulate";
 import type { SocialClass } from "@/domain/types";
 import { generateWorld } from "@/domain/worldgen";
@@ -336,6 +337,41 @@ describe("life-store SQLite persistence (self-hosted Docker deploy)", () => {
       expect(storedResult.people.protagonist!.socialClass).toBe("husbandman");
     } finally {
       raw.close();
+    }
+  });
+
+  it("decision 063 follow-up (CRITICAL fix): a legacy socialClass inside a stored SNAPSHOT (not just the branch result) also reads mapped, so forking a pre-PR4 life never throws or produces NaN", async () => {
+    const args = await buildLifeArgs("store-legacy-snapshot");
+    // A snapshot from a life stored before PR4 would still carry a Tudor-era class — inject that
+    // into one arbitrary snapshot's protagonist, independent of `args.result` (which already reads
+    // mapped, per the test above; this one is specifically about `snapshots_blob`, the field the
+    // original PR4 fix missed).
+    const [someYear, someSnapshot] = [...args.snapshots.entries()][0]!;
+    const legacySnapshots = new Map(args.snapshots);
+    legacySnapshots.set(someYear, { ...someSnapshot, people: { ...someSnapshot.people, protagonist: { ...someSnapshot.people.protagonist!, socialClass: "husbandman" as SocialClass } } });
+
+    const writer = createLifeStore(dbPath);
+    const lifeId = writer.newLifeId();
+    const branchId = writer.newLifeBranchId();
+    writer.registerLife(lifeId, branchId, args.config, args.protagonistName, args.protagonistSex, args.result, legacySnapshots);
+    writer.close();
+
+    const reader = createLifeStore(dbPath);
+    try {
+      const branch = reader.getLifeBranch(lifeId, branchId)!;
+      // The exact regression: PR4 mapped `result` but never `snapshots` — this must now read mapped too.
+      expect(branch.snapshots.get(someYear)!.people.protagonist!.socialClass).toBe("villein");
+
+      // The realistic end-to-end path (`forkWorld`'s own sequence: restore, then re-simulate) must
+      // never throw (`MIN_MARRIAGE_AGE[undefined]`) or silently produce NaN (`CLASS_MORTALITY_MULTIPLIER[undefined]`).
+      const restored = getRestoreSnapshot(branch.snapshots, someYear + 1);
+      const report = await simulate(args.config, restored.people, restored.events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: "protagonist" });
+      expect(report.result.people.protagonist).toBeDefined();
+      for (const person of Object.values(report.result.people)) {
+        if (person.deathYear !== undefined) expect(Number.isNaN(person.deathYear)).toBe(false);
+      }
+    } finally {
+      reader.close();
     }
   });
 });

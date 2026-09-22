@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { LifeSex } from "@/contracts/life";
-import { remapLegacyClasses } from "@/domain/period/classes";
+import { remapLegacyClasses, remapSnapshots } from "@/domain/period/classes";
 import type { Override, SimulationResult, WorldConfig, YearSnapshot } from "@/domain/types";
 import { compressJson, dataDir, decompressJson, nextCounter, openDb, storeCacheSize, withTransaction } from "./db";
 import { LruCache } from "./lru-cache";
@@ -88,7 +88,10 @@ function rowToBranch(row: LifeBranchRow): LifeBranchRecord {
     // Tudor-era `socialClass` strings in `result_json` — mapped to their period equivalent HERE, at
     // read time only, never by rewriting the row (spec's "no migration" requirement).
     result: remapLegacyClasses(decompressJson<SimulationResult>(row.result_json)),
-    snapshots: snapshotsFromJson(decompressJson<Record<string, YearSnapshot>>(row.snapshots_blob)),
+    // CRITICAL fix (decision 063 follow-up): the original PR4 landing remapped `result` but not
+    // `snapshots` — a fork restoring one of these (`fork.ts#getRestoreSnapshot`) from a life stored
+    // before the rename would hand `simulate()` people still carrying Tudor-era classes.
+    snapshots: remapSnapshots(snapshotsFromJson(decompressJson<Record<string, YearSnapshot>>(row.snapshots_blob))),
     createdAt: row.created_at,
   };
 }

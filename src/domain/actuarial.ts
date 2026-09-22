@@ -1,3 +1,4 @@
+import { FALLBACK_CLASS } from "./period/classes";
 import type { SocialClass } from "./types";
 
 /**
@@ -66,8 +67,15 @@ const CLASS_MORTALITY_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
   gentry: 0.85,
 };
 
+/**
+ * Defensive `?? FALLBACK_CLASS` (decision 063 follow-up, CRITICAL fix): the original PR4 CVE was
+ * exactly this table returning `undefined` for a legacy class that slipped through a snapshot's
+ * unmapped `socialClass`, silently producing `NaN` mortality. `socialClass` should always be a
+ * mapped, current `SocialClass` by the time it reaches here — this is defense in depth across the
+ * `decompressJson<T>`-cast boundary TypeScript can't verify at runtime.
+ */
 export function classMortalityMultiplier(socialClass: SocialClass): number {
-  return CLASS_MORTALITY_MULTIPLIER[socialClass];
+  return CLASS_MORTALITY_MULTIPLIER[socialClass] ?? CLASS_MORTALITY_MULTIPLIER[FALLBACK_CLASS];
 }
 
 /** Whether a person of this age and sex could plausibly have a child this year, biologically. */
