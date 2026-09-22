@@ -778,3 +778,82 @@ The brief (`engine-life-course` proposal/spec/design, PR2 of 8): `simulate()` wa
 
 **Deviations / open issues for later PRs in this change:**
 - **No end-to-end "client disconnect never persists" route test.** The abort mechanism is proven in two deterministic layers instead — `sse.test.ts` (cancelling the stream aborts the handler's signal) and `simulate.test.ts` (an aborted signal makes `drainSimulation` stop and throw, never returning a report) — because a real route-level test would have to race a stream cancel against a sub-second `RuleDecisionMaker` run, which is inherently flaky. The route's own catch-and-return-early on `SimulationAbortedError` is a direct, three-line composition of those two proven pieces.
+
+## 063 — Period classes, names and literacy (engine-life-course, PR4)
+
+The brief (`engine-life-course` proposal/spec/design, PR4 of 8): rename `SocialClass` 1:1 to the
+1327-1361 period taxonomy, replace the Tudor-era name pools with 1379-poll-tax-informed ones, and
+replace the Tudor literacy table with a period one gated by a lord's-school-licence multiplier for
+unfree sons — with old stored lives staying readable via a read-time-only legacy class map.
+
+- **`src/domain/types.ts`**: `SOCIAL_CLASS_POOL` renamed 1:1 (decision 049 -> decision 063):
+  `labourer`->`cottar`, `husbandman`->`villein`, `yeoman`->`freeholder`; `artisan`/`merchant`/
+  `clergy`/`gentry` unchanged. Every literal `SocialClass` value across `worldgen.ts` (class weights,
+  job pool, fallback default), `simulate.ts` (marriage-age table, better-off/levy multiplier tables,
+  inheritance check, every `?? "labourer"` fallback), `actuarial.ts` (mortality multiplier table) and
+  `narrate.ts` (the one remaining fallback) was renamed to match — a straight relabeling, not a
+  weights/logic change, so every RNG draw a seed produces is bit-identical to before; only the string
+  a draw resolves to differs.
+- **`src/domain/period/classes.ts`** (new): `mapLegacyClass(raw)` maps a Tudor-era OR already-current
+  string to its period `SocialClass` (or `undefined` for anything else, never throws);
+  `remapLegacyClasses(result)` applies that across a whole `SimulationResult.people`, returning the
+  SAME object reference when nothing needed mapping. `CLASS_LABEL_EN`/`CLASS_LABEL_ES`: en/es display
+  labels per class, `Record<SocialClass, string>` (so a missing class is a compile error) plus a
+  runtime key-parity test, the same convention `src/i18n/dictionary.ts`'s `Dictionary` type/
+  `dictionary.test.ts` already use for the app's locale dictionaries.
+- **`src/server/life-store.ts`**: `rowToBranch` and `listLifeSummaries` both call
+  `remapLegacyClasses` on the decompressed `SimulationResult` before returning it — a life stored
+  before this rename reads back with period classes, while `result_json` on disk is never rewritten
+  (spec's "no migration" requirement; proven directly in `life-store.test.ts` by decompressing the
+  raw row and asserting the original Tudor-era string is still there).
+- **`src/domain/period/names.ts`** (new): 1379 Yorkshire poll tax-informed pools (research.md M-S8) —
+  `MALE_NAMES` repeats John/William 4x each (40% of the 20-entry pool) so plain `index % length`
+  selection reproduces the poll tax's dominant-names skew with no algorithm change; `SURNAMES` mixes
+  the four attested byname patterns (patronymic: Johnson; occupational: Smith; locative: atte Wood;
+  nickname: Long). `src/domain/names.ts` is now a one-line re-export, so `worldgen.ts`'s existing
+  `import { pickUniqueName } from "./names"` needed no change.
+- **`src/domain/period/literacy.ts`** (new): replaces `worldgen.ts`'s Tudor `LITERACY_RATE_MALE/
+  FEMALE` table and `isLiterate` with the design's c.1330 rates (clergy 0.95m/0f, gentry 0.50m/0.20f,
+  merchant 0.40m/0.10f, artisan 0.10m/0.02f, freeholder 0.08m/0.01f, villein 0.10m/0.005f, cottar
+  0.04m/0.002f) and `LORD_SCHOOL_LICENCE=0.3`, applied only to villein/cottar SONS (a serf needed his
+  lord's permission for school; daughters' base rates are already final). `worldgen.ts` re-exports
+  `isLiterate` from here so `simulate.ts`'s existing `import { isLiterate, ... } from "./worldgen"`
+  needed no change. Birth-time keyed draw, same `"literacy"` key as before — deterministic per
+  `(seed, personId, birthYear)`.
+- **Measured, not yet calibrated**: a 40-seed, 24-founder sanity run landed overall literacy at
+  ~11%, well above the ~5% c.1330 target research.md cites. This tracks a PRE-EXISTING worldgen
+  characteristic this PR didn't introduce or worsen — `assignFounderClasses`' structural gentry/
+  clergy shares (1-2 gentry HOUSEHOLDS drawn from as few as 2-5 founder COUPLES, one clergy per
+  village) are a much larger fraction of a small test village than research's "gentry under 5%,
+  ~1 priest per village" implies for a full parish. PR8's task 8.5 (`check-demographics --stats 60
+  --assert`, literacy ≈5%) is the assigned calibration pass for both this table AND that structural
+  share — left untouched here per the design's own "provisional, calibrated" framing for every rate
+  in this table.
+- **No reseeding needed this batch.** The full suite (326 pre-batch, 344 post-batch) passed with
+  only assertion-label updates (`"labourer"` -> `"cottar"` etc. in existing test literals) and the
+  literacy-band test's numeric bounds updated for the new table — no curated seed's actual RNG
+  outcome, event count, or decision content changed, since the class rename is a pure relabeling and
+  the literacy/name pool changes only affect which STRING a deterministic draw resolves to, not
+  draw order or count. `scripts/find-seeds.ts` was not invoked.
+
+**Grounding:** `sdd/engine-life-course/spec` (period-setting-1327-1361 capability, "Period social
+classes"/"Legacy class mapping at read time"/"Period names and literacy" requirements);
+`sdd/engine-life-course/design` revision 2, architecture decision #10 (class rename, legacy map at
+life-store read) and the "Literacy" table; `sdd/engine-life-course/research` #6144 (M-S8 poll tax
+names, gap M7 literacy).
+
+**Verified:** `pnpm test` (344 passing, up from 326 pre-batch — 18 new tests, 0 regressions),
+`pnpm exec tsc --noEmit`, `pnpm lint` clean. New tests: `src/domain/period/classes.test.ts` (legacy
+mapping, no-mutation/same-reference-when-unchanged, en/es label parity), `src/domain/period/
+literacy.test.ts` (determinism, the lord's-licence gate's real effect size, clergy high-literacy
+triangulation), `src/domain/period/names.test.ts` (John/William dominance, the four byname
+categories, `pickName`/`pickUniqueName` contract), plus a new legacy-class round-trip test in
+`src/server/life-store.test.ts`.
+
+**Deviations / open issues for later PRs in this change:**
+- **Overall literacy calibration** (see "Measured, not yet calibrated" above) is deferred to PR8.
+- **En/es class labels are not yet wired into any UI or narration copy** — `narrate.ts` never
+  displayed a class NAME to the user before this PR either (only used class values for internal
+  branching, e.g. the school-event phrasing check), so `CLASS_LABEL_EN/ES` has no call site yet.
+  They exist now, compile-time-paired with `SOCIAL_CLASS_POOL`, ready for PR5's `period/copy.ts` or
+  any later UI work that wants to display a person's class.
