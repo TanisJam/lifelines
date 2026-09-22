@@ -2,6 +2,17 @@
 
 Measured results, newest first. Each entry records the setup, the numbers, and the conclusion drawn from them.
 
+## 2026-09-21 — Decision 046: hierarchical event selection, live measurement (seeds `hier-1`/`hier-2`)
+
+Two fresh, uncached seeds against the live `:3000` server, name "Lucía", `sex: "f"`, `POST /api/lives/stream`.
+
+| Seed | Age at death | Entries | Distinct kinds | Vignette share | `jevRequests` | `jevQuestions` | `inputTokens` | Est. $ | Wall time |
+|---|---|---|---|---|---|---|---|---|---|
+| `hier-1` | 2 | 3 | 3 | 33.3% (1/3) | 47 | 156 | 64,729 | $0.0027 | 12.4s |
+| `hier-2` | 32 | 34 | 9 | **70.6% (24/34)** | 283 | 908 | 369,346 | $0.0155 | 12.8s |
+
+`hier-1` died in infancy (too short a life for the share to mean anything). `hier-2` is the meaningful sample: **70.6%, above the 35% target and above decision 045's own baseline (41-57%)** — the hierarchical fix did not reduce dominance, and by this one sample looks worse than even the reverted "ORDINARY DAY" wording attempt (61-73.8%). See decision 046 for the likely reason: `D1` firing has never been gated by winning the joint `selection` Choice — it's an unconditional backstop for "the protagonist ended the year with no event," which many OTHER candidates' own no-event outcomes (not touched by this round's change) trigger just as often regardless of what the top-level pick chose. The requested "top-level distribution for 3 sample years" breakdown isn't available from this run — that distribution is Jev's judgment, not persisted past the request, and extracting it for specific years wasn't instrumented this round.
+
 ## 2026-09-21 — Jev throughput limits (documented + probed live)
 
 **Documented** ([models](https://docs.typesafe.ai/models.md), [API](https://docs.typesafe.ai/api.md)):
