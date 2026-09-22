@@ -857,3 +857,105 @@ categories, `pickName`/`pickUniqueName` contract), plus a new legacy-class round
   branching, e.g. the school-event phrasing check), so `CLASS_LABEL_EN/ES` has no call site yet.
   They exist now, compile-time-paired with `SOCIAL_CLASS_POOL`, ready for PR5's `period/copy.ts` or
   any later UI work that wants to display a person's class.
+
+## 064 — Dated events, manorial markers and copy (engine-life-course, PR5)
+
+The brief (`engine-life-course` proposal/spec/design, PR5 of 8): replace decision 052/058's
+Tudor-dated shocks and national events with the 1327-1361 window's own (Great Famine, cattle
+murrain, Black Death, second pestilence, the Hundred Years' War's levies, the Ordinance/Statute of
+Labourers), add merchet/heriot/chevage/leyrwite for unfree class members, and give every new event
+and marker en/es narration copy.
+
+- **`src/domain/period/events.ts`** (new): the famine (1305-22 birth-cohort thinning, `M` rural
+  0.12/urban 0.25, keyed `"famine-cohort-thinning"` draw so it perturbs no other worldgen draw) and
+  murrain (1319-21, human multiplier 1.0 — it acts on food, never people, directly) are PRE-WINDOW
+  backstory only, never touching an in-sim year. The Black Death (1348-49, default `M=0.40`,
+  documented range 0.20-0.625) and the second pestilence (1361-62, child rate ~0.22) are dated,
+  in-sim shocks: `blackDeathMortalityForYear`/`secondPestilenceMortalityForYear` return an ABSOLUTE
+  per-year probability via `p_y=1-(1-M)^share`, deliberately NOT a multiplier on the base actuarial
+  curve (a flat multiplier can't reliably hit ~20-62.5%/~22% across every age band the way an
+  absolute, competing-risk-combined probability can). The Hundred Years' War's levy years (1337-47)
+  and the Ordinance (1349)/Statute (1351) of Labourers are narrative dated national events, same
+  unconditional-push pattern as decision 058's Tudor list.
+- **`src/domain/period/markers.ts`** (new): the shared `UNFREE_CLASSES` set (villein, cottar) gates
+  merchet (on marriage), heriot (on a tenant's death) and chevage (on leaving the village, Y3) —
+  all the `"manorial-fine"` `EventKind` with `payload.payee` always the literal `"lord"`, never a
+  `Person` (design decision 10: the lord stays off-stage). Leyrwite is a SEPARATE, keyed side draw
+  (`"leyrwite"` key, p=0.04/courting year, 0.02-0.10 documented range) evaluated once per calendar
+  year for every living, unfree, currently-courting woman, OUTSIDE the categorical event-pick, so it
+  never perturbs any other person-year draw — `activeRomancePair` (the same event-log signal Y1
+  eligibility already reads) stands in for the design's "marital.status=courting" tie, since the
+  engine has no lifeState wiring for the `courting` marital status yet (see Deviations below).
+- **`src/domain/simulate.ts`**: `SWEATING_SICKNESS_YEARS`/`DEARTH_YEARS`/`INFLUENZA_YEARS` and the
+  Tudor `PERIOD_EVENTS` list are REMOVED (Tudor-only, never reachable in 1327-1361); `TOWN_EVENT_TYPES`
+  swaps its three dated slots for `black-death`/`second-pestilence`; `townEventMortalityMultiplier`
+  drops their old per-class/age branches (see `period/events.ts` above for why); the levy's dated
+  spike moves from the 1524-25 Lay Subsidy to the Hundred Years' War's own 1337-47 window
+  (`isHundredYearsWarLevyYear`). `canMarry` drops its `year` parameter and the 1549-53 Clergy
+  Marriage Act exception entirely — clergy simply never marry in this period, a Reformation-era
+  carve-out that can't occur before 1361. Merchet/chevage/leyrwite are wired at their natural event
+  sites (A1 marriage, Y3 leave, the new per-year leyrwite loop); heriot is wired into the general
+  "death" resolution, EXCLUDED for the protagonist specifically — a same-year, causally-later
+  `manorial-fine` event would otherwise sort after their own death and break the pre-existing,
+  load-bearing "the LAST entry is ALWAYS the protagonist's death" chronicle contract.
+- **`src/domain/worldgen.ts`**: `makeAdult` backfills a `"period-marker"` (`marker: "great-famine"`)
+  for every founder adult at year 1315 (every adult founder is, by construction, born by 1309 —
+  old enough to have lived through it); `makeChild` applies the famine-cohort-thinning draw and, if
+  claimed, gives that founder child a backfilled death (`cause: "great-famine"`) within the window,
+  never after it. The murrain backstory marker (villein/freeholder founder couples) is additionally
+  gated on the couple actually being old enough to have lived through 1319-21 (`survivedFamineAsChild`
+  on either parent) — without this gate it fired for ANY villein/freeholder couple regardless of the
+  world's own start year, including the Tudor-era default (caught by a dedicated regression test).
+- **`src/domain/mortality.ts`/`narrate.ts`**: `DeathCause` swaps `sweating-sickness`/`dearth`/
+  `influenza` for `great-famine`/`black-death`/`second-pestilence`; `narrate.ts` gets restrained
+  `manorial-fine`/`period-marker` prose and titles in both locales (leyrwite's exact wording is the
+  design's own: "The manor court fined {name} for leyrwite, and the fine went to the lord."), and
+  `TOWN_EVENT_NARRATION`/`_ES` are now exported for a dedicated en/es key-parity test.
+
+**Reseeding** (decision 053/061 precedent, via `scripts/find-seeds.ts`): three curated seeds broke,
+all for the same underlying reason (a Tudor-only mechanism this PR removes) or a Tudor-year-specific
+tuning that no longer applies to the new dated years:
+- `simulate.test.ts`'s "a widow or widower can remarry..." test: `"widow-check-11"` -> found
+  `"widow-check-11-1"` (predicate: at least one actor with >=2 marriages) — the original run's one
+  remarriage was a clergy actor inside the now-removed 1549-53 window.
+- `simulate.test.ts`'s "the lord's levy actually fires..." test: `"levy-check-6"` -> found
+  `"levy-check-6-25"` (predicate: a levy landing in 1337-47) — the seed was tuned to land in the
+  Tudor-era 1524-25 Lay Subsidy window.
+- The "decision 058: scheduled period events" describe block's `startYear`/`endYear` moved from
+  1498-1558 to 1327-1361/1361 throughout (not a reseed — the dated events themselves moved centuries,
+  so every test in that block needed the new window to observe them at all).
+No other curated seed broke: PR1-PR4's own curated fixtures never touch the 1327-1361-specific
+mechanisms this PR adds.
+
+**Grounding:** `sdd/engine-life-course/spec` (period-setting-1327-1361 capability, "Dated national
+events"/"Manorial markers and i18n parity" requirements); `sdd/engine-life-course/design` revision 2
+("Period events" and "Manorial markers" tables, architecture decisions #10/#15); `sdd/engine-life-
+course/research` #6144 (M-S3/M-S4/M-S5, the markers list, gaps M5).
+
+**Verified:** `pnpm test` (391 passing, up from 375 pre-batch — 16 new tests, 0 regressions),
+`pnpm exec tsc --noEmit`, `pnpm lint` clean. New tests: `src/domain/period/events.test.ts` (20
+cases: famine thinning rate/determinism/bounds, murrain eligibility, Black Death/second-pestilence
+year splits and range), `src/domain/period/markers.test.ts` (8 cases: unfree-class gating, payload
+shape, leyrwite eligibility/rate/determinism), plus new PR5 describe blocks in
+`simulate.test.ts`/`worldgen.test.ts`/`narrate.test.ts` for the dated-shock mortality range,
+manorial-marker wiring, famine/murrain backstory, and en/es copy parity.
+
+**Deviations / open issues for later PRs in this change:**
+- **Leyrwite eligibility reads `activeRomancePair`, not a `lifeState.marital.status="courting"`
+  transition** — the Y1 "romance" event never actually sets that axis to `"courting"` (PR3 wired
+  marriage/moves/widowhood/the A4 betrayal-leave path, but not this one), so wiring leyrwite through
+  lifeState would have meant ALSO adding new courting/single transitions to the Y1/A1 event paths —
+  real new surface area outside this PR's own scope. `activeRomancePair` is the exact same
+  event-log-derived signal Y1 eligibility already uses for "is this person currently courting",
+  so this is a like-for-like substitution, not a weaker check.
+- **The second pestilence's child skew is unit-tested, not integration-tested** — a ~40-founder
+  village 34 simulated years in (on top of the Black Death) rarely has enough surviving children by
+  1361 to show the skew empirically at reasonable seed counts (measured: 0 child deaths in 43
+  second-pestilence deaths across 30 seeds); `period/events.test.ts` proves the formula directly.
+- **The Statute of Labourers' mobility factor is deferred to PR6** — the design's own "Hazard
+  shapes" table ties it to `hazards.ts`'s Y3 factor (`P_k(year)`), which doesn't exist until PR6.
+  This PR ships the Statute's narrative marker and the Hundred Years' War's levy-tax spike only.
+- **`period/copy.ts` (the design's originally-suggested file) was not created** — the launch prompt
+  explicitly asked for copy inside `narrate.ts`'s existing en/es maps instead, which is where PR4's
+  own `CLASS_LABEL_EN/ES` was already left waiting for a call site; this keeps narration copy in one
+  place rather than splitting it across two modules.
