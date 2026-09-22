@@ -1539,7 +1539,7 @@ export async function simulate(
       await mapWithConcurrency(personIds, yearBatchConcurrency, async (personId) => {
         const situations = batchesByPerson.get(personId)!;
         const situationIds = Object.keys(situations);
-        const self = personSummary(people[personId]!, year, people);
+        const self: Record<string, JsonValue> = personSummary(people[personId]!, year, people);
         const isProtagonist = personId === options.protagonistId;
         const result = await options.decisionMaker.decideYear!({ personId, year, self, situations, isProtagonist });
 
