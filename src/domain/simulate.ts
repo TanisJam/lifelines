@@ -10,6 +10,15 @@ import type { Locale } from "./locale";
 import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import { FALLBACK_CLASS } from "./period/classes";
+import {
+  BLACK_DEATH_YEARS,
+  blackDeathMortalityForYear,
+  datedNationalEventTypesForYear,
+  isHundredYearsWarLevyYear,
+  SECOND_PESTILENCE_YEARS,
+  secondPestilenceMortalityForYear,
+} from "./period/events";
+import { isLeyrwiteEligible, isUnfree, manorialFinePayload, shouldPresentLeyrwite } from "./period/markers";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
@@ -206,22 +215,13 @@ function otherPersonBrief(person: Person, year: number, people: Readonly<Record<
 }
 
 /**
- * Decision 053: the Clergy Marriage Act 1548 legalized English clerical marriage (commencement 24
- * November 1548 / royal assent 14 March 1549, research.md's Clergy table), repealed by Mary I's
- * First Statute of Repeal in 1553. Inclusive bounds, per the proposal's own "1549-53" framing.
+ * Engine life course PR5: the Clergy Marriage Act (1549-53) is a Reformation-era, Tudor-only
+ * exception (decision 053) that never applies to the 1327-1361 window this engine now models —
+ * removed rather than dated to a year that can never occur. Clergy are celibate under canon law
+ * throughout the period (research.md, "Clergy: celibacy, concubinage..."), with no exception.
  */
-const CLERGY_MARRIAGE_LEGAL_FROM = 1549;
-const CLERGY_MARRIAGE_LEGAL_TO = 1553;
-
-/**
- * Decision 056 (extended by 053): clergy are celibate under canon law throughout 1498-1558
- * (research.md, "Clergy: celibacy, concubinage, and Reformation clerical marriage" — in force
- * across the whole window in every Catholic territory), EXCEPT for the 1549-53 window in England,
- * when the Clergy Marriage Act made it briefly legal.
- */
-export function canMarry(person: Person, year: number): boolean {
-  if (person.socialClass === "clergy") return year >= CLERGY_MARRIAGE_LEGAL_FROM && year <= CLERGY_MARRIAGE_LEGAL_TO;
-  return true;
+export function canMarry(person: Person): boolean {
+  return person.socialClass !== "clergy";
 }
 
 /**
@@ -397,10 +397,11 @@ export interface CandidateDescriptor {
 
 /**
  * The town-level happenings from mind-model.md's "Town events" table — each one presents A5 to
- * every adult in town. Decision 052 adds three DATED historical shocks (`sweating-sickness`,
- * `dearth`, `influenza`) alongside the original seven random "flavor" kinds.
+ * every adult in town. Engine life course PR5 replaces decision 052's three Tudor-dated shocks
+ * (`sweating-sickness`, `dearth`, `influenza`) with this period's own two dated shocks
+ * (`black-death`, `second-pestilence`) alongside the original seven random "flavor" kinds.
  */
-const TOWN_EVENT_TYPES = ["plague", "famine", "fire", "festival", "conflict", "harvest", "stranger", "sweating-sickness", "dearth", "influenza"] as const;
+const TOWN_EVENT_TYPES = ["plague", "famine", "fire", "festival", "conflict", "harvest", "stranger", "black-death", "second-pestilence"] as const;
 type TownEventType = (typeof TOWN_EVENT_TYPES)[number];
 
 const TOWN_EVENT_LABEL: Record<TownEventType, string> = {
@@ -411,9 +412,8 @@ const TOWN_EVENT_LABEL: Record<TownEventType, string> = {
   conflict: "A conflict has broken out with a neighboring town, and it has reached",
   harvest: "A bountiful harvest has blessed",
   stranger: "A traveling stranger has arrived in",
-  "sweating-sickness": "The sweating sickness has struck",
-  dearth: "A dearth has gripped",
-  influenza: "A grippe has swept through",
+  "black-death": "The Black Death has struck",
+  "second-pestilence": "A second pestilence has struck",
 };
 
 /** Spanish counterpart of `TOWN_EVENT_LABEL` — used only by `questionText`'s `"es"` branch (decision 059); see that function's own comment for why it's currently unreached from any real call site. */
@@ -425,29 +425,12 @@ const TOWN_EVENT_LABEL_ES: Record<TownEventType, string> = {
   conflict: "Ha estallado un conflicto con una aldea vecina, y ha alcanzado a",
   harvest: "Una cosecha abundante ha bendecido a",
   stranger: "Un forastero de paso ha llegado a",
-  "sweating-sickness": "El sudor inglés ha golpeado",
-  dearth: "Una carestía ha atenazado",
-  influenza: "Una gripe ha recorrido",
+  "black-death": "La peste negra ha golpeado",
+  "second-pestilence": "Una segunda peste ha golpeado",
 };
 
-/** Whether a hardship-flavored town event that year (plague/famine/fire) should raise mortality risk for everyone in town that year, flat x1.6 — decision 025's original trio, unchanged by decision 052. The three DATED shocks below get their own demographic/class-skewed multiplier instead (`townEventMortalityMultiplier`), since research.md documents them as unevenly distributed, not flat. */
+/** Whether a hardship-flavored town event that year (plague/famine/fire) should raise mortality risk for everyone in town that year, flat x1.6 — decision 025's original trio, unchanged since. The two dated shocks below get their own absolute-probability treatment instead (see the "death" resolution in `simulateYears`), since research.md documents them at a scale a flat multiplier on the base actuarial curve can't reliably reach. */
 const HARDSHIP_TOWN_EVENTS: ReadonlySet<TownEventType> = new Set(["plague", "famine", "fire"]);
-
-/** Decision 052: the four sweating-sickness summers that fall inside the 1498-1558 window — dated, not rolled (research.md, mortality §5: "Outbreaks in the summers of 1485, 1508, 1517, 1528, and 1551... four of the five... fall inside our window"). */
-const SWEATING_SICKNESS_YEARS: ReadonlySet<number> = new Set([1508, 1517, 1528, 1551]);
-
-/**
- * Decision 052: two dated dearth/famine windows. 1555-56 is directly sourced (research.md,
- * mortality §6, "Dearth crisis, 1555-1557" — the crisis's disease-mortality tail runs into 1557,
- * outside this window, so only the harvest-failure years themselves are modeled here). The 1527-29
- * window comes from the research doc's own "Proposed changes" table (052) but is NOT independently
- * corroborated by its own dearth section — flagged here as the less-certain of the two, carried
- * over from the proposal as given.
- */
-const DEARTH_YEARS: ReadonlySet<number> = new Set([1527, 1528, 1529, 1555, 1556]);
-
-/** Decision 052: the 1557-59 influenza pandemic (research.md, mortality §5 — "English population estimated to have contracted by ~2% over 1557-1559"). */
-const INFLUENZA_YEARS: ReadonlySet<number> = new Set([1557, 1558, 1559]);
 
 /**
  * Decision 052: plague gets its own independent, more-frequent annual roll instead of being one
@@ -458,8 +441,8 @@ const INFLUENZA_YEARS: ReadonlySet<number> = new Set([1557, 1558, 1559]);
  */
 const PLAGUE_ANNUAL_PROBABILITY = 0.025;
 
-/** The random "flavor" town events (unchanged frequency and meaning from decision 025) — plague and the three decision-052 dated shocks are handled separately above, so they're excluded from this uniform pool. */
-const FLAVOR_TOWN_EVENT_TYPES = TOWN_EVENT_TYPES.filter((t) => t !== "plague" && t !== "sweating-sickness" && t !== "dearth" && t !== "influenza");
+/** The random "flavor" town events (unchanged frequency and meaning from decision 025) — plague and the two PR5 dated shocks are handled separately above, so they're excluded from this uniform pool. */
+const FLAVOR_TOWN_EVENT_TYPES = TOWN_EVENT_TYPES.filter((t) => t !== "plague" && t !== "black-death" && t !== "second-pestilence");
 
 /**
  * A rare, world-level happening (round 5, decision 025 — mind-model.md's
@@ -470,15 +453,14 @@ const FLAVOR_TOWN_EVENT_TYPES = TOWN_EVENT_TYPES.filter((t) => t !== "plague" &&
  * candidate-gathering pass AND the event-pushing pass in `simulate()` need
  * to agree on the exact same answer for a given year.
  *
- * Decision 052: dated shocks (sweating sickness, dearth, influenza) take priority — they happen
- * deterministically in their historical years, never rolled — followed by plague's own more
- * frequent independent roll, followed by the original random flavor-event roll (unchanged odds and
- * pool, minus plague, which moved to its own roll above).
+ * Engine life course PR5: the two dated shocks (Black Death, second pestilence) take priority —
+ * they happen deterministically in their historical years, never rolled — followed by plague's own
+ * more frequent independent roll, followed by the original random flavor-event roll (unchanged odds
+ * and pool, minus plague, which moved to its own roll above).
  */
 function townEventForYear(seed: string, year: number): TownEventType | undefined {
-  if (SWEATING_SICKNESS_YEARS.has(year)) return "sweating-sickness";
-  if (DEARTH_YEARS.has(year)) return "dearth";
-  if (INFLUENZA_YEARS.has(year)) return "influenza";
+  if (BLACK_DEATH_YEARS.has(year)) return "black-death";
+  if (SECOND_PESTILENCE_YEARS.has(year)) return "second-pestilence";
   const plagueDraw = keyedDraw(seed, "world", year, "plague-gate");
   if (plagueDraw < PLAGUE_ANNUAL_PROBABILITY) return "plague";
   const gateDraw = keyedDraw(seed, "world", year, "town-event-gate");
@@ -488,45 +470,31 @@ function townEventForYear(seed: string, year: number): TownEventType | undefined
 }
 
 /**
- * Decision 052: per-person mortality multiplier for the town event that happened this year — a
- * generalization of the flat `HARDSHIP_TOWN_EVENTS` x1.6 above (kept unchanged for the original
- * plague/famine/fire trio) to cover the three dated shocks, each with a documented demographic skew
- * (research.md, mortality §5-6):
- *  - Sweating sickness: "disproportionately... the relatively affluent male adult population,
- *    particularly the clergy" (NEJM/PMC review) — a strong multiplier for adult men (15-45) of the
- *    better-off classes, a smaller one for everyone else (it wasn't EXCLUSIVE to them).
- *  - Dearth: grain-price inflation hits the landless/wage-dependent hardest — a strong multiplier
- *    for labourers, a mild one for everyone else (bad harvests raise prices town-wide).
- *  - Influenza: a national, not class-skewed, "~2% population loss" event (research.md) — one flat
- *    multiplier for everyone, TUNED, not measured against real per-year excess mortality (see
- *    docs/decisions.md 052's disclosed limitation).
- * All specific multiplier magnitudes below are DESIGN ASSUMPTIONS — no source gives a per-person
- * hazard ratio for any of these three events.
+ * Decision 052: per-person mortality multiplier for the town event that happened this year — the
+ * flat `HARDSHIP_TOWN_EVENTS` x1.6 above, unchanged for the original plague/famine/fire trio. The
+ * two PR5 dated shocks (Black Death, second pestilence) are DELIBERATELY excluded here (they fall
+ * through to the default `1`): a flat multiplier on the base actuarial curve can't reliably hit
+ * their documented ~20-62.5%/~22% two-year mortality across every age band, so they're combined as
+ * an absolute per-year probability directly in the "death" resolution instead (`period/events.ts`'s
+ * `blackDeathMortalityForYear`/`secondPestilenceMortalityForYear`). `age`/`sex`/`socialClass` stay
+ * in the signature (unused) rather than being dropped, since this function is exported and called
+ * positionally by tests and the "death" resolution below — a future per-class/age dated shock can
+ * reuse this same call shape without another signature change.
  */
-const BETTER_OFF_CLASSES: ReadonlySet<SocialClass> = new Set(["gentry", "merchant", "freeholder", "clergy"]);
-
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function townEventMortalityMultiplier(townEvent: TownEventType | undefined, age: number, sex: Sex, socialClass: SocialClass): number {
   if (!townEvent) return 1;
   if (HARDSHIP_TOWN_EVENTS.has(townEvent)) return 1.6;
-  if (townEvent === "sweating-sickness") {
-    const primeAdultMale = sex === "m" && age >= 15 && age <= 45;
-    const betterOff = BETTER_OFF_CLASSES.has(socialClass);
-    if (primeAdultMale && betterOff) return 5;
-    if (primeAdultMale || betterOff) return 2.5;
-    return 1.2;
-  }
-  if (townEvent === "dearth") return socialClass === "cottar" ? 2.5 : 1.3;
-  if (townEvent === "influenza") return 1.5;
   return 1;
 }
 
 /**
  * Decision 058 (keys renamed 1:1 by decision 063): who actually bore feudal/tax dues (research.md,
- * Economy §"Taxes, housing, diet" — tithe of 10%, rent and entry fines, the 1524-25 Lay Subsidy) — a
- * DESIGN ASSUMPTION (no sourced per-class ratio exists), same disclosed-assumption pattern as
- * `CLASS_MORTALITY_MULTIPLIER` (decision 050) and `townEventMortalityMultiplier` (decision 052).
- * Cottars/villeins (was labourers/husbandmen) paid the most relative to their means; gentry/clergy
- * bore feudal dues far more lightly, when at all.
+ * Economy §"Taxes, housing, diet" — tithe of 10%, rent and entry fines) — a DESIGN ASSUMPTION (no
+ * sourced per-class ratio exists), same disclosed-assumption pattern as `CLASS_MORTALITY_MULTIPLIER`
+ * (decision 050). Cottars/villeins paid the most relative to their means; gentry/clergy bore feudal
+ * dues far more lightly, when at all. PR5 spikes this during the Hundred Years' War levy years
+ * (1337-47, `isHundredYearsWarLevyYear`) instead of decision 058's Tudor-era Lay Subsidy years.
  */
 const LEVY_CLASS_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
   cottar: 1.3,
@@ -541,36 +509,6 @@ const LEVY_CLASS_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
 /** Defensive `?? FALLBACK_CLASS` — same rationale as `minMarriageAge` above (decision 063 follow-up). */
 function levyClassMultiplier(socialClass: SocialClass): number {
   return LEVY_CLASS_MULTIPLIER[socialClass] ?? LEVY_CLASS_MULTIPLIER[FALLBACK_CLASS];
-}
-
-/**
- * Decision 058: one-time, dated national/period events touching every English village during the
- * window (research.md, Clergy/nobility §"Period events 1498-1558") — narrative markers pushed
- * unconditionally at their historical year(s), independent of `townEventForYear`'s own single-slot
- * roll for that year (these are historical certainties, not probabilistic town happenings, so
- * there's no reason to compete with plague/dearth/festival/etc. for the year's one random slot).
- * Deliberately NOT given a mortality multiplier of their own — decision 052's three dated shocks
- * already cover the window's mortality events, and re-tuning mortality here risks the demographic
- * targets decision 050 calibrated (see docs/decisions.md 050's measured figures). "Tithe and rent
- * appear as narrative pressure only (no economy yet)" per proposal 058 — the one exception is the
- * levy class multiplier/Lay Subsidy spike above, which is real state (the protagonist's own levy
- * odds), not narrative.
- */
-const PERIOD_EVENTS: readonly { readonly year: number; readonly type: string }[] = [
-  { year: 1524, type: "lay-subsidy" },
-  { year: 1525, type: "amicable-grant" },
-  { year: 1530, type: "vagrancy-act-1530" },
-  { year: 1536, type: "dissolution-begins" },
-  { year: 1536, type: "vagrancy-act-1536" },
-  { year: 1544, type: "great-debasement" },
-  { year: 1547, type: "chantries-act" },
-  { year: 1547, type: "vagrancy-act-1547" },
-  { year: 1549, type: "prayer-book" },
-  { year: 1553, type: "marian-restoration" },
-];
-
-function periodEventTypesForYear(year: number): readonly string[] {
-  return PERIOD_EVENTS.filter((e) => e.year === year).map((e) => e.type);
 }
 
 /**
@@ -792,7 +730,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // status (inferred, not measured)") is a SOFT preference, not a hard rule: `eligible` is tried
     // same-class-first across the three age windows, only falling back to any class if nobody
     // eligible shares this person's own class at any age gap.
-    if (age >= minMarriageAge(person) && age <= 65 && !person.spouseId && activeRomancePair(events, person.id) === undefined && canMarry(person, year) && mourningOver(person, events, year)) {
+    if (age >= minMarriageAge(person) && age <= 65 && !person.spouseId && activeRomancePair(events, person.id) === undefined && canMarry(person) && mourningOver(person, events, year)) {
       const eligible = (maxAgeGap: number, sameClassOnly: boolean) =>
         aliveNonMoved.find(
           (candidate) =>
@@ -803,7 +741,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
             !isRelatedForMarriage(person, candidate, people) &&
             ageInYear(candidate.birthYear, year) >= minMarriageAge(candidate) &&
             activeRomancePair(events, candidate.id) === undefined &&
-            canMarry(candidate, year) &&
+            canMarry(candidate) &&
             mourningOver(candidate, events, year) &&
             Math.abs(ageInYear(candidate.birthYear, year) - age) <= maxAgeGap &&
             (!sameClassOnly || (candidate.socialClass ?? "cottar") === (person.socialClass ?? "cottar")),
@@ -1132,7 +1070,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         age <= 65 &&
         !protagonist.spouseId &&
         activeRomancePair(events, protagonist.id) === undefined &&
-        canMarry(protagonist, year) &&
+        canMarry(protagonist) &&
         mourningOver(protagonist, events, year)
       ) {
         const suitor = awayCast.find(
@@ -1142,7 +1080,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
             !isRelatedForMarriage(protagonist, c, people) &&
             ageInYear(c.birthYear, year) >= minMarriageAge(c) &&
             activeRomancePair(events, c.id) === undefined &&
-            canMarry(c, year) &&
+            canMarry(c) &&
             mourningOver(c, events, year),
         );
         if (suitor) candidates.push({ decisionId: `Y1:${pairKey(protagonist.id, suitor.id)}:${year}`, kind: "Y1", personId: protagonist.id, partnerId: suitor.id, options: ["encourage", "decline", "wait"] });
@@ -2035,11 +1973,11 @@ export async function* simulateYears(
       townEventId = event.id;
     }
 
-    // Decision 058: dated period events (Dissolution, Chantries Act, Prayer Book, Marian
-    // restoration, the Great Debasement, the vagrancy acts, the Lay Subsidy/Amicable Grant) —
-    // pushed unconditionally, independent of `townEventForYear`'s single random/dated-shock slot
-    // above (see `PERIOD_EVENTS`'s own doc comment for why these don't compete for that slot).
-    for (const periodType of periodEventTypesForYear(year)) {
+    // Engine life course PR5: dated national events (the Hundred Years' War's opening, the
+    // Ordinance and Statute of Labourers) — pushed unconditionally, independent of
+    // `townEventForYear`'s single random/dated-shock slot above (see `period/events.ts`'s
+    // `DATED_NATIONAL_EVENTS` doc comment for why these don't compete for that slot).
+    for (const periodType of datedNationalEventTypesForYear(year)) {
       pushEvent(events, year, "town", [], { eventType: periodType, period: true }, []);
     }
     // --- Biology: synchronous, no AI calls ----------------------------------
@@ -2087,7 +2025,13 @@ export async function* simulateYears(
         // and docs/decisions.md 050's measured figures), not a per-protagonist patch.
         const shockMultiplier = townEventMortalityMultiplier(townEvent, age, person.sex, socialClass);
         const illnessMultiplier = illnessEvent ? 3 : 1;
-        const p = Math.min(0.9, deathProbabilityAtAge(age) * classMortalityMultiplier(socialClass) * shockMultiplier * illnessMultiplier);
+        // Engine life course PR5: the Black Death/second pestilence are combined as an ABSOLUTE
+        // per-year probability (competing risk with the base rate above), not a multiplier — see
+        // `townEventMortalityMultiplier`'s own doc comment for why a flat multiplier can't reliably
+        // hit their documented scale across every age band.
+        const pandemicMortality = blackDeathMortalityForYear(year) ?? secondPestilenceMortalityForYear(year, age);
+        const basePandemic = Math.min(0.9, deathProbabilityAtAge(age) * classMortalityMultiplier(socialClass) * shockMultiplier * illnessMultiplier);
+        const p = pandemicMortality === undefined ? basePandemic : Math.min(0.9, 1 - (1 - basePandemic) * (1 - pandemicMortality));
         // Decision 050: `hasActiveFeud` (and therefore the "feud-violence" cause) is now computed for
         // EVERY person, not just the protagonist — `activeFeudPair` already reads the general event
         // log by personId, so this was never protagonist-specific machinery, only protagonist-gated.
@@ -2114,26 +2058,35 @@ export async function* simulateYears(
           // by the shared `resolveWidowhood` helper (fixed after review, R3-001) so this general
           // death path and decision 051's maternal-death path below can never disagree.
           resultingEventIds.push(...resolveWidowhood(seed, events, people, person, socialClass, year, deathEvent.id));
+          // PR5's heriot marker (design's markers table: "villein/cottar tenant death") — the
+          // deceased's best beast, owed to the lord, on the death of an unfree tenant. Excluded for
+          // the protagonist specifically: their own death is a pre-existing, load-bearing contract
+          // ("the LAST entry is ALWAYS the protagonist's death, level 3" — `life-chronicle.test.ts`)
+          // that a same-year, causally-later event would break by sorting after it.
+          if (isUnfree(socialClass) && person.id !== protagonistId) {
+            const heriotEvent = pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("heriot", person.id), [deathEvent.id]);
+            resultingEventIds.push(heriotEvent.id);
+          }
         } else if (illnessEvent) {
           (illnessEvent.payload as Record<string, JsonValue>).recovered = true;
         }
-        const deathCauses = [...(illnessEvent ? [illnessEvent.id] : []), ...(shockMultiplier > 1 && townEventId ? [townEventId] : [])];
+        const deathCauses = [...(illnessEvent ? [illnessEvent.id] : []), ...((shockMultiplier > 1 || pandemicMortality !== undefined) && townEventId ? [townEventId] : [])];
         record = { ...record, causes: deathCauses, resultingEventIds };
         const pushed = record.chosen === "die" || p >= RECORD_THRESHOLD || record.source === "forced";
         if (pushed) decisions.push(record);
         commitId(people, events, descriptor.personId, minted, pushed);
       } else if (descriptor.kind === "levy") {
         // Decision 058: a class-specific multiplier (research.md, Economy §"Taxes, housing, diet" —
-        // tithe, rent and the Lay Subsidy fell on tenants and labourers; gentry/clergy bore feudal
-        // dues far more lightly, when at all) — a DESIGN ASSUMPTION, no sourced per-class ratio
-        // exists, same disclosed-assumption pattern as decision 050's `CLASS_MORTALITY_MULTIPLIER`
-        // and decision 052's `townEventMortalityMultiplier`. Also spikes in 1524-25 (the Lay
-        // Subsidy/Amicable Grant, dated not rolled, per proposal 058) — the levy candidate is
-        // protagonist-only (see the `SimulateOptions` doc comment), so this never touches the
-        // general village.
+        // tithe, rent and the levy fell on tenants and labourers; gentry/clergy bore feudal dues far
+        // more lightly, when at all) — a DESIGN ASSUMPTION, no sourced per-class ratio exists, same
+        // disclosed-assumption pattern as decision 050's `CLASS_MORTALITY_MULTIPLIER`. Engine life
+        // course PR5 spikes this during the Hundred Years' War's own levy/taxation years (1337-47,
+        // research.md's event list) instead of decision 058's Tudor-era Lay Subsidy years — the levy
+        // candidate is protagonist-only (see the `SimulateOptions` doc comment), so this never
+        // touches the general village.
         const levySocialClass: SocialClass = people[descriptor.personId]!.socialClass ?? "cottar";
-        const laySubsidyYear = year === 1524 || year === 1525;
-        const p = Math.min(0.9, 0.045 * (townEvent === "famine" ? 1.4 : 1) * levyClassMultiplier(levySocialClass) * (laySubsidyYear ? 1.8 : 1));
+        const hywLevyYear = isHundredYearsWarLevyYear(year);
+        const p = Math.min(0.9, 0.045 * (townEvent === "famine" ? 1.4 : 1) * levyClassMultiplier(levySocialClass) * (hywLevyYear ? 1.8 : 1));
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "impose") {
@@ -2203,6 +2156,20 @@ export async function* simulateYears(
       // once-per-living-person "death" pass rather than giving it its own
       // decision — starting school at 6 has no real alternative outcome.
       if (descriptor.kind === "death" && !hasMovedAway(events, descriptor.personId)) school(events, people, descriptor.personId, year);
+    }
+
+    // PR5's leyrwite presentment (design's markers table): a keyed side draw, evaluated once per
+    // calendar year for every living, unfree, currently-courting woman — OUTSIDE the categorical
+    // event-pick below, on its own dedicated key, so it never perturbs any other person-year draw.
+    // `activeRomancePair` (the same event-log signal Y1 eligibility already reads) stands in for
+    // the design's "marital.status=courting" tie — the engine has no pre-marital-pregnancy model.
+    for (const person of Object.values(people)) {
+      if (person.deathYear !== undefined || person.away || hasMovedAway(events, person.id)) continue;
+      const isCourting = activeRomancePair(events, person.id) !== undefined;
+      if (!isLeyrwiteEligible(person, isCourting)) continue;
+      if (shouldPresentLeyrwite(seed, person.id, year)) {
+        pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("leyrwite", person.id), []);
+      }
     }
 
     // Round 12 (decision 045): `socialCandidates` was gathered BEFORE biology ran this year, so it
@@ -2463,6 +2430,15 @@ export async function* simulateYears(
               if (core) applyCoreMemoryShift(seed, self.id, year, self.mind, "trust", 1);
               updateRelationship(self.mind, other.id, other.mind.values, 40, "spouse");
             }
+            // PR5's merchet marker (design's markers table: "villein/cottar marriage") — one fine per
+            // unfree spouse (a villein marrying an artisan only pays for the unfree side; a villein
+            // marrying a villein pays twice, once per household's own tenancy).
+            for (const spouse of [person, partner!]) {
+              if (isUnfree(spouse.socialClass)) {
+                const merchetEvent = pushEvent(events, year, "manorial-fine", [spouse.id], manorialFinePayload("merchet", spouse.id), [event.id]);
+                resultingEventIds.push(merchetEvent.id);
+              }
+            }
           } else if (chosen === "end-it") {
             const event = pushEvent(events, year, "breakup", [person.id, partner!.id], {}, causes);
             resultingEventIds.push(event.id);
@@ -2632,6 +2608,12 @@ export async function* simulateYears(
             if (person.spouseId) {
               const spouse = people[person.spouseId];
               if (spouse) pushThought(spouse.mind, "loneliness", `being left behind by ${person.name}`, 50, 4, year, "anxiety", person.id);
+            }
+            // PR5's chevage marker (design's markers table: "unfree Y3 away") — the licence an
+            // unfree person needed to live off the manor.
+            if (isUnfree(person.socialClass)) {
+              const chevageEvent = pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("chevage", person.id), [event.id]);
+              resultingEventIds.push(chevageEvent.id);
             }
           } else if (person.id === protagonistId) {
             // Decision 047: "stay" used to be entirely silent (no thought, no event) — the

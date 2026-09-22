@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMind, DREAM_GOALS, dreamGerund, pushThought } from "./mind";
-import { article, lifeSummary, narrateEvent, narrateEventForViewer, narrateMemory, narrateThought } from "./narrate";
+import { article, lifeSummary, narrateEvent, narrateEventForViewer, narrateMemory, narrateThought, TOWN_EVENT_NARRATION, TOWN_EVENT_NARRATION_ES } from "./narrate";
 import type { Event, Person } from "./types";
 
 function makePerson(id: string, overrides: Partial<Person> = {}): Person {
@@ -363,5 +363,45 @@ describe("bugfix: return-home narration (payload.returned) reads as a return, no
 
     const { title } = narrateEventForViewer(event, "p001", people, "seed-1", "town", [], "en");
     expect(title).toBe("Leaves for Millbrook");
+  });
+});
+
+describe("PR5: dated period-event copy, en/es key parity", () => {
+  it("en and es cover exactly the same set of town-event keys", () => {
+    expect(Object.keys(TOWN_EVENT_NARRATION).sort()).toEqual(Object.keys(TOWN_EVENT_NARRATION_ES).sort());
+  });
+
+  it("every dated PR5 shock/national-event key has non-empty copy in both locales", () => {
+    for (const key of ["black-death", "second-pestilence", "hundred-years-war-begins", "ordinance-of-labourers", "statute-of-labourers"]) {
+      expect(TOWN_EVENT_NARRATION[key]?.length).toBeGreaterThan(0);
+      expect(TOWN_EVENT_NARRATION_ES[key]?.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("PR5: manorial-fine and period-marker narration (restrained copy, both locales)", () => {
+  const person = makePerson("p001", { sex: "f" });
+  const people = { p001: person };
+
+  it.each(["merchet", "heriot", "chevage", "leyrwite"] as const)("renders restrained en/es prose and a title for %s, never throwing on an unknown event kind", (fine) => {
+    const event: Event = { id: "e1", year: 1340, kind: "manorial-fine", actors: ["p001"], payload: { fine, payerId: "p001", payee: "lord" }, causes: [] };
+    const en = narrateEvent(event, people, "seed-1", "town", [], "en");
+    const es = narrateEvent(event, people, "seed-1", "town", [], "es");
+    expect(en.length).toBeGreaterThan(0);
+    expect(es.length).toBeGreaterThan(0);
+    // "the lord" is named as payee only, never dramatized as a character with their own actions.
+    expect(en.toLowerCase()).not.toMatch(/lord (killed|attacked|raped|tortured)/);
+    const { title } = narrateEventForViewer(event, "p001", people, "seed-1", "town", [], "en");
+    expect(title.length).toBeGreaterThan(0);
+  });
+
+  it.each(["great-famine", "cattle-murrain"] as const)("renders en/es backstory prose and a title for the %s period-marker", (marker) => {
+    const event: Event = { id: "e1", year: 1315, kind: "period-marker", actors: ["p001"], payload: { marker }, causes: [] };
+    const en = narrateEvent(event, people, "seed-1", "town", [], "en");
+    const es = narrateEvent(event, people, "seed-1", "town", [], "es");
+    expect(en.length).toBeGreaterThan(0);
+    expect(es.length).toBeGreaterThan(0);
+    const { title } = narrateEventForViewer(event, "p001", people, "seed-1", "town", [], "en");
+    expect(title.length).toBeGreaterThan(0);
   });
 });

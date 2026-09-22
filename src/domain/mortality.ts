@@ -20,9 +20,9 @@ export const DEATH_CAUSES = [
   "childhood-accident",
   "childbirth",
   "plague",
-  "sweating-sickness",
-  "dearth",
-  "influenza",
+  "great-famine",
+  "black-death",
+  "second-pestilence",
   "war",
   "feud-violence",
   "illness",
@@ -37,9 +37,9 @@ export const DEATH_CAUSE_PHRASE: Record<DeathCause, string> = {
   "childhood-accident": "a childhood accident",
   childbirth: "complications of childbirth",
   plague: "the plague",
-  "sweating-sickness": "the sweating sickness",
-  dearth: "the dearth",
-  influenza: "a grippe",
+  "great-famine": "the Great Famine",
+  "black-death": "the Black Death",
+  "second-pestilence": "the second pestilence",
   war: "war with a neighboring village",
   "feud-violence": "violence from a long-running feud",
   illness: "a lingering illness",
@@ -57,18 +57,21 @@ export interface MortalityContext {
 }
 
 /**
- * Deterministic cause selection, most-specific/dramatic first — decision 052 adds the three dated
- * shocks (sweating sickness, dearth, influenza) ahead of the generic `illness`/`misadventure`
- * fallbacks, alongside the pre-existing plague/war/feud/age-banded causes. Maternal deaths
- * (decision 051) are NOT selected here: they're assigned directly, at the moment of birth, in
- * `simulate.ts`'s A2 "try" outcome, since that death can't go through the general per-person
- * "death" biology decision (which already resolved for the year before that birth existed).
+ * Deterministic cause selection, most-specific/dramatic first — engine life course PR5 replaces
+ * decision 052's three Tudor-dated shocks (sweating sickness, dearth, influenza) with this period's
+ * own two dated shocks (Black Death, second pestilence), ahead of the generic `illness`/
+ * `misadventure` fallbacks, alongside the pre-existing plague/war/feud/age-banded causes.
+ * `"great-famine"` is a PRE-WINDOW backstory cause only (`worldgen.ts`'s founder-cohort thinning),
+ * never reachable from this in-sim function — kept here only so `DeathCause`/`DEATH_CAUSE_PHRASE`
+ * cover it for that backfilled event's own `payload.cause`. Maternal deaths (decision 051) are NOT
+ * selected here: they're assigned directly, at the moment of birth, in `simulate.ts`'s A2 "try"
+ * outcome, since that death can't go through the general per-person "death" biology decision (which
+ * already resolved for the year before that birth existed).
  */
 export function determineDeathCause(ctx: MortalityContext): DeathCause {
   if (ctx.townEventType === "plague") return "plague";
-  if (ctx.townEventType === "sweating-sickness") return "sweating-sickness";
-  if (ctx.townEventType === "dearth") return "dearth";
-  if (ctx.townEventType === "influenza") return "influenza";
+  if (ctx.townEventType === "black-death") return "black-death";
+  if (ctx.townEventType === "second-pestilence") return "second-pestilence";
   if (ctx.townEventType === "conflict" && ctx.age >= 16) return "war";
   if (ctx.hasActiveFeud) return "feud-violence";
   if (ctx.age === 0) return "infant-fever";

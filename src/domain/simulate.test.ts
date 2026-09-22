@@ -233,9 +233,9 @@ describe("decision records", () => {
 
 describe("decision 056: canMarry / class inheritance", () => {
   it("canMarry returns false for clergy and true for every other class", () => {
-    expect(canMarry(makeClergyPerson(), 1520)).toBe(false);
+    expect(canMarry(makeClergyPerson())).toBe(false);
     for (const socialClass of ["cottar", "villein", "freeholder", "artisan", "merchant", "gentry"] as const) {
-      expect(canMarry(makeClergyPerson({ socialClass, job: "farmer" }), 1520)).toBe(true);
+      expect(canMarry(makeClergyPerson({ socialClass, job: "farmer" }))).toBe(true);
     }
   });
 
@@ -321,51 +321,51 @@ describe("decision 050: recalibrated mortality and class multiplier", () => {
   });
 });
 
-describe("decision 052: dated epidemics and dearths", () => {
-  it("a dated shock (sweating sickness, dearth, influenza) only ever kills in its documented historical year(s), never a random one", async () => {
-    const { config, people } = generateWorld({ seed: "epi-check-9", startYear: 1498, endYear: 1558, founderCount: 30 });
-    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
-    const datedDeaths = report.result.events.filter((e) => e.kind === "death" && ["sweating-sickness", "dearth", "influenza"].includes(e.payload.cause as string));
-    expect(datedDeaths.length).toBeGreaterThan(0);
-
-    const yearsByCause: Record<string, readonly number[]> = {
-      "sweating-sickness": [1508, 1517, 1528, 1551],
-      dearth: [1527, 1528, 1529, 1555, 1556],
-      influenza: [1557, 1558, 1559],
-    };
-    for (const death of datedDeaths) {
-      const cause = death.payload.cause as string;
-      expect(yearsByCause[cause]).toContain(death.year);
-    }
-    // The curated seed above is known to hit all three dated shock kinds within 1498-1558.
-    const causesSeen = new Set(datedDeaths.map((d) => d.payload.cause));
-    expect(causesSeen.has("sweating-sickness")).toBe(true);
-    expect(causesSeen.has("dearth")).toBe(true);
-    expect(causesSeen.has("influenza")).toBe(true);
+describe("PR5: Black Death and second pestilence (dated shocks, 1327-1361 window)", () => {
+  it("townEventMortalityMultiplier deliberately falls through to 1 for the two PR5 dated shocks — their scale is handled as an absolute per-year probability, not a multiplier (see period/events.ts, and the 'death' resolution in simulateYears)", () => {
+    expect(townEventMortalityMultiplier(undefined, 30, "m", "cottar")).toBe(1);
+    expect(townEventMortalityMultiplier("black-death", 30, "m", "cottar")).toBe(1);
+    expect(townEventMortalityMultiplier("second-pestilence", 8, "f", "villein")).toBe(1);
+    expect(townEventMortalityMultiplier("plague", 30, "m", "cottar")).toBe(1.6);
   });
 
-  // Fixed after review (R3-003): the old version of this test only checked that a
-  // "sweating-sickness" death cause appeared, but `determineDeathCause` labels EVERY death in a
-  // sweating-sickness year that way (it's keyed off `ctx.townEventType`, not who the multiplier
-  // actually favored) — so the test could pass even if the skew below were broken or removed. This
-  // asserts directly on `townEventMortalityMultiplier` (mortality.ts's documented skew, now
-  // test-exported from simulate.ts) instead.
-  it("sweating sickness raises mortality most for prime-adult men, more than for a child or a woman of the same class", () => {
-    const noEvent = townEventMortalityMultiplier(undefined, 30, "m", "cottar");
-    expect(noEvent).toBe(1);
+  it("Black Death mortality for the cohort alive going into 1348 falls within the documented 20-62.5% range", async () => {
+    const { config, people } = generateWorld({ seed: "black-death-check", startYear: 1327, endYear: 1360, founderCount: 40 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    const cohort1347 = report.snapshots.get(1347)!;
+    const aliveIds = Object.values(cohort1347.people)
+      .filter((p) => p.deathYear === undefined)
+      .map((p) => p.id);
+    expect(aliveIds.length).toBeGreaterThan(0);
+    const diedOfBlackDeath = aliveIds.filter((id) => {
+      const finalDeathYear = report.result.people[id]!.deathYear;
+      return finalDeathYear === 1348 || finalDeathYear === 1349;
+    }).length;
+    const rate = diedOfBlackDeath / aliveIds.length;
+    expect(rate).toBeGreaterThan(0.2);
+    expect(rate).toBeLessThan(0.625);
+  });
 
-    // Same (cottar, not "better-off") class throughout, so only age/sex vary.
-    const primeAdultMan = townEventMortalityMultiplier("sweating-sickness", 30, "m", "cottar");
-    const child = townEventMortalityMultiplier("sweating-sickness", 8, "m", "cottar");
-    const woman = townEventMortalityMultiplier("sweating-sickness", 30, "f", "cottar");
-    expect(primeAdultMan).toBeGreaterThan(1);
-    expect(primeAdultMan).toBeGreaterThan(child);
-    expect(primeAdultMan).toBeGreaterThan(woman);
+  it("at least one 1348-49 death is labeled with the black-death cause, and only in those two years", async () => {
+    const { config, people } = generateWorld({ seed: "black-death-cause-check", startYear: 1327, endYear: 1360, founderCount: 40 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    const blackDeathDeaths = report.result.events.filter((e) => e.kind === "death" && e.payload.cause === "black-death");
+    expect(blackDeathDeaths.length).toBeGreaterThan(0);
+    for (const death of blackDeathDeaths) expect([1348, 1349]).toContain(death.year);
+  });
 
-    // A prime-adult man who is ALSO better-off (research.md: "particularly the clergy") is hit
-    // hardest of all — the documented x5 vs. x2.5-for-either-alone tiering.
-    const primeAdultBetterOffMan = townEventMortalityMultiplier("sweating-sickness", 30, "m", "merchant");
-    expect(primeAdultBetterOffMan).toBeGreaterThan(primeAdultMan);
+  // The child-skew ITSELF (a child's per-year risk exceeds an adult's) is unit-tested directly
+  // against `secondPestilenceMortalityForYear` in `period/events.test.ts` — a small, ~40-founder
+  // village this far into a run (34 simulated years, on top of the Black Death) rarely has enough
+  // surviving children by 1361 for the skew to show up empirically across a reasonable seed count
+  // (measured: 0 child deaths in 43 second-pestilence deaths across 30 seeds), so this integration
+  // test only checks the shock actually fires, dated correctly, in a real simulated run.
+  it("at least one 1361-62 death is labeled with the second-pestilence cause, and only in those two years", async () => {
+    const { config, people } = generateWorld({ seed: "pestilence-check-9", startYear: 1327, endYear: 1365, founderCount: 40 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    const pestilenceDeaths = report.result.events.filter((e) => e.kind === "death" && e.payload.cause === "second-pestilence");
+    expect(pestilenceDeaths.length).toBeGreaterThan(0);
+    for (const death of pestilenceDeaths) expect([1361, 1362]).toContain(death.year);
   });
 });
 
@@ -535,13 +535,9 @@ describe("decision 055: birth spacing", () => {
 });
 
 describe("decision 053: marriage by class and canon law", () => {
-  it("canMarry allows clergy to marry only during the 1549-1553 Clergy Marriage Act window", () => {
+  it("PR5: canMarry is false for clergy in every year — the Tudor-only 1549-53 Clergy Marriage Act window never applies to the 1327-1361 period", () => {
     const priest = makeClergyPerson();
-    expect(canMarry(priest, 1548)).toBe(false);
-    expect(canMarry(priest, 1549)).toBe(true);
-    expect(canMarry(priest, 1551)).toBe(true);
-    expect(canMarry(priest, 1553)).toBe(true);
-    expect(canMarry(priest, 1554)).toBe(false);
+    expect(canMarry(priest)).toBe(false);
   });
 
   it("no in-sim marriage happens below the canon-law absolute minimum (12 women / 14 men), and every actor clears the lowest class floor in the table (17 women / 22 men, gentry) — well above the old flat 16", async () => {
@@ -642,7 +638,10 @@ describe("decision 054: widowhood and remarriage", () => {
   });
 
   it("a widow or widower can remarry, after their class's mourning interval since being widowed", async () => {
-    const { config, people } = generateWorld({ seed: "widow-check-11", startYear: 1498, endYear: 1558, founderCount: 30 });
+    // Reseeded by PR5 (decision 064, docs/decisions.md): "widow-check-11" no longer produces a
+    // remarriage now that `canMarry` drops the Tudor-only 1549-53 Clergy Marriage Act exception —
+    // the run's one remarriage was a clergy actor inside that now-removed window. Assertions unchanged.
+    const { config, people } = generateWorld({ seed: "widow-check-11-1", startYear: 1498, endYear: 1558, founderCount: 30 });
     const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 
     const marriagesByPerson = new Map<string, number[]>();
@@ -712,22 +711,15 @@ describe("life-state invariant: lifeState.marital stays consistent with spouseId
   });
 });
 
-describe("decision 058: scheduled period events", () => {
-  it("the ten dated period events fire at exactly their historical years, every full-length run, regardless of seed — never rolled, never missing", async () => {
+describe("PR5: scheduled period events (Hundred Years' War, Ordinance/Statute of Labourers)", () => {
+  it("the three dated national events fire at exactly their historical years, every full-length run, regardless of seed — never rolled, never missing", async () => {
     const expected: readonly [number, string][] = [
-      [1524, "lay-subsidy"],
-      [1525, "amicable-grant"],
-      [1530, "vagrancy-act-1530"],
-      [1536, "dissolution-begins"],
-      [1536, "vagrancy-act-1536"],
-      [1544, "great-debasement"],
-      [1547, "chantries-act"],
-      [1547, "vagrancy-act-1547"],
-      [1549, "prayer-book"],
-      [1553, "marian-restoration"],
+      [1337, "hundred-years-war-begins"],
+      [1349, "ordinance-of-labourers"],
+      [1351, "statute-of-labourers"],
     ];
     for (const seed of ["period-check-1", "period-check-2"]) {
-      const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 12 });
+      const { config, people } = generateWorld({ seed, startYear: 1327, endYear: 1361, founderCount: 12 });
       const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
       const periodEvents = report.result.events.filter((e) => e.kind === "town" && e.payload.period === true).map((e) => [e.year, e.payload.eventType] as const);
       expect(periodEvents.length).toBe(expected.length);
@@ -736,7 +728,7 @@ describe("decision 058: scheduled period events", () => {
   });
 
   it(
-    "the protagonist's lord's-levy odds are class-weighted: well-off (gentry/clergy) protagonists face a lower aggregate levy rate than labourer/husbandman ones, across many seeds",
+    "the protagonist's lord's-levy odds are class-weighted: well-off (gentry/clergy) protagonists face a lower aggregate levy rate than villein/cottar ones, across many seeds",
     async () => {
       let wellOffLevies = 0;
       let wellOffYears = 0;
@@ -744,7 +736,7 @@ describe("decision 058: scheduled period events", () => {
       let commonYears = 0;
       for (let i = 1; i <= 60; i++) {
         const seed = `levy-check-${i}`;
-        const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 20, protagonist: { name: "Test", sex: "f" } });
+        const { config, people } = generateWorld({ seed, startYear: 1327, endYear: 1361, founderCount: 20, protagonist: { name: "Test", sex: "f" } });
         const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: "protagonist" });
         const protagonist = report.result.people["protagonist"]!;
         const socialClass = protagonist.socialClass;
@@ -766,12 +758,100 @@ describe("decision 058: scheduled period events", () => {
     20000,
   );
 
-  it("the lord's levy actually fires (regression: `biologyDistribution` used to fall through to the immigration `arrive`/`no-arrival` labels for 'levy', so `chosen` could never equal 'impose' and no levy event ever fired), and can land in the 1524-25 Lay Subsidy/Amicable Grant years", async () => {
-    const { config, people } = generateWorld({ seed: "levy-check-6", startYear: 1498, endYear: 1558, founderCount: 20, protagonist: { name: "Test", sex: "f" } });
+  it("the lord's levy actually fires, and can land in the Hundred Years' War's own 1337-47 taxation years", async () => {
+    // Reseeded by PR5 (decision 064, docs/decisions.md): the old "levy-check-6" curated seed was
+    // tuned to land a levy in the Tudor-era 1524-25 Lay Subsidy window, which no longer exists.
+    const { config, people } = generateWorld({ seed: "levy-check-6-25", startYear: 1327, endYear: 1361, founderCount: 20, protagonist: { name: "Test", sex: "f" } });
     const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: "protagonist" });
     const levies = report.result.events.filter((e) => e.kind === "levy");
     expect(levies.length).toBeGreaterThan(0);
-    expect(levies.some((e) => e.year === 1524 || e.year === 1525)).toBe(true);
+    expect(levies.some((e) => e.year >= 1337 && e.year <= 1347)).toBe(true);
+  });
+});
+
+describe("PR5: manorial markers (merchet, heriot, chevage, leyrwite)", () => {
+  it("merchet fires for an unfree spouse's marriage, and only for the unfree side, across several seeds", async () => {
+    let sawMerchet = false;
+    for (let i = 1; i <= 15; i++) {
+      const seed = `merchet-check-${i}`;
+      const { config, people } = generateWorld({ seed, startYear: 1327, endYear: 1361, founderCount: 30 });
+      const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+      for (const marriage of report.result.events.filter((e) => e.kind === "marriage")) {
+        for (const spouseId of marriage.actors) {
+          const spouse = report.result.people[spouseId]!;
+          const merchet = report.result.events.find((e) => e.kind === "manorial-fine" && e.payload.fine === "merchet" && e.actors[0] === spouseId && e.year === marriage.year);
+          const isUnfreeSpouse = spouse.socialClass === "villein" || spouse.socialClass === "cottar";
+          if (isUnfreeSpouse) {
+            sawMerchet = sawMerchet || merchet !== undefined;
+            if (merchet) expect(merchet.payload).toEqual({ fine: "merchet", payerId: spouseId, payee: "lord" });
+          } else {
+            expect(merchet).toBeUndefined();
+          }
+        }
+      }
+    }
+    expect(sawMerchet).toBe(true);
+  });
+
+  it("heriot fires on the death of an unfree NPC tenant (never the protagonist, whose own death must stay the chronicle's last entry), across several seeds", async () => {
+    let sawHeriot = false;
+    for (let i = 1; i <= 15; i++) {
+      const seed = `heriot-check-${i}`;
+      const { config, people } = generateWorld({ seed, startYear: 1327, endYear: 1361, founderCount: 30, protagonist: { name: "Test", sex: "f" } });
+      const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: "protagonist" });
+      for (const death of report.result.events.filter((e) => e.kind === "death")) {
+        const deceasedId = death.actors[0]!;
+        const deceased = report.result.people[deceasedId]!;
+        const heriot = report.result.events.find((e) => e.kind === "manorial-fine" && e.payload.fine === "heriot" && e.actors[0] === deceasedId);
+        const isUnfreeTenant = deceased.socialClass === "villein" || deceased.socialClass === "cottar";
+        if (isUnfreeTenant && deceasedId !== "protagonist") {
+          sawHeriot = sawHeriot || heriot !== undefined;
+        } else {
+          expect(heriot).toBeUndefined();
+        }
+      }
+    }
+    expect(sawHeriot).toBe(true);
+  });
+
+  it("chevage fires when an unfree person leaves the village (Y3), never for a free one, across several seeds", async () => {
+    let sawChevage = false;
+    for (let i = 1; i <= 15; i++) {
+      const seed = `chevage-check-${i}`;
+      const { config, people } = generateWorld({ seed, startYear: 1327, endYear: 1361, founderCount: 30 });
+      const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+      for (const move of report.result.events.filter((e) => e.kind === "move" && e.payload.away === true)) {
+        const leaverId = move.actors[0]!;
+        const leaver = report.result.people[leaverId]!;
+        const chevage = report.result.events.find((e) => e.kind === "manorial-fine" && e.payload.fine === "chevage" && e.actors[0] === leaverId && e.year === move.year);
+        const isUnfreeLeaver = leaver.socialClass === "villein" || leaver.socialClass === "cottar";
+        if (isUnfreeLeaver) {
+          sawChevage = sawChevage || chevage !== undefined;
+        } else {
+          expect(chevage).toBeUndefined();
+        }
+      }
+    }
+    expect(sawChevage).toBe(true);
+  });
+
+  it("leyrwite is only ever presented against an unfree, currently-courting woman", async () => {
+    let sawLeyrwite = false;
+    for (let i = 1; i <= 20; i++) {
+      const seed = `leyrwite-check-${i}`;
+      const { config, people } = generateWorld({ seed, startYear: 1327, endYear: 1361, founderCount: 30 });
+      const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+      const leyrwites = report.result.events.filter((e) => e.kind === "manorial-fine" && e.payload.fine === "leyrwite");
+      for (const leyrwite of leyrwites) {
+        sawLeyrwite = true;
+        const payerId = leyrwite.actors[0]!;
+        const payer = report.result.people[payerId]!;
+        expect(payer.sex).toBe("f");
+        expect(payer.socialClass === "villein" || payer.socialClass === "cottar").toBe(true);
+        expect(leyrwite.payload).toEqual({ fine: "leyrwite", payerId, payee: "lord" });
+      }
+    }
+    expect(sawLeyrwite).toBe(true);
   });
 });
 

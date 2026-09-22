@@ -120,6 +120,20 @@ export const EVENT_KINDS = [
    * changed, so a chronicle can say "was widowed" instead of the marriage just silently vanishing.
    */
   "widowed",
+  /**
+   * Engine life course PR5: a pre-window backstory fact backfilled onto a founder or founder
+   * child — `payload.marker` is `"great-famine"` (survived the 1315-22 famine as a child, or was
+   * claimed by it before the sim window opens) or `"cattle-murrain"` (a villein/freeholder
+   * household's 1319-21 livestock loss). Narrative-only; never affects in-sim mortality by itself.
+   */
+  "period-marker",
+  /**
+   * Engine life course PR5: a manorial due paid by (or on behalf of) an unfree person —
+   * `payload.fine` is `"merchet"` (marriage), `"heriot"` (a tenant's death), `"chevage"` (a licence
+   * to live away) or `"leyrwite"` (the courting-year presentment); `payload.payee` is always
+   * `"lord"`, who stays off-stage (design decision 10) — never a `Person`.
+   */
+  "manorial-fine",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 

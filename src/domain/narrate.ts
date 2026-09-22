@@ -61,9 +61,9 @@ const DEATH_CAUSE_ES: Readonly<Record<DeathCause, string>> = {
   "childhood-accident": "un accidente infantil",
   childbirth: "complicaciones del parto",
   plague: "la peste",
-  "sweating-sickness": "el sudor inglés",
-  dearth: "la carestía",
-  influenza: "una gripe",
+  "great-famine": "la Gran Hambruna",
+  "black-death": "la peste negra",
+  "second-pestilence": "la segunda peste",
   war: "la guerra con una aldea vecina",
   "feud-violence": "la violencia de una vieja rencilla",
   illness: "una enfermedad persistente",
@@ -86,19 +86,11 @@ const TOWN_EVENT_NOUN_ES: Readonly<Record<string, string>> = {
   conflict: "el conflicto",
   harvest: "la buena cosecha",
   stranger: "la llegada de un forastero",
-  "sweating-sickness": "el sudor inglés",
-  dearth: "la carestía",
-  influenza: "la gripe",
-  "lay-subsidy": "el subsidio de la Corona",
-  "amicable-grant": "el donativo amistoso",
-  "dissolution-begins": "la disolución de los monasterios",
-  "chantries-act": "la Ley de las Capillas",
-  "prayer-book": "el nuevo Libro de Oración",
-  "marian-restoration": "la restauración de María",
-  "great-debasement": "la gran devaluación de la moneda",
-  "vagrancy-act-1530": "la ley de vagancia de 1530",
-  "vagrancy-act-1536": "la ley de vagancia de 1536",
-  "vagrancy-act-1547": "la ley de vagancia de 1547",
+  "black-death": "la peste negra",
+  "second-pestilence": "la segunda peste",
+  "hundred-years-war-begins": "la guerra con Francia",
+  "ordinance-of-labourers": "la Ordenanza de los Trabajadores",
+  "statute-of-labourers": "el Estatuto de los Trabajadores",
 };
 
 /** Masculine/feminine noun for each `Job` (plus the `"worker"` fallback `titleFor`/`lifeSummary` use when no job is set), for Spanish sentences that need grammatical agreement with the person's sex — English `article()`/`withArticle()` below need no such split. */
@@ -451,6 +443,25 @@ export function narrateEvent(
       const outcome = vignette?.outcomes[String(event.payload.outcome ?? "")];
       return outcome ? outcome.prose(locale, A, townName) : t(locale, `${A} lived through an ordinary year.`, `${A} vivió un año como cualquier otro.`);
     }
+    case "manorial-fine": {
+      // Engine life course PR5's manorial dues — restrained, non-graphic copy (design's own
+      // leyrwite wording, extended in the same register to the other three fines). The lord is
+      // named only as `payee`, never rendered as a person (design decision 10: stays off-stage).
+      const fine = String(event.payload.fine ?? "");
+      if (fine === "merchet") return t(locale, `${A} paid merchet to marry, and the fine went to the lord.`, `${A} pagó el merchet para casarse, y la multa fue para el señor.`);
+      if (fine === "heriot") return t(locale, `On ${A}'s death, the lord took the best beast as heriot.`, `A la muerte de ${A}, el señor se quedó con la mejor bestia como heriot.`);
+      if (fine === "chevage") return t(locale, `${A} paid chevage for leave to live away from the manor.`, `${A} pagó el chevage por la licencia de vivir fuera del señorío.`);
+      if (fine === "leyrwite") return t(locale, `The manor court fined ${A} for leyrwite, and the fine went to the lord.`, `El tribunal señorial multó a ${A} por leyrwite, y la multa fue para el señor.`);
+      return t(locale, `${A} paid a fine to the lord.`, `${A} pagó una multa al señor.`);
+    }
+    case "period-marker": {
+      // Engine life course PR5's pre-window backstory facts — restrained, narrative-only; never a
+      // mortality effect by themselves (see `period/events.ts`'s own doc comments).
+      const marker = String(event.payload.marker ?? "");
+      if (marker === "great-famine") return t(locale, `${A} had lived through the Great Famine as a child.`, `${A} había vivido la Gran Hambruna siendo niñ${actorSex === "f" ? "a" : "o"}.`);
+      if (marker === "cattle-murrain") return t(locale, `${A}'s household lost cattle to the murrain of 1319-21.`, `El hogar de ${A} perdió ganado por la peste bovina de 1319-21.`);
+      return t(locale, `${A} carried a memory from before.`, `${A} guardaba un recuerdo de antes.`);
+    }
     default:
       return `${A}: ${event.kind}.`;
   }
@@ -583,8 +594,13 @@ const REFLECTION_NARRATION_ES: Record<string, (name: string, other: string) => s
   "looked-for-an-advantage-in-a-town-event": (name, other) => `${name} buscó sacar ventaja de ${other}.`,
 };
 
-/** Third-person narration for a town-level event (round 5, decision 025) — no actors (the event is town-wide), so it doesn't go through the `A`/`B` name substitution the other cases use. */
-const TOWN_EVENT_NARRATION: Record<string, string> = {
+/**
+ * Third-person narration for a town-level event (round 5, decision 025) — no actors (the event is
+ * town-wide), so it doesn't go through the `A`/`B` name substitution the other cases use. Exported
+ * for the en/es key-parity test (`narrate.test.ts`), the same convention `period/classes.ts`'s
+ * `CLASS_LABEL_EN/ES` already established.
+ */
+export const TOWN_EVENT_NARRATION: Record<string, string> = {
   plague: "A plague swept through town.",
   famine: "A famine struck the town.",
   fire: "A fire tore through part of town.",
@@ -592,28 +608,17 @@ const TOWN_EVENT_NARRATION: Record<string, string> = {
   conflict: "A conflict broke out with a neighboring town.",
   harvest: "A bountiful harvest blessed the town.",
   stranger: "A traveling stranger arrived in town.",
-  // Decision 052: three dated historical shocks, alongside the random flavor events above.
-  "sweating-sickness": "The sweating sickness struck, and it fell hardest on the town's better-off men.",
-  dearth: "A dearth gripped the town, and the poor felt it worst.",
-  influenza: "A grippe swept through town.",
-  // Decision 058: dated national/period events (research.md, Clergy/nobility §"Period events
-  // 1498-1558") — narrative markers, not mortality shocks (those stay decision 052's three) or an
-  // economy (none exists yet; tithe/rent stay narrative-only, per the proposal). Named where the
-  // research is specific about who felt it most.
-  "lay-subsidy": "The Crown's Lay Subsidy fell heaviest on the wealthier households in town.",
-  "amicable-grant": "The King's Amicable Grant provoked such anger it was withdrawn before it could be collected.",
-  "dissolution-begins": "The Crown began dissolving the monasteries, unsettling every village with monastic ties.",
-  "chantries-act": "The Chantries Act closed the parish chantry, and with it went the priest who had doubled as schoolmaster.",
-  "prayer-book": "The new English Prayer Book was imposed on every parish, and rebellion followed in the south-west and in Norfolk.",
-  "marian-restoration": "Queen Mary restored the old religion, and the parish turned back to Rome once more.",
-  "great-debasement": "The King's coin was debased again, and wages and rents bought less than before.",
-  "vagrancy-act-1530": "A new law licensed begging for the old and infirm, and ordered whipping for able-bodied vagrants.",
-  "vagrancy-act-1536": "The parish took on its first formal collections for the poor, alongside harsher punishment for vagrancy.",
-  "vagrancy-act-1547": "A harsh new law threatened enslavement for vagrants, though few dared enforce it.",
+  // Engine life course PR5: the period's own two dated shocks, replacing decision 052's Tudor pair.
+  "black-death": "The Black Death swept through, and the village mourned for years afterward.",
+  "second-pestilence": "A second pestilence came through, and it fell hardest on the young.",
+  // PR5's dated national events (research.md's event list), narrative markers only.
+  "hundred-years-war-begins": "War with France began, and the Crown's levies followed.",
+  "ordinance-of-labourers": "The King's Ordinance tried to hold wages at what they had been before the plague.",
+  "statute-of-labourers": "Parliament's Statute confirmed the Ordinance, and forbade leaving one's own village for better wages.",
 };
 
 /** Spanish counterpart of `TOWN_EVENT_NARRATION` above, same keys. */
-const TOWN_EVENT_NARRATION_ES: Record<string, string> = {
+export const TOWN_EVENT_NARRATION_ES: Record<string, string> = {
   plague: "Una peste asoló el pueblo.",
   famine: "Una hambruna golpeó el pueblo.",
   fire: "Un incendio arrasó parte del pueblo.",
@@ -621,19 +626,11 @@ const TOWN_EVENT_NARRATION_ES: Record<string, string> = {
   conflict: "Estalló un conflicto con una aldea vecina.",
   harvest: "Una cosecha abundante bendijo al pueblo.",
   stranger: "Un forastero de paso llegó al pueblo.",
-  "sweating-sickness": "El sudor inglés golpeó con fuerza, y cayó sobre todo en los hombres más acomodados del pueblo.",
-  dearth: "Una carestía atenazó al pueblo, y los más pobres la sintieron peor que nadie.",
-  influenza: "Una gripe se extendió por el pueblo.",
-  "lay-subsidy": "El subsidio de la Corona recayó con más fuerza sobre los hogares más ricos del pueblo.",
-  "amicable-grant": "El donativo amistoso del rey provocó tal ira que fue retirado antes de poder cobrarse.",
-  "dissolution-begins": "La Corona comenzó a disolver los monasterios, inquietando a toda aldea con lazos monásticos.",
-  "chantries-act": "La Ley de las Capillas cerró la capilla parroquial, y con ella se fue el sacerdote que también hacía de maestro de escuela.",
-  "prayer-book": "El nuevo Libro de Oración en inglés se impuso en cada parroquia, y siguió la rebelión en el suroeste y en Norfolk.",
-  "marian-restoration": "La reina María restauró la antigua religión, y la parroquia volvió una vez más a Roma.",
-  "great-debasement": "La moneda del rey se devaluó de nuevo, y los salarios y las rentas alcanzaron para menos que antes.",
-  "vagrancy-act-1530": "Una nueva ley autorizó a mendigar a los ancianos y enfermos, y ordenó azotar a los vagabundos que podían trabajar.",
-  "vagrancy-act-1536": "La parroquia organizó sus primeras colectas formales para los pobres, junto con castigos más duros contra la vagancia.",
-  "vagrancy-act-1547": "Una ley severa amenazó con la esclavitud a los vagabundos, aunque pocos se atrevieron a aplicarla.",
+  "black-death": "La peste negra asoló el pueblo, y su duelo se sintió durante años.",
+  "second-pestilence": "Una segunda peste recorrió el pueblo, y golpeó con más fuerza a los más jóvenes.",
+  "hundred-years-war-begins": "Comenzó la guerra con Francia, y con ella llegaron los tributos de la Corona.",
+  "ordinance-of-labourers": "La Ordenanza del rey intentó mantener los salarios al nivel de antes de la peste.",
+  "statute-of-labourers": "El Estatuto del Parlamento confirmó la Ordenanza, y prohibió abandonar la propia aldea en busca de mejor salario.",
 };
 
 /** Adjective form of an emotion, for DF-style "felt X upon Y" sentences. */
@@ -887,6 +884,23 @@ function titleFor(event: Event, viewerId: string, people: Readonly<Record<string
     }
     case "widowed":
       return t(locale, "Widowed", "Enviudado");
+    case "manorial-fine": {
+      const fine = String(event.payload.fine ?? "");
+      const titles: Record<string, [string, string]> = {
+        merchet: ["Pays merchet", "Paga merchet"],
+        heriot: ["Heriot is paid to the lord", "Se paga heriot al señor"],
+        chevage: ["Pays chevage", "Paga chevage"],
+        leyrwite: ["Fined for leyrwite", "Multa por leyrwite"],
+      };
+      const [en, es] = titles[fine] ?? ["Pays a manorial fine", "Paga una multa señorial"];
+      return t(locale, en, es);
+    }
+    case "period-marker": {
+      const marker = String(event.payload.marker ?? "");
+      if (marker === "great-famine") return t(locale, "Survived the Great Famine", "Sobrevivió a la Gran Hambruna");
+      if (marker === "cattle-murrain") return t(locale, "Lost cattle to the murrain", "Perdió ganado por la peste bovina");
+      return t(locale, "A memory from before", "Un recuerdo de antes");
+    }
     default:
       return capitalize(String(event.kind));
   }
@@ -901,19 +915,11 @@ const TOWN_EVENT_TITLE_ES: Record<string, string> = {
   conflict: "conflicto con una aldea vecina",
   harvest: "buena cosecha",
   stranger: "llega un forastero",
-  "sweating-sickness": "sudor inglés",
-  dearth: "carestía",
-  influenza: "gripe",
-  "lay-subsidy": "subsidio de la Corona",
-  "amicable-grant": "donativo amistoso",
-  "dissolution-begins": "disolución de los monasterios",
-  "chantries-act": "Ley de las Capillas",
-  "prayer-book": "nuevo Libro de Oración",
-  "marian-restoration": "restauración mariana",
-  "great-debasement": "gran devaluación",
-  "vagrancy-act-1530": "ley de vagancia de 1530",
-  "vagrancy-act-1536": "ley de vagancia de 1536",
-  "vagrancy-act-1547": "ley de vagancia de 1547",
+  "black-death": "peste negra",
+  "second-pestilence": "segunda peste",
+  "hundred-years-war-begins": "guerra con Francia",
+  "ordinance-of-labourers": "Ordenanza de los Trabajadores",
+  "statute-of-labourers": "Estatuto de los Trabajadores",
 };
 
 /** Short Spanish titles for `reflection` notes (mirrors `REFLECTION_NARRATION_ES`'s keys). */
@@ -1129,6 +1135,8 @@ const DEFAULT_SIGNIFICANCE: Record<Event["kind"], number> = {
   levy: 0.6,
   vignette: 0.2,
   widowed: 0.6,
+  "period-marker": 0.35,
+  "manorial-fine": 0.5,
 };
 
 /**
