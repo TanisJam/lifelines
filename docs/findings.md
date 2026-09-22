@@ -499,3 +499,24 @@ streaming and before a second (pre-refactor, worktree-based) run could be captur
 "events per year per person" count was collected this round. Both are the natural first things to
 run in the next round, before further building on this batching change, given decision 044 already
 discloses that `occurrence` isn't yet load-bearing for triggering the general candidate catalog.
+
+## 2026-09-21 — Decision 045: before/after live measurement (seeds `occ-1`/`occ-2` vs. `occ-b1`/`occ-b2`)
+
+"Before" = commit `8b603fd` (decision 044, occurrence Nouls + residual code gating) run from a temporary worktree on `:3105` with its own `.cache`, seeds `occ-b1`/`occ-b2`. "After" = decision 045 (one sampled joint event-selection Choice, gating rolls removed) on the live `:3000` server, seeds `occ-1`/`occ-2`. All four lives: name "Lucía", `sex: "random"`, fresh/uncached seeds.
+
+| Seed | Server | Requests | Questions | Input tokens | Est. $ | Wall time | Protagonist entries | Entries/yr | Distinct kinds | Age at death |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `occ-b1` | before (044) | 386 (`jevCalls`; no per-life `jevRequests` field existed pre-045) | n/a | n/a | n/a | 51s | 73 | 1.03 | 8 | 71 |
+| `occ-b2` | before (044) | 60 | n/a | n/a | n/a | 7s | 9 | 1.50 | 5 | 6 |
+| `occ-1` | after (045) | 310 | 808 | 356,871 | $0.0150 | 16s | 35 | 1.06 | 9 | 33 |
+| `occ-2` | after (045) | 340 | 868 | 364,231 | $0.0153 | 25s | 66 | 1.06 | 12 | 62 |
+
+The pre-045 `stats` object has no `jevRequests`/`jevQuestions`/`inputTokens`/`estimatedUsd` fields at all (that's the decision-045 addition), so "before" rows only have what already existed (`jevCalls`/`cacheHits`/`wallTimeMs`). Cache isolation between the worktree and the main repo was confirmed (the worktree started with no `.cache/` at all; the main repo's `.cache/jev-decisions.json`, 824,687 bytes, was untouched). Both young deaths (`occ-b2` at 6, `occ-1` at 33) completed cleanly via the normal mortality curve, not simulation errors. Requests/questions/entries are broadly comparable before vs. after (the per-person-year batching from decision 044 already held); the main behavioral difference decision 045 makes isn't visible in these topline counts — it's that every entry above now happened because Jev selected it, not because a code-side roll passed.
+
+**Variety check** (decision 045's replacement for the original inflation check), after-seeds only:
+- `occ-1`: 9 distinct situation kinds; dominant kind `vignette` = 20/35 = **57.1%** of protagonist entries.
+- `occ-2`: 12 distinct situation kinds; dominant kind `vignette` = 27/66 = **40.9%**; second-most-frequent (`reflection`) close behind at 26/66 = 39.4% — together `vignette` + `reflection` account for 80% of `occ-2`'s entries.
+
+Both exceed the 35% single-kind threshold. A wording/state fix was attempted and measured on two more fresh seeds (`occ-3`, `occ-4`): it made dominance worse (73.8%, 61.3%), so it was reverted — see decision 045's "disclosed variety gap" for the reasoning and the reverted approach.
+
+**Rewrite check**: one `after` life (`occ-1`, `lifeId=life1-mubwc2tk`) rewritten via `POST /api/lives/:id/rewrite/stream`, forked at `D1:protagonist:1501` (a mother's decision on reacting to a new sibling), overriding to the previously-unchosen `optionId="make-room-gladly"` (original probability 0.06 vs. the chosen 0.94). Result: `stats.jevRequests = 233`, `stats.cacheHits = 184` — roughly 54% of calls were cache hits, consistent with replaying most of the unaffected person-years (1500-1533) against the already-warm `:3000` cache rather than re-asking Jev for years the fork didn't touch.
