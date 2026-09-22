@@ -1,4 +1,4 @@
-import { decisionYear } from "./decisions";
+import { decisionSubject } from "./decision-id";
 import { gatherCandidatesForYear } from "./simulate";
 import type { Event, Override, Person } from "./types";
 
@@ -14,14 +14,20 @@ function err(message: string): ValidationResult {
 
 /**
  * Validates a generic override (decision 008) against the exact state it
- * would apply to — the snapshot restored at `decisionYear(override.decisionId) - 1`,
- * i.e. exactly what `forkWorld` uses. Per decision 008, this is the WHOLE
- * validation rule: "the decision exists in the base branch [at this state]
- * and the option is one of its options." Re-derives the same candidate set
- * `simulate()` would generate for that year (`gatherCandidatesForYear` —
- * pure and side-effect-free, no DecisionMaker calls) rather than
- * hand-rolling separate eligibility rules, so validation and simulation
- * can never disagree about what decisions exist.
+ * would apply to — the snapshot restored at `year - 1`, i.e. exactly what
+ * `forkWorld` uses. Per decision 008, this is the WHOLE validation rule:
+ * "the decision exists in the base branch [at this state] and the option is
+ * one of its options." Re-derives the same candidate set `simulate()` would
+ * generate for that year (`gatherCandidatesForYear` — pure and
+ * side-effect-free, no DecisionMaker calls) rather than hand-rolling
+ * separate eligibility rules, so validation and simulation can never
+ * disagree about what decisions exist.
+ *
+ * `year` is the target decision's own `DecisionRecord.year` — decision-identity capability: the
+ * caller already knows it (it read the decision it's rewriting), so this never parses a year back
+ * out of `override.decisionId` (see `decision-id.ts`). Matching against `gatherCandidatesForYear`'s
+ * candidates uses `decisionSubject` (kind + subject only), which works identically for a legacy
+ * year-embedded id and a new ordinal one — the spec's legacy-id backward-compatibility requirement.
  */
 /**
  * `protagonistId`, when set, does two things (round 9, decision 034):
@@ -34,17 +40,11 @@ export function validateOverride(
   override: Override,
   people: Readonly<Record<string, Person>>,
   events: readonly Event[],
+  year: number,
   seed: string,
   config: { readonly startYear: number; readonly endYear: number },
   protagonistId?: string,
 ): ValidationResult {
-  let year: number;
-  try {
-    year = decisionYear(override.decisionId);
-  } catch {
-    return err(`Malformed decision id: "${override.decisionId}".`);
-  }
-
   if (year < config.startYear || year > config.endYear) {
     return err(`Decision year ${year} is outside this world's span (${config.startYear}-${config.endYear}).`);
   }
@@ -56,8 +56,9 @@ export function validateOverride(
     }
   }
 
+  const target = decisionSubject(override.decisionId);
   const candidates = gatherCandidatesForYear(year, people, events, seed, protagonistId);
-  const decision = candidates.find((c) => c.decisionId === override.decisionId);
+  const decision = candidates.find((c) => c.kind === target.kind && c.personId === target.subject);
   if (!decision) {
     return err(`No such decision "${override.decisionId}" at year ${year} in this branch. It may target someone who is dead, not yet born, or otherwise ineligible, or the decision may not come up this year at all.`);
   }

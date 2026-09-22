@@ -59,7 +59,7 @@ describe("forking with the generic override", () => {
     expect(deathDecision).toBeDefined();
 
     const override: Override = { id: "ov-noop", decisionId: deathDecision!.id, optionId: "survive" };
-    const forked = await forkWorld(base.snapshots, override, new RuleDecisionMaker(), "rules", base.result.config);
+    const forked = await forkWorld(base.snapshots, override, deathDecision!.year, new RuleDecisionMaker(), "rules", base.result.config);
 
     expect(forked.result.events).toEqual(base.result.events);
   });
@@ -76,7 +76,7 @@ describe("forking with the generic override", () => {
     const forkYear = declined!.year;
 
     const override: Override = { id: "ov-accept", decisionId: declined!.id, optionId: "encourage" };
-    const forked = await forkWorld(base.snapshots, override, new RuleDecisionMaker(), "rules", base.result.config);
+    const forked = await forkWorld(base.snapshots, override, declined!.year, new RuleDecisionMaker(), "rules", base.result.config);
 
     const beforeBase = base.result.events.filter((e) => e.year < forkYear);
     const beforeForked = forked.result.events.filter((e) => e.year < forkYear);
@@ -98,7 +98,7 @@ describe("forking with the generic override", () => {
     if (!fatalDeath) return; // small deterministic worlds occasionally have nobody die; that's fine, skip.
 
     const override: Override = { id: "ov-survive", decisionId: fatalDeath.id, optionId: "survive" };
-    const forked = await forkWorld(base.snapshots, override, new RuleDecisionMaker(), "rules", base.result.config);
+    const forked = await forkWorld(base.snapshots, override, fatalDeath.year, new RuleDecisionMaker(), "rules", base.result.config);
 
     const person = forked.result.people[fatalDeath.personId];
     expect(person).toBeDefined();
@@ -112,7 +112,7 @@ describe("forking with the generic override", () => {
     expect(declined).toBeDefined();
 
     const override: Override = { id: "ov-accept-2", decisionId: declined!.id, optionId: "encourage" };
-    const forked = await forkWorld(base.snapshots, override, new RuleDecisionMaker(), "rules", base.result.config);
+    const forked = await forkWorld(base.snapshots, override, declined!.year, new RuleDecisionMaker(), "rules", base.result.config);
 
     const unaffectedCount = Object.keys(base.result.people).filter((id) => {
       if (id === declined!.personId) return false;

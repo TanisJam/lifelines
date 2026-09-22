@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import { isRealTurn } from "./chronicle-view";
+import { decisionSubject } from "./decision-id";
 import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution, PersonYearBatch, PersonYearResult } from "./decisions";
 import { normalizeDistribution } from "./rng";
 import { simulate } from "./simulate";
@@ -199,14 +200,20 @@ describe("event-selection gating (decision 045) — no social situation without 
     const contested = maker.picks.filter((p) => p.allIds.length >= 2);
     expect(contested.length).toBeGreaterThan(0); // the world actually produced a real choice at some point
 
-    const decisionsById = new Map(report.result.decisions.map((d) => [d.id, d] as const));
+    // Decision-identity capability: `batch.situations`' keys are `decideYear`'s own internal,
+    // within-batch bookkeeping ids (never persisted — see `simulate.ts#mintId`/`commitId`), distinct
+    // from the `DecisionRecord.id` the engine actually mints and stores. Correlate by
+    // `(kind, personId, year)` instead — unique per candidate, by the same one-candidate-per-kind-
+    // per-person-per-year invariant `decideYear`'s own batching relies on.
+    const decisionsByKey = new Map<string, (typeof report.result.decisions)[number]>(report.result.decisions.map((d) => [`${d.kind}:${d.personId}:${d.year}`, d]));
+    const keyFor = (pick: { personId: string; year: number }, situationId: string): string => `${decisionSubject(situationId).kind}:${pick.personId}:${pick.year}`;
     for (const pick of contested) {
-      const winner = decisionsById.get(pick.selectedId);
+      const winner = decisionsByKey.get(keyFor(pick, pick.selectedId));
       expect(winner?.occurrenceProbability).toBeDefined();
 
       for (const loserId of pick.allIds) {
         if (loserId === pick.selectedId) continue;
-        const loser = decisionsById.get(loserId);
+        const loser = decisionsByKey.get(keyFor(pick, loserId));
         if (!loser) continue; // e.g. throttled by LIFE_DECISION_BUDGET — not part of this batch's contest
         expect(loser.occurrenceProbability).toBeUndefined();
         expect(loser.resultingEventIds.length).toBe(0);

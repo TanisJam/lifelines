@@ -1,7 +1,9 @@
 import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
 import { mapWithConcurrency } from "./concurrency";
+import { decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
+import { advanceSlot, EMPTY_SLOTS } from "./life-state";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
@@ -520,8 +522,50 @@ function periodEventTypesForYear(year: number): readonly string[] {
   return PERIOD_EVENTS.filter((e) => e.year === year).map((e) => e.type);
 }
 
-function overrideFor(overrides: readonly Override[], decisionId: string): Override | undefined {
-  return overrides.find((o) => o.decisionId === decisionId);
+/**
+ * Matches by `(kind, subject)`, not exact id string (decision-identity capability): `subject` here
+ * is always the candidate's own `personId` — the SAME identity `mintId`/`commitId` below mint
+ * against — not its internal within-year bookkeeping key (which, for a paired candidate like `Y1`,
+ * embeds a `pairKey`, not a bare personId, and would never match a minted id's subject). `overrides`
+ * come from the caller and may carry either a legacy year-embedded id or a new ordinal one;
+ * `decisionSubject` parses both the same way, so only the override side needs parsing at all.
+ *
+ * `isOverrideYear` gates this to the run's own start year (a fork/rewrite's `fromYear`, always the
+ * target decision's own year — see `fork.ts`): dropping the year from the matched id would
+ * otherwise force this SAME (kind, subject) at every later year of the re-simulation too, not just
+ * the one the override actually targets.
+ */
+function overrideFor(overrides: readonly Override[], kind: string, subject: string, isOverrideYear: boolean): Override | undefined {
+  if (!isOverrideYear) return undefined;
+  return overrides.find((o) => {
+    const parsed = decisionSubject(o.decisionId);
+    return parsed.kind === kind && parsed.subject === subject;
+  });
+}
+
+/**
+ * Peeks the next id for `(kind, subject)` without mutating anything — safe to call before deciding
+ * whether the resulting decision will actually be recorded (biology's `RECORD_THRESHOLD` gate runs
+ * AFTER this). `subject === "world"` (immigration) needs no `people` lookup at all (see
+ * `mintDecisionId`).
+ */
+function mintId(people: Readonly<Record<string, Person>>, kind: string, subject: string, year: number): MintedId {
+  const slots = subject === "world" ? EMPTY_SLOTS : (people[subject]?.lifeState?.slots ?? EMPTY_SLOTS);
+  return mintDecisionId(kind, subject, year, slots);
+}
+
+/**
+ * Commits a minted id's slot advance onto its subject's `lifeState.slots` (see
+ * `life-state.ts#advanceSlot`) — call exactly once per minted id, with `occurred` reflecting
+ * whether the decision it belongs to was actually recorded. A `world` subject needs no commit (its
+ * ordinal is the year itself, never persisted state).
+ */
+function commitId(people: Record<string, Person>, subject: string, minted: MintedId, occurred: boolean): void {
+  if (subject === "world") return;
+  const person = people[subject];
+  if (!person) return;
+  const slots = person.lifeState?.slots ?? EMPTY_SLOTS;
+  person.lifeState = { slots: advanceSlot(slots, minted.key, occurred) };
 }
 
 /** Years a person is "immune" from another illness roll after falling ill, so illness doesn't spam a handful of bad-luck years. */
@@ -1732,9 +1776,10 @@ async function resolveDailyLifeVignette(
   finalVignetteWinner: string | undefined,
   /** Round 11 (decision 044): a result already fetched as part of the decider's per-person-year batch — when present, no extra `DecisionMaker` call is made here at all. */
   preFetched?: ResolvedDecision,
+  isOverrideYear = false,
 ): Promise<{ decision: DecisionRecord; wasRealCall: boolean }> {
   const decisionId = `D1:${protagonist.id}:${year}`;
-  const forced = overrideFor(overrides, decisionId);
+  const forced = overrideFor(overrides, "D1", protagonist.id, isOverrideYear);
 
   let vignette: Vignette;
   let deciderId: string;
@@ -1820,8 +1865,14 @@ async function resolveDailyLifeVignette(
   }
 
   const decisionOptions: DecisionOption[] = options.map((id) => ({ id, label: optionLabel("D1", id, decider.name) }));
+  // D1's minted subject is always the PROTAGONIST (matching its legacy `D1:<protagonistId>:<year>`
+  // shape), even when `deciderId` is a parent (decision 043) — it's fundamentally the protagonist's
+  // day. Always pushed by the caller (`simulate()`'s "at least one entry per year" guarantee), so the
+  // slot commits unconditionally as an occurrence.
+  const minted = mintId(people, "D1", protagonist.id, year);
+  commitId(people, protagonist.id, minted, true);
   const decision: DecisionRecord = {
-    id: decisionId,
+    id: minted.id,
     personId: deciderId,
     partnerId: descriptor.partnerId,
     year,
@@ -1945,14 +1996,16 @@ export async function simulate(
 
     const illnessResultByPerson = new Map<string, Event | undefined>();
 
+    const isOverrideYear = year === startYear;
     for (const descriptor of biologyCandidates) {
-      const forced = overrideFor(overrides, descriptor.decisionId);
+      const forced = overrideFor(overrides, descriptor.kind, descriptor.personId, isOverrideYear);
+      const minted = mintId(people, descriptor.kind, descriptor.personId, year);
       let record: DecisionRecord;
 
       if (descriptor.kind === "illness") {
         const age = ageInYear(people[descriptor.personId]!.birthYear, year);
         const p = baseIllnessChance(age);
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name);
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
         let illnessEvent: Event | undefined;
         if (record.chosen === "illness") {
           illnessEvent = pushEvent(events, year, "illness", [descriptor.personId], { age }, []);
@@ -1961,7 +2014,9 @@ export async function simulate(
         record = { ...record, resultingEventIds: illnessEvent ? [illnessEvent.id] : [] };
         // Recording threshold (decision 007): always record if it actually
         // happened, or if the road not taken (illness) had a real chance.
-        if (record.chosen === "illness" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+        const pushed = record.chosen === "illness" || p >= RECORD_THRESHOLD || record.source === "forced";
+        if (pushed) decisions.push(record);
+        commitId(people, descriptor.personId, minted, pushed);
       } else if (descriptor.kind === "death") {
         const person = people[descriptor.personId]!;
         const age = ageInYear(person.birthYear, year);
@@ -1981,7 +2036,7 @@ export async function simulate(
         // log by personId, so this was never protagonist-specific machinery, only protagonist-gated.
         const hasActiveFeud = activeFeudPair(events, person.id) !== undefined;
         const mortalityContext: MortalityContext = { age, sex: person.sex, hadIllness: !!illnessEvent, townEventType: townEvent, hasActiveFeud };
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, person.name, config.town.name);
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, person.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "die") {
           person.deathYear = year;
@@ -2007,7 +2062,9 @@ export async function simulate(
         }
         const deathCauses = [...(illnessEvent ? [illnessEvent.id] : []), ...(shockMultiplier > 1 && townEventId ? [townEventId] : [])];
         record = { ...record, causes: deathCauses, resultingEventIds };
-        if (record.chosen === "die" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+        const pushed = record.chosen === "die" || p >= RECORD_THRESHOLD || record.source === "forced";
+        if (pushed) decisions.push(record);
+        commitId(people, descriptor.personId, minted, pushed);
       } else if (descriptor.kind === "levy") {
         // Decision 058: a class-specific multiplier (research.md, Economy §"Taxes, housing, diet" —
         // tithe, rent and the Lay Subsidy fell on tenants and labourers; gentry/clergy bore feudal
@@ -2020,42 +2077,54 @@ export async function simulate(
         const levySocialClass: SocialClass = people[descriptor.personId]!.socialClass ?? "labourer";
         const laySubsidyYear = year === 1524 || year === 1525;
         const p = Math.min(0.9, 0.045 * (townEvent === "famine" ? 1.4 : 1) * levyClassMultiplier(levySocialClass) * (laySubsidyYear ? 1.8 : 1));
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name);
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "impose") {
           const event = pushEvent(events, year, "levy", [descriptor.personId], {}, []);
           resultingEventIds.push(event.id);
         }
         record = { ...record, resultingEventIds };
-        if (record.chosen === "impose" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+        {
+          const pushed = record.chosen === "impose" || p >= RECORD_THRESHOLD || record.source === "forced";
+          if (pushed) decisions.push(record);
+          commitId(people, descriptor.personId, minted, pushed);
+        }
       } else if (descriptor.kind === "away-arrival") {
         // A lightweight newcomer joining the away cast (decision 040) — code-rolled, exactly like
         // immigration, and resolved here (before social `buildQuestion` runs) so a real Person
         // already exists for the SAME year's Y1/Y5 candidates to reference by id.
         const p = 0.4;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name);
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "arrive") {
           const newPerson = spawnAwayPerson(seed, year, people);
           people[newPerson.id] = newPerson;
         }
         record = { ...record, resultingEventIds };
-        if (record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+        {
+          const pushed = record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced";
+          if (pushed) decisions.push(record);
+          commitId(people, descriptor.personId, minted, pushed);
+        }
       } else if (descriptor.kind === "return") {
         // Returning home (decision 040) — a small yearly chance, not a considered choice, so it's
         // code-rolled like immigration/levy rather than sent to a DecisionMaker.
         const p = 0.08;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name);
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "return") {
           const event = pushEvent(events, year, "move", [descriptor.personId], { away: false, returned: true, destination: config.town.name }, []);
           resultingEventIds.push(event.id);
         }
         record = { ...record, resultingEventIds };
-        if (record.chosen === "return" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+        {
+          const pushed = record.chosen === "return" || p >= RECORD_THRESHOLD || record.source === "forced";
+          if (pushed) decisions.push(record);
+          commitId(people, descriptor.personId, minted, pushed);
+        }
       } else {
         const p = 0.05;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, config.town.name, config.town.name);
+        record = resolveBiologyDecision(descriptor, year, p, seed, forced, config.town.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "arrive") {
           const newPerson = spawnImmigrant(seed, year, people);
@@ -2064,7 +2133,11 @@ export async function simulate(
           resultingEventIds.push(event.id);
         }
         record = { ...record, resultingEventIds };
-        if (record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
+        {
+          const pushed = record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced";
+          if (pushed) decisions.push(record);
+          commitId(people, descriptor.personId, minted, pushed);
+        }
       }
 
       // Piggyback the (deterministic, no-alternative) school event on the
@@ -2088,7 +2161,7 @@ export async function simulate(
     // candidate if they're the protagonist — see below) is bundled into a single `PersonYearBatch`
     // and answered with a single `decideYear` call, so the mind/portrait state is paid for once.
     const questions = socialCandidates.map((c) => buildQuestion(c, year, config, people));
-    const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.decisionId));
+    const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.kind, c.personId, isOverrideYear));
     // Budget priority (round 9, decision 037): once the running total of REAL DecisionMaker calls
     // hits LIFE_DECISION_BUDGET, any further social decision NOT about the protagonist is answered
     // with the deterministic rule heuristic instead — the protagonist's own decisions, and
@@ -2111,7 +2184,7 @@ export async function simulate(
     // deciders (the protagonist, and a living parent for the `decidedByParent` pool), so it's a flat
     // array rather than a single `{descriptor, question}` like decision 044's `d1`.
     let d1Candidates: readonly { readonly descriptor: CandidateDescriptor; readonly question: DecisionQuestion; readonly vignette: Vignette; readonly deciderId: string }[] = [];
-    if (options.protagonistId && !overrideFor(overrides, `D1:${options.protagonistId}:${year}`)) {
+    if (options.protagonistId && !overrideFor(overrides, "D1", options.protagonistId, isOverrideYear)) {
       const protagonist = people[options.protagonistId];
       if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
         d1Candidates = buildDailyLifeVignetteCandidates(protagonist, year, seed, people, events, townEvent).map((c) => ({ ...c, question: buildQuestion(c.descriptor, year, config, people) }));
@@ -2228,6 +2301,7 @@ export async function simulate(
     for (let i = 0; i < socialCandidates.length; i++) {
       const descriptor = socialCandidates[i]!;
       const forced = forcedFlags[i];
+      const minted = mintId(people, descriptor.kind, descriptor.personId, year);
       const person = people[descriptor.personId]!;
       const partner = descriptor.partnerId ? people[descriptor.partnerId] : undefined;
 
@@ -2820,7 +2894,7 @@ export async function simulate(
       }
 
       decisions.push({
-        id: descriptor.decisionId,
+        id: minted.id,
         personId: descriptor.personId,
         partnerId: descriptor.partnerId,
         year,
@@ -2839,6 +2913,9 @@ export async function simulate(
         resultingEventIds,
         occurrenceProbability,
       });
+      // Every social candidate is recorded unconditionally (no `RECORD_THRESHOLD` gate, unlike
+      // biology above), so this id's slot always advances as an occurrence.
+      commitId(people, descriptor.personId, minted, true);
     }
 
     // "At least one entry per year" (round 10, decision 042): if the protagonist ends this year
@@ -2886,6 +2963,7 @@ export async function simulate(
             d1Candidates,
             finalVignetteWinner,
             preFetched,
+            isOverrideYear,
           );
           decisions.push(d1Decision);
           if (wasRealCall) decisionCalls += 1;
@@ -2912,12 +2990,12 @@ export async function simulate(
   };
 }
 
-function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p: number, seed: string, forced: Override | undefined, selfName: string, townName: string): DecisionRecord {
+function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p: number, seed: string, forced: Override | undefined, selfName: string, townName: string, minted: MintedId): DecisionRecord {
   const options: DecisionOption[] = descriptor.options.map((id) => ({ id, label: optionLabel(descriptor.kind, id, selfName) }));
 
   if (forced) {
     return {
-      id: descriptor.decisionId,
+      id: minted.id,
       personId: descriptor.personId,
       year,
       kind: descriptor.kind,
@@ -2937,7 +3015,7 @@ function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p
   const final = biologyDistribution(descriptor.kind, p);
   const sample = sampleGumbelMax(final as Record<string, number>, seed, descriptor.personId, year, descriptor.kind);
   return {
-    id: descriptor.decisionId,
+    id: minted.id,
     personId: descriptor.personId,
     year,
     kind: descriptor.kind,

@@ -1,17 +1,19 @@
-import { decisionYear } from "./decisions";
 import type { DecisionMaker } from "./decisions";
 import { simulate, type SimulateReport } from "./simulate";
 import type { Override, YearSnapshot } from "./types";
 
 export class ForkError extends Error {}
 
-/** The state a fork of `override` would restore and build from — exactly the year before its decision. */
-export function getRestoreSnapshot(snapshots: ReadonlyMap<number, YearSnapshot>, override: Pick<Override, "decisionId">): YearSnapshot {
-  const decisionYearValue = decisionYear(override.decisionId);
-  const restoreYear = decisionYearValue - 1;
+/**
+ * The state a fork at `year` (the target decision's own `DecisionRecord.year` — decision-identity
+ * capability: never parsed back out of the id, see `decision-id.ts`) would restore and build from —
+ * exactly the year before that decision.
+ */
+export function getRestoreSnapshot(snapshots: ReadonlyMap<number, YearSnapshot>, year: number): YearSnapshot {
+  const restoreYear = year - 1;
   const snapshot = snapshots.get(restoreYear);
   if (!snapshot) {
-    throw new ForkError(`No snapshot available for year ${restoreYear}; cannot fork at decision "${override.decisionId}".`);
+    throw new ForkError(`No snapshot available for year ${restoreYear}; cannot fork at year ${year}.`);
   }
   return snapshot;
 }
@@ -32,13 +34,14 @@ export function getRestoreSnapshot(snapshots: ReadonlyMap<number, YearSnapshot>,
 export async function forkWorld(
   snapshots: ReadonlyMap<number, YearSnapshot>,
   override: Override,
+  /** The target decision's own `year` (see `getRestoreSnapshot`'s doc comment). */
+  year: number,
   decisionMaker: DecisionMaker,
   engineSource: "jev" | "rules",
   baseConfig: { readonly seed: string; readonly startYear: number; readonly endYear: number; readonly town: { readonly name: string } },
   concurrencyLimit?: number,
   protagonistId?: string,
 ): Promise<SimulateReport> {
-  const snapshot = getRestoreSnapshot(snapshots, override);
-  const fromYear = decisionYear(override.decisionId);
-  return simulate(baseConfig, snapshot.people, snapshot.events, { decisionMaker, engineSource, overrides: [override], fromYear, concurrencyLimit, protagonistId });
+  const snapshot = getRestoreSnapshot(snapshots, year);
+  return simulate(baseConfig, snapshot.people, snapshot.events, { decisionMaker, engineSource, overrides: [override], fromYear: year, concurrencyLimit, protagonistId });
 }

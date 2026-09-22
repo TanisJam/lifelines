@@ -176,18 +176,6 @@ export interface DecisionMakerStats {
   questions?: number;
 }
 
-/**
- * Every decision id ends with `:<year>` (see `simulate.ts#gatherCandidatesForYear`
- * and `resolveBiologyDecision`) — this pulls it back out, so an `Override`
- * (which per decision 008 carries only `decisionId` + `optionId`) still
- * lets a fork know which year's snapshot to restore.
- */
-export function decisionYear(decisionId: string): number {
-  const year = Number(decisionId.split(":").pop());
-  if (!Number.isFinite(year)) throw new Error(`Malformed decision id (no trailing year): "${decisionId}"`);
-  return year;
-}
-
 /** Where a decision's `final` distribution came from. */
 export type DecisionSource = "jev" | "rules" | "biology" | "forced";
 
@@ -215,7 +203,12 @@ export interface DecisionOption {
  * reason.
  */
 export interface DecisionRecord {
-  /** Content-derived, stable across forks: `<kind>:<personId-or-pairKey-or-"world">:<year>`. */
+  /**
+   * Content-derived, stable across forks: `<kind>:<subject>#<ordinal>.<attempt>` (decision-identity
+   * capability — see `decision-id.ts#mintDecisionId`; never encodes the year, read `year` below
+   * instead). Old stored lives keep their legacy `<kind>:<subject>:<year>` ids unchanged — read as-is,
+   * never parsed for the year (see `decision-id.ts#decisionSubject`).
+   */
   readonly id: string;
   readonly personId: string;
   /**

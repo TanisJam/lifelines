@@ -64,7 +64,7 @@ describe("protagonist-centric simulation (round 9, decision 034/035)", () => {
     expect(deathDecision).toBeDefined();
 
     const override: Override = { id: "ov-survive-protagonist", decisionId: deathDecision!.id, optionId: "survive" };
-    const forked = await forkWorld(report.snapshots, override, new RuleDecisionMaker(), "rules", config, undefined, "protagonist");
+    const forked = await forkWorld(report.snapshots, override, deathDecision!.year, new RuleDecisionMaker(), "rules", config, undefined, "protagonist");
 
     const person = forked.result.people.protagonist!;
     // Either they eventually died again, later — or they lived on to the safety cap.
@@ -79,8 +79,9 @@ describe("protagonist-centric simulation (round 9, decision 034/035)", () => {
     // birth-immutability guard from the (separate) "outside the world's span" guard, widen the
     // span artificially here — the protagonist's own `birthYear` on `people` is unaffected.
     const widerConfig = { ...config, startYear: config.startYear - 10 };
-    const override: Override = { id: "ov-before-birth", decisionId: `Y1:whoever:${config.startYear - 5}`, optionId: "encourage" };
-    const result = validateOverride(override, people, events, config.seed, widerConfig, "protagonist");
+    const overrideYear = config.startYear - 5;
+    const override: Override = { id: "ov-before-birth", decisionId: `Y1:whoever:${overrideYear}`, optionId: "encourage" };
+    const result = validateOverride(override, people, events, overrideYear, config.seed, widerConfig, "protagonist");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/immutable|birth/i);
   });
@@ -89,7 +90,7 @@ describe("protagonist-centric simulation (round 9, decision 034/035)", () => {
     const { config, people, events } = protagonistWorld("proto-birth-ok");
     // Every living person gets a "death" candidate every year, including the protagonist's birth year.
     const override: Override = { id: "ov-at-birth-year", decisionId: `death:protagonist:${config.startYear}`, optionId: "survive" };
-    const result = validateOverride(override, people, events, config.seed, config, "protagonist");
+    const result = validateOverride(override, people, events, config.startYear, config.seed, config, "protagonist");
     expect(result.ok).toBe(true);
   });
 
@@ -148,10 +149,10 @@ describe("protagonist-centric simulation (round 9, decision 034/035)", () => {
 
     // This is the bug (round 10, decision 042's disclosed gap): before the fix, `gatherCandidatesForYear`
     // had no knowledge of `D1` at all, so this always failed with "no such decision".
-    const validation = validateOverride(override, snapshot.people, snapshot.events, config.seed, config, "protagonist");
+    const validation = validateOverride(override, snapshot.people, snapshot.events, d1Decision!.year, config.seed, config, "protagonist");
     expect(validation.ok).toBe(true);
 
-    const forked = await forkWorld(report.snapshots, override, new RuleDecisionMaker(), "rules", config, undefined, "protagonist");
+    const forked = await forkWorld(report.snapshots, override, d1Decision!.year, new RuleDecisionMaker(), "rules", config, undefined, "protagonist");
 
     // The life before the fork year is unchanged: every event that happened earlier is untouched.
     const preForkOriginal = report.result.events.filter((e) => e.year < d1Decision!.year);
