@@ -1,5 +1,6 @@
 /** Pure domain types. No Next.js, no SDK, no I/O. */
 import type { DecisionRecord } from "./decisions";
+import type { LifeState } from "./life-state";
 import type { PersonMind } from "./mind";
 
 export type Sex = "f" | "m";
@@ -81,6 +82,13 @@ export interface Person {
   readonly away?: true;
   /** The DF-inspired inner-life model (round 4, docs/mind-model.md). Every person has one; Jev reads it, code writes it. */
   mind: PersonMind;
+  /**
+   * Decision-identity + life-state capabilities: bookkeeping `simulate.ts` mutates in place as
+   * decisions are minted (see `decision-id.ts#mintDecisionId`, `life-state.ts#advanceSlot`).
+   * Optional for the same backward-compat reason as `socialClass`/`literate` — a life stored before
+   * this field existed has none; every reader falls back to `EMPTY_SLOTS`, no migration needed.
+   */
+  lifeState?: LifeState;
 }
 
 export const EVENT_KINDS = [
