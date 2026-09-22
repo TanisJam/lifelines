@@ -5,7 +5,7 @@ import { simulate } from "@/domain/simulate";
 import type { DecisionRecord } from "@/domain/decisions";
 import type { Event, Person, SimulationResult } from "@/domain/types";
 import { generateWorld } from "@/domain/worldgen";
-import { buildLifeChronicle } from "./life-chronicle";
+import { buildLifeChronicle, buildProvisionalTickEntries } from "./life-chronicle";
 import { deleteLife, registerLife } from "./life-store";
 
 async function buildRealChronicle(seed: string) {
@@ -156,6 +156,43 @@ function fixtureSnapshots(result: SimulationResult): Map<number, import("@/domai
   }
   return snapshots;
 }
+
+describe("buildProvisionalTickEntries — live SSE ticks (incremental-simulation capability)", () => {
+  it("scopes entries to exactly the requested year, not the whole timeline", async () => {
+    const result = fixtureResult();
+    const entries = await buildProvisionalTickEntries(
+      "protagonist",
+      1510,
+      result.events,
+      result.people,
+      result.decisions,
+      "f",
+      result.config.seed,
+      result.config.town.name,
+      "en",
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.id).toBe("ev-ap1");
+    expect(entries[0]!.year).toBe(1510);
+  });
+
+  it("a different year returns a different, non-overlapping entry set (triangulation)", async () => {
+    const result = fixtureResult();
+    const entries = await buildProvisionalTickEntries(
+      "protagonist",
+      1500,
+      result.events,
+      result.people,
+      result.decisions,
+      "f",
+      result.config.seed,
+      result.config.town.name,
+      "en",
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.id).toBe("ev-birth");
+  });
+});
 
 describe("buildLifeChronicle — NPC-decided turns are labeled (fixture)", () => {
   it("an NPC's decision ABOUT the protagonist (AP1) is decidedBy that NPC, not 'self' or 'chance'", async () => {

@@ -1158,9 +1158,17 @@ export async function narratePersonTimeline(
   seed = "narrate",
   townName = "town",
   locale: Locale = DEFAULT_LOCALE,
+  /**
+   * Incremental-simulation capability: narrate only THIS subset (e.g. one simulated year's new
+   * events) while `events` still supplies the full causal/subsumed-illness context — used by
+   * `life-chronicle.ts#buildProvisionalTickEntries` for live SSE ticks, which score only the
+   * year just simulated rather than re-narrating the whole life so far. Defaults to every one of
+   * `events` the caller already filters to `personId` (the original, whole-timeline behavior).
+   */
+  eventsToScore?: readonly Event[],
 ): Promise<NarratedEvent[]> {
   const subsumedIllnesses = illnessIdsSubsumedByDeath(events);
-  const personEvents = events
+  const personEvents = (eventsToScore ?? events)
     .filter((e) => e.actors.includes(personId))
     .filter((e) => e.kind !== "child")
     .filter((e) => !(e.kind === "illness" && subsumedIllnesses.has(e.id)))

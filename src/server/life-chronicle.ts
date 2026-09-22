@@ -5,7 +5,7 @@ import type { DecisionRecord } from "@/domain/decisions";
 import { DEFAULT_LOCALE, type Locale } from "@/domain/locale";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "@/domain/mortality";
 import { renderPortrait } from "@/domain/mind";
-import { deathCauseDisplay, familyRelation, lifeSummary, narratePersonTimeline } from "@/domain/narrate";
+import { deathCauseDisplay, familyRelation, lifeSummary, narratePersonTimeline, type NarratedEvent } from "@/domain/narrate";
 import type { Event, Person } from "@/domain/types";
 import { causeNounPhrase } from "@/server/chronicle-data";
 import { getDecisionMaker } from "@/server/decision-engine";
@@ -110,6 +110,73 @@ function buildCast(protagonist: Person, people: Readonly<Record<string, Person>>
   return cast;
 }
 
+/**
+ * One narrated event → one `ChronicleEntry` (round 9 `buildLifeChronicle`'s original inline
+ * `.map()` body, extracted round 13 — incremental-simulation capability — so live SSE ticks and
+ * the authoritative chronicle share this exact transform instead of two copies drifting apart).
+ */
+function buildEntryFromNarrated(
+  narrated: NarratedEvent,
+  events: readonly Event[],
+  people: Readonly<Record<string, Person>>,
+  decisionByEventId: ReadonlyMap<string, DecisionRecord>,
+  protagonistId: string,
+  protagonistSex: LifeSex,
+  timeline: readonly NarratedEvent[],
+): ChronicleEntry {
+  const { event, title, prose, significance } = narrated;
+  const decision = decisionByEventId.get(event.id);
+  const isProtagonistDeath = event.kind === "death" && event.actors[0] === protagonistId;
+  const { text: markedProse, links } = markLinks(prose, event.actors, people, protagonistId);
+
+  const causeEvent = event.causes
+    .map((id) => events.find((e) => e.id === id))
+    .find((e): e is Event => !!e && e.year < event.year);
+  const causePhrase = causeEvent ? causeNounPhrase(causeEvent, protagonistId, people) : null;
+  const cause = causePhrase ? { entryId: timeline.some((t) => t.event.id === causeEvent!.id) ? causeEvent!.id : undefined, phrase: causePhrase, year: causeEvent!.year } : undefined;
+
+  const turn = decision && (isProtagonistDeath || isRealTurn(decision)) ? buildTurn(decision, people, protagonistSex) : undefined;
+
+  return {
+    id: event.id,
+    year: event.year,
+    level: levelFor(event, decision, isProtagonistDeath, significance),
+    kind: event.kind,
+    title,
+    prose: markedProse,
+    links,
+    cause,
+    turn,
+  };
+}
+
+/**
+ * Incremental-simulation capability, design decision 9: provisional per-year tick entries for
+ * live SSE — narrated with heuristic significance ONLY (no `decisionMaker` passed to
+ * `narratePersonTimeline`, so its `significance()` — the Jev call — never runs mid-simulation).
+ * The authoritative chronicle, built once the life has ended via `buildLifeChronicle` (which DOES
+ * pass `getDecisionMaker()`), is what `done` carries; these entries are a fast preview only.
+ */
+export async function buildProvisionalTickEntries(
+  protagonistId: string,
+  year: number,
+  events: readonly Event[],
+  people: Readonly<Record<string, Person>>,
+  decisions: readonly DecisionRecord[],
+  protagonistSex: LifeSex,
+  seed: string,
+  townName: string,
+  locale: Locale,
+): Promise<ChronicleEntry[]> {
+  const yearEvents = events.filter((e) => e.year === year);
+  const timeline = await narratePersonTimeline(protagonistId, events, people, undefined, 8, seed, townName, locale, yearEvents);
+
+  const decisionByEventId = new Map<string, DecisionRecord>();
+  for (const decision of decisions) for (const eventId of decision.resultingEventIds) decisionByEventId.set(eventId, decision);
+
+  return timeline.map((narrated) => buildEntryFromNarrated(narrated, events, people, decisionByEventId, protagonistId, protagonistSex, timeline));
+}
+
 export interface ChronicleResult {
   readonly data?: Chronicle;
   readonly error?: string;
@@ -154,31 +221,7 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string,
   const causeCode = deathEvent && typeof deathEvent.payload.cause === "string" ? (deathEvent.payload.cause as DeathCause) : undefined;
   const causeOfDeath = causeCode && causeCode in DEATH_CAUSE_PHRASE ? deathCauseDisplay(locale, causeCode) : locale === "es" ? "mala fortuna" : "misfortune";
 
-  const entries: ChronicleEntry[] = timeline.map(({ event, title, prose, significance }) => {
-    const decision = decisionByEventId.get(event.id);
-    const isProtagonistDeath = event.kind === "death" && event.actors[0] === PROTAGONIST_ID;
-    const { text: markedProse, links } = markLinks(prose, event.actors, people, PROTAGONIST_ID);
-
-    const causeEvent = event.causes
-      .map((id) => events.find((e) => e.id === id))
-      .find((e): e is Event => !!e && e.year < event.year);
-    const causePhrase = causeEvent ? causeNounPhrase(causeEvent, PROTAGONIST_ID, people) : null;
-    const cause = causePhrase ? { entryId: timeline.some((t) => t.event.id === causeEvent!.id) ? causeEvent!.id : undefined, phrase: causePhrase, year: causeEvent!.year } : undefined;
-
-    const turn = decision && (isProtagonistDeath || isRealTurn(decision)) ? buildTurn(decision, people, protagonist.sex) : undefined;
-
-    return {
-      id: event.id,
-      year: event.year,
-      level: levelFor(event, decision, isProtagonistDeath, significance),
-      kind: event.kind,
-      title,
-      prose: markedProse,
-      links,
-      cause,
-      turn,
-    };
-  });
+  const entries: ChronicleEntry[] = timeline.map((narrated) => buildEntryFromNarrated(narrated, events, people, decisionByEventId, PROTAGONIST_ID, protagonist.sex, timeline));
 
   // Decision 042 supersedes decision 038's period-summary rule for the protagonist: `simulate.ts`
   // now guarantees at least one event per year of their life (the `D1` everyday-life vignette,
