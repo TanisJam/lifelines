@@ -1,19 +1,24 @@
-import { mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { afterAll } from "vitest";
 
 /**
  * Every store's default (globalThis-cached) instance resolves its SQLite DB path from `DATA_DIR`
- * (see `src/server/db.ts`). Vitest re-evaluates `setupFiles` for every test file, so this runs
- * once per file — but it always computes the SAME directory for a given worker (keyed by the
- * worker's own pool id, not anything random) and just re-creates it if it's already there
- * (`mkdirSync(..., { recursive: true })` is idempotent). That gives each vitest worker its own
- * `DATA_DIR`, so two workers never open the same SQLite file concurrently (which was surfacing as
- * `SQLITE_BUSY` under the shared single temp dir this used to set up in `vitest.config.ts`), while
- * still never touching the real `.data/`. Falls back to the process id when no pool id is
- * available (e.g. a single-worker/no-pool run).
+ * (see `src/server/db.ts`), read lazily on first use (`dataDir()` is a function, not a module-level
+ * constant) — so setting it here before any test runs is enough, even though this file itself runs
+ * before the store modules are imported. Vitest re-evaluates `setupFiles` for every test file, so
+ * this runs once per file: `mkdtempSync` hands each file its own uniquely-named temp directory
+ * (never touching the real `.data/`), which fixes the two problems the old
+ * `pool-id`/`worker-id`-keyed version had — two workers could never collide (no shared key to
+ * collide on in the first place), and, unlike a deterministic key, a fresh random suffix can never
+ * collide with a directory a PREVIOUS `pnpm test` invocation left behind, since that one never
+ * cleaned up after itself. `afterAll` below removes this file's directory once its tests finish, so
+ * nothing outlives the run.
  */
-const workerId = process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? String(process.pid);
-const dir = path.join(os.tmpdir(), `lifelines-test-data-${workerId}`);
-mkdirSync(dir, { recursive: true });
+const dir = mkdtempSync(path.join(os.tmpdir(), "lifelines-"));
 process.env.DATA_DIR = dir;
+
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true });
+});

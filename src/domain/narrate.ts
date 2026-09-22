@@ -280,6 +280,14 @@ export function narrateEvent(
           event,
           t(locale, [`${A} arrived in town and settled in.`, `${A} came to town looking for a new start.`], [`${A} llegó al pueblo y se estableció.`, `${A} llegó al pueblo en busca de un nuevo comienzo.`]),
         );
+      if (event.payload.returned) {
+        const home = String(event.payload.destination ?? townName);
+        return pick(
+          seed,
+          event,
+          t(locale, [`${A} came home to ${home}.`, `${A} returned to ${home}.`], [`${A} volvió a ${home}.`, `${A} regresó a su hogar en ${home}.`]),
+        );
+      }
       if (event.payload.forced) return t(locale, `${A} left for ${String(event.payload.destination ?? "parts unknown")}.`, `${A} partió hacia ${String(event.payload.destination ?? "tierras desconocidas")}.`);
       return pick(
         seed,
@@ -845,9 +853,12 @@ function titleFor(event: Event, viewerId: string, people: Readonly<Record<string
     case "school":
       return t(locale, "Learns letters", "Aprende a leer");
     case "move":
-      return event.payload.arrived
-        ? t(locale, "Arrives in town", "Llega al pueblo")
-        : t(locale, `Leaves for ${String(event.payload.destination ?? "parts unknown")}`, `Parte hacia ${String(event.payload.destination ?? "tierras desconocidas")}`);
+      if (event.payload.arrived) return t(locale, "Arrives in town", "Llega al pueblo");
+      if (event.payload.returned) {
+        const home = String(event.payload.destination ?? townName);
+        return t(locale, `Returns to ${home}`, `Vuelve a ${home}`);
+      }
+      return t(locale, `Leaves for ${String(event.payload.destination ?? "parts unknown")}`, `Parte hacia ${String(event.payload.destination ?? "tierras desconocidas")}`);
     case "illness":
       return event.payload.recovered ? t(locale, "Recovers from illness", "Se recupera de una enfermedad") : t(locale, "Falls ill", "Enferma");
     case "child":

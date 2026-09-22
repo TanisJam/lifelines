@@ -324,3 +324,44 @@ describe("decision 059: Spanish narration", () => {
     expect(summary).toContain("curandera");
   });
 });
+
+describe("bugfix: return-home narration (payload.returned) reads as a return, not another departure", () => {
+  it("English: a returned move is narrated as coming/returning home, with a 'Returns to' title", () => {
+    const person = makePerson("p001", { sex: "f" });
+    const people = { p001: person };
+    const event: Event = { id: "e1", year: 1520, kind: "move", actors: ["p001"], payload: { away: false, returned: true, destination: "Ravenford" }, causes: [] };
+
+    const prose = narrateEvent(event, people, "seed-1", "Ravenford", [], "en");
+    expect(prose).toMatch(/^Person p001 (came home to|returned to) Ravenford\.$/);
+    expect(prose).not.toMatch(/moved away|left for|packed up/);
+
+    const { title } = narrateEventForViewer(event, "p001", people, "seed-1", "Ravenford", [], "en");
+    expect(title).toBe("Returns to Ravenford");
+    expect(title).not.toMatch(/^Leaves for/);
+  });
+
+  it("Spanish: a returned move is narrated as volvió/regresó home, with a 'Vuelve a' title", () => {
+    const person = makePerson("p001", { sex: "f" });
+    const people = { p001: person };
+    const event: Event = { id: "e1", year: 1520, kind: "move", actors: ["p001"], payload: { away: false, returned: true, destination: "Ravenford" }, causes: [] };
+
+    const prose = narrateEvent(event, people, "seed-1", "Ravenford", [], "es");
+    expect(prose).toMatch(/^Person p001 (volvió a|regresó a su hogar en) Ravenford\.$/);
+    expect(prose).not.toMatch(/se mudó|partió hacia|recogió sus cosas/);
+
+    const { title } = narrateEventForViewer(event, "p001", people, "seed-1", "Ravenford", [], "es");
+    expect(title).toBe("Vuelve a Ravenford");
+  });
+
+  it("a plain departure (no payload.returned) still narrates as leaving/moving away, unchanged", () => {
+    const person = makePerson("p001", { sex: "f" });
+    const people = { p001: person };
+    const event: Event = { id: "e1", year: 1520, kind: "move", actors: ["p001"], payload: { away: true, destination: "Millbrook" }, causes: [] };
+
+    const prose = narrateEvent(event, people, "seed-1", "town", [], "en");
+    expect(prose).toMatch(/^Person p001 (moved away to|packed up and left for) Millbrook\.$/);
+
+    const { title } = narrateEventForViewer(event, "p001", people, "seed-1", "town", [], "en");
+    expect(title).toBe("Leaves for Millbrook");
+  });
+});
