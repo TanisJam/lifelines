@@ -1,13 +1,13 @@
-import type { ChronicleEntry, LifeStreamEvent, RewriteRequest } from "@/contracts/life";
+import type { LifeStreamEvent, RewriteRequest } from "@/contracts/life";
 import { buildGhostAnnotations } from "@/domain/decision-id";
 import { ForkError, getRestoreSnapshot } from "@/domain/fork";
 import { isLocale } from "@/domain/locale";
-import { simulate } from "@/domain/simulate";
+import { drainSimulation, SimulationAbortedError, simulateYears } from "@/domain/simulate";
 import type { Override } from "@/domain/types";
 import { validateOverride } from "@/domain/validate-override";
 import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
-import { buildLifeChronicle } from "@/server/life-chronicle";
+import { buildLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
 import { getLife, getLifeBranch, newLifeBranchId, registerLifeBranch } from "@/server/life-store";
 import { sseResponse } from "@/server/sse";
 
@@ -22,10 +22,16 @@ function errorResponse(message: string, status = 400): Response {
 /**
  * Streams a rewrite of one protagonist's life from the changed turn forward (round 9, decision
  * 034/036) — originally the single-life counterpart to the legacy `/api/worlds/[worldId]/edit/stream`
- * (removed in decision 060). Sends `divergence`
- * right after `start` (the old vs. new outcome label for the turn being changed), then `tick` frames
- * from the divergence year on, then `done` with sparse `ghosts` for every downstream turn whose
- * outcome actually changed.
+ * (removed in decision 060). Sends `divergence` right after `start` (the old vs. new outcome label
+ * for the turn being changed), then `tick` frames from the divergence year on, then `done` with
+ * sparse `ghosts` for every downstream turn whose outcome actually changed.
+ *
+ * Incremental-simulation capability (round 13): re-simulation resumes `simulateYears()` from the
+ * restored snapshot's year (`fromYear`) and drains it live — every yielded tick is already
+ * `>= forkYear`, so no separate "since the fork" filter is needed the way the old post-hoc replay
+ * required. Ticks are heuristic-significance-only (no Jev calls); `done`'s chronicle is still built
+ * by `buildLifeChronicle` (which DOES call Jev). A client disconnect aborts the re-simulation and
+ * skips registering the new branch.
  */
 export async function POST(request: Request, context: { params: Promise<{ lifeId: string }> }): Promise<Response> {
   const { lifeId } = await context.params;
@@ -74,7 +80,7 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
   const { decisionMaker, engineSource } = guard.engine;
   const newBranchId = newLifeBranchId();
 
-  return sseResponse(async (send) => {
+  return sseResponse(async (send, signal) => {
     const start: LifeStreamEvent = {
       type: "start",
       lifeId,
@@ -91,13 +97,37 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
     // process-wide singleton, so its stats are cumulative across every life/rewrite; snapshot
     // before/after this ONE run so the reported numbers are this rewrite's alone.
     const statsBefore = snapshotDecisionMakerStats(decisionMaker);
-    const report = await simulate(life.config, restoreSnapshot.people, restoreSnapshot.events, {
-      decisionMaker,
-      engineSource,
-      overrides: [override],
-      fromYear: forkYear,
-      protagonistId: "protagonist",
-    });
+
+    let report;
+    try {
+      report = await drainSimulation(
+        simulateYears(life.config, restoreSnapshot.people, restoreSnapshot.events, {
+          decisionMaker,
+          engineSource,
+          overrides: [override],
+          fromYear: forkYear,
+          protagonistId: "protagonist",
+        }),
+        async (tick) => {
+          const entries = await buildProvisionalTickEntries(
+            "protagonist",
+            tick.year,
+            tick.snapshot.events,
+            tick.snapshot.people,
+            tick.snapshot.decisions,
+            life.protagonistSex,
+            life.config.seed,
+            life.config.town.name,
+            locale,
+          );
+          if (entries.length > 0) send("tick", { type: "tick", year: tick.year, entries });
+        },
+        signal,
+      );
+    } catch (error) {
+      if (error instanceof SimulationAbortedError) return; // client disconnected — no persistence, no more frames
+      throw error;
+    }
 
     const label = `Changed in ${forkYear}`;
     const newBranch = registerLifeBranch(lifeId, newBranchId, branchId, forkYear, override, report.result, report.snapshots, label);
@@ -113,22 +143,12 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
     }
     const chronicle = chronicleResult.data;
 
-    const newEntriesFromFork = chronicle.entries.filter((e) => (e.endYear ?? e.year) >= forkYear);
-    const byYear = new Map<number, ChronicleEntry[]>();
-    for (const entry of newEntriesFromFork) {
-      const bucket = byYear.get(entry.year) ?? [];
-      bucket.push(entry);
-      byYear.set(entry.year, bucket);
-    }
-    for (const year of [...byYear.keys()].sort((a, b) => a - b)) {
-      send("tick", { type: "tick", year, entries: byYear.get(year)! });
-    }
-
     // Matched by causal position (kind + personId + Nth occurrence), not literal decision id —
     // decision-identity capability: a rewritten decision's id shares neither a year nor (for a
     // legacy branch) even a FORMAT with the one it replaced (see `decision-id.ts#buildGhostAnnotations`).
     // `forkYear` (fixed after review, R3-002) numbers the base branch's occurrences from the fork
     // point on, matching `report.result.decisions`'s own fresh-from-`forkYear` numbering.
+    const newEntriesFromFork = chronicle.entries.filter((e) => (e.endYear ?? e.year) >= forkYear);
     const ghosts = buildGhostAnnotations(baseBranch.result.decisions, report.result.decisions, newEntriesFromFork, forkYear);
 
     const runStats = decisionMakerRunStats(decisionMaker, statsBefore);

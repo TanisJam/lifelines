@@ -1,16 +1,17 @@
-import type { ChronicleEntry, CreateLifeRequest, LifeSex, LifeStreamEvent } from "@/contracts/life";
+import type { CreateLifeRequest, LifeSex, LifeStreamEvent } from "@/contracts/life";
 import { isLocale } from "@/domain/locale";
-import { simulate } from "@/domain/simulate";
+import { drainSimulation, SimulationAbortedError, simulateYears } from "@/domain/simulate";
 import { generateWorld, resolveProtagonistSex } from "@/domain/worldgen";
 import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
-import { buildLifeChronicle } from "@/server/life-chronicle";
+import { buildLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
 import { newLifeBranchId, newLifeId, registerLife } from "@/server/life-store";
 import { sseResponse } from "@/server/sse";
 
 export const runtime = "nodejs";
 
-const START_YEAR = 1498;
+/** Period-setting capability: the run begins at the start of the 1327–1361 period this engine models. */
+const START_YEAR = 1327;
 /** A generous safety cap (see mortality.ts): the sim always stops earlier, at the protagonist's death, but the actuarial curve alone never guarantees that before some fixed year. */
 const MAX_LIFESPAN_YEARS = 100;
 
@@ -24,11 +25,13 @@ function errorResponse(message: string, status = 400): Response {
 
 /**
  * Streams the birth-to-death simulation of one protagonist (round 9, decision 034/036).
- * `tick.entries` replays the FINAL chronicle's entries grouped by year, in chronicle order —
- * simpler and more reliable than narrating incrementally mid-simulation (which would need
- * significance scoring and cross-year causal lookups before the life is even finished), while
- * still giving the client one frame per simulated year as the contract asks. See docs/decisions.md
- * 036 for why this is a deliberate scoping choice, not an oversight.
+ * Incremental-simulation capability (round 13): `tick.entries` is now built LIVE, one simulated
+ * year at a time, from `simulateYears()`'s own generator — heuristic significance only, no Jev
+ * calls (design decision 9) — rather than replaying the final chronicle after the whole life has
+ * already finished simulating (the old round-9 approach, docs/decisions.md 036). `done` still
+ * carries the one authoritative `Chronicle`, built by `buildLifeChronicle` (which DOES call Jev).
+ * A client disconnect aborts the in-flight simulation and skips persisting a branch (see
+ * `sseResponse`'s `AbortSignal` and `drainSimulation`'s `SimulationAbortedError`).
  */
 export async function POST(request: Request): Promise<Response> {
   let body: Partial<CreateLifeRequest> = {};
@@ -67,13 +70,15 @@ export async function POST(request: Request): Promise<Response> {
   const lifeId = newLifeId();
   const branchId = newLifeBranchId();
 
-  return sseResponse(async (send) => {
+  const protagonistSex = protagonist.sex as LifeSex;
+
+  return sseResponse(async (send, signal) => {
     const start: LifeStreamEvent = {
       type: "start",
       lifeId,
       branchId,
       villageName: config.town.name,
-      protagonist: { name: protagonist.name, sex: protagonist.sex, birthYear: protagonist.birthYear },
+      protagonist: { name: protagonist.name, sex: protagonistSex, birthYear: protagonist.birthYear },
     };
     send("start", start);
 
@@ -81,8 +86,33 @@ export async function POST(request: Request): Promise<Response> {
     // so its own stats are cumulative across every life — snapshot before/after this ONE run so the
     // reported numbers are this life's alone, not inflated by whatever ran earlier in the process.
     const statsBefore = snapshotDecisionMakerStats(decisionMaker);
-    const report = await simulate(config, people, events, { decisionMaker, engineSource, protagonistId: "protagonist" });
-    registerLife(lifeId, branchId, config, protagonist.name, protagonist.sex as LifeSex, report.result, report.snapshots);
+
+    let report;
+    try {
+      report = await drainSimulation(
+        simulateYears(config, people, events, { decisionMaker, engineSource, protagonistId: "protagonist" }),
+        async (tick) => {
+          const entries = await buildProvisionalTickEntries(
+            "protagonist",
+            tick.year,
+            tick.snapshot.events,
+            tick.snapshot.people,
+            tick.snapshot.decisions,
+            protagonistSex,
+            config.seed,
+            config.town.name,
+            locale,
+          );
+          if (entries.length > 0) send("tick", { type: "tick", year: tick.year, entries });
+        },
+        signal,
+      );
+    } catch (error) {
+      if (error instanceof SimulationAbortedError) return; // client disconnected — no persistence, no more frames
+      throw error;
+    }
+
+    registerLife(lifeId, branchId, config, protagonist.name, protagonistSex, report.result, report.snapshots);
 
     const chronicleResult = await buildLifeChronicle(lifeId, branchId, locale);
     if (!chronicleResult.data) {
@@ -90,16 +120,6 @@ export async function POST(request: Request): Promise<Response> {
       return;
     }
     const chronicle = chronicleResult.data;
-
-    const byYear = new Map<number, ChronicleEntry[]>();
-    for (const entry of chronicle.entries) {
-      const bucket = byYear.get(entry.year) ?? [];
-      bucket.push(entry);
-      byYear.set(entry.year, bucket);
-    }
-    for (const year of [...byYear.keys()].sort((a, b) => a - b)) {
-      send("tick", { type: "tick", year, entries: byYear.get(year)! });
-    }
 
     // Snapshotted AFTER `buildLifeChronicle` too, since its own `significance()` calls (life-chronicle
     // narration) belong to this life just as much as the simulation's own `decideYear`/`decide` calls.
