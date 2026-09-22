@@ -823,16 +823,35 @@ export const VIGNETTE_OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = Ob
 );
 
 /**
- * Deterministically picks one eligible vignette for this protagonist-year (keyed RNG, same seed +
- * personId + year always agrees) — `feast-day`'s universal eligibility guarantees this never comes
- * up empty. `recentIds` (round 10, decision 043), when given, excludes any vignette used within the
- * last 5 years of this same life — a deterministic exclusion, not a re-roll: if every eligible
- * vignette was recently used, the exclusion is dropped rather than leaving the year without one.
+ * Every eligible vignette for this protagonist-year, after the same 5-year no-repeat exclusion
+ * `pickVignette` always applied (round 10, decision 043) — dropped rather than leaving the pool
+ * empty if every eligible vignette was recently used. `feast-day`'s near-universal (age >= 3)
+ * eligibility guarantees this is never empty for anyone past infancy; below that, the pool falls
+ * back to the full, unfiltered `VIGNETTES` list as a last resort so a year is never left without one.
+ * Shared by `pickVignette` (legacy single RNG pick, kept for a `DecisionMaker` without `decideYear`)
+ * and `simulate.ts`'s `buildDailyLifeVignetteCandidates` (round 12 continuation, decision 046 —
+ * hierarchical event selection, which needs the WHOLE pool, not one pre-picked winner).
  */
-export function pickVignette(seed: string, personId: string, year: number, ctx: VignetteContext, recentIds?: ReadonlySet<string>): Vignette {
+export function eligibleVignettePool(ctx: VignetteContext, recentIds?: ReadonlySet<string>): readonly Vignette[] {
   const eligible = VIGNETTES.filter((v) => v.eligible(ctx));
   const notRecentlyUsed = recentIds ? eligible.filter((v) => !recentIds.has(v.id)) : eligible;
-  const pool = notRecentlyUsed.length > 0 ? notRecentlyUsed : eligible.length > 0 ? eligible : VIGNETTES;
+  return notRecentlyUsed.length > 0 ? notRecentlyUsed : eligible.length > 0 ? eligible : VIGNETTES;
+}
+
+/**
+ * Deterministically picks one eligible vignette for this protagonist-year (keyed RNG, same seed +
+ * personId + year always agrees). Kept only for a `DecisionMaker` that doesn't implement
+ * `decideYear` (a minimal test double) — the real batched path (`simulate.ts`,
+ * `buildDailyLifeVignetteCandidates`) offers the WHOLE eligible pool to Jev instead (round 12,
+ * decision 046).
+ */
+export function pickVignette(seed: string, personId: string, year: number, ctx: VignetteContext, recentIds?: ReadonlySet<string>): Vignette {
+  const pool = eligibleVignettePool(ctx, recentIds);
   const rng = keyedRng(seed, personId, year, "D1-vignette-pick");
   return pool[Math.floor(rng() * pool.length)]!;
+}
+
+/** The vignette that owns a given outcome option id — option ids are unique across the whole pool (see `VIGNETTE_OPTION_DESCRIPTIONS`), so this is unambiguous. Used to resolve a forked/overridden `D1` decision's option back to its vignette without re-deriving eligibility (round 12, decision 046). */
+export function getVignetteForOption(optionId: string): Vignette | undefined {
+  return VIGNETTES.find((v) => optionId in v.outcomes);
 }

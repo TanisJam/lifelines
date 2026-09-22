@@ -153,6 +153,17 @@ function pickInstructions(isProtagonist: boolean): string {
   return isProtagonist ? base : `${base} If none of them are likely enough for this particular year, choose "nothing": an ordinary year in which nothing notable happens.`;
 }
 
+/**
+ * Round 12 continuation (decision 046): the SECOND, nested Choice — asked in the same request as
+ * `pick`, speculatively, regardless of whether `pick` ends up choosing `"everyday"` — "of all the
+ * everyday moments that could plausibly fill an otherwise-quiet year, which one is most likely?"
+ * Kept as a genuinely separate judgment from `pick` itself (never folded back into one flat list)
+ * so a vivid, specific vignette never competes directly against a rare, specific life situation —
+ * see decision 046 for why that competition is what caused vignettes to dominate under decision 045.
+ */
+const VIGNETTE_PICK_INSTRUCTIONS =
+  "You are the person in 'self' — read self.mind and self.portrait for who you are. If this year brings an ordinary everyday moment rather than anything more significant, which one of these everyday moments would it most likely be? Each option below names one. Given who you are and your circumstances this year, which is most plausible?";
+
 /** ~64k tokens/request hard cap (docs/findings.md); requests are split before reaching this so the shared `self` state and every situation's questions fit with headroom. */
 export const JEV_YEAR_TOKEN_BUDGET = 55_000;
 
@@ -285,29 +296,57 @@ export class JevDecisionMaker implements DecisionMaker {
     const chunkResults = await Promise.all(chunks.map((ids, i) => this.decideYearChunk(batch, ids, i === 0)));
 
     const selection: Record<string, number> = {};
+    const vignetteSelection: Record<string, number> = {};
     const response: Record<string, Distribution> = {};
     for (const result of chunkResults) {
       Object.assign(selection, result.selection);
+      Object.assign(vignetteSelection, result.vignetteSelection);
       Object.assign(response, result.response);
     }
-    return { selection, response };
+    return { selection, vignetteSelection, response };
   }
 
-  /** The `pick` Choice's criteria: every situation's own description, plus `"nothing"` for a non-protagonist batch (see `pickInstructions`). Shared between `decideYearChunk` (to actually ask it) and `splitByTokenBudget` (to size it into the token estimate, since it always rides in chunk 0 regardless of how situations themselves are split). */
+  /**
+   * The `pick` Choice's criteria: every NON-vignette situation's own description, plus `"nothing"`
+   * for a non-protagonist batch (see `pickInstructions`), plus (round 12, decision 046) ONE
+   * aggregate `"everyday"` option standing in for every `D1` vignette candidate this batch has —
+   * never one option per vignette (that's exactly the flat-list dominance decision 046 fixes). Shared
+   * between `decideYearChunk` (to actually ask it) and `splitByTokenBudget` (to size it into the
+   * token estimate, since it always rides in chunk 0 regardless of how situations themselves are
+   * split).
+   */
   private pickCriteria(batch: PersonYearBatch): ChoiceCriteria {
     const criteria: ChoiceCriteria = {};
+    let hasVignette = false;
     for (const [id, situation] of Object.entries(batch.situations)) {
+      if (situation.kind === "D1") {
+        hasVignette = true;
+        continue;
+      }
       const situationState = situation.question.state as Record<string, JsonValue>;
       const situationInfo = situationState.situation as Record<string, JsonValue> | undefined;
       criteria[id] = typeof situationInfo?.question === "string" ? situationInfo.question : `A "${situation.kind}" situation.`;
     }
+    if (hasVignette) criteria.everyday = "An ordinary moment of everyday life, with no major life event this year.";
     if (!batch.isProtagonist) criteria.nothing = "An ordinary, uneventful year: nothing notable happens.";
     return criteria;
   }
 
-  /** Greedily groups situation ids so each group's estimated tokens (shared `self` + `pick` criteria + its own situations/questions) stays under `JEV_YEAR_TOKEN_BUDGET`. A single situation that alone exceeds the budget still gets its own group (never dropped). */
+  /** The `vignettePick` Choice's criteria (round 12, decision 046): every `D1` vignette candidate's own question text — empty (never asked) when this batch has none. */
+  private vignetteCriteria(batch: PersonYearBatch): ChoiceCriteria {
+    const criteria: ChoiceCriteria = {};
+    for (const [id, situation] of Object.entries(batch.situations)) {
+      if (situation.kind !== "D1") continue;
+      const situationState = situation.question.state as Record<string, JsonValue>;
+      const situationInfo = situationState.situation as Record<string, JsonValue> | undefined;
+      criteria[id] = typeof situationInfo?.question === "string" ? situationInfo.question : `A "${situation.kind}" situation.`;
+    }
+    return criteria;
+  }
+
+  /** Greedily groups situation ids so each group's estimated tokens (shared `self` + `pick`/`vignettePick` criteria + its own situations/questions) stays under `JEV_YEAR_TOKEN_BUDGET`. A single situation that alone exceeds the budget still gets its own group (never dropped). */
   private splitByTokenBudget(batch: PersonYearBatch, situationIds: readonly string[]): string[][] {
-    const selfTokens = estimateTokens(batch.self) + estimateTokens(this.pickCriteria(batch));
+    const selfTokens = estimateTokens(batch.self) + estimateTokens(this.pickCriteria(batch)) + estimateTokens(this.vignetteCriteria(batch));
     const groups: string[][] = [];
     let current: string[] = [];
     let currentTokens = selfTokens;
@@ -348,7 +387,14 @@ export class JevDecisionMaker implements DecisionMaker {
 
       questions[`resp:${id}`] = choice(DECISION_INSTRUCTIONS[situation.kind], criteria);
     }
-    if (includeSelection) questions.pick = choice(pickInstructions(batch.isProtagonist), this.pickCriteria(batch));
+    const vignetteCriteria = this.vignetteCriteria(batch);
+    const hasVignette = Object.keys(vignetteCriteria).length > 0;
+    if (includeSelection) {
+      questions.pick = choice(pickInstructions(batch.isProtagonist), this.pickCriteria(batch));
+      // Round 12 (decision 046): the second, nested Choice — asked in the SAME request as `pick`,
+      // speculatively, whether or not `pick` ends up choosing "everyday" (see `VIGNETTE_PICK_INSTRUCTIONS`).
+      if (hasVignette) questions.vignettePick = choice(VIGNETTE_PICK_INSTRUCTIONS, vignetteCriteria);
+    }
 
     const state: Record<string, JsonValue> = { self: batch.self, year: batch.year, situations: situationsState };
     const key = decisionCacheKey(`year:${batch.personId}:${batch.year}:${situationIds.slice().sort().join(",")}:${includeSelection}`, { state, model: this.model });
@@ -372,8 +418,10 @@ export class JevDecisionMaker implements DecisionMaker {
       response[id] = (result.answers[`resp:${id}`] as { probabilities: Distribution }).probabilities;
     }
     const selection: Record<string, number> = includeSelection ? ((result.answers.pick as { probabilities: Distribution }).probabilities as Record<string, number>) : {};
+    const vignetteSelection: Record<string, number> =
+      includeSelection && hasVignette ? ((result.answers.vignettePick as { probabilities: Distribution }).probabilities as Record<string, number>) : {};
 
-    const personYearResult: PersonYearResult = { selection, response };
+    const personYearResult: PersonYearResult = { selection, vignetteSelection, response };
     this.yearCache.set(key, personYearResult);
     this.yearCache.flush();
     return personYearResult;

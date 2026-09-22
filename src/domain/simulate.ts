@@ -10,7 +10,7 @@ import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistributi
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
 import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type JsonValue, type Job, type Override, type Person, type Sex, type SimulationResult, type Trait, type WorldConfig, type YearSnapshot } from "./types";
-import { getVignette, pickVignette, type Vignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
+import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
 import { pickJob, pickTraits } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
@@ -830,8 +830,14 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
   if (protagonistId) {
     const protagonist = people[protagonistId];
     if (protagonist && protagonist.deathYear === undefined && year >= protagonist.birthYear) {
-      const { descriptor } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEvent);
-      candidates.push(descriptor);
+      // Round 12 continuation (decision 046, hierarchical event selection): the WHOLE eligible pool,
+      // not one RNG-picked vignette — a single combined `D1:<protagonistId>:<year>` candidate whose
+      // `options` is the union of every eligible vignette's outcomes, so `validate-override.ts`'s
+      // simple "is this optionId one of this decision's options" check still works unchanged for a
+      // fork/rewrite targeting ANY of them (`getVignetteForOption` resolves which one owns it).
+      const vignetteCandidates = buildDailyLifeVignetteCandidates(protagonist, year, seed, people, events, townEvent);
+      const options = Array.from(new Set(vignetteCandidates.flatMap((c) => c.descriptor.options)));
+      candidates.push({ decisionId: `D1:${protagonist.id}:${year}`, kind: "D1", personId: protagonist.id, options });
     }
   }
 
@@ -1185,6 +1191,58 @@ function buildDailyLifeVignetteDescriptor(
 }
 
 /**
+ * Round 12 continuation (decision 046, hierarchical event selection): the WHOLE eligible-vignette
+ * pool for this protagonist-year (same context/recency logic `buildDailyLifeVignetteDescriptor`
+ * uses), one `CandidateDescriptor` per vignette — each becomes its own speculative `D1` situation in
+ * a person-year batch, rather than code pre-picking a single winner by RNG. Each candidate's
+ * `decisionId` embeds the protagonist and vignette (`D1:<protagonistId>:<year>:<vignetteId>`) so
+ * they never collide within a year; the FINAL, single `D1:<protagonistId>:<year>` `DecisionRecord`
+ * (what forks/overrides address) is assembled afterward from whichever one wins. `personId` on each
+ * candidate is still `deciderId` (self, or a living parent for the `decidedByParent` early-childhood
+ * pool — decision 043) — so this can split across two batches (the protagonist's own, and a living
+ * parent's) when both self-decided and parent-decided vignettes are eligible the same year (ages
+ * 3-5); `simulate()` merges their `vignetteSelection`s before the final cross-batch pick.
+ */
+function buildDailyLifeVignetteCandidates(
+  protagonist: Person,
+  year: number,
+  seed: string,
+  people: Readonly<Record<string, Person>>,
+  events: readonly Event[],
+  townEventType: TownEventType | undefined,
+): { readonly descriptor: CandidateDescriptor; readonly vignette: Vignette; readonly deciderId: string }[] {
+  const ctx: VignetteContext = {
+    age: ageInYear(protagonist.birthYear, year),
+    away: hasMovedAway(events, protagonist.id),
+    job: protagonist.job,
+    hasSpouse: !!protagonist.spouseId,
+    hasChild: livingChildId(people, protagonist) !== undefined,
+    hasLivingParent: relationshipTargetId("parent", protagonist, people) !== undefined,
+    hasLivingSibling: livingSiblingId(people, protagonist) !== undefined,
+    season: seasonFor(seed, protagonist.id, year, "D1"),
+    townEventType,
+  };
+  const recentIds = new Set(
+    events.filter((e) => e.kind === "vignette" && e.actors.includes(protagonist.id) && e.year >= year - 5 && e.year < year).map((e) => e.payload.vignette as string),
+  );
+  const pool = eligibleVignettePool(ctx, recentIds);
+  return pool.map((vignette) => {
+    const options = Object.keys(vignette.outcomes);
+    const decisionId = `D1:${protagonist.id}:${year}:${vignette.id}`;
+    const deciderId = vignette.decidedByParent ? (relationshipTargetId("parent", protagonist, people) ?? protagonist.id) : protagonist.id;
+    const descriptor: CandidateDescriptor = {
+      decisionId,
+      kind: "D1",
+      personId: deciderId,
+      ...(deciderId !== protagonist.id ? { partnerId: protagonist.id } : {}),
+      options,
+      extra: { vignette: vignette.id },
+    };
+    return { descriptor, vignette, deciderId };
+  });
+}
+
+/**
  * "At least one entry per year" (round 10, decision 042): called once per year, ONLY when the
  * protagonist produced zero events of their own that year (checked by the caller, after every
  * other biology/social decision for the year has already resolved) — presents ONE everyday-life
@@ -1204,15 +1262,47 @@ async function resolveDailyLifeVignette(
   decisionMaker: DecisionMaker,
   engineSource: "jev" | "rules",
   overrides: readonly Override[],
+  /** Round 12 continuation (decision 046): the whole eligible-vignette pool this protagonist-year offered, and which one (if any) the cross-batch `vignette-pick` sample chose. */
+  d1Candidates: readonly { readonly descriptor: CandidateDescriptor; readonly vignette: Vignette; readonly deciderId: string }[],
+  finalVignetteWinner: string | undefined,
   /** Round 11 (decision 044): a result already fetched as part of the decider's per-person-year batch — when present, no extra `DecisionMaker` call is made here at all. */
   preFetched?: ResolvedDecision,
 ): Promise<{ decision: DecisionRecord; wasRealCall: boolean }> {
-  const { descriptor, vignette, deciderId } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType);
-  const options = descriptor.options;
-  const decisionId = descriptor.decisionId;
+  const decisionId = `D1:${protagonist.id}:${year}`;
+  const forced = overrideFor(overrides, decisionId);
+
+  let vignette: Vignette;
+  let deciderId: string;
+  if (forced) {
+    // A forked/overridden D1 decision (decision 043): resolve which vignette OWNS the forced option
+    // rather than assuming whichever one won selection — option ids are unique across the pool.
+    vignette = getVignetteForOption(forced.optionId) ?? d1Candidates[0]?.vignette ?? buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType).vignette;
+    deciderId = vignette.decidedByParent ? (relationshipTargetId("parent", protagonist, people) ?? protagonist.id) : protagonist.id;
+  } else {
+    const winner = finalVignetteWinner ? d1Candidates.find((c) => c.descriptor.decisionId === finalVignetteWinner) : undefined;
+    if (winner) {
+      vignette = winner.vignette;
+      deciderId = winner.deciderId;
+    } else {
+      // Legacy fallback: no batched `decideYear` result (an adapter that only implements `decide()`)
+      // — fall back to the old single RNG pick, exactly as before decision 044.
+      const picked = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType);
+      vignette = picked.vignette;
+      deciderId = picked.deciderId;
+    }
+  }
+
+  const options = Object.keys(vignette.outcomes);
+  const descriptor: CandidateDescriptor = {
+    decisionId,
+    kind: "D1",
+    personId: deciderId,
+    ...(deciderId !== protagonist.id ? { partnerId: protagonist.id } : {}),
+    options,
+    extra: { vignette: vignette.id },
+  };
   const decider = people[deciderId] ?? protagonist;
   const question = buildQuestion(descriptor, year, config, people);
-  const forced = overrideFor(overrides, decisionId);
 
   let final: Distribution;
   let jevRaw: Distribution | undefined;
@@ -1504,17 +1594,27 @@ export async function simulate(
     // to be needed, consumed only if the year is otherwise quiet (see the guarantee block below).
     // Kept out of `socialCandidates` itself (unchanged from decision 043) so it's never
     // double-resolved through the generic per-kind loop below.
-    let d1: { readonly descriptor: CandidateDescriptor; readonly question: DecisionQuestion } | undefined;
+    // Round 12 continuation (decision 046): the WHOLE eligible-vignette pool, one candidate per
+    // vignette — not one RNG-picked winner (see `buildDailyLifeVignetteCandidates`). Can span two
+    // deciders (the protagonist, and a living parent for the `decidedByParent` pool), so it's a flat
+    // array rather than a single `{descriptor, question}` like decision 044's `d1`.
+    let d1Candidates: readonly { readonly descriptor: CandidateDescriptor; readonly question: DecisionQuestion; readonly vignette: Vignette; readonly deciderId: string }[] = [];
     if (options.protagonistId && !overrideFor(overrides, `D1:${options.protagonistId}:${year}`)) {
       const protagonist = people[options.protagonistId];
       if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
-        const { descriptor } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEvent);
-        d1 = { descriptor, question: buildQuestion(descriptor, year, config, people) };
+        d1Candidates = buildDailyLifeVignetteCandidates(protagonist, year, seed, people, events, townEvent).map((c) => ({ ...c, question: buildQuestion(c.descriptor, year, config, people) }));
       }
     }
 
     const batchable = typeof options.decisionMaker.decideYear === "function";
     const resultByDecisionId = new Map<string, ResolvedDecision>();
+    // Round 12 continuation (decision 046): every batch's raw `vignetteSelection` weights, merged
+    // (decision ids are globally unique, so this is a safe union) into ONE pool for the single,
+    // canonical "which vignette actually happens" sample below — and each batch's own normalized
+    // `"everyday"` share, keyed by that batch's `personId`, for the winner's `occurrenceProbability`.
+    const vignetteSelectionRaw: Record<string, number> = {};
+    const everydayShareByPerson = new Map<string, number>();
+    let finalVignetteWinner: string | undefined;
 
     if (batchable) {
       const batchesByPerson = new Map<string, Record<string, PersonYearSituation>>();
@@ -1525,10 +1625,10 @@ export async function simulate(
         situations[c.decisionId] = { kind: c.kind as DecisionQuestion["kind"], question: questions[i]! };
         batchesByPerson.set(c.personId, situations);
       }
-      if (d1) {
-        const situations = batchesByPerson.get(d1.descriptor.personId) ?? {};
-        situations[d1.descriptor.decisionId] = { kind: "D1", question: d1.question };
-        batchesByPerson.set(d1.descriptor.personId, situations);
+      for (const c of d1Candidates) {
+        const situations = batchesByPerson.get(c.descriptor.personId) ?? {};
+        situations[c.descriptor.decisionId] = { kind: "D1", question: c.question };
+        batchesByPerson.set(c.descriptor.personId, situations);
       }
 
       // One real request per person-year batch (not per situation) — this replaces the old
@@ -1543,16 +1643,27 @@ export async function simulate(
         const isProtagonist = personId === options.protagonistId;
         const result = await options.decisionMaker.decideYear!({ personId, year, self, situations, isProtagonist });
 
+        if (result.vignetteSelection && Object.keys(result.vignetteSelection).length > 0) {
+          Object.assign(vignetteSelectionRaw, result.vignetteSelection);
+        }
+
         // Jev (or RuleDecisionMaker's offline equivalent) only JUDGES the joint event-selection
         // distribution — the domain engine samples it itself with Gumbel-max, exactly like every
         // other decision (a DecisionMaker never rolls dice), keyed `(seed, personId, year,
         // "event-pick")` so it's deterministic and reproducible across identical-seed runs/forks.
+        // Round 12 continuation (decision 046): `"everyday"` stands in for every `D1` vignette
+        // candidate this batch had — WHICH one actually wins is a second, nested sample (below,
+        // after every batch has reported in), not decided here.
         let selectedId: string | undefined;
         let normalizedSelection: Record<string, number> | undefined;
         if (situationIds.length > 0 && Object.keys(result.selection).length > 0) {
           normalizedSelection = normalizeDistribution(result.selection as Record<string, number>);
           const sample = sampleGumbelMax(normalizedSelection, seed, personId, year, "event-pick");
-          if (sample.chosen !== "nothing") selectedId = sample.chosen;
+          if (sample.chosen === "everyday") {
+            everydayShareByPerson.set(personId, normalizedSelection.everyday!);
+          } else if (sample.chosen !== "nothing") {
+            selectedId = sample.chosen;
+          }
         }
 
         for (const id of situationIds) {
@@ -1560,7 +1671,9 @@ export async function simulate(
           if (!jevRaw) continue;
           // Round 12 (decision 045): only the SELECTED situation carries an `occurrenceProbability`
           // (its normalized share of the selection distribution) — every other candidate this
-          // person-year stays undefined, same as a forced decision or the legacy fallback below.
+          // person-year stays undefined, same as a forced decision or the legacy fallback below. A
+          // vignette candidate's `occurrenceProbability` is finalized just below instead (round 12
+          // continuation, decision 046 — it depends on the cross-batch vignette-pick winner).
           const occurrenceProbability = id === selectedId ? normalizedSelection![id] : undefined;
           resultByDecisionId.set(
             id,
@@ -1568,6 +1681,22 @@ export async function simulate(
           );
         }
       });
+
+      // Round 12 continuation (decision 046): the SECOND, nested sample — "of every eligible
+      // vignette across every batch that offered one, which actually happens?" — keyed
+      // `(seed, protagonistId, year, "vignette-pick")`, exactly like `"event-pick"` above. Only the
+      // winning candidate's `occurrenceProbability` is set, and only when the batch that owns it
+      // (its `deciderId`) actually landed on `"everyday"` — P(everyday) x P(this vignette | everyday).
+      if (Object.keys(vignetteSelectionRaw).length > 0) {
+        const normalizedVignetteSelection = normalizeDistribution(vignetteSelectionRaw);
+        finalVignetteWinner = sampleGumbelMax(normalizedVignetteSelection, seed, options.protagonistId ?? "world", year, "vignette-pick").chosen;
+        const winnerCandidate = d1Candidates.find((c) => c.descriptor.decisionId === finalVignetteWinner);
+        const everydayShare = winnerCandidate ? everydayShareByPerson.get(winnerCandidate.descriptor.personId) : undefined;
+        if (winnerCandidate && everydayShare !== undefined) {
+          const existing = resultByDecisionId.get(finalVignetteWinner!);
+          if (existing) resultByDecisionId.set(finalVignetteWinner!, { ...existing, occurrenceProbability: everydayShare * normalizedVignetteSelection[finalVignetteWinner!]! });
+        }
+      }
     } else {
       // Legacy fallback: an adapter that doesn't implement `decideYear` (e.g. a minimal test
       // double) still gets one `decide()` call per candidate, exactly as before decision 044.
@@ -2135,8 +2264,22 @@ export async function simulate(
       if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
         const hasOwnEventThisYear = events.some((e) => e.year === year && e.actors.includes(protagonist.id));
         if (!hasOwnEventThisYear) {
-          const preFetched = d1 ? resultByDecisionId.get(d1.descriptor.decisionId) : undefined;
-          const { decision: d1Decision, wasRealCall } = await resolveDailyLifeVignette(protagonist, year, seed, config, people, events, townEvent, options.decisionMaker, options.engineSource, overrides, preFetched);
+          const preFetched = finalVignetteWinner ? resultByDecisionId.get(finalVignetteWinner) : undefined;
+          const { decision: d1Decision, wasRealCall } = await resolveDailyLifeVignette(
+            protagonist,
+            year,
+            seed,
+            config,
+            people,
+            events,
+            townEvent,
+            options.decisionMaker,
+            options.engineSource,
+            overrides,
+            d1Candidates,
+            finalVignetteWinner,
+            preFetched,
+          );
           decisions.push(d1Decision);
           if (wasRealCall) decisionCalls += 1;
         }

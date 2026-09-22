@@ -34,17 +34,34 @@ export class RuleDecisionMaker implements DecisionMaker {
     return ruleDistribution(question);
   }
 
-  /** Round 11 (decision 044) / round 12 (decision 045): the batched equivalent of `decide()` — answers every situation in one pass, no network, fully deterministic. `selection` carries raw weights (per `ruleSelectionWeight`/`NOTHING_WEIGHT`); `simulate.ts` samples it with Gumbel-max exactly like the real Jev path, never special-cased here. */
+  /**
+   * Round 11 (decision 044) / round 12 (decisions 045/046): the batched equivalent of `decide()` —
+   * answers every situation in one pass, no network, fully deterministic. `selection` carries raw
+   * weights (per `ruleSelectionWeight`/`NOTHING_WEIGHT`); `simulate.ts` samples it with Gumbel-max
+   * exactly like the real Jev path, never special-cased here. Round 12 continuation (decision 046):
+   * `D1` vignette candidates never get their own `selection` entry — they're aggregated under one
+   * flat `"everyday"` weight, with their OWN relative weights (equal, since this heuristic has no
+   * basis to prefer one vignette over another) in `vignetteSelection` instead, exactly like the real
+   * Jev adapter's nested `pick`/`vignettePick` split.
+   */
   async decideYear(batch: PersonYearBatch): Promise<PersonYearResult> {
     this.calls += 1;
     const selection: Record<string, number> = {};
+    const vignetteSelection: Record<string, number> = {};
     const response: Record<string, Distribution> = {};
+    let hasVignette = false;
     for (const [id, situation] of Object.entries(batch.situations)) {
       response[id] = normalizeDistribution(ruleDistribution(situation.question) as Record<string, number>);
-      selection[id] = ruleSelectionWeight(situation.kind);
+      if (situation.kind === "D1") {
+        vignetteSelection[id] = 1;
+        hasVignette = true;
+      } else {
+        selection[id] = ruleSelectionWeight(situation.kind);
+      }
     }
+    if (hasVignette) selection.everyday = ruleSelectionWeight("D1");
     if (!batch.isProtagonist && Object.keys(selection).length > 0) selection.nothing = NOTHING_WEIGHT;
-    return { selection, response };
+    return { selection, vignetteSelection, response };
   }
 
   getStats(): DecisionMakerStats {

@@ -123,6 +123,18 @@ export interface PersonYearResult {
    * outcome. Replaces N independent occurrence judgments with one coherent choice among alternatives.
    */
   readonly selection: Readonly<Record<string, number>>;
+  /**
+   * Round 12 continuation (decision 046, hierarchical event selection — superseding 045's flat
+   * option list): when this person-year has any `D1` daily-life vignette candidates, `selection`
+   * carries ONE aggregate `"everyday"` option for all of them together (never one per vignette —
+   * offering ~30 similar, always-plausible vignette options directly against 3-5 rare life
+   * situations systematically over-represented "an ordinary day" the way near-duplicate alternatives
+   * inflate a shared choice in any flat multinomial model). This is the SECOND, nested Choice —
+   * "if this year brings an ordinary everyday moment, which one?" — asked in the SAME request,
+   * judged across every eligible vignette. The domain engine consumes it (and only it) when
+   * `selection` samples `"everyday"`.
+   */
+  readonly vignetteSelection?: Readonly<Record<string, number>>;
   /** Speculative response distribution for EVERY situation (asked whether or not it's the one selected) — the caller only consumes the response for whichever situation `selection` ends up sampling. */
   readonly response: Readonly<Record<string, Distribution>>;
 }
