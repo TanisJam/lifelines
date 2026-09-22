@@ -4,6 +4,7 @@
  * removed; every consumer now reads `DecisionRecord.year` directly) with `<kind>:<subject>#<ordinal>.<attempt>`,
  * minted from the subject's `slots` bookkeeping (`life-state.ts`).
  */
+import { pairKey } from "./events";
 import { type SlotState, slotKey } from "./life-state";
 
 export interface MintedId {
@@ -49,6 +50,20 @@ export function decisionSubject(decisionId: string): { readonly kind: string; re
   const lastColon = rest.lastIndexOf(":");
   const subject = lastColon !== -1 ? rest.slice(0, lastColon) : rest;
   return { kind, subject };
+}
+
+/**
+ * Matches a parsed override subject against a candidate's own identity (fixed after review,
+ * R3-001). The new ordinal scheme and a legacy id for a NON-paired kind both carry a bare
+ * `personId` as `subject`, so `personId === subject` covers them directly. A legacy id for a
+ * PAIRED social kind (e.g. `Y1`) instead embeds the two participants' `pairKey` as `subject` (the
+ * pre-change persisted `DecisionRecord.id` shape) — never a bare personId — so a candidate with a
+ * `partnerId` also matches when its own recomputed pair key equals `subject`. Design decision 7:
+ * a legacy paired override matches by (kind, personId, partnerId), never by parsing the pair key
+ * back apart.
+ */
+export function candidateMatchesSubject(subject: string, personId: string, partnerId: string | undefined): boolean {
+  return personId === subject || (partnerId !== undefined && pairKey(personId, partnerId) === subject);
 }
 
 interface DecisionLike {
@@ -97,11 +112,24 @@ interface ChronicleEntryLike {
  * diverged from the base branch — matched by causal position (see `causalPositions`), not by literal
  * decision id, so a rewrite that mints ids in a different format (or shifts a decision's year) still
  * finds its match.
+ *
+ * `forkYear`, when given (fixed after review, R3-002), numbers the base branch's occurrences ONLY
+ * from the fork point on. `newDecisions` comes from a `simulate()` run started fresh at `forkYear`
+ * (no prior decisions), so its own occurrence #1 means the fork's first post-fork decision, not the
+ * base branch's first decision of that kind ever — a recurring kind (death, illness, D1, ...) must
+ * count from the same origin on both sides, or a post-fork decision pairs against the wrong
+ * pre-fork one. Defaults to "no filter" for callers (and existing tests) that don't fork.
  */
-export function buildGhostAnnotations(baseDecisions: readonly DecisionRecordLike[], newDecisions: readonly DecisionRecordLike[], newEntries: readonly ChronicleEntryLike[]): Record<string, string> {
-  const oldPositions = causalPositions(baseDecisions);
+export function buildGhostAnnotations(
+  baseDecisions: readonly DecisionRecordLike[],
+  newDecisions: readonly DecisionRecordLike[],
+  newEntries: readonly ChronicleEntryLike[],
+  forkYear: number = Number.NEGATIVE_INFINITY,
+): Record<string, string> {
+  const baseFromFork = baseDecisions.filter((d) => d.year >= forkYear);
+  const oldPositions = causalPositions(baseFromFork);
   const newPositions = causalPositions(newDecisions);
-  const oldByPosition = new Map(baseDecisions.map((d) => [oldPositions.get(d.id), d] as const));
+  const oldByPosition = new Map(baseFromFork.map((d) => [oldPositions.get(d.id), d] as const));
 
   const ghosts: Record<string, string> = {};
   for (const entry of newEntries) {

@@ -127,7 +127,9 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
     // Matched by causal position (kind + personId + Nth occurrence), not literal decision id —
     // decision-identity capability: a rewritten decision's id shares neither a year nor (for a
     // legacy branch) even a FORMAT with the one it replaced (see `decision-id.ts#buildGhostAnnotations`).
-    const ghosts = buildGhostAnnotations(baseBranch.result.decisions, report.result.decisions, newEntriesFromFork);
+    // `forkYear` (fixed after review, R3-002) numbers the base branch's occurrences from the fork
+    // point on, matching `report.result.decisions`'s own fresh-from-`forkYear` numbering.
+    const ghosts = buildGhostAnnotations(baseBranch.result.decisions, report.result.decisions, newEntriesFromFork, forkYear);
 
     const runStats = decisionMakerRunStats(decisionMaker, statsBefore);
     const done: LifeStreamEvent = {

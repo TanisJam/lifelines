@@ -97,4 +97,33 @@ describe("buildGhostAnnotations", () => {
     const ghosts = buildGhostAnnotations([], [], [{ id: "entry-1" }]);
     expect(ghosts).toEqual({});
   });
+
+  it("aligns causal positions to forkYear, not the base branch's whole life, so a recurring kind doesn't pair against a pre-fork decision (R3-002)", () => {
+    // The rewrite's OWN `simulate()` run starts fresh AT forkYear (decision-identity capability:
+    // `report.result.decisions` never carries pre-fork history) — this is occurrence #1 in the NEW
+    // branch's numbering, even though it's occurrence #3 in the base branch's whole-life numbering.
+    const baseDecisions = [
+      { id: "illness:protagonist:1330", year: 1330, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] },
+      { id: "illness:protagonist:1331", year: 1331, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] },
+      { id: "illness:protagonist:1332", year: 1332, kind: "illness", personId: "protagonist", chosen: "illness", options: [option("illness"), option("healthy")] },
+    ];
+    const newDecisions = [{ id: "illness:protagonist#1.1", year: 1332, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] }];
+    const newEntries = [{ id: "entry-1", turn: { decisionId: "illness:protagonist#1.1", chosen: { optionId: "healthy" } } }];
+
+    const ghosts = buildGhostAnnotations(baseDecisions, newDecisions, newEntries, 1332);
+    expect(ghosts["entry-1"]).toBeDefined();
+    expect(ghosts["entry-1"]).toMatch(/illness/i);
+  });
+
+  it("does NOT invent a spurious ghost against a pre-fork occurrence when the correctly-aligned post-fork outcome actually matches (R3-002)", () => {
+    const baseDecisions = [
+      { id: "illness:protagonist:1330", year: 1330, kind: "illness", personId: "protagonist", chosen: "illness", options: [option("illness"), option("healthy")] },
+      { id: "illness:protagonist:1332", year: 1332, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] },
+    ];
+    const newDecisions = [{ id: "illness:protagonist#1.1", year: 1332, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] }];
+    const newEntries = [{ id: "entry-1", turn: { decisionId: "illness:protagonist#1.1", chosen: { optionId: "healthy" } } }];
+
+    const ghosts = buildGhostAnnotations(baseDecisions, newDecisions, newEntries, 1332);
+    expect(ghosts["entry-1"]).toBeUndefined();
+  });
 });

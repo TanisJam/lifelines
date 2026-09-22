@@ -1,6 +1,6 @@
 import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
 import { mapWithConcurrency } from "./concurrency";
-import { decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
+import { candidateMatchesSubject, decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
 import { advanceSlot, EMPTY_SLOTS } from "./life-state";
@@ -534,12 +534,16 @@ function periodEventTypesForYear(year: number): readonly string[] {
  * target decision's own year — see `fork.ts`): dropping the year from the matched id would
  * otherwise force this SAME (kind, subject) at every later year of the re-simulation too, not just
  * the one the override actually targets.
+ *
+ * `partnerId`, when the candidate has one, lets a LEGACY pairKey-shaped override id (a paired social
+ * kind like `Y1`, minted before ordinal ids existed) still match (fixed after review, R3-001) — see
+ * `decision-id.ts#candidateMatchesSubject`.
  */
-function overrideFor(overrides: readonly Override[], kind: string, subject: string, isOverrideYear: boolean): Override | undefined {
+function overrideFor(overrides: readonly Override[], kind: string, subject: string, isOverrideYear: boolean, partnerId?: string): Override | undefined {
   if (!isOverrideYear) return undefined;
   return overrides.find((o) => {
     const parsed = decisionSubject(o.decisionId);
-    return parsed.kind === kind && parsed.subject === subject;
+    return parsed.kind === kind && candidateMatchesSubject(parsed.subject, subject, partnerId);
   });
 }
 
@@ -2161,7 +2165,7 @@ export async function simulate(
     // candidate if they're the protagonist — see below) is bundled into a single `PersonYearBatch`
     // and answered with a single `decideYear` call, so the mind/portrait state is paid for once.
     const questions = socialCandidates.map((c) => buildQuestion(c, year, config, people));
-    const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.kind, c.personId, isOverrideYear));
+    const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.kind, c.personId, isOverrideYear, c.partnerId));
     // Budget priority (round 9, decision 037): once the running total of REAL DecisionMaker calls
     // hits LIFE_DECISION_BUDGET, any further social decision NOT about the protagonist is answered
     // with the deterministic rule heuristic instead — the protagonist's own decisions, and

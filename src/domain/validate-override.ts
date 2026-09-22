@@ -1,4 +1,4 @@
-import { decisionSubject } from "./decision-id";
+import { candidateMatchesSubject, decisionSubject } from "./decision-id";
 import { gatherCandidatesForYear } from "./simulate";
 import type { Event, Override, Person } from "./types";
 
@@ -26,8 +26,10 @@ function err(message: string): ValidationResult {
  * `year` is the target decision's own `DecisionRecord.year` — decision-identity capability: the
  * caller already knows it (it read the decision it's rewriting), so this never parses a year back
  * out of `override.decisionId` (see `decision-id.ts`). Matching against `gatherCandidatesForYear`'s
- * candidates uses `decisionSubject` (kind + subject only), which works identically for a legacy
- * year-embedded id and a new ordinal one — the spec's legacy-id backward-compatibility requirement.
+ * candidates uses `decisionSubject` plus `candidateMatchesSubject` (fixed after review, R3-001),
+ * which works identically for a legacy year-embedded id (bare-personId or, for a paired kind like
+ * `Y1`, pairKey-shaped) and a new ordinal one — the spec's legacy-id backward-compatibility
+ * requirement.
  */
 /**
  * `protagonistId`, when set, does two things (round 9, decision 034):
@@ -58,7 +60,7 @@ export function validateOverride(
 
   const target = decisionSubject(override.decisionId);
   const candidates = gatherCandidatesForYear(year, people, events, seed, protagonistId);
-  const decision = candidates.find((c) => c.kind === target.kind && c.personId === target.subject);
+  const decision = candidates.find((c) => c.kind === target.kind && candidateMatchesSubject(target.subject, c.personId, c.partnerId));
   if (!decision) {
     return err(`No such decision "${override.decisionId}" at year ${year} in this branch. It may target someone who is dead, not yet born, or otherwise ineligible, or the decision may not come up this year at all.`);
   }
