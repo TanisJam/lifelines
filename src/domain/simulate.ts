@@ -3,7 +3,7 @@ import { mapWithConcurrency } from "./concurrency";
 import { candidateMatchesSubject, decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
-import { advanceSlot, EMPTY_SLOTS } from "./life-state";
+import { advanceSlot, EMPTY_SLOTS, ensureLifeState } from "./life-state";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
@@ -596,14 +596,16 @@ function mintId(people: Readonly<Record<string, Person>>, kind: string, subject:
  * Commits a minted id's slot advance onto its subject's `lifeState.slots` (see
  * `life-state.ts#advanceSlot`) — call exactly once per minted id, with `occurred` reflecting
  * whether the decision it belongs to was actually recorded. A `world` subject needs no commit (its
- * ordinal is the year itself, never persisted state).
+ * ordinal is the year itself, never persisted state). Reads through `ensureLifeState` first so a
+ * subject's very first commit this run bootstraps the rest of `lifeState` from their real history
+ * (see `life-state.ts`) instead of overwriting it with a slots-only fragment.
  */
-function commitId(people: Record<string, Person>, subject: string, minted: MintedId, occurred: boolean): void {
+function commitId(people: Record<string, Person>, events: readonly Event[], subject: string, minted: MintedId, occurred: boolean): void {
   if (subject === "world") return;
   const person = people[subject];
   if (!person) return;
-  const slots = person.lifeState?.slots ?? EMPTY_SLOTS;
-  person.lifeState = { slots: advanceSlot(slots, minted.key, occurred) };
+  const state = ensureLifeState(person, events);
+  person.lifeState = { ...state, slots: advanceSlot(state.slots, minted.key, occurred) };
 }
 
 /** Years a person is "immune" from another illness roll after falling ill, so illness doesn't spam a handful of bad-luck years. */
@@ -1908,7 +1910,7 @@ async function resolveDailyLifeVignette(
   // day. Always pushed by the caller (`simulate()`'s "at least one entry per year" guarantee), so the
   // slot commits unconditionally as an occurrence.
   const minted = mintId(people, "D1", protagonist.id, year);
-  commitId(people, protagonist.id, minted, true);
+  commitId(people, events, protagonist.id, minted, true);
   const decision: DecisionRecord = {
     id: minted.id,
     personId: deciderId,
@@ -2054,7 +2056,7 @@ export async function* simulateYears(
         // happened, or if the road not taken (illness) had a real chance.
         const pushed = record.chosen === "illness" || p >= RECORD_THRESHOLD || record.source === "forced";
         if (pushed) decisions.push(record);
-        commitId(people, descriptor.personId, minted, pushed);
+        commitId(people, events, descriptor.personId, minted, pushed);
       } else if (descriptor.kind === "death") {
         const person = people[descriptor.personId]!;
         const age = ageInYear(person.birthYear, year);
@@ -2102,7 +2104,7 @@ export async function* simulateYears(
         record = { ...record, causes: deathCauses, resultingEventIds };
         const pushed = record.chosen === "die" || p >= RECORD_THRESHOLD || record.source === "forced";
         if (pushed) decisions.push(record);
-        commitId(people, descriptor.personId, minted, pushed);
+        commitId(people, events, descriptor.personId, minted, pushed);
       } else if (descriptor.kind === "levy") {
         // Decision 058: a class-specific multiplier (research.md, Economy §"Taxes, housing, diet" —
         // tithe, rent and the Lay Subsidy fell on tenants and labourers; gentry/clergy bore feudal
@@ -2125,7 +2127,7 @@ export async function* simulateYears(
         {
           const pushed = record.chosen === "impose" || p >= RECORD_THRESHOLD || record.source === "forced";
           if (pushed) decisions.push(record);
-          commitId(people, descriptor.personId, minted, pushed);
+          commitId(people, events, descriptor.personId, minted, pushed);
         }
       } else if (descriptor.kind === "away-arrival") {
         // A lightweight newcomer joining the away cast (decision 040) — code-rolled, exactly like
@@ -2142,7 +2144,7 @@ export async function* simulateYears(
         {
           const pushed = record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced";
           if (pushed) decisions.push(record);
-          commitId(people, descriptor.personId, minted, pushed);
+          commitId(people, events, descriptor.personId, minted, pushed);
         }
       } else if (descriptor.kind === "return") {
         // Returning home (decision 040) — a small yearly chance, not a considered choice, so it's
@@ -2158,7 +2160,7 @@ export async function* simulateYears(
         {
           const pushed = record.chosen === "return" || p >= RECORD_THRESHOLD || record.source === "forced";
           if (pushed) decisions.push(record);
-          commitId(people, descriptor.personId, minted, pushed);
+          commitId(people, events, descriptor.personId, minted, pushed);
         }
       } else {
         const p = 0.05;
@@ -2174,7 +2176,7 @@ export async function* simulateYears(
         {
           const pushed = record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced";
           if (pushed) decisions.push(record);
-          commitId(people, descriptor.personId, minted, pushed);
+          commitId(people, events, descriptor.personId, minted, pushed);
         }
       }
 
@@ -2953,7 +2955,7 @@ export async function* simulateYears(
       });
       // Every social candidate is recorded unconditionally (no `RECORD_THRESHOLD` gate, unlike
       // biology above), so this id's slot always advances as an occurrence.
-      commitId(people, descriptor.personId, minted, true);
+      commitId(people, events, descriptor.personId, minted, true);
     }
 
     // "At least one entry per year" (round 10, decision 042): if the protagonist ends this year
