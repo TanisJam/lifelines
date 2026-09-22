@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
+import { isRealTurn } from "./chronicle-view";
 import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution, PersonYearBatch, PersonYearResult } from "./decisions";
 import { normalizeDistribution } from "./rng";
 import { simulate } from "./simulate";
@@ -303,5 +304,89 @@ describe("hierarchical event selection (decision 046) — the vignette-pick is c
     const withOccurrence = d1Decisions.filter((d) => d.occurrenceProbability !== undefined);
     expect(withOccurrence.length).toBeGreaterThan(0); // "everyday" did win at least one (even) year
     for (const d of withOccurrence) expect(d.year % 2).toBe(0);
+  });
+});
+
+describe("protagonist 'nothing happens' choices still produce a chronicle event (decision 047)", () => {
+  /**
+   * The `note` values decision 047 added for each social kind's no-op option(s) — declining,
+   * waiting, staying put, and so on. Kept in sync with the branches added in `simulate.ts`'s big
+   * social-decision switch. A5 is special: NONE of its three options ever pushed an event (for
+   * anyone), so every option is a "no-op" there.
+   */
+  const NOOP_OPTIONS: Record<string, readonly string[]> = {
+    Y1: ["decline", "wait"],
+    A1: ["delay"],
+    A3: ["pass", "ignore"],
+    A2: ["wait", "refuse"],
+    Y4: ["forgive", "nurse-it"],
+    A6: ["feud"],
+    Y3: ["stay"],
+    A5: ["help", "flee", "profit"],
+  };
+
+  /**
+   * Every response distribution is uniform across that situation's own options (`uniformResponse`,
+   * already used above for decision 046's tests) — with 2-4 options that keeps every chosen
+   * option's own probability well under 0.9, so `isRealTurn` reads every resulting decision as a
+   * real turn regardless of WHICH option a given deterministic Gumbel-max draw happens to land on.
+   * `selection` always puts full weight on the first (sorted) non-D1 eligible situation, so a real
+   * situation — never "everyday" or "nothing" — is what's selected whenever one is eligible.
+   */
+  class UniformSocialDecisionMaker implements DecisionMaker {
+    async decide(question: DecisionQuestion): Promise<Distribution> {
+      return normalizeDistribution(Object.fromEntries(question.options.map((o) => [o, 1])));
+    }
+
+    async decideYear(batch: PersonYearBatch): Promise<PersonYearResult> {
+      const response = uniformResponse(batch.situations);
+      const nonD1Ids = Object.keys(batch.situations)
+        .filter((id) => batch.situations[id]!.kind !== "D1")
+        .sort();
+      const d1Ids = Object.keys(batch.situations).filter((id) => batch.situations[id]!.kind === "D1");
+      const selection: Record<string, number> = {};
+      if (nonD1Ids.length > 0) selection[nonD1Ids[0]!] = 1;
+      else if (d1Ids.length > 0) selection.everyday = 1;
+      else selection.nothing = 1;
+      const vignetteSelection: Record<string, number> = {};
+      for (const id of d1Ids) vignetteSelection[id] = 1;
+      return { selection, vignetteSelection, response };
+    }
+
+    getStats(): DecisionMakerStats {
+      return { calls: 0, cacheHits: 0, wallTimeMs: 0 };
+    }
+  }
+
+  it("the protagonist's no-op choices get a real event and still read as a real turn", async () => {
+    const { config, people, events } = protagonistWorld("noop-turn-1");
+    const report = await simulate(config, people, events, { decisionMaker: new UniformSocialDecisionMaker(), engineSource: "rules", protagonistId: PROTAGONIST_ID });
+    const noOpMatches = report.result.decisions.filter(
+      (d) => d.personId === PROTAGONIST_ID && d.occurrenceProbability !== undefined && (NOOP_OPTIONS[d.kind] ?? []).includes(d.chosen),
+    );
+    expect(noOpMatches.length).toBeGreaterThan(0); // the scenario actually exercises at least one no-op branch
+    for (const d of noOpMatches) {
+      expect(d.resultingEventIds.length).toBeGreaterThan(0);
+      expect(isRealTurn(d)).toBe(true);
+    }
+  });
+
+  it("an NPC's no-op choice still produces no event (only the protagonist gets the decision-047 backfill)", async () => {
+    const { config, people, events } = generateWorld({ seed: "noop-npc-1", startYear: 1500, endYear: 1540, founderCount: 12 });
+    const report = await simulate(config, people, events, { decisionMaker: new UniformSocialDecisionMaker(), engineSource: "rules" });
+    const noOpMatches = report.result.decisions.filter((d) => d.occurrenceProbability !== undefined && (NOOP_OPTIONS[d.kind] ?? []).includes(d.chosen));
+    expect(noOpMatches.length).toBeGreaterThan(0);
+    for (const d of noOpMatches) expect(d.resultingEventIds.length).toBe(0);
+  });
+
+  it("the D1 backstop does not fire in a year a real situation was selected for the protagonist", async () => {
+    const { config, people, events } = protagonistWorld("noop-turn-1");
+    const report = await simulate(config, people, events, { decisionMaker: new UniformSocialDecisionMaker(), engineSource: "rules", protagonistId: PROTAGONIST_ID });
+    const selectedYears = new Set(
+      report.result.decisions.filter((d) => d.personId === PROTAGONIST_ID && d.kind !== "D1" && d.occurrenceProbability !== undefined).map((d) => d.year),
+    );
+    expect(selectedYears.size).toBeGreaterThan(0);
+    const d1Years = new Set(report.result.decisions.filter((d) => d.kind === "D1").map((d) => d.year));
+    for (const year of selectedYears) expect(d1Years.has(year)).toBe(false);
   });
 });

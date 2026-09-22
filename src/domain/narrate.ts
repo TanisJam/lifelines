@@ -239,6 +239,22 @@ const REFLECTION_NARRATION: Record<string, (name: string, other: string) => stri
   "kept-at-home": (name, other) => `${name} kept ${other} at home a while longer.`,
   "went-on-pilgrimage": (name) => `${name} set out on a pilgrimage.`,
   "stayed-home-from-pilgrimage": (name) => `${name} felt the pull of a pilgrimage, and stayed home all the same.`,
+  // Decision 047: the protagonist's "nothing happens" options (declining, waiting, staying) are
+  // real story beats now, not silence — reuses this same reflection/note vocabulary rather than a
+  // new event kind, since it's exactly the pattern decision 030 established for this purpose.
+  "declined-a-suitor": (name, other) => `${name} declined ${other}'s interest.`,
+  "stayed-unsure-about-a-suitor": (name, other) => `${name} stayed unsure about ${other}.`,
+  "put-off-a-marriage-decision": (name, other) => `${name} put off the decision about marrying ${other}.`,
+  "passed-an-opportunity-to-a-friend": (name) => `${name} passed the opportunity to a friend.`,
+  "ignored-an-opportunity": (name) => `${name} let the opportunity pass unclaimed.`,
+  "chose-not-to-have-a-child": (name) => `${name} chose not to have a child that year.`,
+  "let-go-of-a-slight": (name, other) => `${name} let go of the slight from ${other}.`,
+  "silently-resented-someone": (name, other) => `${name} silently resented ${other}.`,
+  "let-a-feud-drag-on": (name, other) => `${name} let the feud with ${other} drag on.`,
+  "chose-to-stay-home": (name) => `${name} chose to stay, when leaving was on the table.`,
+  "helped-during-a-town-event": (name, other) => `${name} pitched in during the ${other}.`,
+  "kept-clear-of-a-town-event": (name, other) => `${name} kept clear of the ${other}.`,
+  "looked-for-an-advantage-in-a-town-event": (name, other) => `${name} looked for an advantage in the ${other}.`,
 };
 
 /** Third-person narration for a town-level event (round 5, decision 025) — no actors (the event is town-wide), so it doesn't go through the `A`/`B` name substitution the other cases use. */

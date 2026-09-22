@@ -1410,6 +1410,11 @@ export async function simulate(
   const seed = config.seed;
   const snapshots = new Map<number, YearSnapshot>();
   let decisionCalls = 0;
+  // Decision 047: captured once, outside the per-candidate loop below, because that loop shadows
+  // `options` with a local `DecisionOption[]` of the same name (its `decisions.push({ options, ... })`
+  // shorthand) — referencing `options.protagonistId` inside that loop would hit the TDZ instead of
+  // this function's `SimulateOptions` parameter.
+  const protagonistId = options.protagonistId;
 
   const startYear = options.fromYear ?? config.startYear;
 
@@ -1783,6 +1788,13 @@ export async function simulate(
           } else {
             pushThought(person.mind, "hope", `being unsure about ${partner!.name}`, 20, 1, year);
           }
+          // Decision 047: "decline"/"wait" are real story beats for the protagonist, not silence —
+          // an NPC's no-op stays event-free, matching the pre-047 behavior everyone else keeps.
+          if (person.id === protagonistId && chosen !== "encourage") {
+            const note = chosen === "decline" ? "declined-a-suitor" : "stayed-unsure-about-a-suitor";
+            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
+            resultingEventIds.push(event.id);
+          }
           break;
         }
         case "A1": {
@@ -1810,6 +1822,10 @@ export async function simulate(
           } else {
             pushThought(person.mind, "hope", `still weighing marriage to ${partner!.name}`, 20, 1, year);
           }
+          if (person.id === protagonistId && chosen !== "propose" && chosen !== "end-it") {
+            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note: "put-off-a-marriage-decision", otherName: partner!.name }, []);
+            resultingEventIds.push(event.id);
+          }
           break;
         }
         case "A3": {
@@ -1823,6 +1839,11 @@ export async function simulate(
             pushThought(person.mind, "contentment", "helping a friend get ahead", 25, 2, year, "altruism");
             const friend = person.mind.relationships.find((r) => r.bond === "friend");
             if (friend) updateRelationship(person.mind, friend.personId, undefined, 10);
+          }
+          if (person.id === protagonistId && chosen !== "seize") {
+            const note = chosen === "pass" ? "passed-an-opportunity-to-a-friend" : "ignored-an-opportunity";
+            const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
+            resultingEventIds.push(event.id);
           }
           break;
         }
@@ -1846,6 +1867,10 @@ export async function simulate(
           } else if (chosen === "refuse") {
             pushThought(person.mind, "regret", "choosing not to have a child this year", 20, 2, year);
           }
+          if (person.id === protagonistId && chosen !== "try") {
+            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note: "chose-not-to-have-a-child", otherName: partner!.name }, []);
+            resultingEventIds.push(event.id);
+          }
           break;
         }
         case "Y4": {
@@ -1864,6 +1889,11 @@ export async function simulate(
             pushThought(person.mind, "bitterness", `silently resenting ${partner!.name}`, 40, 6, year, "stressVulnerability", partner!.id);
             addMemory(seed, person.id, year, person.mind, `began to resent ${partner!.name} in ${year}`, "bitterness", partner!.id);
             updateRelationship(person.mind, partner!.id, partner!.mind.values, -25, "grudge");
+          }
+          if (person.id === protagonistId && chosen !== "confront") {
+            const note = chosen === "forgive" ? "let-go-of-a-slight" : "silently-resented-someone";
+            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
+            resultingEventIds.push(event.id);
           }
           break;
         }
@@ -1894,6 +1924,10 @@ export async function simulate(
             pushThought(person.mind, "anger", `the feud with ${partner!.name} dragging on`, 30, 2, year, "anger", partner!.id);
             updateRelationship(person.mind, partner!.id, partner!.mind.values, -10, "grudge");
           }
+          if (person.id === protagonistId && chosen !== "reconcile" && chosen !== "sabotage") {
+            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note: "let-a-feud-drag-on", otherName: partner!.name }, []);
+            resultingEventIds.push(event.id);
+          }
           break;
         }
         case "Y3": {
@@ -1913,6 +1947,11 @@ export async function simulate(
               const spouse = people[person.spouseId];
               if (spouse) pushThought(spouse.mind, "loneliness", `being left behind by ${person.name}`, 50, 4, year, "anxiety", person.id);
             }
+          } else if (person.id === protagonistId) {
+            // Decision 047: "stay" used to be entirely silent (no thought, no event) — the
+            // handoff's own example of a turn ("Tomas asks her to leave → She stays") demands one.
+            const event = pushEvent(events, year, "reflection", [person.id], { note: "chose-to-stay-home" }, []);
+            resultingEventIds.push(event.id);
           }
           break;
         }
@@ -2079,6 +2118,13 @@ export async function simulate(
             pushThought(person.mind, positive ? "contentment" : "shame", positive ? `keeping to themselves during the ${townKind}` : `keeping clear of the ${townKind} instead of helping`, 30, 3, year, "gregariousness");
           } else {
             pushThought(person.mind, positive ? "contentment" : "shame", `looking for an advantage in the ${townKind}`, 35, 3, year, "greed");
+          }
+          // Decision 047: A5 never pushed an event for any outcome, for anyone. NPCs keep that
+          // (avoids log noise), but the protagonist now gets one regardless of which option fires.
+          if (person.id === protagonistId) {
+            const note = chosen === "help" ? "helped-during-a-town-event" : chosen === "flee" ? "kept-clear-of-a-town-event" : "looked-for-an-advantage-in-a-town-event";
+            const event = pushEvent(events, year, "reflection", [person.id], { note, otherName: townKind }, causes);
+            resultingEventIds.push(event.id);
           }
           break;
         }
@@ -2259,6 +2305,18 @@ export async function simulate(
     // NEW this round: the candidates it's backstopping for now got a real, Jev-judged, occurrence-
     // weighted joint selection instead of N independent code-gated coin flips, so D1 fires less
     // often in practice — but the mechanism guaranteeing it fires when needed is unchanged.
+    //
+    // Decision 047 fix: the OTHER reason D1 dominated wasn't selection at all — it was that a
+    // selected situation whose chosen option was a "nothing happens" one (A1 "delay", Y1
+    // "decline"/"wait", Y3 "stay", A3 "ignore", A6 "feud" (drags on), Y4 "nurse-it", A2 "wait"/
+    // "refuse", A5 every option) produced NO event for the protagonist, so `hasOwnEventThisYear`
+    // was false and D1 fired anyway even though a real situation WAS selected and resolved.
+    // Every no-op branch above now pushes a `reflection` event (same generic kind decision 030
+    // introduced for C2/O2/O4/etc.) for the protagonist only — declining, waiting, staying are
+    // story beats, not silence. NPCs are untouched (still no event on their own no-ops), so this
+    // never grows the general village simulation's event volume. D1 now only fires when the
+    // selected situation genuinely produced nothing (e.g. its counterpart got invalidated
+    // mid-resolution) — a true safety net, not the common case.
     if (options.protagonistId) {
       const protagonist = people[options.protagonistId];
       if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
