@@ -236,7 +236,7 @@ export function narrateEvent(
       // phrasing distinguishes the gentry/merchant grammar-school route from everyone else's parish
       // instruction, per research.md's "Literacy by class and sex" and Economy §"Occupations..." —
       // clergy sons went the same grammar/song-school route as gentry/merchant sons.
-      const socialClass = String(event.payload.socialClass ?? "labourer");
+      const socialClass = String(event.payload.socialClass ?? "cottar");
       if (socialClass === "gentry" || socialClass === "merchant" || socialClass === "clergy") {
         return t(
           locale,

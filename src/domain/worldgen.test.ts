@@ -72,20 +72,20 @@ describe("decision 049: social class at worldgen", () => {
     }
   });
 
-  it("class shares across many seeds land within a generous tolerance of the sourced defaults (labourer ~25%, husbandman ~45%)", () => {
-    const counts: Record<SocialClass, number> = { labourer: 0, husbandman: 0, yeoman: 0, artisan: 0, merchant: 0, clergy: 0, gentry: 0 };
+  it("class shares across many seeds land within a generous tolerance of the sourced defaults (cottar ~25%, villein ~45% — decision 063 renamed labourer/husbandman)", () => {
+    const counts: Record<SocialClass, number> = { cottar: 0, villein: 0, freeholder: 0, artisan: 0, merchant: 0, clergy: 0, gentry: 0 };
     let total = 0;
     for (const seed of SEEDS) {
       const { people } = generateWorld({ seed, founderCount: 30 });
       for (const person of Object.values(people)) {
-        counts[person.socialClass ?? "labourer"] += 1;
+        counts[person.socialClass ?? "cottar"] += 1;
         total += 1;
       }
     }
-    expect(counts.labourer / total).toBeGreaterThan(0.12);
-    expect(counts.labourer / total).toBeLessThan(0.4);
-    expect(counts.husbandman / total).toBeGreaterThan(0.25);
-    expect(counts.husbandman / total).toBeLessThan(0.65);
+    expect(counts.cottar / total).toBeGreaterThan(0.12);
+    expect(counts.cottar / total).toBeLessThan(0.4);
+    expect(counts.villein / total).toBeGreaterThan(0.25);
+    expect(counts.villein / total).toBeLessThan(0.65);
   });
 
   it("a founder child inherits its class from the father", () => {
@@ -100,12 +100,12 @@ describe("decision 049: social class at worldgen", () => {
   });
 });
 
-describe("decision 057: literacy at worldgen", () => {
-  it("literacy rates by class land within research.md's order-of-magnitude ranges, aggregated across many seeds", () => {
+describe("decision 063 (was decision 057): literacy at worldgen, period rates + lord's-licence gate", () => {
+  it("literacy rates by class land within the documented c.1330 ranges, aggregated across many seeds", () => {
     const literateByClass: Record<SocialClass, { literate: number; total: number }> = {
-      labourer: { literate: 0, total: 0 },
-      husbandman: { literate: 0, total: 0 },
-      yeoman: { literate: 0, total: 0 },
+      cottar: { literate: 0, total: 0 },
+      villein: { literate: 0, total: 0 },
+      freeholder: { literate: 0, total: 0 },
       artisan: { literate: 0, total: 0 },
       merchant: { literate: 0, total: 0 },
       clergy: { literate: 0, total: 0 },
@@ -114,13 +114,13 @@ describe("decision 057: literacy at worldgen", () => {
     for (const seed of SEEDS) {
       const { people } = generateWorld({ seed, founderCount: 30 });
       for (const person of Object.values(people)) {
-        const cls = person.socialClass ?? "labourer";
+        const cls = person.socialClass ?? "cottar";
         literateByClass[cls].total += 1;
         if (person.literate) literateByClass[cls].literate += 1;
       }
     }
-    // Labourers: sourced ~5-10% (research.md, "day-labourer illiteracy stayed >90% even by 1600").
-    expect(literateByClass.labourer.literate / literateByClass.labourer.total).toBeLessThan(0.25);
+    // Cottars (was labourer): gated male base 0.04*0.3=0.012, female 0.002 — an overwhelming majority illiterate.
+    expect(literateByClass.cottar.literate / literateByClass.cottar.total).toBeLessThan(0.1);
     // Clergy: "near-universal literacy (Latin literacy required for office)".
     if (literateByClass.clergy.total > 0) expect(literateByClass.clergy.literate / literateByClass.clergy.total).toBeGreaterThan(0.7);
   });

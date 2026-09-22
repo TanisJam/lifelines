@@ -184,8 +184,8 @@ function personSummary(person: Person, year: number, people: Readonly<Record<str
     age: ageInYear(person.birthYear, year),
     job: person.job,
     // Decision 049: exposed so later content (vignettes, Jev's own judgment) can be class-aware.
-    // Optional on `Person` for backward compat — falls back to the largest single class.
-    socialClass: person.socialClass ?? "labourer",
+    // Optional on `Person` for backward compat — falls back to the mapped-equivalent default class.
+    socialClass: person.socialClass ?? "cottar",
     literate: person.literate ?? false,
     married: person.spouseId !== undefined,
     mind: compactMindState(person.mind),
@@ -199,7 +199,7 @@ function otherPersonBrief(person: Person, year: number, people: Readonly<Record<
     name: person.name,
     age: ageInYear(person.birthYear, year),
     job: person.job,
-    socialClass: person.socialClass ?? "labourer",
+    socialClass: person.socialClass ?? "cottar",
     portrait: renderPortrait(person.name, person.mind, (id) => people[id]?.name ?? id),
   };
 }
@@ -235,18 +235,20 @@ const CANON_MINIMUM_MARRIAGE_AGE: Readonly<Record<Sex, number>> = { f: 12, m: 14
  * research.md's "Marriage rules for simulation use" synthesis table. These are the table's own
  * BEST-ESTIMATE, explicitly-tunable class figures, not settled historical constants (no
  * age-at-first-marriage series specific to most of these classes was located for exactly
- * 1498-1558): `labourer` anchors on the table's "landless labourers" row (older than tenant
- * peasants — later/less-reliable economic independence), `husbandman`/`yeoman` on its "customary
- * tenant peasants" row (~24 women / ~26 men, the best-sourced commoner figures), `artisan` on its
- * own row (mastership-gated marriage), `merchant` similarly with a wider male-female gap (the
- * Florentine pattern), `gentry` markedly younger (interpolated from Hollingsworth's long-run ducal
- * trend). `clergy` never actually reaches this check in practice — `canMarry` above excludes them
- * outside 1549-53 — but carries a value anyway so this stays a total function over `SocialClass`.
+ * 1498-1558): `cottar` (was `labourer`) anchors on the table's "landless labourers" row (older than
+ * tenant peasants — later/less-reliable economic independence), `villein`/`freeholder` (was
+ * `husbandman`/`yeoman`) on its "customary tenant peasants" row (~24 women / ~26 men, the
+ * best-sourced commoner figures), `artisan` on its own row (mastership-gated marriage), `merchant`
+ * similarly with a wider male-female gap (the Florentine pattern), `gentry` markedly younger
+ * (interpolated from Hollingsworth's long-run ducal trend). `clergy` never actually reaches this
+ * check in practice — `canMarry` above excludes them outside 1549-53 — but carries a value anyway so
+ * this stays a total function over `SocialClass`. Renamed 1:1 by decision 063; superseded entirely
+ * by PR6's per-class marriage-floor table (design revision 2, decision 14).
  */
 const MIN_MARRIAGE_AGE: Readonly<Record<SocialClass, Readonly<Record<Sex, number>>>> = {
-  labourer: { f: 25, m: 28 },
-  husbandman: { f: 24, m: 26 },
-  yeoman: { f: 24, m: 26 },
+  cottar: { f: 25, m: 28 },
+  villein: { f: 24, m: 26 },
+  freeholder: { f: 24, m: 26 },
   artisan: { f: 22, m: 25 },
   merchant: { f: 20, m: 27 },
   clergy: { f: 24, m: 26 },
@@ -255,7 +257,7 @@ const MIN_MARRIAGE_AGE: Readonly<Record<SocialClass, Readonly<Record<Sex, number
 
 /** The earliest age `person` is eligible to marry this year, by their class and sex — never below the canon-law absolute minimum. */
 function minMarriageAge(person: Person): number {
-  const socialClass = person.socialClass ?? "labourer";
+  const socialClass = person.socialClass ?? "cottar";
   return Math.max(MIN_MARRIAGE_AGE[socialClass][person.sex], CANON_MINIMUM_MARRIAGE_AGE[person.sex]);
 }
 
@@ -334,7 +336,7 @@ function eligibleForAnotherChild(mother: Person, people: Readonly<Record<string,
   // who dies at its very first evaluation still resets the spacing cooldown.
   const infantDied = lastChild.deathYear !== undefined && lastChild.deathYear - lastChild.birthYear <= 1;
   if (infantDied) return true;
-  const spacingYears = (mother.socialClass ?? "labourer") === "gentry" ? 1 : 2;
+  const spacingYears = (mother.socialClass ?? "cottar") === "gentry" ? 1 : 2;
   return year - lastChild.birthYear >= spacingYears;
 }
 
@@ -491,7 +493,7 @@ function townEventForYear(seed: string, year: number): TownEventType | undefined
  * All specific multiplier magnitudes below are DESIGN ASSUMPTIONS — no source gives a per-person
  * hazard ratio for any of these three events.
  */
-const BETTER_OFF_CLASSES: ReadonlySet<SocialClass> = new Set(["gentry", "merchant", "yeoman", "clergy"]);
+const BETTER_OFF_CLASSES: ReadonlySet<SocialClass> = new Set(["gentry", "merchant", "freeholder", "clergy"]);
 
 function townEventMortalityMultiplier(townEvent: TownEventType | undefined, age: number, sex: Sex, socialClass: SocialClass): number {
   if (!townEvent) return 1;
@@ -503,22 +505,23 @@ function townEventMortalityMultiplier(townEvent: TownEventType | undefined, age:
     if (primeAdultMale || betterOff) return 2.5;
     return 1.2;
   }
-  if (townEvent === "dearth") return socialClass === "labourer" ? 2.5 : 1.3;
+  if (townEvent === "dearth") return socialClass === "cottar" ? 2.5 : 1.3;
   if (townEvent === "influenza") return 1.5;
   return 1;
 }
 
 /**
- * Decision 058: who actually bore feudal/tax dues (research.md, Economy §"Taxes, housing, diet" —
- * tithe of 10%, rent and entry fines, the 1524-25 Lay Subsidy) — a DESIGN ASSUMPTION (no sourced
- * per-class ratio exists), same disclosed-assumption pattern as `CLASS_MORTALITY_MULTIPLIER`
- * (decision 050) and `townEventMortalityMultiplier` (decision 052). Labourers/husbandmen paid the
- * most relative to their means; gentry/clergy bore feudal dues far more lightly, when at all.
+ * Decision 058 (keys renamed 1:1 by decision 063): who actually bore feudal/tax dues (research.md,
+ * Economy §"Taxes, housing, diet" — tithe of 10%, rent and entry fines, the 1524-25 Lay Subsidy) — a
+ * DESIGN ASSUMPTION (no sourced per-class ratio exists), same disclosed-assumption pattern as
+ * `CLASS_MORTALITY_MULTIPLIER` (decision 050) and `townEventMortalityMultiplier` (decision 052).
+ * Cottars/villeins (was labourers/husbandmen) paid the most relative to their means; gentry/clergy
+ * bore feudal dues far more lightly, when at all.
  */
 const LEVY_CLASS_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
-  labourer: 1.3,
-  husbandman: 1.15,
-  yeoman: 1.0,
+  cottar: 1.3,
+  villein: 1.15,
+  freeholder: 1.0,
   artisan: 0.9,
   merchant: 0.8,
   clergy: 0.5,
@@ -792,7 +795,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
             canMarry(candidate, year) &&
             mourningOver(candidate, events, year) &&
             Math.abs(ageInYear(candidate.birthYear, year) - age) <= maxAgeGap &&
-            (!sameClassOnly || (candidate.socialClass ?? "labourer") === (person.socialClass ?? "labourer")),
+            (!sameClassOnly || (candidate.socialClass ?? "cottar") === (person.socialClass ?? "cottar")),
         );
       const partner = eligible(10, true) ?? eligible(20, true) ?? eligible(40, true) ?? eligible(10, false) ?? eligible(20, false) ?? eligible(40, false);
       if (partner) {
@@ -832,14 +835,14 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // (age 10) already apprenticed this person to a trade — that hook now actually sets `job` (see
     // the `AP1` outcome case below), so this is only a real "first job" opportunity for whoever
     // wasn't. The offered job is drawn from the person's OWN social class's pool (decision 049): the
-    // eldest living son of a husbandman/yeoman/gentry father inherits the holding (`farmer`/
-    // `landholder`, custom/primogeniture — research.md, Family §Inheritance systems); an artisan's
-    // son has a ~15% chance (sourced 10-20%, Economy §2) of taking up his father's own craft;
-    // everyone else draws at random from their class's pool.
+    // eldest living son of a villein/freeholder/gentry (was husbandman/yeoman/gentry) father inherits
+    // the holding (`farmer`/`landholder`, custom/primogeniture — research.md, Family §Inheritance
+    // systems); an artisan's son has a ~15% chance (sourced 10-20%, Economy §2) of taking up his
+    // father's own craft; everyone else draws at random from their class's pool.
     if (isWorkingAge(age) && age === 16 && person.job === "none") {
-      const socialClass: SocialClass = person.socialClass ?? "labourer";
+      const socialClass: SocialClass = person.socialClass ?? "cottar";
       const father = person.fatherId ? people[person.fatherId] : undefined;
-      const inheritsHolding = person.sex === "m" && isEldestLivingSon(person, people) && (socialClass === "husbandman" || socialClass === "yeoman" || socialClass === "gentry");
+      const inheritsHolding = person.sex === "m" && isEldestLivingSon(person, people) && (socialClass === "villein" || socialClass === "freeholder" || socialClass === "gentry");
       let opportunityJob: Job;
       if (inheritsHolding) {
         opportunityJob = socialClass === "gentry" ? "landholder" : "farmer";
@@ -1096,7 +1099,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       // extra roll the year after arriving — settling into a livelihood in the new place is the
       // first thing that actually happens there, so it's allowed even if a home job was already set.
       if (isWorkingAge(age) && ((age === 16 && protagonist.job === "none") || (awaySince !== undefined && year === awaySince + 1))) {
-        const socialClass: SocialClass = protagonist.socialClass ?? "labourer";
+        const socialClass: SocialClass = protagonist.socialClass ?? "cottar";
         const opportunityJob = pickJobForClass(socialClass, keyedRng(seed, protagonist.id, year, "away-opportunity-job"));
         candidates.push({ decisionId: `A3:${protagonist.id}:${year}`, kind: "A3", personId: protagonist.id, options: ["seize", "pass", "ignore"], opportunityJob, extra: { currentJob: protagonist.job } });
       }
@@ -1710,7 +1713,7 @@ function buildDailyLifeVignetteDescriptor(
     age: ageInYear(protagonist.birthYear, year),
     away: hasMovedAway(events, protagonist.id),
     job: protagonist.job,
-    socialClass: protagonist.socialClass ?? "labourer",
+    socialClass: protagonist.socialClass ?? "cottar",
     hasSpouse: !!protagonist.spouseId,
     hasChild: livingChildId(people, protagonist) !== undefined,
     hasLivingParent: relationshipTargetId("parent", protagonist, people) !== undefined,
@@ -1766,7 +1769,7 @@ function buildDailyLifeVignetteCandidates(
     age: ageInYear(protagonist.birthYear, year),
     away: hasMovedAway(events, protagonist.id),
     job: protagonist.job,
-    socialClass: protagonist.socialClass ?? "labourer",
+    socialClass: protagonist.socialClass ?? "cottar",
     hasSpouse: !!protagonist.spouseId,
     hasChild: livingChildId(people, protagonist) !== undefined,
     hasLivingParent: relationshipTargetId("parent", protagonist, people) !== undefined,
@@ -2064,7 +2067,7 @@ export async function* simulateYears(
         const person = people[descriptor.personId]!;
         const age = ageInYear(person.birthYear, year);
         const illnessEvent = illnessResultByPerson.get(descriptor.personId);
-        const socialClass: SocialClass = person.socialClass ?? "labourer";
+        const socialClass: SocialClass = person.socialClass ?? "cottar";
         // Decision 050: the protagonist-only mortality bonus (mortality.ts's old
         // `protagonistMortalityBonus`) is REMOVED — the protagonist now faces the exact same,
         // recalibrated actuarial curve, class multiplier and town-event multiplier as any NPC. What
@@ -2117,7 +2120,7 @@ export async function* simulateYears(
         // Subsidy/Amicable Grant, dated not rolled, per proposal 058) — the levy candidate is
         // protagonist-only (see the `SimulateOptions` doc comment), so this never touches the
         // general village.
-        const levySocialClass: SocialClass = people[descriptor.personId]!.socialClass ?? "labourer";
+        const levySocialClass: SocialClass = people[descriptor.personId]!.socialClass ?? "cottar";
         const laySubsidyYear = year === 1524 || year === 1525;
         const p = Math.min(0.9, 0.045 * (townEvent === "famine" ? 1.4 : 1) * levyClassMultiplier(levySocialClass) * (laySubsidyYear ? 1.8 : 1));
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
@@ -2526,7 +2529,7 @@ export async function* simulateYears(
                 // through decision 054's widowhood handling — the same shared helper the general
                 // biology death path uses below, so a husband whose wife dies in childbirth is
                 // widowed exactly like anyone else.
-                resultingEventIds.push(...resolveWidowhood(seed, events, people, person, person.socialClass ?? "labourer", year, deathEvent.id));
+                resultingEventIds.push(...resolveWidowhood(seed, events, people, person, person.socialClass ?? "cottar", year, deathEvent.id));
               }
             } else {
               pushThought(person.mind, "longing", "hoping for a child, still", 15, 1, year);
@@ -3118,7 +3121,7 @@ function school(events: Event[], people: Record<string, Person>, personId: strin
   const person = people[personId];
   if (!person) return;
   if (ageInYear(person.birthYear, year) === 7 && person.literate) {
-    pushEvent(events, year, "school", [personId], { socialClass: person.socialClass ?? "labourer" }, []);
+    pushEvent(events, year, "school", [personId], { socialClass: person.socialClass ?? "cottar" }, []);
   }
 }
 
@@ -3197,7 +3200,7 @@ function spawnChild(seed: string, year: number, mother: Person, father: Person, 
   // Decision 056: inherits the father's class (mother's, if the father's is somehow unknown — a
   // hand-built `Person` fixture without `socialClass` set, since a real simulated father always has
   // one). Literacy (decision 057) is then drawn fresh for the child, at birth, by their own class/sex.
-  const socialClass = father.socialClass ?? mother.socialClass ?? "labourer";
+  const socialClass = father.socialClass ?? mother.socialClass ?? "cottar";
   const literate = isLiterate(seed, childId, year, sex, socialClass);
   return { id: childId, name, sex, birthYear: year, traits, job: "none", motherId: mother.id, fatherId: father.id, founder: false, mind, socialClass, literate };
 }

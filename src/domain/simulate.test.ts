@@ -234,7 +234,7 @@ describe("decision records", () => {
 describe("decision 056: canMarry / class inheritance", () => {
   it("canMarry returns false for clergy and true for every other class", () => {
     expect(canMarry(makeClergyPerson(), 1520)).toBe(false);
-    for (const socialClass of ["labourer", "husbandman", "yeoman", "artisan", "merchant", "gentry"] as const) {
+    for (const socialClass of ["cottar", "villein", "freeholder", "artisan", "merchant", "gentry"] as const) {
       expect(canMarry(makeClergyPerson({ socialClass, job: "farmer" }), 1520)).toBe(true);
     }
   });
@@ -287,21 +287,21 @@ describe("decision 057: no universal school event", () => {
 });
 
 describe("decision 050: recalibrated mortality and class multiplier", () => {
-  it("orders the class multipliers per the documented direction: labourer worst, common classes at baseline, merchant better, clergy/gentry best", () => {
-    const labourer = classMortalityMultiplier("labourer");
-    const baseline = classMortalityMultiplier("husbandman");
+  it("orders the class multipliers per the documented direction: cottar (was labourer) worst, common classes at baseline, merchant better, clergy/gentry best", () => {
+    const cottar = classMortalityMultiplier("cottar");
+    const baseline = classMortalityMultiplier("villein");
     const merchant = classMortalityMultiplier("merchant");
     const clergy = classMortalityMultiplier("clergy");
-    expect(classMortalityMultiplier("yeoman")).toBe(baseline);
+    expect(classMortalityMultiplier("freeholder")).toBe(baseline);
     expect(classMortalityMultiplier("artisan")).toBe(baseline);
-    expect(labourer).toBeGreaterThan(baseline);
+    expect(cottar).toBeGreaterThan(baseline);
     expect(baseline).toBeGreaterThan(merchant);
     expect(merchant).toBeGreaterThan(clergy);
     expect(classMortalityMultiplier("gentry")).toBe(clergy);
   });
 
-  it("the class multiplier actually moves simulated mortality: across several seeds, labourers die younger on average than gentry/clergy", async () => {
-    const labourerAges: number[] = [];
+  it("the class multiplier actually moves simulated mortality: across several seeds, cottars (was labourer) die younger on average than gentry/clergy", async () => {
+    const cottarAges: number[] = [];
     const wellOffAges: number[] = [];
     for (const seed of ["class-mortality-1", "class-mortality-2", "class-mortality-3", "class-mortality-4", "class-mortality-5"]) {
       const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 30 });
@@ -309,15 +309,15 @@ describe("decision 050: recalibrated mortality and class multiplier", () => {
       for (const person of Object.values(report.result.people)) {
         if (person.deathYear === undefined) continue;
         const ageAtDeath = person.deathYear - person.birthYear;
-        const socialClass: SocialClass = person.socialClass ?? "labourer";
-        if (socialClass === "labourer") labourerAges.push(ageAtDeath);
+        const socialClass: SocialClass = person.socialClass ?? "cottar";
+        if (socialClass === "cottar") cottarAges.push(ageAtDeath);
         if (socialClass === "gentry" || socialClass === "clergy") wellOffAges.push(ageAtDeath);
       }
     }
-    expect(labourerAges.length).toBeGreaterThan(0);
+    expect(cottarAges.length).toBeGreaterThan(0);
     expect(wellOffAges.length).toBeGreaterThan(0);
     const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-    expect(avg(labourerAges)).toBeLessThan(avg(wellOffAges));
+    expect(avg(cottarAges)).toBeLessThan(avg(wellOffAges));
   });
 });
 
@@ -351,13 +351,13 @@ describe("decision 052: dated epidemics and dearths", () => {
   // asserts directly on `townEventMortalityMultiplier` (mortality.ts's documented skew, now
   // test-exported from simulate.ts) instead.
   it("sweating sickness raises mortality most for prime-adult men, more than for a child or a woman of the same class", () => {
-    const noEvent = townEventMortalityMultiplier(undefined, 30, "m", "labourer");
+    const noEvent = townEventMortalityMultiplier(undefined, 30, "m", "cottar");
     expect(noEvent).toBe(1);
 
-    // Same (labourer, not "better-off") class throughout, so only age/sex vary.
-    const primeAdultMan = townEventMortalityMultiplier("sweating-sickness", 30, "m", "labourer");
-    const child = townEventMortalityMultiplier("sweating-sickness", 8, "m", "labourer");
-    const woman = townEventMortalityMultiplier("sweating-sickness", 30, "f", "labourer");
+    // Same (cottar, not "better-off") class throughout, so only age/sex vary.
+    const primeAdultMan = townEventMortalityMultiplier("sweating-sickness", 30, "m", "cottar");
+    const child = townEventMortalityMultiplier("sweating-sickness", 8, "m", "cottar");
+    const woman = townEventMortalityMultiplier("sweating-sickness", 30, "f", "cottar");
     expect(primeAdultMan).toBeGreaterThan(1);
     expect(primeAdultMan).toBeGreaterThan(child);
     expect(primeAdultMan).toBeGreaterThan(woman);
@@ -425,7 +425,7 @@ describe("decision 051: maternal mortality at childbirth", () => {
       traits: [],
       job: "labourer",
       founder: true,
-      socialClass: "labourer",
+      socialClass: "cottar",
       mind: createMind("seed", "husband1", 1480),
     };
     const candidate: Person = {
@@ -436,7 +436,7 @@ describe("decision 051: maternal mortality at childbirth", () => {
       traits: [],
       job: "none",
       founder: true,
-      socialClass: "labourer",
+      socialClass: "cottar",
       mind: createMind("seed", "candidate1", 1485),
     };
     const people = { [husband.id]: husband, [candidate.id]: candidate };
@@ -472,7 +472,7 @@ describe("decision 055: birth spacing", () => {
           .filter((p) => p.motherId === motherId)
           .sort((a, b) => a.birthYear - b.birthYear);
         if (children.length < 2) continue;
-        const minSpacing = (mother.socialClass ?? "labourer") === "gentry" ? 1 : 2;
+        const minSpacing = (mother.socialClass ?? "cottar") === "gentry" ? 1 : 2;
         for (let i = 1; i < children.length; i++) {
           const previous = children[i - 1]!;
           const current = children[i]!;
@@ -506,7 +506,7 @@ describe("decision 055: birth spacing", () => {
       traits: [],
       job: "none",
       founder: true,
-      socialClass: "labourer",
+      socialClass: "cottar",
       mind: undefined as unknown as Person["mind"],
     };
     const infantDiedAtFirstEvaluation: Person = {
@@ -571,7 +571,7 @@ describe("decision 053: marriage by class and canon law", () => {
       traits: [],
       job: "none",
       founder: false,
-      socialClass: "husbandman",
+      socialClass: "villein",
       mind: createMind("cousin-seed", overrides.id, birthYear),
       ...overrides,
     };
@@ -609,8 +609,8 @@ describe("decision 053: marriage by class and canon law", () => {
     // Ids chosen so the cross-class candidate sorts FIRST alphabetically (`aliveNonMoved` is sorted
     // by id) — if the same-class preference weren't real, plain `.find()` would return the
     // cross-class candidate simply because it comes first in iteration order.
-    const person = mkPerson({ id: "z_person", sex: "f", socialClass: "husbandman", birthYear: 1500 }); // age 30
-    const sameClass = mkPerson({ id: "y_same", sex: "m", socialClass: "husbandman", birthYear: 1502 }); // age 28
+    const person = mkPerson({ id: "z_person", sex: "f", socialClass: "villein", birthYear: 1500 }); // age 30
+    const sameClass = mkPerson({ id: "y_same", sex: "m", socialClass: "villein", birthYear: 1502 }); // age 28
     const crossClass = mkPerson({ id: "a_cross", sex: "m", socialClass: "merchant", birthYear: 1501 }); // age 29
 
     const people = { person, sameClass, crossClass };
@@ -754,7 +754,7 @@ describe("decision 058: scheduled period events", () => {
         if (socialClass === "gentry" || socialClass === "clergy") {
           wellOffLevies += levyCount;
           wellOffYears += eligibleYears;
-        } else if (socialClass === "labourer" || socialClass === "husbandman") {
+        } else if (socialClass === "cottar" || socialClass === "villein") {
           commonLevies += levyCount;
           commonYears += eligibleYears;
         }

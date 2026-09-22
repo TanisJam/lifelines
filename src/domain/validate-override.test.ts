@@ -74,10 +74,10 @@ describe("validateOverride", () => {
   });
 
   it("matches a LEGACY paired-kind override id (kind:pairKey:year, e.g. Y1) against its candidate by (kind, personId, partnerId), not by the literal pairKey subject string (R3-001)", () => {
-    const suitor: Person = { id: "suitor1", name: "Suitor", sex: "m", birthYear: 1480, traits: [], job: "labourer", founder: true, socialClass: "labourer", mind: createMind("legacy-pair", "suitor1", 1480) };
-    const candidate: Person = { id: "candidate1", name: "Candidate", sex: "f", birthYear: 1485, traits: [], job: "none", founder: true, socialClass: "labourer", mind: createMind("legacy-pair", "candidate1", 1485) };
+    const suitor: Person = { id: "suitor1", name: "Suitor", sex: "m", birthYear: 1480, traits: [], job: "labourer", founder: true, socialClass: "cottar", mind: createMind("legacy-pair", "suitor1", 1480) };
+    const candidate: Person = { id: "candidate1", name: "Candidate", sex: "f", birthYear: 1485, traits: [], job: "none", founder: true, socialClass: "cottar", mind: createMind("legacy-pair", "candidate1", 1485) };
     const people = { [suitor.id]: suitor, [candidate.id]: candidate };
-    const year = 1529; // well past MIN_MARRIAGE_AGE.labourer (f25/m28)
+    const year = 1529; // well past MIN_MARRIAGE_AGE.cottar (f25/m28)
     const config = { startYear: 1498, endYear: 1558 };
 
     const y1Candidate = gatherCandidatesForYear(year, people, [], "legacy-pair").find((c) => c.kind === "Y1")!;

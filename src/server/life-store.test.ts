@@ -4,7 +4,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import { simulate } from "@/domain/simulate";
+import type { SocialClass } from "@/domain/types";
 import { generateWorld } from "@/domain/worldgen";
+import { decompressJson, openDb } from "./db";
 import { createLifeStore } from "./life-store";
 
 async function buildLifeArgs(seed: string) {
@@ -297,5 +299,43 @@ describe("life-store SQLite persistence (self-hosted Docker deploy)", () => {
     expect(life.latestBranchId).toBe(beforeLatestBranchId);
     expect(life.branches.has("lb-attempted")).toBe(false);
     expect([...life.branches.keys()]).toEqual([originalBranchId]);
+  });
+
+  it("decision 063 (engine-life-course PR4): a legacy Tudor-era socialClass reads mapped to its period class, with the stored bytes left untouched", async () => {
+    const args = await buildLifeArgs("store-legacy-class");
+    // A life "stored under the old code" is approximated here by overwriting the protagonist's
+    // socialClass with a retired Tudor-era value before it's ever written to the DB — the exact
+    // shape `remapLegacyClasses` must handle, since a real pre-rename life would have this value
+    // already sitting in `result_json` on disk.
+    const legacyResult = { ...args.result, people: { ...args.result.people, protagonist: { ...args.result.people.protagonist!, socialClass: "husbandman" as SocialClass } } };
+
+    const writer = createLifeStore(dbPath);
+    const lifeId = writer.newLifeId();
+    const branchId = writer.newLifeBranchId();
+    writer.registerLife(lifeId, branchId, args.config, args.protagonistName, args.protagonistSex, legacyResult, args.snapshots);
+    writer.close();
+
+    const reader = createLifeStore(dbPath);
+    try {
+      const branch = reader.getLifeBranch(lifeId, branchId);
+      expect(branch!.result.people.protagonist!.socialClass).toBe("villein");
+
+      const summary = reader.listLifeSummaries().find((s) => s.id === lifeId);
+      expect(summary!.latestResult.people.protagonist!.socialClass).toBe("villein");
+    } finally {
+      reader.close();
+    }
+
+    // No migration: reading the RAW compressed row directly (bypassing the store entirely) still
+    // shows the original legacy string — mapping happens only in the in-memory projection returned
+    // to callers, never by rewriting the row.
+    const raw = openDb(dbPath);
+    try {
+      const row = raw.prepare("SELECT result_json FROM life_branches WHERE id = ?").get(branchId) as { result_json: Uint8Array };
+      const storedResult = decompressJson<typeof legacyResult>(row.result_json);
+      expect(storedResult.people.protagonist!.socialClass).toBe("husbandman");
+    } finally {
+      raw.close();
+    }
   });
 });

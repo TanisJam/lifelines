@@ -1,9 +1,13 @@
 import type { DecisionMaker, DecisionQuestion } from "./decisions";
 import { makeEventId } from "./events";
 import { createMind, VALUES, type ValueName } from "./mind";
-import { keyedRng, sampleGumbelMax } from "./rng";
 import { pickUniqueName } from "./names";
+import { isLiterate } from "./period/literacy";
+import { keyedRng, sampleGumbelMax } from "./rng";
 import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type Job, type JsonValue, type Person, type Sex, type SocialClass, type Trait, type WorldConfig } from "./types";
+
+/** Re-exported so existing callers (`simulate.ts`) keep importing literacy alongside the other worldgen helpers — the actual rates/gate now live in `period/literacy.ts` (decision 063). */
+export { isLiterate };
 
 function pushEvent(events: Event[], year: number, kind: EventKind, actors: readonly string[], payload: Record<string, JsonValue>): Event {
   const event: Event = { id: makeEventId(events, year, kind, actors), year, kind, actors, payload, causes: [] };
@@ -103,16 +107,18 @@ export function pickJob(rng: () => number): Job {
 }
 
 /**
- * Decision 049: jobs are class-bound. Grounded in research.md's economy synthesis (§2, "Occupations
- * and inheritance of trade") — labourers had no transmissible trade, husbandmen/yeomen farmed their
- * holding, artisans covered the village's attested trades (smith, carpenter, weaver, miller, baker,
- * tanner — plus `healer`, "wise woman"/barber-surgeon flavor, folded in here rather than given its
- * own class), merchants ran trade/inns, clergy meant the one parish priest, and gentry held land.
+ * Decision 049 (renamed 1:1 by decision 063 for the 1327-1361 period): jobs are class-bound.
+ * Grounded in research.md's economy synthesis (§2, "Occupations and inheritance of trade") —
+ * cottars (was labourer) had no transmissible trade, villeins/freeholders (was husbandmen/yeomen)
+ * farmed their holding, artisans covered the village's attested trades (smith, carpenter, weaver,
+ * miller, baker, tanner — plus `healer`, "wise woman"/barber-surgeon flavor, folded in here rather
+ * than given its own class), merchants ran trade/inns, clergy meant the one parish priest, and
+ * gentry held land.
  */
 export const JOB_POOL_BY_CLASS: Readonly<Record<SocialClass, readonly Job[]>> = {
-  labourer: ["labourer", "shepherd"],
-  husbandman: ["farmer"],
-  yeoman: ["farmer"],
+  cottar: ["labourer", "shepherd"],
+  villein: ["farmer"],
+  freeholder: ["farmer"],
   artisan: ["blacksmith", "carpenter", "weaver", "miller", "baker", "tanner", "healer"],
   merchant: ["merchant", "innkeeper"],
   clergy: ["priest"],
@@ -126,17 +132,18 @@ export function pickJobForClass(socialClass: SocialClass, rng: () => number): Jo
 }
 
 /**
- * Founder/immigrant class shares (decision 049). `labourer` (Wrightson, ~25% of rural population)
- * and `husbandman` (40-50% inferred midpoint, research.md §1 "Social structure...Synthesis") are
- * sourced; `yeoman`/`artisan`/`merchant` shares are TUNABLE DESIGN DEFAULTS, not sourced figures —
- * no village-level census for these three was located in the research pass. `clergy` (exactly one
- * parish priest) and `gentry` (1-2 households) are assigned structurally, not by this weighted draw
- * — see `assignFounderClasses`.
+ * Founder/immigrant class shares (decision 049, renamed by decision 063). `cottar` (was `labourer`;
+ * Wrightson, ~25% of rural population) and `villein` (was `husbandman`; 40-50% inferred midpoint,
+ * research.md §1 "Social structure...Synthesis") are sourced; `freeholder` (was `yeoman`)/`artisan`/
+ * `merchant` shares are TUNABLE DESIGN DEFAULTS, not sourced figures — no village-level census for
+ * these three was located in the research pass. `clergy` (exactly one parish priest) and `gentry`
+ * (1-2 households) are assigned structurally, not by this weighted draw — see
+ * `assignFounderClasses`.
  */
 const COMMON_CLASS_WEIGHTS: readonly (readonly [SocialClass, number])[] = [
-  ["labourer", 0.25],
-  ["husbandman", 0.45],
-  ["yeoman", 0.1],
+  ["cottar", 0.25],
+  ["villein", 0.45],
+  ["freeholder", 0.1],
   ["artisan", 0.12],
   ["merchant", 0.08],
 ];
@@ -150,38 +157,6 @@ export function pickCommonClass(rng: () => number): SocialClass {
     if (draw < cumulative) return socialClass;
   }
   return COMMON_CLASS_WEIGHTS[COMMON_CLASS_WEIGHTS.length - 1]![0];
-}
-
-/**
- * Decision 057: signature-literacy rates by class and sex, order-of-magnitude design defaults
- * interpolated from research.md's "Literacy by class and sex" table (mostly later-16th-/17th-c.
- * Cressy-derived signature evidence, explicitly flagged there as an interpolation for exactly
- * 1498-1558). Female rates are lower across the board (women's illiteracy ~90% overall per Cressy),
- * with gentry/merchant daughters higher than the female average, per the same table.
- */
-const LITERACY_RATE_MALE: Readonly<Record<SocialClass, number>> = {
-  labourer: 0.07, // ~5-10%; day-labourer illiteracy stayed >90% even by 1600
-  husbandman: 0.15, // ~10-20%, UNVERIFIED per research.md, Brewminate-derived
-  yeoman: 0.35, // "moderate, rising toward mid-century" — between artisan and gentry
-  artisan: 0.35, // village artisans "one-half to three-quarters unable to sign" -> ~25-50%
-  merchant: 0.9, // among the "almost totally literate" groups by 1600
-  clergy: 0.98, // Latin literacy required for office
-  gentry: 0.85, // near-universal by 1600; ~30% illiterate among northern gentry as late as 1530
-};
-const LITERACY_RATE_FEMALE: Readonly<Record<SocialClass, number>> = {
-  labourer: 0.02,
-  husbandman: 0.04,
-  yeoman: 0.08,
-  artisan: 0.08,
-  merchant: 0.25,
-  clergy: 0.02, // clergy is structurally male in this window; kept only as a safe fallback
-  gentry: 0.3,
-};
-
-/** Decided once, deterministically, at birth (decision 057) — keyed by `birthYear` so it's stable across the person's whole life. */
-export function isLiterate(seed: string, personId: string, birthYear: number, sex: Sex, socialClass: SocialClass): boolean {
-  const rate = sex === "m" ? LITERACY_RATE_MALE[socialClass] : LITERACY_RATE_FEMALE[socialClass];
-  return keyedRng(seed, personId, birthYear, "literacy")() < rate;
 }
 
 /**
@@ -305,7 +280,7 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
     // not reachable here, since a founder child always has both parents, but kept symmetric with
     // `spawnChild` in simulate.ts). Founder children are always under 16 (see `maxChildAge` below),
     // so `job` stays "none" regardless of class — the class-bound pool only matters once A3/AP1 fire.
-    const socialClass = father.socialClass ?? mother.socialClass ?? "labourer";
+    const socialClass = father.socialClass ?? mother.socialClass ?? "cottar";
     const job = age >= 16 ? pickJobForClass(socialClass, keyedRng(seed, id, startYear, "job")) : "none";
     const literate = isLiterate(seed, id, birthYear, sex, socialClass);
     const mind = createMind(seed, id, birthYear, [mother.mind, father.mind]);
@@ -373,7 +348,7 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
       const sex: Sex = options.protagonist.sex === "random" ? (sexRng() < 0.5 ? "f" : "m") : options.protagonist.sex;
       const mind = createMind(seed, "protagonist", startYear, [mother.mind, father.mind]);
       // Decision 056: inherits the father's class (mother's, if the father were unknown).
-      const protagonistClass = father.socialClass ?? mother.socialClass ?? "labourer";
+      const protagonistClass = father.socialClass ?? mother.socialClass ?? "cottar";
       const literate = isLiterate(seed, "protagonist", startYear, sex, protagonistClass);
       const protagonist: Person = {
         id: "protagonist",

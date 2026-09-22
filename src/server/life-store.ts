@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { LifeSex } from "@/contracts/life";
+import { remapLegacyClasses } from "@/domain/period/classes";
 import type { Override, SimulationResult, WorldConfig, YearSnapshot } from "@/domain/types";
 import { compressJson, dataDir, decompressJson, nextCounter, openDb, storeCacheSize, withTransaction } from "./db";
 import { LruCache } from "./lru-cache";
@@ -83,7 +84,10 @@ function rowToBranch(row: LifeBranchRow): LifeBranchRecord {
     parentBranchId: row.parent_branch_id ?? undefined,
     forkYear: row.fork_year ?? undefined,
     override: row.override_json ? (JSON.parse(row.override_json) as Override) : undefined,
-    result: decompressJson<SimulationResult>(row.result_json),
+    // Decision 063 (engine-life-course PR4): a life stored before the period-class rename still has
+    // Tudor-era `socialClass` strings in `result_json` — mapped to their period equivalent HERE, at
+    // read time only, never by rewriting the row (spec's "no migration" requirement).
+    result: remapLegacyClasses(decompressJson<SimulationResult>(row.result_json)),
     snapshots: snapshotsFromJson(decompressJson<Record<string, YearSnapshot>>(row.snapshots_blob)),
     createdAt: row.created_at,
   };
@@ -365,7 +369,7 @@ export function createLifeStore(dbPath?: string, cacheSize?: number): LifeStore 
       protagonistName: row.protagonist_name,
       config: JSON.parse(row.config_json) as WorldConfig,
       latestBranchId: row.latest_branch_id,
-      latestResult: decompressJson<SimulationResult>(row.result_json),
+      latestResult: remapLegacyClasses(decompressJson<SimulationResult>(row.result_json)),
       branchCount: row.branch_count,
     }));
   }

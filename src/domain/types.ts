@@ -37,12 +37,15 @@ export const JOB_POOL = ["labourer", "shepherd", "farmer", "blacksmith", "carpen
 export type Job = (typeof JOB_POOL)[number];
 
 /**
- * Social class / estate (decision 049), anchored to research.md's "Life by social class,
- * 1498–1558" synthesis. `labourer` = cottager/landless wage labourer, `husbandman` = customary
- * tenant/copyholder, `yeoman` = wealthier freeholder, `clergy` = the parish priest (celibate,
- * `canMarry` in `simulate.ts` returns false for this class), `gentry` = nobility/gentry households.
+ * Social class / estate, renamed 1:1 for the 1327-1361 period setting (decision 063,
+ * engine-life-course PR4; supersedes decision 049's Tudor-era pool). `cottar` (was `labourer`) =
+ * smallholder/landless wage labourer, `villein` (was `husbandman`) = unfree customary tenant,
+ * `freeholder` (was `yeoman`) = wealthier free tenant, `clergy` = the parish priest (celibate,
+ * `canMarry` in `simulate.ts` returns false for this class), `gentry` = knight/gentry households.
+ * `artisan`/`merchant` are unchanged. A stored life from before this rename keeps its OLD literal
+ * value on disk — `period/classes.ts#mapLegacyClass` maps it to this pool at read time only.
  */
-export const SOCIAL_CLASS_POOL = ["labourer", "husbandman", "yeoman", "artisan", "merchant", "clergy", "gentry"] as const;
+export const SOCIAL_CLASS_POOL = ["villein", "cottar", "freeholder", "artisan", "merchant", "clergy", "gentry"] as const;
 export type SocialClass = (typeof SOCIAL_CLASS_POOL)[number];
 
 export interface Person {
@@ -63,8 +66,8 @@ export interface Person {
   /**
    * Decision 049: inherited from the father at birth (mother if father unknown — decision 056).
    * Optional so a hand-built `Person` fixture (tests, or data from before this field existed) stays
-   * valid; every code path that reads it falls back to `"labourer"` (the largest single class) via
-   * `person.socialClass ?? "labourer"` rather than assuming it's always present.
+   * valid; every code path that reads it falls back to `"cottar"` (the mapped equivalent of the old
+   * `"labourer"` default) via `person.socialClass ?? "cottar"` rather than assuming it's always present.
    */
   socialClass?: SocialClass;
   /**

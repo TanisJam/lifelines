@@ -46,19 +46,20 @@ export function deathProbabilityAtAge(age: number): number {
 }
 
 /**
- * Decision 050: a small class gradient on top of the base curve above — ASSUMPTION, not a sourced
- * figure (research.md's synthesis explicitly flags any class-specific mortality adjustment as
- * unsourced: "this adjustment is an assumption, not a sourced figure"). Gentry/clergy get the
- * "well-provisioned adult male" proxy direction from Hollingsworth/Hatcher's monastic/peerage
- * comparisons (better diet, less exposure to subsistence-level want); merchants a smaller version
- * of the same; labourers the downward adjustment research.md's synthesis suggests for landless
- * wage-labourers versus the aggregate. Husbandman/yeoman/artisan are left at the aggregate baseline
+ * Decision 050 (keys renamed 1:1 by decision 063): a small class gradient on top of the base curve
+ * above — ASSUMPTION, not a sourced figure (research.md's synthesis explicitly flags any
+ * class-specific mortality adjustment as unsourced: "this adjustment is an assumption, not a sourced
+ * figure"). Gentry/clergy get the "well-provisioned adult male" proxy direction from
+ * Hollingsworth/Hatcher's monastic/peerage comparisons (better diet, less exposure to
+ * subsistence-level want); merchants a smaller version of the same; cottars (was labourer) the
+ * downward adjustment research.md's synthesis suggests for landless wage-labourers versus the
+ * aggregate. Villein/freeholder (was husbandman/yeoman)/artisan are left at the aggregate baseline
  * (1.0) — no sourced or even suggested direction was found for them specifically.
  */
 const CLASS_MORTALITY_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
-  labourer: 1.1,
-  husbandman: 1.0,
-  yeoman: 1.0,
+  cottar: 1.1,
+  villein: 1.0,
+  freeholder: 1.0,
   artisan: 1.0,
   merchant: 0.95,
   clergy: 0.85,
