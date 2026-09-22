@@ -36,6 +36,9 @@ yarn-error.log*
 # TypeSafe decision cache (per-machine, may contain response content)
 /.cache/
 
+# Local SQLite DB + Jev cache when DATA_DIR is unset (self-hosted Docker deploy uses a mounted volume instead)
+/.data/
+
 # vercel
 .vercel
 

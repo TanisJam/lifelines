@@ -14,6 +14,9 @@ Open items and product calls, newest first. Move an item to `decisions.md` once 
 - [ ] **Rewrite ghost annotations come back empty.** The "In the original life, …" matching is too narrow when the butterfly effect shifts later events by a year or more (decision 039).
 - [ ] **SSE ticks replay the finished life** grouped by year, instead of narrating the simulation as it runs (decision 036).
 
+- [ ] **The world-store persist-failure test proves nothing.** `addBranch` calls `newBranchId()` on the closed DB before it opens the transaction, so the test passes even if the ordering regresses. Close the DB after minting the id, or inject a failing write (review R3, 2026-09-22).
+- [ ] **Test DATA_DIR survives between runs.** `vitest.setup.ts` keys the directory on the pool id and never cleans it up, so default-store state leaks across runs and test files. Use a per-run directory and clean it up in teardown (review R3, 2026-09-22).
+
 ## Later
 
 - [ ] **Possible double departure.** Seed `noop-1` shows "Leaves for Ravensworth, a city" and later "Leaves for Raven's Reach". Check whether this is a return home followed by a second departure (which is fine, but the return should appear in the chronicle) or a bug in the away-from-home logic (decision 040).

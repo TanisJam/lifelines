@@ -1,0 +1,33 @@
+# Homelab deploy: one long-running lifelines container behind Traefik, on the shared `coolify`
+# Docker network. Run from the repo root: `docker compose -f deploy/compose.yaml up -d --build`.
+# Requires an `.env` file next to this one (copy `deploy/env.example`) and the external `coolify`
+# network to already exist.
+services:
+  lifelines:
+    image: lifelines:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    # Bounds the container's total memory (the app's own STORE_CACHE_SIZE bounds the two in-process
+    # life/world LRU caches, but this is the outer guardrail against the whole container's usage —
+    # Node's own overhead, request buffering, etc.) — generous for a single-instance homelab deploy.
+    mem_limit: 2g
+    volumes:
+      - lifelines-data:/data
+    networks:
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.routers.lifelines.entrypoints=http"
+      - "traefik.http.routers.lifelines.rule=Host(`lifelines.mnr.ar`)"
+      - "traefik.http.services.lifelines.loadbalancer.server.port=3000"
+
+volumes:
+  lifelines-data:
+
+networks:
+  coolify:
+    external: true

@@ -3,7 +3,7 @@ import type { LifeListItem } from "@/contracts/life";
 import { isLocale } from "@/domain/locale";
 import { deathCauseDisplay } from "@/domain/narrate";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "@/domain/mortality";
-import { listLifeBranches, listLives } from "@/server/life-store";
+import { listLifeSummaries } from "@/server/life-store";
 
 export const runtime = "nodejs";
 
@@ -17,21 +17,20 @@ export const runtime = "nodejs";
 export async function GET(request: Request): Promise<NextResponse> {
   const langParam = new URL(request.url).searchParams.get("lang");
   const locale = langParam && isLocale(langParam) ? langParam : "en";
-  const items: LifeListItem[] = listLives().map((life) => {
-    const branch = life.branches.get(life.latestBranchId)!;
-    const protagonist = branch.result.people.protagonist;
-    const deathEvent = branch.result.events.find((e) => e.kind === "death" && e.actors[0] === "protagonist");
+  const items: LifeListItem[] = listLifeSummaries().map((summary) => {
+    const protagonist = summary.latestResult.people.protagonist;
+    const deathEvent = summary.latestResult.events.find((e) => e.kind === "death" && e.actors[0] === "protagonist");
     const causeCode = deathEvent && typeof deathEvent.payload.cause === "string" ? (deathEvent.payload.cause as DeathCause) : undefined;
     const causeOfDeath = causeCode && causeCode in DEATH_CAUSE_PHRASE ? deathCauseDisplay(locale, causeCode) : locale === "es" ? "mala fortuna" : "misfortune";
-    const deathYear = protagonist?.deathYear ?? life.config.endYear;
+    const deathYear = protagonist?.deathYear ?? summary.config.endYear;
     return {
-      lifeId: life.id,
-      name: life.protagonistName,
-      birthYear: life.config.startYear,
+      lifeId: summary.id,
+      name: summary.protagonistName,
+      birthYear: summary.config.startYear,
       deathYear,
-      ageAtDeath: deathYear - life.config.startYear,
+      ageAtDeath: deathYear - summary.config.startYear,
       causeOfDeath,
-      branchCount: listLifeBranches(life.id).length,
+      branchCount: summary.branchCount,
     };
   });
   return NextResponse.json(items);

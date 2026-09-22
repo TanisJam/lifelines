@@ -16,7 +16,11 @@ function buildDecisionMaker(): DecisionMaker {
   const useJev = engine === "jev" || (engine !== "rules" && hasKey);
 
   if (useJev) {
-    return new JevDecisionMaker({ cacheFilePath: path.join(process.cwd(), ".cache", "jev-decisions.json") });
+    // Self-hosted Docker deploy: lives under DATA_DIR (a mounted volume) so it survives restarts,
+    // same as the SQLite DB (see `db.ts`). Falls back to the pre-existing `.cache/` (gitignored,
+    // relative to `process.cwd()`) when DATA_DIR is unset, so local dev is unchanged.
+    const cacheDir = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, "cache") : path.join(process.cwd(), ".cache");
+    return new JevDecisionMaker({ cacheFilePath: path.join(cacheDir, "jev-decisions.json") });
   }
   return new RuleDecisionMaker();
 }
