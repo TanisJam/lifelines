@@ -3,6 +3,7 @@ import { makeEventId } from "./events";
 import { createMind, VALUES, type ValueName } from "./mind";
 import { pickUniqueName } from "./names";
 import { FALLBACK_CLASS } from "./period/classes";
+import { famineClaimedChildhood, famineDeathYear, FAMINE_MARKER_YEAR, MURRAIN_MARKER_CLASSES, MURRAIN_WINDOW, survivedFamineAsChild } from "./period/events";
 import { isLiterate } from "./period/literacy";
 import { keyedRng, sampleGumbelMax } from "./rng";
 import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type Job, type JsonValue, type Person, type Sex, type SocialClass, type Trait, type WorldConfig } from "./types";
@@ -267,6 +268,13 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
     const mind = createMind(seed, id, birthYear, [], bias);
     const person: Person = { id, name, sex, birthYear, traits, job, founder, mind, socialClass, literate };
     people[id] = person;
+    // Engine life course PR5: the Great Famine is pre-window backstory only (the run starts 1327,
+    // 5 years after it ends) — every adult founder was born well before 1310, so they were all old
+    // enough to remember living through it (design: "backfilled period-marker for founders aged
+    // >=5 in 1315"). A backstory-only marker, never an in-sim mortality effect.
+    if (survivedFamineAsChild(birthYear)) {
+      pushEvent(events, FAMINE_MARKER_YEAR, "period-marker", [id], { marker: "great-famine", role: "survivor" });
+    }
     return person;
   }
 
@@ -290,6 +298,14 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
     const literate = isLiterate(seed, id, birthYear, sex, socialClass);
     const mind = createMind(seed, id, birthYear, [mother.mind, father.mind]);
     const person: Person = { id, name, sex, birthYear, traits, job, motherId: mother.id, fatherId: father.id, founder: false, mind, socialClass, literate };
+    // Engine life course PR5: a founder child born within the Great Famine's 1305-22 cohort window
+    // has a documented chance of never having survived it — a dead sibling in the family's own
+    // pre-window backstory, not an in-sim event (the run starts 1327, after the famine ends). A
+    // NEW, dedicated keyed draw (`famineClaimedChildhood`), so it never perturbs this child's own
+    // age/name/traits/job/literacy draws, nor any other person's.
+    if (famineClaimedChildhood(seed, id, birthYear)) {
+      person.deathYear = famineDeathYear(seed, id, birthYear);
+    }
     people[id] = person;
     return person;
   }
@@ -383,6 +399,21 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
     for (const child of children.sort((a, b) => a.birthYear - b.birthYear)) {
       const backfilled = child.id !== "protagonist";
       pushEvent(events, child.birthYear, "birth", [child.id, mother.id, father.id], backfilled ? { backfilled: true } : {});
+      // Engine life course PR5: a famine-claimed child (see `makeChild`) gets its own backfilled
+      // death, same pre-window backstory convention as the birth/marriage backfills above.
+      if (child.deathYear !== undefined) {
+        pushEvent(events, child.deathYear, "death", [child.id], { age: child.deathYear - child.birthYear, awayFromTown: false, cause: "great-famine", backfilled: true });
+      }
+    }
+
+    // Engine life course PR5's murrain backstory marker (design's markers table: "villein/freeholder
+    // founder households get a backstory marker") — the cattle murrain (1319-21) acted on FOOD, not
+    // people directly (`MURRAIN_HUMAN_MULTIPLIER`), so this is narrative-only, no mortality effect.
+    // Gated on `survivedFamineAsChild` (born by 1310) so it only fires for a founding generation old
+    // enough to have actually lived through 1319-21 — a simulation started far from 1327 (e.g. the
+    // Tudor-era default) never sees it, exactly like the famine survivor marker above.
+    if (MURRAIN_MARKER_CLASSES.has(coupleClass) && (survivedFamineAsChild(mother.birthYear) || survivedFamineAsChild(father.birthYear))) {
+      pushEvent(events, MURRAIN_WINDOW.start + 1, "period-marker", [mother.id, father.id], { marker: "cattle-murrain" });
     }
 
     familyIndex += 1;

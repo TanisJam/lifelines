@@ -126,6 +126,58 @@ describe("decision 063 (was decision 057): literacy at worldgen, period rates + 
   });
 });
 
+describe("PR5: Great Famine and cattle murrain backstory (worldgen)", () => {
+  it("every founder adult carries a survived-the-famine period-marker, dated to 1315, since all adult founders are born well before 1310", () => {
+    const { people, events } = generateWorld({ seed: "famine-marker-check", startYear: 1327, founderCount: 24 });
+    const adultFounders = Object.values(people).filter((p) => p.founder);
+    expect(adultFounders.length).toBeGreaterThan(0);
+    for (const founder of adultFounders) {
+      const marker = events.find((e) => e.kind === "period-marker" && e.actors.includes(founder.id) && e.payload.marker === "great-famine");
+      expect(marker).toBeDefined();
+      expect(marker!.year).toBe(1315);
+    }
+  });
+
+  it("some founder children born within the 1305-22 famine window are claimed by it (a backfilled death, before the sim window opens), across many seeds", () => {
+    let famineDeaths = 0;
+    for (let i = 1; i <= 20; i++) {
+      const { people, events } = generateWorld({ seed: `famine-thinning-check-${i}`, startYear: 1327, founderCount: 40 });
+      for (const person of Object.values(people)) {
+        if (person.founder || person.deathYear === undefined) continue;
+        if (person.deathYear <= 1322) {
+          famineDeaths++;
+          const deathEvent = events.find((e) => e.kind === "death" && e.actors[0] === person.id && e.year === person.deathYear);
+          expect(deathEvent).toBeDefined();
+          expect(deathEvent!.payload.cause).toBe("great-famine");
+          expect(deathEvent!.payload.backfilled).toBe(true);
+        }
+      }
+    }
+    expect(famineDeaths).toBeGreaterThan(0);
+  });
+
+  it("villein/freeholder founder couples carry a cattle-murrain backstory marker; other classes never do", () => {
+    let sawMurrainMarker = false;
+    for (let i = 1; i <= 10; i++) {
+      const { people, events } = generateWorld({ seed: `murrain-check-${i}`, startYear: 1327, founderCount: 24 });
+      const murrainMarkers = events.filter((e) => e.kind === "period-marker" && e.payload.marker === "cattle-murrain");
+      for (const marker of murrainMarkers) {
+        sawMurrainMarker = true;
+        for (const actorId of marker.actors) {
+          const socialClass = people[actorId]!.socialClass;
+          expect(socialClass === "villein" || socialClass === "freeholder").toBe(true);
+        }
+      }
+    }
+    expect(sawMurrainMarker).toBe(true);
+  });
+
+  it("has no effect at all when generated with the Tudor-era default start year (1498) — every founder is born well after the famine window closes", () => {
+    const { events } = generateWorld({ seed: "tudor-unaffected-check", founderCount: 20 });
+    expect(events.some((e) => e.kind === "period-marker")).toBe(false);
+  });
+});
+
 describe("JOB_POOL_BY_CLASS", () => {
   it("never lists 'scholar' or 'guard' (removed per decision 049) for any class", () => {
     for (const jobs of Object.values(JOB_POOL_BY_CLASS)) {
