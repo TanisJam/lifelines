@@ -40,20 +40,22 @@ describe("protagonist-centric simulation (round 9, decision 034/035)", () => {
     expect(protagonist.deathYear!).toBeLessThan(stopped.config.endYear);
   });
 
-  it("the protagonist's death event always carries a causeOfDeath code (never an NPC's death, which has none)", () => {
+  it("the protagonist's death event always carries a causeOfDeath code — and, since decision 050 (mortality recalibration), so does an NPC's, since the protagonist now faces the exact same mortality/cause machinery as everyone else", () => {
     const deathEvent = stopped.report.result.events.find((e) => e.kind === "death" && e.actors[0] === "protagonist");
     expect(deathEvent).toBeDefined();
     expect(typeof deathEvent!.payload.cause).toBe("string");
 
     const npcDeath = stopped.report.result.events.find((e) => e.kind === "death" && e.actors[0] !== "protagonist");
-    if (npcDeath) expect(npcDeath.payload.cause).toBeUndefined();
+    if (npcDeath) expect(typeof npcDeath.payload.cause).toBe("string");
   });
 
-  it("without protagonistId, the general village simulation is completely unaffected (no death carries a cause, nothing stops early)", async () => {
+  it("without protagonistId, the general village simulation still runs its full configured span, and every death still carries a cause (decision 050: this was previously protagonist-only and gone without a protagonistId — now it's just the general mortality machinery, on for everyone regardless)", async () => {
     const { config, people, events } = protagonistWorld("proto-unaffected");
     const report = await simulate(config, people, events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
     expect(Math.max(...report.snapshots.keys())).toBe(config.endYear);
-    expect(report.result.events.every((e) => e.kind !== "death" || e.payload.cause === undefined)).toBe(true);
+    const deaths = report.result.events.filter((e) => e.kind === "death");
+    expect(deaths.length).toBeGreaterThan(0);
+    expect(deaths.every((e) => typeof e.payload.cause === "string")).toBe(true);
   });
 
   it("forking the protagonist's death (forcing 'survive') continues the life past the original death year", async () => {
@@ -199,6 +201,10 @@ describe("away catalog (round 10, decision 040) — leaving home is no longer a 
     }
     expect(leaveYear).toBeDefined();
     const eventsAfterLeaving = report!.result.events.filter((e) => e.year > leaveYear! && e.actors.includes("protagonist") && e.kind !== "illness" && e.kind !== "death");
-    expect(eventsAfterLeaving.length).toBeGreaterThan(2);
+    // Decision 056 removed the every-20-years A3 job re-draw (including its away-catalog twin),
+    // which was one of this test's own event sources — the threshold is lowered accordingly (was
+    // `> 2`) rather than the test now proving something weaker; it still requires real life events
+    // beyond a bare arrival/return, not just biology.
+    expect(eventsAfterLeaving.length).toBeGreaterThanOrEqual(2);
   });
 });

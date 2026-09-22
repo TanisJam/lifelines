@@ -1,17 +1,18 @@
-import { ageInYear, deathProbabilityAtAge, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
+import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
 import { mapWithConcurrency } from "./concurrency";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
-import { determineDeathCause, protagonistMortalityBonus } from "./mortality";
+import type { Locale } from "./locale";
+import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
-import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type JsonValue, type Job, type Override, type Person, type Sex, type SimulationResult, type Trait, type WorldConfig, type YearSnapshot } from "./types";
+import { TRAIT_POOL, type Event, type EventKind, type JsonValue, type Job, type Override, type Person, type Sex, type SimulationResult, type SocialClass, type Trait, type WorldConfig, type YearSnapshot } from "./types";
 import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
-import { pickJob, pickTraits } from "./worldgen";
+import { isLiterate, pickCommonClass, pickJobForClass, pickTraits } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
 
@@ -97,6 +98,43 @@ function isRelated(a: Person, b: Person): boolean {
 }
 
 /**
+ * Decision 053: the grandparent ids reachable from `person`'s own parent ids, via `people` (needed
+ * to look up a parent's own parents — `isRelated` above only ever needs the two `Person` objects
+ * directly). Missing parents/grandparents (founders, or a parent whose own parents aren't tracked)
+ * just contribute nothing, which is the correct "unknown, so not provably related" reading.
+ */
+function grandparentIds(person: Person, people: Readonly<Record<string, Person>>): Set<string> {
+  const ids = new Set<string>();
+  for (const parentId of [person.motherId, person.fatherId]) {
+    if (!parentId) continue;
+    const parent = people[parentId];
+    if (!parent) continue;
+    if (parent.motherId) ids.add(parent.motherId);
+    if (parent.fatherId) ids.add(parent.fatherId);
+  }
+  return ids;
+}
+
+/**
+ * Decision 053: consanguinity to first cousins — "the most our kinship data covers" (proposal 053's
+ * own scoping). Canon law (Lateran IV, canon 50; research.md, Family §rules 2) barred marriage
+ * within the 4th degree of consanguinity/affinity; first cousins fall within that bar, so this is a
+ * genuine, if partial, implementation of the rule, not the full 4th-degree computation — the engine
+ * has no great-grandparent/great-aunt/uncle data to check further out. Sharing a grandparent implies
+ * `isRelated` would already catch a sibling pair (they share BOTH parents, hence all four
+ * grandparents), so this only adds NEW coverage for actual cousins.
+ */
+function isRelatedForMarriage(a: Person, b: Person, people: Readonly<Record<string, Person>>): boolean {
+  if (isRelated(a, b)) return true;
+  const aGrandparents = grandparentIds(a, people);
+  if (aGrandparents.size === 0) return false;
+  for (const id of grandparentIds(b, people)) {
+    if (aGrandparents.has(id)) return true;
+  }
+  return false;
+}
+
+/**
  * A person's state for Jev (round 4): compact mind JSON plus a prose
  * portrait built from DF-style band templates (see `mind.ts`). This is
  * "who they are" for the *acting* person (`self`); other participants get
@@ -109,6 +147,10 @@ function personSummary(person: Person, year: number, people: Readonly<Record<str
     sex: person.sex,
     age: ageInYear(person.birthYear, year),
     job: person.job,
+    // Decision 049: exposed so later content (vignettes, Jev's own judgment) can be class-aware.
+    // Optional on `Person` for backward compat — falls back to the largest single class.
+    socialClass: person.socialClass ?? "labourer",
+    literate: person.literate ?? false,
     married: person.spouseId !== undefined,
     mind: compactMindState(person.mind),
     portrait: renderPortrait(person.name, person.mind, (id) => people[id]?.name ?? id),
@@ -121,8 +163,162 @@ function otherPersonBrief(person: Person, year: number, people: Readonly<Record<
     name: person.name,
     age: ageInYear(person.birthYear, year),
     job: person.job,
+    socialClass: person.socialClass ?? "labourer",
     portrait: renderPortrait(person.name, person.mind, (id) => people[id]?.name ?? id),
   };
+}
+
+/**
+ * Decision 053: the Clergy Marriage Act 1548 legalized English clerical marriage (commencement 24
+ * November 1548 / royal assent 14 March 1549, research.md's Clergy table), repealed by Mary I's
+ * First Statute of Repeal in 1553. Inclusive bounds, per the proposal's own "1549-53" framing.
+ */
+const CLERGY_MARRIAGE_LEGAL_FROM = 1549;
+const CLERGY_MARRIAGE_LEGAL_TO = 1553;
+
+/**
+ * Decision 056 (extended by 053): clergy are celibate under canon law throughout 1498-1558
+ * (research.md, "Clergy: celibacy, concubinage, and Reformation clerical marriage" — in force
+ * across the whole window in every Catholic territory), EXCEPT for the 1549-53 window in England,
+ * when the Clergy Marriage Act made it briefly legal.
+ */
+export function canMarry(person: Person, year: number): boolean {
+  if (person.socialClass === "clergy") return year >= CLERGY_MARRIAGE_LEGAL_FROM && year <= CLERGY_MARRIAGE_LEGAL_TO;
+  return true;
+}
+
+/**
+ * Decision 053: canon law's absolute floor (research.md, Family §rules 1 — girls from 12, boys
+ * from 14, distinguishing betrothal from consummated marriage). A hard lower bound under EVERY
+ * class's own eligibility age below, in force throughout the Catholic window 1498-1558.
+ */
+const CANON_MINIMUM_MARRIAGE_AGE: Readonly<Record<Sex, number>> = { f: 12, m: 14 };
+
+/**
+ * Decision 053: the age from which marriage becomes eligible, by class and sex — anchored to
+ * research.md's "Marriage rules for simulation use" synthesis table. These are the table's own
+ * BEST-ESTIMATE, explicitly-tunable class figures, not settled historical constants (no
+ * age-at-first-marriage series specific to most of these classes was located for exactly
+ * 1498-1558): `labourer` anchors on the table's "landless labourers" row (older than tenant
+ * peasants — later/less-reliable economic independence), `husbandman`/`yeoman` on its "customary
+ * tenant peasants" row (~24 women / ~26 men, the best-sourced commoner figures), `artisan` on its
+ * own row (mastership-gated marriage), `merchant` similarly with a wider male-female gap (the
+ * Florentine pattern), `gentry` markedly younger (interpolated from Hollingsworth's long-run ducal
+ * trend). `clergy` never actually reaches this check in practice — `canMarry` above excludes them
+ * outside 1549-53 — but carries a value anyway so this stays a total function over `SocialClass`.
+ */
+const MIN_MARRIAGE_AGE: Readonly<Record<SocialClass, Readonly<Record<Sex, number>>>> = {
+  labourer: { f: 25, m: 28 },
+  husbandman: { f: 24, m: 26 },
+  yeoman: { f: 24, m: 26 },
+  artisan: { f: 22, m: 25 },
+  merchant: { f: 20, m: 27 },
+  clergy: { f: 24, m: 26 },
+  gentry: { f: 17, m: 22 },
+};
+
+/** The earliest age `person` is eligible to marry this year, by their class and sex — never below the canon-law absolute minimum. */
+function minMarriageAge(person: Person): number {
+  const socialClass = person.socialClass ?? "labourer";
+  return Math.max(MIN_MARRIAGE_AGE[socialClass][person.sex], CANON_MINIMUM_MARRIAGE_AGE[person.sex]);
+}
+
+/**
+ * Decision 054: a widow or widower isn't immediately back in the courtship pool — a mourning
+ * interval must pass since their most recent `widowed` event (see the death-resolution block
+ * below) before they're offered as a `Y1` initiator or candidate again. Widowers mourned faster
+ * than widows, per research.md's Family §rules 10 ("remarriage rates for widows were markedly
+ * lower than for widowers, and widowers remarried both more often and faster than widows") — the
+ * DIRECTION is sourced; the exact number of years is a DESIGN DEFAULT, since no interval is
+ * quantified anywhere in the sources located.
+ */
+const MOURNING_YEARS: Readonly<Record<Sex, number>> = { m: 1, f: 3 };
+
+function mourningOver(person: Person, events: readonly Event[], year: number): boolean {
+  const widowedEvents = events.filter((e) => e.kind === "widowed" && e.actors[0] === person.id);
+  const last = widowedEvents[widowedEvents.length - 1];
+  if (!last) return true;
+  return year - last.year >= MOURNING_YEARS[person.sex];
+}
+
+/**
+ * Decision 054's widowhood handling, extracted (fixed after review, R3-001) so BOTH death paths
+ * that can end a marriage — the general biology death-resolution block AND decision 051's
+ * maternal-death-in-childbirth roll, which previously skipped it entirely, leaving a widower's
+ * `spouseId` set forever and no `widowed` event for him — share one source of truth. Clears
+ * `spouseId` on both sides, records a `widowed` event causally linked to the death, and lets an
+ * artisan's widow keep the shop (only when SHE doesn't already have a trade of her own) exactly as
+ * decision 054 specified. No-ops (returns no event ids) when `deceased` has no living spouse.
+ */
+function resolveWidowhood(
+  seed: string,
+  events: Event[],
+  people: Record<string, Person>,
+  deceased: Person,
+  deceasedSocialClass: SocialClass,
+  year: number,
+  deathEventId: string,
+): readonly string[] {
+  if (!deceased.spouseId) return [];
+  const survivor = people[deceased.spouseId];
+  if (!survivor || survivor.deathYear !== undefined) return [];
+  survivor.spouseId = undefined;
+  deceased.spouseId = undefined;
+  const keepsTrade = deceasedSocialClass === "artisan" && deceased.job !== "none" && survivor.sex === "f" && survivor.job === "none";
+  if (keepsTrade) {
+    survivor.job = deceased.job;
+    survivor.socialClass = "artisan";
+  }
+  const widowedEvent = pushEvent(events, year, "widowed", [survivor.id, deceased.id], keepsTrade ? { keptTrade: true } : {}, [deathEventId]);
+  pushThought(survivor.mind, "grief", `losing ${deceased.name}`, 75, 8, year, "lovePropensity", deceased.id);
+  addMemory(seed, survivor.id, year, survivor.mind, `was widowed when ${deceased.name} died in ${year}`, "grief", deceased.id);
+  return [widowedEvent.id];
+}
+
+/**
+ * Decision 055: birth spacing. A married woman isn't eligible for another A2 "try" this soon after
+ * her last birth — ~2 years generally (Davenport 2019's 30-33 month intervals round down slightly
+ * for the engine's whole-year granularity, and this is meant as a floor under the probabilistic
+ * conception roll below, not the target average interval itself), shortened to ~1 year for gentry
+ * (the same source's "elite... wet-nursing shortens intervals" finding — 24.6 vs 30.3 months).
+ * Reset entirely (no cooldown) if her most recent child died before its first birthday, matching
+ * Davenport's "the interval shortens when an infant dies before weaning."
+ */
+function eligibleForAnotherChild(mother: Person, people: Readonly<Record<string, Person>>, year: number): boolean {
+  const children = Object.values(people).filter((c) => c.motherId === mother.id);
+  if (children.length === 0) return true;
+  const lastChild = children.reduce((latest, c) => (c.birthYear > latest.birthYear ? c : latest));
+  // Fixed after review (R3-002): `< 1` never fired — a child born in-sim is never death-evaluated
+  // in its own birth year (see actuarial.ts's age<2 band-width comment), so its earliest possible
+  // `deathYear` is `birthYear + 1`. `<= 1` matches that actual engine timing (and matches
+  // `check-demographics.ts`'s own `deathYear - birthYear <= 1` infant-death definition), so a child
+  // who dies at its very first evaluation still resets the spacing cooldown.
+  const infantDied = lastChild.deathYear !== undefined && lastChild.deathYear - lastChild.birthYear <= 1;
+  if (infantDied) return true;
+  const spacingYears = (mother.socialClass ?? "labourer") === "gentry" ? 1 : 2;
+  return year - lastChild.birthYear >= spacingYears;
+}
+
+/**
+ * Decision 055: conception probability given a real "try" this year — replaces the old 100%.
+ * ~60-70% for a fertile woman under 35, declining toward the top of the fertile window, per the
+ * brief's target range; the exact age-banded curve is a DESIGN DEFAULT, not a sourced age-specific
+ * fecundity table (none was found in research.md for 1498-1558) — it's shaped to make the
+ * 30-33-month Davenport interval (spacing floor above + sub-100% "try" success) land near a
+ * plausible completed-family size, not read off a primary source.
+ */
+function conceptionProbability(age: number): number {
+  if (age <= 35) return 0.65;
+  if (age <= 40) return 0.45;
+  return 0.25;
+}
+
+/** The eldest LIVING son sharing this person's father (decision 056's holding-inheritance rule) — true only for `person` itself. */
+function isEldestLivingSon(person: Person, people: Readonly<Record<string, Person>>): boolean {
+  if (person.sex !== "m" || !person.fatherId) return false;
+  const brothers = Object.values(people).filter((p) => p.fatherId === person.fatherId && p.sex === "m" && p.deathYear === undefined);
+  const eldestBirthYear = Math.min(...brothers.map((b) => b.birthYear));
+  return person.birthYear === eldestBirthYear;
 }
 
 /** A decision opportunity for one year: what it is, who it's about, and its option ids — without calling any DecisionMaker. Reused by both the real simulation loop and override validation (`validate-override.ts`), so the two can never disagree about what decisions exist at a given year. */
@@ -148,8 +344,12 @@ export interface CandidateDescriptor {
   readonly extra?: Record<string, JsonValue>;
 }
 
-/** The seven town-level happenings from mind-model.md's "Town events" table — each one presents A5 to every adult in town. */
-const TOWN_EVENT_TYPES = ["plague", "famine", "fire", "festival", "conflict", "harvest", "stranger"] as const;
+/**
+ * The town-level happenings from mind-model.md's "Town events" table — each one presents A5 to
+ * every adult in town. Decision 052 adds three DATED historical shocks (`sweating-sickness`,
+ * `dearth`, `influenza`) alongside the original seven random "flavor" kinds.
+ */
+const TOWN_EVENT_TYPES = ["plague", "famine", "fire", "festival", "conflict", "harvest", "stranger", "sweating-sickness", "dearth", "influenza"] as const;
 type TownEventType = (typeof TOWN_EVENT_TYPES)[number];
 
 const TOWN_EVENT_LABEL: Record<TownEventType, string> = {
@@ -160,10 +360,55 @@ const TOWN_EVENT_LABEL: Record<TownEventType, string> = {
   conflict: "A conflict has broken out with a neighboring town, and it has reached",
   harvest: "A bountiful harvest has blessed",
   stranger: "A traveling stranger has arrived in",
+  "sweating-sickness": "The sweating sickness has struck",
+  dearth: "A dearth has gripped",
+  influenza: "A grippe has swept through",
 };
 
-/** Whether a hardship-flavored town event that year (plague/famine/fire) that should raise mortality risk for everyone in town that year. */
+/** Spanish counterpart of `TOWN_EVENT_LABEL` — used only by `questionText`'s `"es"` branch (decision 059); see that function's own comment for why it's currently unreached from any real call site. */
+const TOWN_EVENT_LABEL_ES: Record<TownEventType, string> = {
+  plague: "Una peste ha asolado",
+  famine: "Una hambruna ha golpeado",
+  fire: "Un incendio ha arrasado parte de",
+  festival: "Una fiesta ha llegado a",
+  conflict: "Ha estallado un conflicto con una aldea vecina, y ha alcanzado a",
+  harvest: "Una cosecha abundante ha bendecido a",
+  stranger: "Un forastero de paso ha llegado a",
+  "sweating-sickness": "El sudor inglés ha golpeado",
+  dearth: "Una carestía ha atenazado",
+  influenza: "Una gripe ha recorrido",
+};
+
+/** Whether a hardship-flavored town event that year (plague/famine/fire) should raise mortality risk for everyone in town that year, flat x1.6 — decision 025's original trio, unchanged by decision 052. The three DATED shocks below get their own demographic/class-skewed multiplier instead (`townEventMortalityMultiplier`), since research.md documents them as unevenly distributed, not flat. */
 const HARDSHIP_TOWN_EVENTS: ReadonlySet<TownEventType> = new Set(["plague", "famine", "fire"]);
+
+/** Decision 052: the four sweating-sickness summers that fall inside the 1498-1558 window — dated, not rolled (research.md, mortality §5: "Outbreaks in the summers of 1485, 1508, 1517, 1528, and 1551... four of the five... fall inside our window"). */
+const SWEATING_SICKNESS_YEARS: ReadonlySet<number> = new Set([1508, 1517, 1528, 1551]);
+
+/**
+ * Decision 052: two dated dearth/famine windows. 1555-56 is directly sourced (research.md,
+ * mortality §6, "Dearth crisis, 1555-1557" — the crisis's disease-mortality tail runs into 1557,
+ * outside this window, so only the harvest-failure years themselves are modeled here). The 1527-29
+ * window comes from the research doc's own "Proposed changes" table (052) but is NOT independently
+ * corroborated by its own dearth section — flagged here as the less-certain of the two, carried
+ * over from the proposal as given.
+ */
+const DEARTH_YEARS: ReadonlySet<number> = new Set([1527, 1528, 1529, 1555, 1556]);
+
+/** Decision 052: the 1557-59 influenza pandemic (research.md, mortality §5 — "English population estimated to have contracted by ~2% over 1557-1559"). */
+const INFLUENZA_YEARS: ReadonlySet<number> = new Set([1557, 1558, 1559]);
+
+/**
+ * Decision 052: plague gets its own independent, more-frequent annual roll instead of being one
+ * slice of the flavor-event pool below — the brief's "stays random but a bit more frequent...
+ * keep it rare, e.g. a few per century" (research.md's proposed-changes table). Tuned (not derived
+ * from a per-year attack rate — none exists for this window) so a full 60-year life sees roughly
+ * 1-2 plague years and a century sees roughly 2-3.
+ */
+const PLAGUE_ANNUAL_PROBABILITY = 0.025;
+
+/** The random "flavor" town events (unchanged frequency and meaning from decision 025) — plague and the three decision-052 dated shocks are handled separately above, so they're excluded from this uniform pool. */
+const FLAVOR_TOWN_EVENT_TYPES = TOWN_EVENT_TYPES.filter((t) => t !== "plague" && t !== "sweating-sickness" && t !== "dearth" && t !== "influenza");
 
 /**
  * A rare, world-level happening (round 5, decision 025 — mind-model.md's
@@ -173,12 +418,106 @@ const HARDSHIP_TOWN_EVENTS: ReadonlySet<TownEventType> = new Set(["plague", "fam
  * function (not inlined in `gatherCandidatesForYear`) because both the
  * candidate-gathering pass AND the event-pushing pass in `simulate()` need
  * to agree on the exact same answer for a given year.
+ *
+ * Decision 052: dated shocks (sweating sickness, dearth, influenza) take priority — they happen
+ * deterministically in their historical years, never rolled — followed by plague's own more
+ * frequent independent roll, followed by the original random flavor-event roll (unchanged odds and
+ * pool, minus plague, which moved to its own roll above).
  */
 function townEventForYear(seed: string, year: number): TownEventType | undefined {
+  if (SWEATING_SICKNESS_YEARS.has(year)) return "sweating-sickness";
+  if (DEARTH_YEARS.has(year)) return "dearth";
+  if (INFLUENZA_YEARS.has(year)) return "influenza";
+  const plagueDraw = keyedDraw(seed, "world", year, "plague-gate");
+  if (plagueDraw < PLAGUE_ANNUAL_PROBABILITY) return "plague";
   const gateDraw = keyedDraw(seed, "world", year, "town-event-gate");
   if (gateDraw >= 0.02) return undefined;
   const typeDraw = keyedDraw(seed, "world", year, "town-event-type");
-  return TOWN_EVENT_TYPES[Math.floor(typeDraw * TOWN_EVENT_TYPES.length)];
+  return FLAVOR_TOWN_EVENT_TYPES[Math.floor(typeDraw * FLAVOR_TOWN_EVENT_TYPES.length)];
+}
+
+/**
+ * Decision 052: per-person mortality multiplier for the town event that happened this year — a
+ * generalization of the flat `HARDSHIP_TOWN_EVENTS` x1.6 above (kept unchanged for the original
+ * plague/famine/fire trio) to cover the three dated shocks, each with a documented demographic skew
+ * (research.md, mortality §5-6):
+ *  - Sweating sickness: "disproportionately... the relatively affluent male adult population,
+ *    particularly the clergy" (NEJM/PMC review) — a strong multiplier for adult men (15-45) of the
+ *    better-off classes, a smaller one for everyone else (it wasn't EXCLUSIVE to them).
+ *  - Dearth: grain-price inflation hits the landless/wage-dependent hardest — a strong multiplier
+ *    for labourers, a mild one for everyone else (bad harvests raise prices town-wide).
+ *  - Influenza: a national, not class-skewed, "~2% population loss" event (research.md) — one flat
+ *    multiplier for everyone, TUNED, not measured against real per-year excess mortality (see
+ *    docs/decisions.md 052's disclosed limitation).
+ * All specific multiplier magnitudes below are DESIGN ASSUMPTIONS — no source gives a per-person
+ * hazard ratio for any of these three events.
+ */
+const BETTER_OFF_CLASSES: ReadonlySet<SocialClass> = new Set(["gentry", "merchant", "yeoman", "clergy"]);
+
+function townEventMortalityMultiplier(townEvent: TownEventType | undefined, age: number, sex: Sex, socialClass: SocialClass): number {
+  if (!townEvent) return 1;
+  if (HARDSHIP_TOWN_EVENTS.has(townEvent)) return 1.6;
+  if (townEvent === "sweating-sickness") {
+    const primeAdultMale = sex === "m" && age >= 15 && age <= 45;
+    const betterOff = BETTER_OFF_CLASSES.has(socialClass);
+    if (primeAdultMale && betterOff) return 5;
+    if (primeAdultMale || betterOff) return 2.5;
+    return 1.2;
+  }
+  if (townEvent === "dearth") return socialClass === "labourer" ? 2.5 : 1.3;
+  if (townEvent === "influenza") return 1.5;
+  return 1;
+}
+
+/**
+ * Decision 058: who actually bore feudal/tax dues (research.md, Economy §"Taxes, housing, diet" —
+ * tithe of 10%, rent and entry fines, the 1524-25 Lay Subsidy) — a DESIGN ASSUMPTION (no sourced
+ * per-class ratio exists), same disclosed-assumption pattern as `CLASS_MORTALITY_MULTIPLIER`
+ * (decision 050) and `townEventMortalityMultiplier` (decision 052). Labourers/husbandmen paid the
+ * most relative to their means; gentry/clergy bore feudal dues far more lightly, when at all.
+ */
+const LEVY_CLASS_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
+  labourer: 1.3,
+  husbandman: 1.15,
+  yeoman: 1.0,
+  artisan: 0.9,
+  merchant: 0.8,
+  clergy: 0.5,
+  gentry: 0.4,
+};
+
+function levyClassMultiplier(socialClass: SocialClass): number {
+  return LEVY_CLASS_MULTIPLIER[socialClass];
+}
+
+/**
+ * Decision 058: one-time, dated national/period events touching every English village during the
+ * window (research.md, Clergy/nobility §"Period events 1498-1558") — narrative markers pushed
+ * unconditionally at their historical year(s), independent of `townEventForYear`'s own single-slot
+ * roll for that year (these are historical certainties, not probabilistic town happenings, so
+ * there's no reason to compete with plague/dearth/festival/etc. for the year's one random slot).
+ * Deliberately NOT given a mortality multiplier of their own — decision 052's three dated shocks
+ * already cover the window's mortality events, and re-tuning mortality here risks the demographic
+ * targets decision 050 calibrated (see docs/decisions.md 050's measured figures). "Tithe and rent
+ * appear as narrative pressure only (no economy yet)" per proposal 058 — the one exception is the
+ * levy class multiplier/Lay Subsidy spike above, which is real state (the protagonist's own levy
+ * odds), not narrative.
+ */
+const PERIOD_EVENTS: readonly { readonly year: number; readonly type: string }[] = [
+  { year: 1524, type: "lay-subsidy" },
+  { year: 1525, type: "amicable-grant" },
+  { year: 1530, type: "vagrancy-act-1530" },
+  { year: 1536, type: "dissolution-begins" },
+  { year: 1536, type: "vagrancy-act-1536" },
+  { year: 1544, type: "great-debasement" },
+  { year: 1547, type: "chantries-act" },
+  { year: 1547, type: "vagrancy-act-1547" },
+  { year: 1549, type: "prayer-book" },
+  { year: 1553, type: "marian-restoration" },
+];
+
+function periodEventTypesForYear(year: number): readonly string[] {
+  return PERIOD_EVENTS.filter((e) => e.year === year).map((e) => e.type);
 }
 
 function overrideFor(overrides: readonly Override[], decisionId: string): Override | undefined {
@@ -187,6 +526,9 @@ function overrideFor(overrides: readonly Override[], decisionId: string): Overri
 
 /** Years a person is "immune" from another illness roll after falling ill, so illness doesn't spam a handful of bad-luck years. */
 const ILLNESS_COOLDOWN_YEARS = 3;
+
+/** Decision 051: maternal mortality per birth (research.md, "Maternal mortality" — Schofield 1986's Elizabethan 9.3/1000 anchor, ~0.9-1.0%; applied across the whole 1498-1558 window with low confidence, since the source is just after it). */
+const MATERNAL_DEATH_PROBABILITY = 0.0095;
 
 /**
  * Round 5 fix (decision 022, "monotone loops" — Orla Cinderfell's chronicle
@@ -342,20 +684,30 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // Round 12 (decision 045): the old `seekChance`/`seekDraw` code-side probability gate is gone —
     // eligibility here is purely deterministic (age, unmarried, no active romance, a real partner on
     // hand); Jev's per-person-year event-selection Choice decides whether this actually happens.
-    if (isAdult(age) && age <= 65 && !person.spouseId && activeRomancePair(events, person.id) === undefined) {
-      const eligible = (maxAgeGap: number) =>
+    // Decision 053 replaces the flat `isAdult(age)` (16) floor with `minMarriageAge` (class- and
+    // sex-specific, never below the canon-law 12/14 minimum) and adds the consanguinity-to-cousins
+    // check (`isRelatedForMarriage`). Decision 054 adds the mourning-interval gate for a widow(er).
+    // Status endogamy (research.md, Family §rules synthesis: "marriage tended to stay within one's
+    // status (inferred, not measured)") is a SOFT preference, not a hard rule: `eligible` is tried
+    // same-class-first across the three age windows, only falling back to any class if nobody
+    // eligible shares this person's own class at any age gap.
+    if (age >= minMarriageAge(person) && age <= 65 && !person.spouseId && activeRomancePair(events, person.id) === undefined && canMarry(person, year) && mourningOver(person, events, year)) {
+      const eligible = (maxAgeGap: number, sameClassOnly: boolean) =>
         aliveNonMoved.find(
           (candidate) =>
             candidate.id !== person.id &&
             candidate.sex !== person.sex &&
             !candidate.spouseId &&
             !claimedPartners.has(candidate.id) &&
-            !isRelated(person, candidate) &&
-            isAdult(ageInYear(candidate.birthYear, year)) &&
+            !isRelatedForMarriage(person, candidate, people) &&
+            ageInYear(candidate.birthYear, year) >= minMarriageAge(candidate) &&
             activeRomancePair(events, candidate.id) === undefined &&
-            Math.abs(ageInYear(candidate.birthYear, year) - age) <= maxAgeGap,
+            canMarry(candidate, year) &&
+            mourningOver(candidate, events, year) &&
+            Math.abs(ageInYear(candidate.birthYear, year) - age) <= maxAgeGap &&
+            (!sameClassOnly || (candidate.socialClass ?? "labourer") === (person.socialClass ?? "labourer")),
         );
-      const partner = eligible(10) ?? eligible(20) ?? eligible(40);
+      const partner = eligible(10, true) ?? eligible(20, true) ?? eligible(40, true) ?? eligible(10, false) ?? eligible(20, false) ?? eligible(40, false);
       if (partner) {
         claimedPartners.add(partner.id);
         claimedPartners.add(person.id);
@@ -387,18 +739,29 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       }
     }
 
-    // A3 Career opportunity: first job at 16, then roughly every 20 years (round 6 fix, decision
-    // 028, "careers are incoherent" — rarer, per the brief, than the old every-15-years cadence
-    // that had Briala change trades four times in one life). `yearsInCurrentJob` goes into `extra`
-    // so Jev can weigh "I've spent 15 years at this" — a fact the state never carried before.
-    if (isWorkingAge(age) && (age === 16 || (age - 16) % 20 === 0)) {
-      const lastJobEvent = eventsFor(events, person.id)
-        .filter((e) => e.kind === "job")
-        .sort((a, b) => b.year - a.year)[0];
-      const yearsInCurrentJob = lastJobEvent ? year - lastJobEvent.year : age - 16;
-      const alternatives = JOB_POOL.filter((j) => j !== person.job && j !== "none");
-      const opportunity = alternatives[Math.floor(keyedDraw(seed, person.id, year, "opportunity-job") * alternatives.length)] ?? person.job;
-      candidates.push({ decisionId: `A3:${person.id}:${year}`, kind: "A3", personId: person.id, options: ["seize", "pass", "ignore"], opportunityJob: opportunity, extra: { yearsInCurrentJob, currentJob: person.job } });
+    // A3 Career opportunity: first job at 16 ONLY (round 13, decision 056 — the periodic
+    // every-20-years re-draw is removed: villagers didn't freely change trades in this period; see
+    // research.md, Economy §2, "not mechanical; free mobility between trades"). Skipped if AP1
+    // (age 10) already apprenticed this person to a trade — that hook now actually sets `job` (see
+    // the `AP1` outcome case below), so this is only a real "first job" opportunity for whoever
+    // wasn't. The offered job is drawn from the person's OWN social class's pool (decision 049): the
+    // eldest living son of a husbandman/yeoman/gentry father inherits the holding (`farmer`/
+    // `landholder`, custom/primogeniture — research.md, Family §Inheritance systems); an artisan's
+    // son has a ~15% chance (sourced 10-20%, Economy §2) of taking up his father's own craft;
+    // everyone else draws at random from their class's pool.
+    if (isWorkingAge(age) && age === 16 && person.job === "none") {
+      const socialClass: SocialClass = person.socialClass ?? "labourer";
+      const father = person.fatherId ? people[person.fatherId] : undefined;
+      const inheritsHolding = person.sex === "m" && isEldestLivingSon(person, people) && (socialClass === "husbandman" || socialClass === "yeoman" || socialClass === "gentry");
+      let opportunityJob: Job;
+      if (inheritsHolding) {
+        opportunityJob = socialClass === "gentry" ? "landholder" : "farmer";
+      } else if (socialClass === "artisan" && father && father.job !== "none" && keyedDraw(seed, person.id, year, "father-craft") < 0.15) {
+        opportunityJob = father.job;
+      } else {
+        opportunityJob = pickJobForClass(socialClass, keyedRng(seed, person.id, year, "opportunity-job"));
+      }
+      candidates.push({ decisionId: `A3:${person.id}:${year}`, kind: "A3", personId: person.id, options: ["seize", "pass", "ignore"], opportunityJob, extra: { currentJob: person.job } });
     }
 
     // A2 Have a child: asked via the mother. Density-damped once the living population is large.
@@ -411,7 +774,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // Round 12 (decision 045): the old density-damped `gateChance`/`gateDraw` code-side probability
     // gate is gone — every married woman in her fertile window is eligible every year (deterministic:
     // sex, spouse alive, fertile age); Jev's event-selection Choice decides whether this is the year.
-    if (person.sex === "f" && person.spouseId && isFertileAge(age, "f")) {
+    if (person.sex === "f" && person.spouseId && isFertileAge(age, "f") && eligibleForAnotherChild(person, people, year)) {
       const spouse = people[person.spouseId];
       if (spouse && spouse.deathYear === undefined) {
         const existingChildren = Object.values(people).filter((c) => c.motherId === person.id).length;
@@ -642,16 +1005,13 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       const awaySince = awayMoveYear(events, protagonistId);
       const awayCast = Object.values(people).filter((p) => p.away === true);
 
-      // Work: same cadence as A3 at home, plus one extra roll the year after arriving — settling
-      // into a livelihood in the new place is the first thing that actually happens there.
-      if (isWorkingAge(age) && (age === 16 || (age - 16) % 20 === 0 || (awaySince !== undefined && year === awaySince + 1))) {
-        const lastJobEvent = eventsFor(events, protagonist.id)
-          .filter((e) => e.kind === "job")
-          .sort((a, b) => b.year - a.year)[0];
-        const yearsInCurrentJob = lastJobEvent ? year - lastJobEvent.year : age - 16;
-        const alternatives = JOB_POOL.filter((j) => j !== protagonist.job && j !== "none");
-        const opportunity = alternatives[Math.floor(keyedDraw(seed, protagonist.id, year, "away-opportunity-job") * alternatives.length)] ?? protagonist.job;
-        candidates.push({ decisionId: `A3:${protagonist.id}:${year}`, kind: "A3", personId: protagonist.id, options: ["seize", "pass", "ignore"], opportunityJob: opportunity, extra: { yearsInCurrentJob, currentJob: protagonist.job } });
+      // Work: same one-time cadence as A3 at home (age 16, no re-draw — decision 056), plus one
+      // extra roll the year after arriving — settling into a livelihood in the new place is the
+      // first thing that actually happens there, so it's allowed even if a home job was already set.
+      if (isWorkingAge(age) && ((age === 16 && protagonist.job === "none") || (awaySince !== undefined && year === awaySince + 1))) {
+        const socialClass: SocialClass = protagonist.socialClass ?? "labourer";
+        const opportunityJob = pickJobForClass(socialClass, keyedRng(seed, protagonist.id, year, "away-opportunity-job"));
+        candidates.push({ decisionId: `A3:${protagonist.id}:${year}`, kind: "A3", personId: protagonist.id, options: ["seize", "pass", "ignore"], opportunityJob, extra: { currentJob: protagonist.job } });
       }
 
       // A newcomer arrives in the away cast — code-rolled, like immigration, and resolved in the
@@ -663,8 +1023,27 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
 
       // Y1/A1 Courtship and marriage, with whoever's on hand in the away cast. Round 12 (decision
       // 045): the old `seekDraw` code-side gate is gone — eligible whenever a real suitor is on hand.
-      if (isAdult(age) && age <= 65 && !protagonist.spouseId && activeRomancePair(events, protagonist.id) === undefined) {
-        const suitor = awayCast.find((c) => c.sex !== protagonist.sex && !c.spouseId && isAdult(ageInYear(c.birthYear, year)) && activeRomancePair(events, c.id) === undefined);
+      // Decision 053/054: same `minMarriageAge`/`isRelatedForMarriage`/mourning-interval rules as
+      // the home village — a small standing cast (<2), so class endogamy isn't worth widening for
+      // here (there's rarely a real choice of partner to prefer among).
+      if (
+        age >= minMarriageAge(protagonist) &&
+        age <= 65 &&
+        !protagonist.spouseId &&
+        activeRomancePair(events, protagonist.id) === undefined &&
+        canMarry(protagonist, year) &&
+        mourningOver(protagonist, events, year)
+      ) {
+        const suitor = awayCast.find(
+          (c) =>
+            c.sex !== protagonist.sex &&
+            !c.spouseId &&
+            !isRelatedForMarriage(protagonist, c, people) &&
+            ageInYear(c.birthYear, year) >= minMarriageAge(c) &&
+            activeRomancePair(events, c.id) === undefined &&
+            canMarry(c, year) &&
+            mourningOver(c, events, year),
+        );
         if (suitor) candidates.push({ decisionId: `Y1:${pairKey(protagonist.id, suitor.id)}:${year}`, kind: "Y1", personId: protagonist.id, partnerId: suitor.id, options: ["encourage", "decline", "wait"] });
       }
       const awayRomancePartnerId = activeRomancePair(events, protagonist.id);
@@ -692,7 +1071,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         const mother = protagonist.sex === "f" ? protagonist : awaySpouse;
         const father = protagonist.sex === "f" ? awaySpouse : protagonist;
         const motherAge = ageInYear(mother.birthYear, year);
-        if (isFertileAge(motherAge, "f")) {
+        if (isFertileAge(motherAge, "f") && eligibleForAnotherChild(mother, people, year)) {
           const existingChildren = Object.values(people).filter((c) => c.motherId === mother.id).length;
           candidates.push({
             decisionId: `A2:${pairKey(mother.id, father.id)}:${year}`,
@@ -928,8 +1307,86 @@ function optionLabel(kind: string, optionId: string, selfName: string, otherName
   }
 }
 
-/** The situation, worded from the person's own perspective (spec: "the question fields it depends on, and a question worded from the person's perspective"). */
-function questionText(kind: string, otherName?: string, townName?: string, opportunityJob?: string, breakdownKind?: string, townEventType?: TownEventType): string {
+/**
+ * The situation, worded from the person's own perspective (spec: "the question fields it depends
+ * on, and a question worded from the person's perspective").
+ *
+ * Decision 059 ("the display half of `questionText()`"): takes `Locale` as its first argument and
+ * has a full Spanish branch, but every call site in this file passes `"en"` explicitly and always
+ * will — this string does double duty as both `DecisionQuestion.state.situation.question` (sent to
+ * Jev, must stay fixed for the answer cache) and `DecisionRecord.question` (persisted once at
+ * simulate time, never re-derived per viewer the way `narrate.ts`'s prose is). Exported so the
+ * Spanish branch is independently testable and available to a future display layer that reconstructs
+ * a localized question from `DecisionRecord`'s structured fields, without this file needing to know
+ * about locales at simulation time.
+ */
+export function questionText(locale: Locale, kind: string, otherName?: string, townName?: string, opportunityJob?: string, breakdownKind?: string, townEventType?: TownEventType): string {
+  if (locale === "es") {
+    switch (kind) {
+      case "Y1":
+        return `${otherName} ha mostrado interés en mí. ¿Lo alimento?`;
+      case "A1":
+        return `Llevamos ya un tiempo cortejándonos. ¿Le propongo matrimonio?`;
+      case "A3":
+        return `Se ha abierto un puesto como ${opportunityJob ?? "algo nuevo"}. ¿Lo tomo?`;
+      case "A2":
+        return `¿Intentamos tener un hijo este año?`;
+      case "Y4":
+        return `${otherName} me ha ofendido. ¿Le hago frente por ello?`;
+      case "A6":
+        return `Mi rencilla con ${otherName} lleva años. ¿Qué hago al respecto?`;
+      case "Y3":
+        return `Hay una oportunidad en la ciudad. ¿Me voy, o me quedo?`;
+      case "A8":
+        return `Mi sueño sigue sin cumplirse. ¿Qué hago al respecto?`;
+      case "A11":
+        return `El peso de todo se ha vuelto demasiado (${breakdownKind ?? "un punto de quiebre"}). ¿Cómo respondo?`;
+      case "C2":
+        return `${otherName ?? "Mi progenitor"} ha muerto. ¿Cómo lo afronto?`;
+      case "C3":
+        return `Ya tengo edad para pensar en qué haré de mi vida. ¿Qué me llama?`;
+      case "O2":
+        return `He cargado este rencor contra ${otherName ?? "ellos"} durante años. ¿Hago las paces al fin?`;
+      case "O4":
+        return `Soy viejo, y la muerte se acerca. ¿Cómo la recibo?`;
+      case "A5":
+        return `${townEventType ? TOWN_EVENT_LABEL_ES[townEventType] : "Algo ha sucedido en"} ${townName ?? "el pueblo"}. ¿Qué hago?`;
+      case "illness":
+        return `¿Enfermo este año?`;
+      case "death":
+        return `¿Sobrevivo este año?`;
+      case "immigration":
+        return `¿Llega un recién llegado a ${townName ?? "el pueblo"} este año?`;
+      case "levy":
+        return `¿Impone el señor un tributo contra ${townName ?? "la aldea"} este año?`;
+      case "C1":
+        return `${otherName ?? "Mi hermano"} sigue acaparando la atención que quiero para mí. ¿Qué hago?`;
+      case "C4":
+        return `${otherName ?? "Alguien"} no deja de acosarme. ¿Qué hago?`;
+      case "Y2":
+        return `Mi sueño y mi oficio tiran en direcciones distintas. ¿Qué hago?`;
+      case "Y5":
+        return `${otherName ?? "Alguien"} y yo nos hemos acercado. ¿Me sincero con esa persona?`;
+      case "A4":
+        return `He descubierto una traición. ¿Cómo respondo?`;
+      case "A7":
+        return `Mi fe se ha tambaleado. ¿Qué hago?`;
+      case "A9":
+        return `Siento una atracción hacia alguien que no es mi cónyuge. ¿Qué hago?`;
+      case "A10":
+        return `${otherName ?? "Un joven"} cerca de mí necesitaría un mentor. ¿Lo tomo bajo mi ala?`;
+      case "O1":
+        return `Soy viejo, con propiedades que dejar. ¿Cómo las reparto?`;
+      case "O3":
+        return `Mi sueño nunca se cumplió. ¿Qué hago con lo que queda de él?`;
+      case "AP1":
+        return `${otherName ?? "Mi hijo"} ya tiene edad para un oficio. ¿Qué decido para él?`;
+      case "PIL1":
+        return `Desde hace tiempo siento la llamada de una peregrinación. ¿Voy?`;
+      default:
+        return `¿Qué hago (${kind})?`;
+    }
+  }
   switch (kind) {
     case "Y1":
       return `${otherName} has shown interest in me. Do I encourage it?`;
@@ -1072,7 +1529,13 @@ function buildQuestion(descriptor: CandidateDescriptor, year: number, config: Wo
   // generic kind is that its wording lives in the vignette pool, parameterized by state.
   const vignetteId = descriptor.kind === "D1" && typeof descriptor.extra?.vignette === "string" ? descriptor.extra.vignette : undefined;
   const vignetteForQuestion = vignetteId ? getVignette(vignetteId) : undefined;
-  const situationQuestion = vignetteForQuestion ? vignetteForQuestion.question(town) : questionText(descriptor.kind, partner?.name, town, descriptor.opportunityJob, descriptor.breakdownKind, descriptor.townEventType);
+  // Decision 059: always English — this is what `state.situation.question` sends to Jev (below),
+  // and the model-facing string must stay fixed regardless of the reader's locale so the answer
+  // cache stays valid. See `buildQuestion`'s other call site (the `D1` `DecisionRecord.question`
+  // just above `buildDailyLifeVignetteCandidates`) for the same rule, spelled out at length.
+  const situationQuestion = vignetteForQuestion
+    ? vignetteForQuestion.question("en", town)
+    : questionText("en", descriptor.kind, partner?.name, town, descriptor.opportunityJob, descriptor.breakdownKind, descriptor.townEventType);
   const state: Record<string, JsonValue> = {
     self: base,
     situation: { code: descriptor.kind, question: situationQuestion, ...descriptor.extra },
@@ -1160,6 +1623,7 @@ function buildDailyLifeVignetteDescriptor(
     age: ageInYear(protagonist.birthYear, year),
     away: hasMovedAway(events, protagonist.id),
     job: protagonist.job,
+    socialClass: protagonist.socialClass ?? "labourer",
     hasSpouse: !!protagonist.spouseId,
     hasChild: livingChildId(people, protagonist) !== undefined,
     hasLivingParent: relationshipTargetId("parent", protagonist, people) !== undefined,
@@ -1215,6 +1679,7 @@ function buildDailyLifeVignetteCandidates(
     age: ageInYear(protagonist.birthYear, year),
     away: hasMovedAway(events, protagonist.id),
     job: protagonist.job,
+    socialClass: protagonist.socialClass ?? "labourer",
     hasSpouse: !!protagonist.spouseId,
     hasChild: livingChildId(people, protagonist) !== undefined,
     hasLivingParent: relationshipTargetId("parent", protagonist, people) !== undefined,
@@ -1361,7 +1826,13 @@ async function resolveDailyLifeVignette(
     partnerId: descriptor.partnerId,
     year,
     kind: "D1",
-    question: vignette.question(config.town.name),
+    // Decision 059: always English here, deliberately — `DecisionRecord.question` is computed once
+    // at simulate time and persisted (unlike `narrate.ts`'s prose, which is re-derived fresh from
+    // structured events every render), so it can't be re-localized per viewer without either storing
+    // both languages or growing `DecisionRecord` with the raw params needed to rebuild it. The
+    // chronicle's own reader-facing prose/title (what the proposal calls "per-locale narration") goes
+    // through `narrate.ts`'s `locale` parameter instead, at render time, per the reader's locale.
+    question: vignette.question("en", config.town.name),
     options: decisionOptions,
     jevRaw,
     prior,
@@ -1382,6 +1853,14 @@ function biologyDistribution(kind: string, p: number): Distribution {
   if (kind === "illness") return { illness: p, healthy: 1 - p };
   if (kind === "death") return { die: p, survive: 1 - p };
   if (kind === "return") return { return: p, stay: 1 - p };
+  // Decision 058: pre-existing bug found while adding the levy class multiplier — "levy" (options
+  // `["impose", "spare"]`) fell through to this function's `arrive`/`no-arrival` default (meant for
+  // "immigration"/"away-arrival", which happen to share the "arrive" label by coincidence), so
+  // `sampleGumbelMax` could never actually choose `"impose"` and the death-resolution loop's
+  // `if (record.chosen === "impose")` check was permanently unreachable — the lord's levy has never
+  // fired an event since it was introduced (decision 035). Fixed here rather than filed as a
+  // separate follow-up, since 058's own levy class-multiplier/Lay Subsidy work is otherwise inert.
+  if (kind === "levy") return { impose: p, spare: 1 - p };
   return { arrive: p, "no-arrival": 1 - p };
 }
 
@@ -1447,8 +1926,14 @@ export async function simulate(
       const event = pushEvent(events, year, "town", [], { eventType: townEvent }, []);
       townEventId = event.id;
     }
-    const hardshipMultiplier = townEvent && HARDSHIP_TOWN_EVENTS.has(townEvent) ? 1.6 : 1;
 
+    // Decision 058: dated period events (Dissolution, Chantries Act, Prayer Book, Marian
+    // restoration, the Great Debasement, the vagrancy acts, the Lay Subsidy/Amicable Grant) —
+    // pushed unconditionally, independent of `townEventForYear`'s single random/dated-shock slot
+    // above (see `PERIOD_EVENTS`'s own doc comment for why these don't compete for that slot).
+    for (const periodType of periodEventTypesForYear(year)) {
+      pushEvent(events, year, "town", [], { eventType: periodType, period: true }, []);
+    }
     // --- Biology: synchronous, no AI calls ----------------------------------
     // Illness is processed before death for the same person (in `gatherCandidatesForYear`'s
     // sort order, "death" < "illness" alphabetically would be wrong — we sort by kind name,
@@ -1481,38 +1966,60 @@ export async function simulate(
         const person = people[descriptor.personId]!;
         const age = ageInYear(person.birthYear, year);
         const illnessEvent = illnessResultByPerson.get(descriptor.personId);
-        let p = illnessEvent ? Math.min(0.9, deathProbabilityAtAge(age) * 3 * hardshipMultiplier) : Math.min(0.9, deathProbabilityAtAge(age) * hardshipMultiplier);
-        // Round 9 (decision 035): the protagonist's mortality gets extra, cause-varied risk on top
-        // of the village-wide actuarial curve above — see mortality.ts. Purely additive to `p`, and
-        // gated to `descriptor.personId === options.protagonistId`, so every other person in town
-        // (and the whole village when no protagonist is set) is completely unaffected.
-        const isProtagonist = descriptor.personId === options.protagonistId;
-        const hasActiveFeud = isProtagonist && activeFeudPair(events, person.id) !== undefined;
-        const recentChildbirth = isProtagonist && person.sex === "f" && events.some((e) => e.kind === "birth" && e.year === year - 1 && (e.actors[1] === person.id || e.actors[2] === person.id));
-        const mortalityContext = { age, sex: person.sex, hadIllness: !!illnessEvent, townEventType: townEvent, hasActiveFeud, recentChildbirth };
-        if (isProtagonist) p = Math.min(0.95, p + protagonistMortalityBonus(mortalityContext));
+        const socialClass: SocialClass = person.socialClass ?? "labourer";
+        // Decision 050: the protagonist-only mortality bonus (mortality.ts's old
+        // `protagonistMortalityBonus`) is REMOVED — the protagonist now faces the exact same,
+        // recalibrated actuarial curve, class multiplier and town-event multiplier as any NPC. What
+        // decision 035 was protecting (a 15-20% pre-15 protagonist death share) is now a property of
+        // the general population's own recalibrated curve (see `actuarial.ts#deathProbabilityAtAge`
+        // and docs/decisions.md 050's measured figures), not a per-protagonist patch.
+        const shockMultiplier = townEventMortalityMultiplier(townEvent, age, person.sex, socialClass);
+        const illnessMultiplier = illnessEvent ? 3 : 1;
+        const p = Math.min(0.9, deathProbabilityAtAge(age) * classMortalityMultiplier(socialClass) * shockMultiplier * illnessMultiplier);
+        // Decision 050: `hasActiveFeud` (and therefore the "feud-violence" cause) is now computed for
+        // EVERY person, not just the protagonist — `activeFeudPair` already reads the general event
+        // log by personId, so this was never protagonist-specific machinery, only protagonist-gated.
+        const hasActiveFeud = activeFeudPair(events, person.id) !== undefined;
+        const mortalityContext: MortalityContext = { age, sex: person.sex, hadIllness: !!illnessEvent, townEventType: townEvent, hasActiveFeud };
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, person.name, config.town.name);
         const resultingEventIds: string[] = [];
         if (record.chosen === "die") {
           person.deathYear = year;
-          const cause = isProtagonist ? determineDeathCause(mortalityContext) : undefined;
+          // Decision 050: every death now carries a `cause` (not just the protagonist's) —
+          // `determineDeathCause` was already a pure function of context available for anyone.
+          const cause = determineDeathCause(mortalityContext);
           const deathEvent = pushEvent(
             events,
             year,
             "death",
             [descriptor.personId],
-            { age, awayFromTown: hasMovedAway(events, descriptor.personId), ...(cause ? { cause } : {}) },
+            { age, awayFromTown: hasMovedAway(events, descriptor.personId), cause },
             illnessEvent ? [illnessEvent.id] : [],
           );
           resultingEventIds.push(deathEvent.id);
+          // Decision 054: widowhood — `spouseId` was previously NEVER cleared on death (the bug the
+          // decision fixes), which made remarriage impossible for anyone whose spouse died. Handled
+          // by the shared `resolveWidowhood` helper (fixed after review, R3-001) so this general
+          // death path and decision 051's maternal-death path below can never disagree.
+          resultingEventIds.push(...resolveWidowhood(seed, events, people, person, socialClass, year, deathEvent.id));
         } else if (illnessEvent) {
           (illnessEvent.payload as Record<string, JsonValue>).recovered = true;
         }
-        const deathCauses = [...(illnessEvent ? [illnessEvent.id] : []), ...(hardshipMultiplier > 1 && townEventId ? [townEventId] : [])];
+        const deathCauses = [...(illnessEvent ? [illnessEvent.id] : []), ...(shockMultiplier > 1 && townEventId ? [townEventId] : [])];
         record = { ...record, causes: deathCauses, resultingEventIds };
         if (record.chosen === "die" || p >= RECORD_THRESHOLD || record.source === "forced") decisions.push(record);
       } else if (descriptor.kind === "levy") {
-        const p = 0.045 * (townEvent === "famine" ? 1.4 : 1);
+        // Decision 058: a class-specific multiplier (research.md, Economy §"Taxes, housing, diet" —
+        // tithe, rent and the Lay Subsidy fell on tenants and labourers; gentry/clergy bore feudal
+        // dues far more lightly, when at all) — a DESIGN ASSUMPTION, no sourced per-class ratio
+        // exists, same disclosed-assumption pattern as decision 050's `CLASS_MORTALITY_MULTIPLIER`
+        // and decision 052's `townEventMortalityMultiplier`. Also spikes in 1524-25 (the Lay
+        // Subsidy/Amicable Grant, dated not rolled, per proposal 058) — the levy candidate is
+        // protagonist-only (see the `SimulateOptions` doc comment), so this never touches the
+        // general village.
+        const levySocialClass: SocialClass = people[descriptor.personId]!.socialClass ?? "labourer";
+        const laySubsidyYear = year === 1524 || year === 1525;
+        const p = Math.min(0.9, 0.045 * (townEvent === "famine" ? 1.4 : 1) * levyClassMultiplier(levySocialClass) * (laySubsidyYear ? 1.8 : 1));
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name);
         const resultingEventIds: string[] = [];
         if (record.chosen === "impose") {
@@ -1768,7 +2275,12 @@ export async function simulate(
       const resultingEventIds: string[] = [];
       const causes: string[] = [];
 
-      if (occurs) {
+      // Decision 051: `person.deathYear === undefined` guards against a candidate for someone who
+      // died from an EARLIER candidate's outcome THIS SAME year's apply loop — new with maternal
+      // mortality (A2's "try" case below can now kill the mother mid-loop, same year), since the
+      // upfront `socialCandidates` filter above only removes people biology already killed BEFORE
+      // this loop started, not someone who dies partway through it.
+      if (occurs && person.deathYear === undefined) {
       switch (descriptor.kind) {
         case "Y1": {
           if (chosen === "encourage" && !person.spouseId && !partner!.spouseId) {
@@ -1849,20 +2361,52 @@ export async function simulate(
         }
         case "A2": {
           if (chosen === "try") {
-            const marriageEvent = events.filter((e) => e.kind === "marriage" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
-            if (marriageEvent) causes.push(marriageEvent.id);
-            let child = spawnChild(seed, year, person, partner!, people);
-            // A child born to an away couple (decision 040) is itself part of the lightweight away
-            // cast, not a home villager — otherwise they'd wrongly enter the home village's own
-            // illness/death/courtship pools despite never having set foot in it.
-            if (person.away || partner!.away) child = { ...child, away: true };
-            people[child.id] = child;
-            const childEvent = pushEvent(events, year, "child", [person.id, partner!.id], { childId: child.id }, causes);
-            const birthEvent = pushEvent(events, year, "birth", [child.id, person.id, partner!.id], {}, [childEvent.id]);
-            resultingEventIds.push(childEvent.id, birthEvent.id);
-            for (const self of [person, partner!]) {
-              pushThought(self.mind, "joy", `welcoming ${child.name} into the family`, 60, 5, year, "lovePropensity", child.id);
-              addMemory(seed, self.id, year, self.mind, `${child.name} was born in ${year}`, "joy", child.id);
+            // Decision 055: conception is no longer guaranteed on "try" — a probabilistic roll
+            // (Davenport 2019's birth-interval evidence implies real sub-fecund periods even among
+            // couples actively trying), keyed distinctly from every other A2 draw so it doesn't
+            // correlate with the eligibility/spacing checks above or the maternal-death roll below.
+            const conceiveDraw = keyedDraw(seed, pairKey(person.id, partner!.id), year, "conceive");
+            if (conceiveDraw < conceptionProbability(ageInYear(person.birthYear, year))) {
+              const marriageEvent = events.filter((e) => e.kind === "marriage" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
+              if (marriageEvent) causes.push(marriageEvent.id);
+              let child = spawnChild(seed, year, person, partner!, people);
+              // A child born to an away couple (decision 040) is itself part of the lightweight away
+              // cast, not a home villager — otherwise they'd wrongly enter the home village's own
+              // illness/death/courtship pools despite never having set foot in it.
+              if (person.away || partner!.away) child = { ...child, away: true };
+              people[child.id] = child;
+              const childEvent = pushEvent(events, year, "child", [person.id, partner!.id], { childId: child.id }, causes);
+              const birthEvent = pushEvent(events, year, "birth", [child.id, person.id, partner!.id], {}, [childEvent.id]);
+              resultingEventIds.push(childEvent.id, birthEvent.id);
+              for (const self of [person, partner!]) {
+                pushThought(self.mind, "joy", `welcoming ${child.name} into the family`, 60, 5, year, "lovePropensity", child.id);
+                addMemory(seed, self.id, year, self.mind, `${child.name} was born in ${year}`, "joy", child.id);
+              }
+              // Decision 051: maternal mortality — an independent ~1% (0.9-1.0%) risk of death for
+              // the mother, the SAME year as the birth (Schofield 1986). This can't ride the general
+              // per-person "death" biology decision above — that already resolved for this year
+              // before this birth existed — so it's its own keyed roll, applied immediately after
+              // the birth. The `person.deathYear === undefined` guard added to the apply loop above
+              // is what keeps any LATER candidate this same year from still applying an outcome for
+              // her once this fires.
+              const maternalDraw = keyedDraw(seed, person.id, year, "maternal-death");
+              if (maternalDraw < MATERNAL_DEATH_PROBABILITY) {
+                person.deathYear = year;
+                const motherAge = ageInYear(person.birthYear, year);
+                const deathEvent = pushEvent(events, year, "death", [person.id], { age: motherAge, awayFromTown: hasMovedAway(events, person.id), cause: "childbirth" }, [childEvent.id, birthEvent.id]);
+                resultingEventIds.push(deathEvent.id);
+                // Fixed after review (R3-001): this maternal-death path previously never went
+                // through decision 054's widowhood handling — the same shared helper the general
+                // biology death path uses below, so a husband whose wife dies in childbirth is
+                // widowed exactly like anyone else.
+                resultingEventIds.push(...resolveWidowhood(seed, events, people, person, person.socialClass ?? "labourer", year, deathEvent.id));
+              }
+            } else {
+              pushThought(person.mind, "longing", "hoping for a child, still", 15, 1, year);
+              if (person.id === protagonistId) {
+                const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note: "tried-for-a-child-without-success", otherName: partner!.name }, []);
+                resultingEventIds.push(event.id);
+              }
             }
           } else if (chosen === "refuse") {
             pushThought(person.mind, "regret", "choosing not to have a child this year", 20, 2, year);
@@ -2250,7 +2794,12 @@ export async function simulate(
           const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
           resultingEventIds.push(event.id);
           pushThought(partner!.mind, "hope", `${person.name}'s decision about ${partner!.sex === "f" ? "her" : "his"} future`, 25, 4, year, "ambition", person.id);
+          // Decision 056 fix: `apprentice-own-trade` previously only narrated the apprenticeship —
+          // the child's actual `job` was never set, so A3 at 16 would still draw a fresh one at
+          // random. It now really does set the trade, which is also why A3 (age 16) skips anyone
+          // whose `job` is already set.
           if (chosen === "apprentice-own-trade" && person.job !== "none") {
+            partner!.job = person.job;
             addMemory(seed, partner!.id, year, partner!.mind, `was apprenticed to the family trade of ${person.job} in ${year}`, "hope", person.id);
           }
           break;
@@ -2276,7 +2825,7 @@ export async function simulate(
         partnerId: descriptor.partnerId,
         year,
         kind: descriptor.kind,
-        question: questionText(descriptor.kind, partner?.name, config.town.name, descriptor.opportunityJob, descriptor.breakdownKind, descriptor.townEventType),
+        question: questionText("en", descriptor.kind, partner?.name, config.town.name, descriptor.opportunityJob, descriptor.breakdownKind, descriptor.townEventType),
         options,
         jevRaw,
         prior,
@@ -2372,7 +2921,7 @@ function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p
       personId: descriptor.personId,
       year,
       kind: descriptor.kind,
-      question: questionText(descriptor.kind, undefined, townName),
+      question: questionText("en", descriptor.kind, undefined, townName),
       options,
       final: { [forced.optionId]: 1 },
       noise: {},
@@ -2392,7 +2941,7 @@ function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p
     personId: descriptor.personId,
     year,
     kind: descriptor.kind,
-    question: questionText(descriptor.kind, undefined, townName),
+    question: questionText("en", descriptor.kind, undefined, townName),
     options,
     prior: final,
     final,
@@ -2406,10 +2955,19 @@ function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p
   };
 }
 
+/**
+ * Decision 057: replaces the old universal age-6 `school` event. `literate` is decided once, at
+ * birth (`worldgen.ts#isLiterate`, keyed by class and sex per research.md's literacy table) — this
+ * only decides WHEN the (already-determined) literate ones are taught, at age 7, and only pushes an
+ * event for them. Everyone else simply never gets a `school` event, which is the period-faithful
+ * default (research.md: labourers ~5-10% literate, ~90% of women illiterate overall).
+ */
 function school(events: Event[], people: Record<string, Person>, personId: string, year: number): void {
   const person = people[personId];
   if (!person) return;
-  if (ageInYear(person.birthYear, year) === 6) pushEvent(events, year, "school", [personId], {}, []);
+  if (ageInYear(person.birthYear, year) === 7 && person.literate) {
+    pushEvent(events, year, "school", [personId], { socialClass: person.socialClass ?? "labourer" }, []);
+  }
 }
 
 /** Picks a first name not already in use by any of `existingNames` with this exact full name — see decision 019 (duplicate names). Falls back to an epithet if the whole pool for this sex is exhausted (small towns won't hit this, a very large one might). */
@@ -2434,9 +2992,15 @@ function spawnImmigrant(seed: string, year: number, people: Readonly<Record<stri
   const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
   const name = `${first} ${surname}`;
   const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
-  const job = pickJob(keyedRng(seed, newId, year, "job"));
+  // Decision 049: an immigrant is assigned one of the five "common" classes (not clergy/gentry,
+  // which are structural, one-per-village roles decided at worldgen — see `worldgen.ts`); no
+  // sourced figure exists for immigrant class distribution specifically, so this reuses the same
+  // founder-class weights as a documented, reasonable default.
+  const socialClass = pickCommonClass(keyedRng(seed, newId, year, "social-class"));
+  const job = pickJobForClass(socialClass, keyedRng(seed, newId, year, "job"));
+  const literate = isLiterate(seed, newId, birthYear, sex, socialClass);
   const mind = createMind(seed, newId, birthYear, []);
-  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind };
+  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, socialClass, literate };
 }
 
 /** A lightweight newcomer met in the protagonist's away catalog (decision 040) — deterministic and content-derived (`away-<year>`), same shape as `spawnImmigrant`, tagged `away: true` so it never joins the home village's own pools. */
@@ -2452,9 +3016,11 @@ function spawnAwayPerson(seed: string, year: number, people: Readonly<Record<str
   const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
   const name = `${first} ${surname}`;
   const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
-  const job = pickJob(keyedRng(seed, newId, year, "job"));
+  const socialClass = pickCommonClass(keyedRng(seed, newId, year, "social-class"));
+  const job = pickJobForClass(socialClass, keyedRng(seed, newId, year, "job"));
+  const literate = isLiterate(seed, newId, birthYear, sex, socialClass);
   const mind = createMind(seed, newId, birthYear, []);
-  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, away: true };
+  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, away: true, socialClass, literate };
 }
 
 function spawnChild(seed: string, year: number, mother: Person, father: Person, people: Readonly<Record<string, Person>>): Person {
@@ -2476,7 +3042,12 @@ function spawnChild(seed: string, year: number, mother: Person, father: Person, 
   const first = uniqueFirstName(existingNames, sex, Math.floor(nameIdxRng() * 20), surname);
   const name = `${first} ${surname}`;
   const mind = createMind(seed, childId, year, [mother.mind, father.mind]);
-  return { id: childId, name, sex, birthYear: year, traits, job: "none", motherId: mother.id, fatherId: father.id, founder: false, mind };
+  // Decision 056: inherits the father's class (mother's, if the father's is somehow unknown — a
+  // hand-built `Person` fixture without `socialClass` set, since a real simulated father always has
+  // one). Literacy (decision 057) is then drawn fresh for the child, at birth, by their own class/sex.
+  const socialClass = father.socialClass ?? mother.socialClass ?? "labourer";
+  const literate = isLiterate(seed, childId, year, sex, socialClass);
+  return { id: childId, name, sex, birthYear: year, traits, job: "none", motherId: mother.id, fatherId: father.id, founder: false, mind, socialClass, literate };
 }
 
-export { dreamGoalSatisfiedBy, feudPairHistory, gatherCandidatesForYear };
+export { dreamGoalSatisfiedBy, eligibleForAnotherChild, feudPairHistory, gatherCandidatesForYear, townEventMortalityMultiplier };

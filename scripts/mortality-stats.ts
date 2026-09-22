@@ -11,7 +11,7 @@ import { generateWorld } from "../src/domain/worldgen";
 import { deleteLife, registerLife } from "../src/server/life-store";
 import { buildLifeChronicle } from "../src/server/life-chronicle";
 
-const START_YEAR = 1500;
+const START_YEAR = 1498;
 const MAX_LIFESPAN_YEARS = 100;
 
 interface LifeStats {

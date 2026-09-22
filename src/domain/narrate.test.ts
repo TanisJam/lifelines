@@ -160,15 +160,20 @@ describe("round 8 grammar fixes (decision 033)", () => {
     // vowel-leading job in JOB_POOL, but the helper must be correct for the whole set, not just
     // that one case.
     const expected: Record<string, "a" | "an"> = {
+      labourer: "a",
+      shepherd: "a",
       farmer: "a",
       blacksmith: "a",
+      carpenter: "a",
+      weaver: "a",
+      miller: "a",
+      baker: "a",
+      tanner: "a",
       healer: "a",
       merchant: "a",
-      scholar: "a",
-      guard: "a",
-      fisher: "a",
       innkeeper: "an",
-      weaver: "a",
+      priest: "a",
+      landholder: "a",
     };
     for (const [job, want] of Object.entries(expected)) {
       const withArticleText = article(job);
@@ -205,5 +210,117 @@ describe("round 8 grammar fixes (decision 033)", () => {
       expect(prose).toContain(`${goalPronoun} sights`);
       expect(prose).not.toContain("their sights");
     }
+  });
+});
+
+describe("decision 054: widowhood narration", () => {
+  it("narrateEvent renders a 'widowed' event with the survivor as the subject, distinguishing widow/widower by sex, and names the kept trade when flagged", () => {
+    const widow = makePerson("p001", { sex: "f" });
+    const husband = makePerson("p002", { sex: "m" });
+    const people = { p001: widow, p002: husband };
+    const plain: Event = { id: "e1", year: 1540, kind: "widowed", actors: ["p001", "p002"], payload: {}, causes: [] };
+    const plainProse = narrateEvent(plain, people, "seed-1");
+    expect(plainProse).toContain(widow.name);
+    expect(plainProse).toContain(husband.name);
+    expect(plainProse).not.toContain("kept the workshop");
+
+    const keptTrade: Event = { id: "e2", year: 1540, kind: "widowed", actors: ["p001", "p002"], payload: { keptTrade: true }, causes: [] };
+    expect(narrateEvent(keptTrade, people, "seed-1")).toContain("kept the workshop going alone");
+
+    // A widower (survivor is male) reads "widower", not "widow" — exercised across several seeds
+    // since only one of `pick`'s two phrasing variants actually contains the noun.
+    const widower = makePerson("p003", { sex: "m" });
+    const wife = makePerson("p004", { sex: "f" });
+    const widowerEvent: Event = { id: "e3", year: 1540, kind: "widowed", actors: ["p003", "p004"], payload: {}, causes: [] };
+    let sawWidower = false;
+    for (const seed of ["seed-1", "seed-2", "seed-3", "seed-4"]) {
+      const prose = narrateEvent(widowerEvent, { p003: widower, p004: wife }, seed);
+      expect(prose).not.toContain("a widow when");
+      if (prose.includes("widower")) sawWidower = true;
+    }
+    expect(sawWidower).toBe(true);
+  });
+
+  it("a death's title/prose still credits the surviving spouse's relation ('Husband X dies') once `spouseId` has already been cleared by the death itself — decision 054's own fix, since the widowhood bug fix would otherwise silently break this", () => {
+    const wife = makePerson("p001", { sex: "f" }); // spouseId already cleared, as `simulate.ts` now does
+    const husband = makePerson("p002", { sex: "m", deathYear: 1550 });
+    const people = { p001: wife, p002: husband };
+    const deathEvent: Event = { id: "e1", year: 1550, kind: "death", actors: ["p002"], payload: { age: 74 }, causes: [] };
+    const widowedEvent: Event = { id: "e2", year: 1550, kind: "widowed", actors: ["p001", "p002"], payload: {}, causes: [deathEvent.id] };
+    const allEvents = [deathEvent, widowedEvent];
+
+    const rendered = narrateEventForViewer(deathEvent, "p001", people, "seed-1", "town", allEvents);
+    expect(rendered.title).toBe("Husband Person p002 dies");
+    expect(rendered.prose).toContain("husband");
+    expect(rendered.prose).toContain(husband.name);
+  });
+});
+
+describe("decision 059: Spanish narration", () => {
+  it("renders Spanish prose for a marriage, deterministically, distinct from the English prose", () => {
+    const bride = makePerson("p001", { sex: "f" });
+    const groom = makePerson("p002", { sex: "m" });
+    const people = { p001: bride, p002: groom };
+    const event: Event = { id: "e1", year: 1520, kind: "marriage", actors: ["p001", "p002"], payload: {}, causes: [] };
+
+    const es = narrateEvent(event, people, "seed-1", "town", [], "es");
+    const en = narrateEvent(event, people, "seed-1", "town", [], "en");
+    expect(es).not.toBe(en);
+    expect(es).toMatch(/se casó con|contrajeron matrimonio/);
+    expect(es).toContain(bride.name);
+    expect(es).toContain(groom.name);
+    // Determinism: the same (seed, event) always renders the exact same Spanish string.
+    expect(narrateEvent(event, people, "seed-1", "town", [], "es")).toBe(es);
+  });
+
+  it("renders Spanish prose for a birth", () => {
+    const mother = makePerson("p001", { sex: "f" });
+    const father = makePerson("p002", { sex: "m" });
+    const child = makePerson("p003");
+    const people = { p001: mother, p002: father, p003: child };
+    const event: Event = { id: "e1", year: 1520, kind: "birth", actors: ["p003", "p001", "p002"], payload: {}, causes: [] };
+    const es = narrateEvent(event, people, "seed-1", "town", [], "es");
+    expect(es).toMatch(/nació|recibieron/);
+    expect(es).toContain(child.name);
+  });
+
+  it("renders Spanish prose for a death, translating the cause of death", () => {
+    const person = makePerson("p001", { sex: "m" });
+    const event: Event = { id: "e1", year: 1550, kind: "death", actors: ["p001"], payload: { age: 60, cause: "old-age" }, causes: [] };
+    const es = narrateEvent(event, { p001: person }, "seed-1", "town", [], "es");
+    expect(es).toMatch(/murió|fue llevado/);
+    expect(es).toContain("vejez");
+    expect(es).toContain("60");
+  });
+
+  it("renders a Spanish job title, gender-agreed with the person's sex", () => {
+    const woman = makePerson("p001", { sex: "f" });
+    const man = makePerson("p002", { sex: "m" });
+    const eventFor = (id: string): Event => ({ id: `e-${id}`, year: 1520, kind: "job", actors: [id], payload: { job: "baker", forced: true }, causes: [] });
+    const esWoman = narrateEvent(eventFor("p001"), { p001: woman }, "seed-1", "town", [], "es");
+    const esMan = narrateEvent(eventFor("p002"), { p002: man }, "seed-1", "town", [], "es");
+    expect(esWoman).toContain("panadera");
+    expect(esMan).toContain("panadero");
+  });
+
+  it("renders Spanish prose for a town event", () => {
+    const event: Event = { id: "e1", year: 1536, kind: "town", actors: [], payload: { eventType: "plague" }, causes: [] };
+    const es = narrateEvent(event, {}, "seed-1", "Ravenford", [], "es");
+    expect(es).toBe("Una peste asoló el pueblo.");
+  });
+
+  it("titleFor (via narrateEventForViewer) renders a Spanish title", () => {
+    const woman = makePerson("p001", { sex: "f" });
+    const event: Event = { id: "e1", year: 1520, kind: "birth", actors: ["p001"], payload: {}, causes: [] };
+    const { title } = narrateEventForViewer(event, "p001", { p001: woman }, "seed-1", "town", [], "es");
+    expect(title).toBe("Nace");
+  });
+
+  it("lifeSummary renders in Spanish", () => {
+    const deceased = makePerson("p001", { birthYear: 1490, deathYear: 1550, job: "healer", sex: "f" });
+    const summary = lifeSummary(deceased, { p001: deceased }, [], "Ravenford", "es");
+    expect(summary).toContain("murió a los 60");
+    expect(summary).toContain("Ravenford");
+    expect(summary).toContain("curandera");
   });
 });

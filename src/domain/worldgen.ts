@@ -3,7 +3,7 @@ import { makeEventId } from "./events";
 import { createMind, VALUES, type ValueName } from "./mind";
 import { keyedRng, sampleGumbelMax } from "./rng";
 import { pickUniqueName } from "./names";
-import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type Job, type JsonValue, type Person, type Sex, type Trait, type WorldConfig } from "./types";
+import { JOB_POOL, TRAIT_POOL, type Event, type EventKind, type Job, type JsonValue, type Person, type Sex, type SocialClass, type Trait, type WorldConfig } from "./types";
 
 function pushEvent(events: Event[], year: number, kind: EventKind, actors: readonly string[], payload: Record<string, JsonValue>): Event {
   const event: Event = { id: makeEventId(events, year, kind, actors), year, kind, actors, payload, causes: [] };
@@ -34,7 +34,7 @@ function estimateMarriageYear(seed: string, mother: Person, father: Person, chil
 /**
  * "Let fate decide" (round 10, decision 041): rather than a code-side keyed
  * coin flip blind to the name, asks the DecisionMaker (kind `SEX1`) whether
- * a name like this, in a medieval European village, is more likely a girl or
+ * a name like this, in an English village around 1500, is more likely a girl or
  * a boy — then samples that distribution with the same keyed Gumbel-max
  * helper every other decision uses, keyed by (seed, "protagonist",
  * startYear, "SEX1") so a re-run with the same seed and name is
@@ -51,7 +51,7 @@ export async function resolveProtagonistSex(decisionMaker: DecisionMaker, seed: 
     kind: "SEX1",
     personId: "protagonist",
     year: startYear,
-    state: { name, setting: "a medieval European village, around 1500" },
+    state: { name, setting: "an English village, around 1500" },
     options: ["f", "m"],
   };
   const distribution = await decisionMaker.decide(question);
@@ -77,11 +77,15 @@ export interface GenerateWorldOptions {
   readonly protagonist?: { readonly name: string; readonly sex: Sex | "random" };
 }
 
-const DEFAULT_START_YEAR = 1500;
-const DEFAULT_END_YEAR = 1575; // 75 years, within the 60-80 spec range
+// Round 13 (decision 048): anchored to England's own well-measured window, per research.md's
+// "Life by social class, 1498-1558" ("England is the only region with continuous quantitative data
+// for the window"). 1498-1558 is 60 years, at the low end of the 60-80 spec range.
+const DEFAULT_START_YEAR = 1498;
+const DEFAULT_END_YEAR = 1558;
 const DEFAULT_FOUNDER_COUNT = 18; // adult founders; +children brings the initial population to ~20-24
 
-const TOWN_NAME_ADJECTIVES = ["Millbrook", "Ashford", "Wren's Hollow", "Stonebridge", "Fenmoor", "Oakhaven", "Raven's Reach", "Thistlewick"] as const;
+/** Plausible early Tudor English village names — invented but period-flavored, not fantasy-style. */
+const TOWN_NAME_ADJECTIVES = ["Ashby", "Thornbury", "Coldharbour", "Wickham", "Langley", "Middleton", "Stoke Parva", "Netherfield"] as const;
 
 export function pickTraits(rng: () => number, count: number): Trait[] {
   const pool = [...TRAIT_POOL];
@@ -96,6 +100,88 @@ export function pickTraits(rng: () => number, count: number): Trait[] {
 export function pickJob(rng: () => number): Job {
   const workingJobs = JOB_POOL.filter((j) => j !== "none");
   return workingJobs[Math.floor(rng() * workingJobs.length)]!;
+}
+
+/**
+ * Decision 049: jobs are class-bound. Grounded in research.md's economy synthesis (§2, "Occupations
+ * and inheritance of trade") — labourers had no transmissible trade, husbandmen/yeomen farmed their
+ * holding, artisans covered the village's attested trades (smith, carpenter, weaver, miller, baker,
+ * tanner — plus `healer`, "wise woman"/barber-surgeon flavor, folded in here rather than given its
+ * own class), merchants ran trade/inns, clergy meant the one parish priest, and gentry held land.
+ */
+export const JOB_POOL_BY_CLASS: Readonly<Record<SocialClass, readonly Job[]>> = {
+  labourer: ["labourer", "shepherd"],
+  husbandman: ["farmer"],
+  yeoman: ["farmer"],
+  artisan: ["blacksmith", "carpenter", "weaver", "miller", "baker", "tanner", "healer"],
+  merchant: ["merchant", "innkeeper"],
+  clergy: ["priest"],
+  gentry: ["landholder"],
+};
+
+/** A random job from `socialClass`'s own pool — the class-bound replacement for the old flat `pickJob`. */
+export function pickJobForClass(socialClass: SocialClass, rng: () => number): Job {
+  const pool = JOB_POOL_BY_CLASS[socialClass];
+  return pool[Math.floor(rng() * pool.length)]!;
+}
+
+/**
+ * Founder/immigrant class shares (decision 049). `labourer` (Wrightson, ~25% of rural population)
+ * and `husbandman` (40-50% inferred midpoint, research.md §1 "Social structure...Synthesis") are
+ * sourced; `yeoman`/`artisan`/`merchant` shares are TUNABLE DESIGN DEFAULTS, not sourced figures —
+ * no village-level census for these three was located in the research pass. `clergy` (exactly one
+ * parish priest) and `gentry` (1-2 households) are assigned structurally, not by this weighted draw
+ * — see `assignFounderClasses`.
+ */
+const COMMON_CLASS_WEIGHTS: readonly (readonly [SocialClass, number])[] = [
+  ["labourer", 0.25],
+  ["husbandman", 0.45],
+  ["yeoman", 0.1],
+  ["artisan", 0.12],
+  ["merchant", 0.08],
+];
+
+/** Draws one of the five "common" classes (everything but clergy/gentry) from `COMMON_CLASS_WEIGHTS`. */
+export function pickCommonClass(rng: () => number): SocialClass {
+  const draw = rng();
+  let cumulative = 0;
+  for (const [socialClass, weight] of COMMON_CLASS_WEIGHTS) {
+    cumulative += weight;
+    if (draw < cumulative) return socialClass;
+  }
+  return COMMON_CLASS_WEIGHTS[COMMON_CLASS_WEIGHTS.length - 1]![0];
+}
+
+/**
+ * Decision 057: signature-literacy rates by class and sex, order-of-magnitude design defaults
+ * interpolated from research.md's "Literacy by class and sex" table (mostly later-16th-/17th-c.
+ * Cressy-derived signature evidence, explicitly flagged there as an interpolation for exactly
+ * 1498-1558). Female rates are lower across the board (women's illiteracy ~90% overall per Cressy),
+ * with gentry/merchant daughters higher than the female average, per the same table.
+ */
+const LITERACY_RATE_MALE: Readonly<Record<SocialClass, number>> = {
+  labourer: 0.07, // ~5-10%; day-labourer illiteracy stayed >90% even by 1600
+  husbandman: 0.15, // ~10-20%, UNVERIFIED per research.md, Brewminate-derived
+  yeoman: 0.35, // "moderate, rising toward mid-century" — between artisan and gentry
+  artisan: 0.35, // village artisans "one-half to three-quarters unable to sign" -> ~25-50%
+  merchant: 0.9, // among the "almost totally literate" groups by 1600
+  clergy: 0.98, // Latin literacy required for office
+  gentry: 0.85, // near-universal by 1600; ~30% illiterate among northern gentry as late as 1530
+};
+const LITERACY_RATE_FEMALE: Readonly<Record<SocialClass, number>> = {
+  labourer: 0.02,
+  husbandman: 0.04,
+  yeoman: 0.08,
+  artisan: 0.08,
+  merchant: 0.25,
+  clergy: 0.02, // clergy is structurally male in this window; kept only as a safe fallback
+  gentry: 0.3,
+};
+
+/** Decided once, deterministically, at birth (decision 057) — keyed by `birthYear` so it's stable across the person's whole life. */
+export function isLiterate(seed: string, personId: string, birthYear: number, sex: Sex, socialClass: SocialClass): boolean {
+  const rate = sex === "m" ? LITERACY_RATE_MALE[socialClass] : LITERACY_RATE_FEMALE[socialClass];
+  return keyedRng(seed, personId, birthYear, "literacy")() < rate;
 }
 
 /**
@@ -184,7 +270,7 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
     return id;
   }
 
-  function makeAdult(sex: Sex, ageMin: number, ageMax: number, familyIndex: number, founder = true): Person {
+  function makeAdult(sex: Sex, ageMin: number, ageMax: number, familyIndex: number, socialClass: SocialClass, founder = true): Person {
     const id = nextId();
     const ageRng = keyedRng(seed, id, startYear, "age");
     const age = ageMin + Math.floor(ageRng() * (ageMax - ageMin + 1));
@@ -195,10 +281,11 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
     const existingNames = new Set(Object.values(people).map((p) => p.name));
     const name = pickUniqueName(existingNames, sex, nameIndex, surnameIndex);
     const traits = pickTraits(keyedRng(seed, id, startYear, "traits"), 3);
-    const job = age >= 16 ? pickJob(keyedRng(seed, id, startYear, "job")) : "none";
+    const job = age >= 16 ? pickJobForClass(socialClass, keyedRng(seed, id, startYear, "job")) : "none";
+    const literate = isLiterate(seed, id, birthYear, sex, socialClass);
     const bias = familyValueBias(seed, familyIndex, startYear);
     const mind = createMind(seed, id, birthYear, [], bias);
-    const person: Person = { id, name, sex, birthYear, traits, job, founder, mind };
+    const person: Person = { id, name, sex, birthYear, traits, job, founder, mind, socialClass, literate };
     people[id] = person;
     return person;
   }
@@ -214,15 +301,42 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
     const existingNames = new Set(Object.values(people).map((p) => p.name));
     const name = pickUniqueName(existingNames, sex, nameIndex, surnameIndex);
     const traits = pickTraits(keyedRng(seed, id, startYear, "traits"), 3);
-    const job = age >= 16 ? pickJob(keyedRng(seed, id, startYear, "job")) : "none";
+    // Decision 056: a child inherits its class from the father (mother if the father is unknown —
+    // not reachable here, since a founder child always has both parents, but kept symmetric with
+    // `spawnChild` in simulate.ts). Founder children are always under 16 (see `maxChildAge` below),
+    // so `job` stays "none" regardless of class — the class-bound pool only matters once A3/AP1 fire.
+    const socialClass = father.socialClass ?? mother.socialClass ?? "labourer";
+    const job = age >= 16 ? pickJobForClass(socialClass, keyedRng(seed, id, startYear, "job")) : "none";
+    const literate = isLiterate(seed, id, birthYear, sex, socialClass);
     const mind = createMind(seed, id, birthYear, [mother.mind, father.mind]);
-    const person: Person = { id, name, sex, birthYear, traits, job, motherId: mother.id, fatherId: father.id, founder: false, mind };
+    const person: Person = { id, name, sex, birthYear, traits, job, motherId: mother.id, fatherId: father.id, founder: false, mind, socialClass, literate };
     people[id] = person;
     return person;
   }
 
   const shape = familyShape(founderCount);
   let familyIndex = 0;
+
+  // Decision 049: structural roles decided BEFORE the founder loops below, so `makeAdult` can draw
+  // a class-bound job at creation time instead of a class being bolted on afterward.
+  //  - Clergy: exactly one parish priest per village (research.md, "roughly one parish priest per
+  //    village/parish — structural, not a population %"). Priests were male and celibate, so this
+  //    is drawn from the UNATTACHED SINGLES only, never a couple — specifically the first male
+  //    single (`s === 1`; singles alternate f/m starting with f), so it never collides with a
+  //    married founder. Skipped for a tiny `singleCount` (< 2) as a documented edge case.
+  //  - Gentry: 1-2 households (research.md: "gentry under 5%", "1-2 gentry households" as a
+  //    structural default), drawn from the COUPLES only (a gentry "household" implies an estate a
+  //    family holds, not a lone adult) via a keyed rejection sample.
+  const clergySingleIndex = shape.singleCount > 1 ? 1 : undefined;
+  const gentryCountRng = keyedRng(seed, "world", startYear, "gentry-count");
+  const gentryCount = Math.min(shape.coupleCount, 1 + (gentryCountRng() < 0.5 ? 0 : 1));
+  const gentryCoupleIndices = new Set<number>();
+  if (shape.coupleCount > 0) {
+    const gentryPickRng = keyedRng(seed, "world", startYear, "gentry-pick");
+    while (gentryCoupleIndices.size < gentryCount) {
+      gentryCoupleIndices.add(Math.floor(gentryPickRng() * shape.coupleCount));
+    }
+  }
 
   // Founder couples: age brackets shared by both partners (within a few years of
   // each other), each with zero to three children already growing up.
@@ -231,9 +345,11 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
     const bracket = bracketRng();
     const [ageMin, ageMax] = bracket < 0.35 ? [22, 32] : bracket < 0.75 ? [30, 45] : [42, 60];
 
+    const coupleClass: SocialClass = gentryCoupleIndices.has(c) ? "gentry" : pickCommonClass(keyedRng(seed, "world", startYear, `family-class-${familyIndex}`));
+
     const wifeFirst: Sex = c % 2 === 0 ? "f" : "m";
-    const first = makeAdult(wifeFirst, ageMin, ageMax, familyIndex);
-    const second = makeAdult(wifeFirst === "f" ? "m" : "f", ageMin, ageMax, familyIndex);
+    const first = makeAdult(wifeFirst, ageMin, ageMax, familyIndex, coupleClass);
+    const second = makeAdult(wifeFirst === "f" ? "m" : "f", ageMin, ageMax, familyIndex, coupleClass);
     first.spouseId = second.id;
     second.spouseId = first.id;
     const mother = first.sex === "f" ? first : second;
@@ -256,7 +372,23 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
       const sexRng = keyedRng(seed, "protagonist", startYear, "sex");
       const sex: Sex = options.protagonist.sex === "random" ? (sexRng() < 0.5 ? "f" : "m") : options.protagonist.sex;
       const mind = createMind(seed, "protagonist", startYear, [mother.mind, father.mind]);
-      const protagonist: Person = { id: "protagonist", name: options.protagonist.name, sex, birthYear: startYear, traits: [], job: "none", motherId: mother.id, fatherId: father.id, founder: false, mind };
+      // Decision 056: inherits the father's class (mother's, if the father were unknown).
+      const protagonistClass = father.socialClass ?? mother.socialClass ?? "labourer";
+      const literate = isLiterate(seed, "protagonist", startYear, sex, protagonistClass);
+      const protagonist: Person = {
+        id: "protagonist",
+        name: options.protagonist.name,
+        sex,
+        birthYear: startYear,
+        traits: [],
+        job: "none",
+        motherId: mother.id,
+        fatherId: father.id,
+        founder: false,
+        mind,
+        socialClass: protagonistClass,
+        literate,
+      };
       people["protagonist"] = protagonist;
       children.push(protagonist);
     }
@@ -279,14 +411,16 @@ export function generateWorld(options: GenerateWorldOptions): { config: WorldCon
   // Unattached singles: keeps the romance pool alive from year one, spread young-to-mid adult.
   for (let s = 0; s < shape.singleCount; s++) {
     const sex: Sex = s % 2 === 0 ? "f" : "m";
-    makeAdult(sex, 18, 38, familyIndex);
+    const socialClass: SocialClass = s === clergySingleIndex ? "clergy" : pickCommonClass(keyedRng(seed, "world", startYear, `family-class-${familyIndex}`));
+    makeAdult(sex, 18, 38, familyIndex, socialClass);
     familyIndex += 1;
   }
 
   // Elders: town texture, occasional illness/death flavor, sometimes unattached.
   for (let e = 0; e < shape.elderCount; e++) {
     const sex: Sex = e % 2 === 0 ? "m" : "f";
-    makeAdult(sex, 55, 72, familyIndex);
+    const socialClass = pickCommonClass(keyedRng(seed, "world", startYear, `family-class-${familyIndex}`));
+    makeAdult(sex, 55, 72, familyIndex, socialClass);
     familyIndex += 1;
   }
 

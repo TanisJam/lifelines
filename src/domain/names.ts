@@ -1,19 +1,26 @@
-/** Small fixed name pools. Deterministic index selection, not free text generation. */
+/**
+ * Small fixed name pools. Deterministic index selection, not free text generation.
+ *
+ * Round 13 (decision 048): replaced with period-attested English given names and surnames for
+ * early Tudor England, c. 1498-1558 — the setting the engine is now anchored to (research.md,
+ * "Life by social class, 1498-1558"). Pool sizes are unchanged (20 entries each) so name-collision
+ * odds don't increase relative to the old fantasy pools.
+ */
 
 export const FEMALE_NAMES = [
-  "Aria", "Briala", "Cressida", "Dana", "Elowen", "Fira", "Greta", "Hana", "Ilva", "Junia",
-  "Kira", "Liora", "Mira", "Nella", "Orla", "Petra", "Quilla", "Rosalind", "Sable", "Talia",
+  "Agnes", "Joan", "Alice", "Margaret", "Elizabeth", "Isabel", "Katherine", "Anne", "Emma", "Cecily",
+  "Margery", "Christian", "Beatrice", "Denise", "Edith", "Eleanor", "Joanna", "Mabel", "Rose", "Sibyl",
 ] as const;
 
 export const MALE_NAMES = [
-  "Aldric", "Branwell", "Cedric", "Dorian", "Elric", "Fenwick", "Garrick", "Hollis", "Ivo", "Jonas",
-  "Kaelan", "Loran", "Merric", "Nolan", "Osric", "Perrin", "Quill", "Roran", "Silas", "Torin",
+  "John", "Thomas", "William", "Richard", "Robert", "Henry", "Nicholas", "Edward", "Walter", "Roger",
+  "Simon", "Hugh", "Peter", "Stephen", "Adam", "Gilbert", "Ralph", "Geoffrey", "Edmund", "Alexander",
 ] as const;
 
 export const SURNAMES = [
-  "Ashford", "Brightwater", "Cinderfell", "Duskwood", "Embermoor", "Fairwind", "Greyhollow", "Hallowmere",
-  "Ironvale", "Juniperwick", "Kestrelholt", "Larkspire", "Mossgate", "Nightwood", "Oakhaven", "Ravensworth",
-  "Stonebrook", "Thistledown", "Underhill", "Whitmoor",
+  "Smith", "Miller", "Carter", "Taylor", "Baker", "Webb", "Cooke", "Fletcher",
+  "Ward", "Hayward", "Thatcher", "Shepherd", "Mason", "Tanner", "Turner", "Wright",
+  "Palmer", "Fuller", "Dyer", "Coleman",
 ] as const;
 
 export function pickName(sex: "f" | "m", nameIndex: number, surnameIndex: number): string {

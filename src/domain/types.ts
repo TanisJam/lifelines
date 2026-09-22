@@ -25,8 +25,24 @@ export const TRAIT_POOL = [
 ] as const;
 export type Trait = (typeof TRAIT_POOL)[number];
 
-export const JOB_POOL = ["farmer", "blacksmith", "healer", "merchant", "scholar", "guard", "fisher", "innkeeper", "weaver", "none"] as const;
+/**
+ * Round 13 (decisions 048/049/056/057): jobs are class-bound (see
+ * `worldgen.ts#JOB_POOL_BY_CLASS`) and period-appropriate for early Tudor England — `scholar` and
+ * `guard` are removed (soldiering happens via the existing `levy` situation, not a standing job),
+ * and the old flat, uniformly-random pool is replaced with trades actually attested for a c.
+ * 1498-1558 English village (research.md, "Social structure, work and material life" §2).
+ */
+export const JOB_POOL = ["labourer", "shepherd", "farmer", "blacksmith", "carpenter", "weaver", "miller", "baker", "tanner", "healer", "merchant", "innkeeper", "priest", "landholder", "none"] as const;
 export type Job = (typeof JOB_POOL)[number];
+
+/**
+ * Social class / estate (decision 049), anchored to research.md's "Life by social class,
+ * 1498–1558" synthesis. `labourer` = cottager/landless wage labourer, `husbandman` = customary
+ * tenant/copyholder, `yeoman` = wealthier freeholder, `clergy` = the parish priest (celibate,
+ * `canMarry` in `simulate.ts` returns false for this class), `gentry` = nobility/gentry households.
+ */
+export const SOCIAL_CLASS_POOL = ["labourer", "husbandman", "yeoman", "artisan", "merchant", "clergy", "gentry"] as const;
+export type SocialClass = (typeof SOCIAL_CLASS_POOL)[number];
 
 export interface Person {
   readonly id: string;
@@ -43,6 +59,19 @@ export interface Person {
   readonly fatherId?: string;
   /** True for the initial cast generated at world creation. */
   readonly founder: boolean;
+  /**
+   * Decision 049: inherited from the father at birth (mother if father unknown — decision 056).
+   * Optional so a hand-built `Person` fixture (tests, or data from before this field existed) stays
+   * valid; every code path that reads it falls back to `"labourer"` (the largest single class) via
+   * `person.socialClass ?? "labourer"` rather than assuming it's always present.
+   */
+  socialClass?: SocialClass;
+  /**
+   * Decision 057: whether this person can read, decided deterministically at birth by class and
+   * sex (research.md, "Literacy by class and sex"). Optional for the same backward-compat reason as
+   * `socialClass`; absent is treated as `false` everywhere it's read.
+   */
+  literate?: boolean;
   /**
    * True only for a lightweight newcomer met in the place the protagonist settled after leaving
    * home (decision 040) — a suitor, spouse, friend, or child born away. Excluded from the general
@@ -73,6 +102,13 @@ export const EVENT_KINDS = [
   "reflection",
   "levy",
   "vignette",
+  /**
+   * Decision 054: fired for the surviving spouse the same year their partner dies — actors
+   * `[survivorId, deceasedId]`. Previously `spouseId` was never cleared on death at all (a bug:
+   * widows/widowers could never remarry); this event is the durable record of the moment that
+   * changed, so a chronicle can say "was widowed" instead of the marriage just silently vanishing.
+   */
+  "widowed",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
