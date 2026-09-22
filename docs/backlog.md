@@ -9,6 +9,8 @@ Open items and product calls, newest first. Move an item to `decisions.md` once 
 
 ## To review
 
+- [ ] **People marry about 15 years too late.** The mean age at first marriage is 40.2 for women and 44.0 for men over 60 seeds, against about 25 and 27 in research.md. The class floors from 053 hold; the delay comes from the person-year event lottery, where marriage competes with every other event each year. Fixing it means changing how marriage is drawn, not tuning a number. It pushes fertility, widowhood and inheritance off history (decision 053).
+
 - [ ] **Rewrite ghost annotations come back empty.** The "In the original life, …" matching is too narrow when the butterfly effect shifts later events by a year or more (decision 039).
 - [ ] **SSE ticks replay the finished life** grouped by year, instead of narrating the simulation as it runs (decision 036).
 
