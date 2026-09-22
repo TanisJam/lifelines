@@ -3,10 +3,16 @@
  * `send(event, data)` call inside `handler` writes one SSE frame; the
  * stream closes when `handler` resolves, or after emitting an `error`
  * frame if it throws.
+ *
+ * Incremental-simulation capability: `handler` also receives an `AbortSignal` that fires when the
+ * underlying `ReadableStream` is cancelled — the standard Web Streams signal for "the client
+ * disconnected" — so a live-draining caller (`drainSimulation`) can stop simulating and skip
+ * persisting a branch nobody will read.
  */
-export function sseResponse(handler: (send: (event: string, data: unknown) => void) => Promise<void>): Response {
+export function sseResponse(handler: (send: (event: string, data: unknown) => void, signal: AbortSignal) => Promise<void>): Response {
   const encoder = new TextEncoder();
   let closed = false;
+  const abortController = new AbortController();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -19,9 +25,9 @@ export function sseResponse(handler: (send: (event: string, data: unknown) => vo
         }
       };
       try {
-        await handler(send);
+        await handler(send, abortController.signal);
       } catch (error) {
-        send("error", { message: error instanceof Error ? error.message : String(error) });
+        if (!abortController.signal.aborted) send("error", { message: error instanceof Error ? error.message : String(error) });
       } finally {
         closed = true;
         try {
@@ -30,6 +36,10 @@ export function sseResponse(handler: (send: (event: string, data: unknown) => vo
           // Already closed.
         }
       }
+    },
+    cancel() {
+      // The client disconnected before `handler` finished.
+      abortController.abort();
     },
   });
 
