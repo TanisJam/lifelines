@@ -676,6 +676,42 @@ describe("decision 054: widowhood and remarriage", () => {
   });
 });
 
+describe("life-state invariant: lifeState.marital stays consistent with spouseId", () => {
+  it("every alive person's lifeState.marital status agrees with whether spouseId is set, across several full-length village runs", async () => {
+    let peopleChecked = 0;
+    for (const seed of ["lifestate-invariant-1", "lifestate-invariant-2", "lifestate-invariant-3"]) {
+      const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 24 });
+      const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+      for (const person of Object.values(report.result.people)) {
+        if (person.deathYear !== undefined) continue;
+        peopleChecked++;
+        const isMarriedInLifeState = person.lifeState?.marital.status === "married";
+        expect(isMarriedInLifeState).toBe(person.spouseId !== undefined);
+        if (isMarriedInLifeState) expect(person.lifeState!.marital.partnerId).toBe(person.spouseId);
+      }
+    }
+    expect(peopleChecked).toBeGreaterThan(0);
+  });
+
+  it("a widowed survivor's lifeState reads widowed, not married, immediately after their spouse's death", async () => {
+    const { config, people } = generateWorld({ seed: "lifestate-widowed-check", startYear: 1498, endYear: 1558, founderCount: 24 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    const widowedEvents = report.result.events.filter((e) => e.kind === "widowed");
+    expect(widowedEvents.length).toBeGreaterThan(0);
+    for (const widowed of widowedEvents) {
+      const survivorId = widowed.actors[0]!;
+      const survivor = report.result.people[survivorId]!;
+      // A later remarriage (a subsequent "married" lifeState) is legitimate and expected; only
+      // assert "widowed, not still married to the deceased" for a survivor who never remarried.
+      // Once the survivor has since died themselves, `resolveWidowhood` no longer touches their OWN
+      // lifeState (only the NEW survivor's) — same as every other bookkeeping field (job,
+      // socialClass) staying frozen at death, so this assertion is scoped to the living, exactly
+      // like the general invariant test above.
+      if (survivor.deathYear === undefined && survivor.spouseId === undefined) expect(survivor.lifeState?.marital.status).toBe("widowed");
+    }
+  });
+});
+
 describe("decision 058: scheduled period events", () => {
   it("the ten dated period events fire at exactly their historical years, every full-length run, regardless of seed — never rolled, never missing", async () => {
     const expected: readonly [number, string][] = [

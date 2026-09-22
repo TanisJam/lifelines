@@ -3,7 +3,7 @@ import { mapWithConcurrency } from "./concurrency";
 import { candidateMatchesSubject, decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
-import { advanceSlot, EMPTY_SLOTS, ensureLifeState } from "./life-state";
+import { advanceSlot, applyLifeTransition, EMPTY_SLOTS, ensureLifeState } from "./life-state";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
@@ -298,8 +298,11 @@ function resolveWidowhood(
   if (!deceased.spouseId) return [];
   const survivor = people[deceased.spouseId];
   if (!survivor || survivor.deathYear !== undefined) return [];
+  // Read BEFORE clearing spouseId below — see the marriage-side note in the `A1` case for why.
+  const survivorState = ensureLifeState(survivor, events);
   survivor.spouseId = undefined;
   deceased.spouseId = undefined;
+  survivor.lifeState = applyLifeTransition(survivorState, { axis: "marital", to: "widowed" }, year);
   const keepsTrade = deceasedSocialClass === "artisan" && deceased.job !== "none" && survivor.sex === "f" && survivor.job === "none";
   if (keepsTrade) {
     survivor.job = deceased.job;
@@ -2153,6 +2156,8 @@ export async function* simulateYears(
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "return") {
+          const returning = people[descriptor.personId]!;
+          returning.lifeState = applyLifeTransition(ensureLifeState(returning, events), { axis: "residence", to: "home" }, year);
           const event = pushEvent(events, year, "move", [descriptor.personId], { away: false, returned: true, destination: config.town.name }, []);
           resultingEventIds.push(event.id);
         }
@@ -2427,8 +2432,15 @@ export async function* simulateYears(
           const romanceEvent = events.filter((e) => e.kind === "romance" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
           if (romanceEvent) causes.push(romanceEvent.id);
           if (chosen === "propose" && !person.spouseId && !partner!.spouseId) {
+            // Read each lifeState BEFORE setting spouseId below — `ensureLifeState` derives a
+            // missing lifeState from `spouseId` (see `life-state.ts#deriveLifeState`), so deriving
+            // AFTER the assignment would already see "married" and make the transition a no-op self-loop.
+            const personState = ensureLifeState(person, events);
+            const partnerState = ensureLifeState(partner!, events);
             person.spouseId = partner!.id;
             partner!.spouseId = person.id;
+            person.lifeState = applyLifeTransition(personState, { axis: "marital", to: "married", partnerId: partner!.id }, year);
+            partner!.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "married", partnerId: person.id }, year);
             const event = pushEvent(events, year, "marriage", [person.id, partner!.id], {}, causes);
             resultingEventIds.push(event.id);
             for (const [self, other] of [[person, partner!] as const, [partner!, person] as const]) {
@@ -2458,6 +2470,7 @@ export async function* simulateYears(
           if (chosen === "seize") {
             const job = (descriptor.opportunityJob ?? person.job) as Job;
             person.job = job;
+            person.lifeState = applyLifeTransition(ensureLifeState(person, events), { axis: "vocation", to: "working" }, year);
             const event = pushEvent(events, year, "job", [person.id], { job }, []);
             resultingEventIds.push(event.id);
             pushThought(person.mind, "pride", `becoming ${article(job)} ${job}`, 45, 3, year, "ambition");
@@ -2597,6 +2610,7 @@ export async function* simulateYears(
             // place) instead of the old placeholder "a distant town" — the protagonist keeps
             // living a real life there, not falling off the edge of the story.
             const dest = pickAwayDestination(seed, year);
+            person.lifeState = applyLifeTransition(ensureLifeState(person, events), { axis: "residence", to: "away", place: dest.full }, year);
             const event = pushEvent(events, year, "move", [person.id], { away: true, destination: dest.full }, causes);
             resultingEventIds.push(event.id);
             pushThought(person.mind, "hope", `leaving home for ${dest.name}`, 40, 3, year, "curiosity");
@@ -2840,8 +2854,13 @@ export async function* simulateYears(
           pushThought(person.mind, "betrayal", `discovering ${partner!.name}'s betrayal`, 70, 6, year, "trust", partner!.id);
           addMemory(seed, person.id, year, person.mind, `discovered ${partner!.name}'s betrayal in ${year}`, "betrayal", partner!.id);
           if (chosen === "leave") {
+            // Read BEFORE clearing spouseId below — see the marriage-side note in the `A1` case.
+            const personState = ensureLifeState(person, events);
+            const partnerState = ensureLifeState(partner!, events);
             person.spouseId = undefined;
             partner!.spouseId = undefined;
+            person.lifeState = applyLifeTransition(personState, { axis: "marital", to: "single" }, year);
+            partner!.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "single" }, year);
             const breakupEvent = pushEvent(events, year, "breakup", [person.id, partner!.id], {}, [event.id]);
             resultingEventIds.push(breakupEvent.id);
             updateRelationship(person.mind, partner!.id, partner!.mind.values, -60, "grudge");
