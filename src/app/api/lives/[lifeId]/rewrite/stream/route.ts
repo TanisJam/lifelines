@@ -1,5 +1,5 @@
 import type { ChronicleEntry, LifeStreamEvent, RewriteRequest } from "@/contracts/life";
-import { decisionYear } from "@/domain/decisions";
+import { buildGhostAnnotations } from "@/domain/decision-id";
 import { ForkError, getRestoreSnapshot } from "@/domain/fork";
 import { isLocale } from "@/domain/locale";
 import { simulate } from "@/domain/simulate";
@@ -43,17 +43,10 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
   overrideCounter += 1;
   const override: Override = { id: `lov${overrideCounter}-${Date.now().toString(36)}`, decisionId: body.decisionId, optionId: body.optionId };
 
-  let restoreSnapshot;
-  try {
-    restoreSnapshot = getRestoreSnapshot(baseBranch.snapshots, override);
-  } catch (error) {
-    if (error instanceof ForkError) return errorResponse(error.message);
-    throw error;
-  }
-
-  const validation = validateOverride(override, restoreSnapshot.people, restoreSnapshot.events, life.config.seed, life.config, "protagonist");
-  if (!validation.ok) return errorResponse(validation.error);
-
+  // Decision-identity capability: the target decision's `year` comes from the decision record
+  // itself (found by its own literal id, exactly as rendered to the user), never parsed back out of
+  // `override.decisionId` — see `decision-id.ts`. Found BEFORE restoring a snapshot or validating,
+  // since both of those need this same year.
   const originalDecision = baseBranch.result.decisions.find((d) => d.id === override.decisionId);
   if (!originalDecision) return errorResponse(`No such decision "${override.decisionId}" in this branch.`);
   const chosenOption = originalDecision.options.find((o) => o.id === originalDecision.chosen);
@@ -62,12 +55,23 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
   const originalLabel = chosenOption?.label ?? originalDecision.chosen;
   const newLabel = newOption.label;
   const entryId = originalDecision.resultingEventIds[0] ?? override.decisionId;
+  const forkYear = originalDecision.year;
+
+  let restoreSnapshot;
+  try {
+    restoreSnapshot = getRestoreSnapshot(baseBranch.snapshots, forkYear);
+  } catch (error) {
+    if (error instanceof ForkError) return errorResponse(error.message);
+    throw error;
+  }
+
+  const validation = validateOverride(override, restoreSnapshot.people, restoreSnapshot.events, forkYear, life.config.seed, life.config, "protagonist");
+  if (!validation.ok) return errorResponse(validation.error);
 
   // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work starts.
   const guard = await guardSimulation(request, body);
   if (guard instanceof Response) return guard;
   const { decisionMaker, engineSource } = guard.engine;
-  const forkYear = decisionYear(override.decisionId);
   const newBranchId = newLifeBranchId();
 
   return sseResponse(async (send) => {
@@ -120,15 +124,10 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
       send("tick", { type: "tick", year, entries: byYear.get(year)! });
     }
 
-    const oldDecisionsById = new Map(baseBranch.result.decisions.map((d) => [d.id, d] as const));
-    const ghosts: Record<string, string> = {};
-    for (const entry of newEntriesFromFork) {
-      if (!entry.turn) continue;
-      const oldDecision = oldDecisionsById.get(entry.turn.decisionId);
-      if (!oldDecision || oldDecision.chosen === entry.turn.chosen.optionId) continue;
-      const oldLabel = oldDecision.options.find((o) => o.id === oldDecision.chosen)?.label ?? oldDecision.chosen;
-      ghosts[entry.id] = `In the original life, ${oldLabel.charAt(0).toLowerCase()}${oldLabel.slice(1)}.`;
-    }
+    // Matched by causal position (kind + personId + Nth occurrence), not literal decision id —
+    // decision-identity capability: a rewritten decision's id shares neither a year nor (for a
+    // legacy branch) even a FORMAT with the one it replaced (see `decision-id.ts#buildGhostAnnotations`).
+    const ghosts = buildGhostAnnotations(baseBranch.result.decisions, report.result.decisions, newEntriesFromFork);
 
     const runStats = decisionMakerRunStats(decisionMaker, statsBefore);
     const done: LifeStreamEvent = {
