@@ -69,7 +69,7 @@ export function createIpRateLimiter(dbPath?: string, options?: Partial<RateLimit
   return { consume, close: () => db.close() };
 }
 
-// Process-wide singleton, same `globalThis` reasoning as `db.ts`/`world-store.ts`: Next.js can
+// Process-wide singleton, same `globalThis` reasoning as `db.ts`/`life-store.ts`: Next.js can
 // bundle Route Handlers separately, so a plain module-level variable could fork into independent
 // instances (and independent in-process state) across bundles.
 const globalLimiterKey = "__lifelinesIpRateLimiter__";

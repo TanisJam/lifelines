@@ -26,7 +26,7 @@ function buildDecisionMaker(): DecisionMaker {
 }
 
 // Attached to `globalThis` (not a plain module-level variable) for the same
-// reason as the world store: Next.js can bundle Route Handlers and Server
+// reason as the life store: Next.js can bundle Route Handlers and Server
 // Components separately, giving each its own module instance. Without this,
 // the Jev adapter's cache and call/latency stats would silently fork into
 // two independent copies instead of being shared across the whole process.

@@ -4,7 +4,7 @@ import { stripLocale } from "./pathname";
 describe("decision 059: stripLocale", () => {
   it("strips a leading /en or /es segment", () => {
     expect(stripLocale("/en/lives")).toBe("/lives");
-    expect(stripLocale("/es/world/w1/person/p1")).toBe("/world/w1/person/p1");
+    expect(stripLocale("/es/life/l1")).toBe("/life/l1");
     expect(stripLocale("/en")).toBe("/");
     expect(stripLocale("/es")).toBe("/");
   });

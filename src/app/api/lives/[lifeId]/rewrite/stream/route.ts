@@ -21,7 +21,8 @@ function errorResponse(message: string, status = 400): Response {
 
 /**
  * Streams a rewrite of one protagonist's life from the changed turn forward (round 9, decision
- * 034/036) — the single-life counterpart to `/api/worlds/[worldId]/edit/stream`. Sends `divergence`
+ * 034/036) — originally the single-life counterpart to the legacy `/api/worlds/[worldId]/edit/stream`
+ * (removed in decision 060). Sends `divergence`
  * right after `start` (the old vs. new outcome label for the turn being changed), then `tick` frames
  * from the divergence year on, then `done` with sparse `ghosts` for every downstream turn whose
  * outcome actually changed.

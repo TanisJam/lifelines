@@ -12,10 +12,10 @@ import { stripLocale } from "@/i18n/pathname";
  * The generic site header/footer, hidden on the Living Chronicle page (round 7, decision 031 —
  * porting the mock's visual design faithfully): the mock's `.cw-topbar` is a full, self-contained
  * app shell for that page, and stacking our generic header above it doesn't match the mock at
- * all. Every OTHER page (start screen, "Your lives", the legacy village) keeps the original site
- * chrome. Round 9 (decision 041) adds `/life/[lifeId]`, the new single-life chronicle route,
- * alongside the legacy `/world/.../person/...` chronicle it superseded — both are full-bleed
- * `.cw-app` shells.
+ * all. Every OTHER page (start screen, "Your lives") keeps the original site chrome. Round 9
+ * (decision 041) adds `/life/[lifeId]`, the single-life chronicle route — a full-bleed `.cw-app`
+ * shell. (The legacy `/world/**` village flow this once shared the check with was removed; see
+ * decision 060.)
  *
  * Decision 059: every pathname now carries a `/en`/`/es` prefix (`app/[lang]/**`), so the
  * chronicle-path/active-nav checks below run against `stripLocale(pathname)`, not the raw
@@ -23,7 +23,7 @@ import { stripLocale } from "@/i18n/pathname";
  */
 function isChroniclePath(pathname: string | null): boolean {
   const path = stripLocale(pathname);
-  return /^\/world\/[^/]+\/person\/[^/]+/.test(path) || /^\/life\/[^/]+/.test(path);
+  return /^\/life\/[^/]+/.test(path);
 }
 
 function isActive(pathname: string | null, href: string): boolean {

@@ -4,13 +4,17 @@ import { DatabaseSync } from "node:sqlite";
 import { brotliCompressSync, brotliDecompressSync, constants as zlibConstants } from "node:zlib";
 
 /**
- * SQLite persistence adapter (self-hosted Docker deploy, decision: persist lives/worlds so they
- * survive restarts and redeploys). Uses Node's built-in `node:sqlite` (`DatabaseSync`) rather than
- * a native npm module — keeps the Docker build simple (no node-gyp / prebuilt-binary matrix) and
- * is available unflagged on Node 22.5+ (verified locally on Node v26 and on the `node:24-bookworm-slim`
+ * SQLite persistence adapter (self-hosted Docker deploy, decision: persist lives so they survive
+ * restarts and redeploys). Uses Node's built-in `node:sqlite` (`DatabaseSync`) rather than a
+ * native npm module — keeps the Docker build simple (no node-gyp / prebuilt-binary matrix) and is
+ * available unflagged on Node 22.5+ (verified locally on Node v26 and on the `node:24-bookworm-slim`
  * image used by `Dockerfile`). This module owns the raw DB connection, schema, and JSON<->BLOB
- * codec; `life-store.ts`/`world-store.ts` own the domain-shaped read/write logic on top of it. Kept
- * out of `src/domain` per the hexagonal layout — this is infrastructure, not domain logic.
+ * codec; `life-store.ts` owns the domain-shaped read/write logic on top of it. Kept out of
+ * `src/domain` per the hexagonal layout — this is infrastructure, not domain logic.
+ *
+ * Decision 060: `worlds`/`world_branches` are no longer created here (the legacy `/world` flow
+ * that owned them was removed) — `CREATE TABLE IF NOT EXISTS` never ran a `DROP`, so a prod DB
+ * that already has those tables just keeps them, unused, rather than risking data loss.
  */
 
 /** `DATA_DIR` is the single knob for where all persistent state lives — this DB, and (see `decision-engine.ts`) the Jev decision cache. Defaults to `.data` (gitignored) for local dev; the Docker image sets `DATA_DIR=/data`, a mounted volume. */
@@ -19,11 +23,11 @@ export function dataDir(): string {
 }
 
 /**
- * How many lives/worlds `life-store.ts`/`world-store.ts` each keep hydrated in their in-memory
- * `LruCache` at once — bounds process memory (a full-lifespan life alone is tens of MB of
- * uncompressed snapshots once loaded). Configurable via `STORE_CACHE_SIZE`; defaults to 16, which
- * is generous for the homelab single-instance deploy this app targets while still bounding growth.
- * Falls back to the default for anything that isn't a positive integer.
+ * How many lives `life-store.ts` keeps hydrated in its in-memory `LruCache` at once — bounds
+ * process memory (a full-lifespan life alone is tens of MB of uncompressed snapshots once
+ * loaded). Configurable via `STORE_CACHE_SIZE`; defaults to 16, which is generous for the homelab
+ * single-instance deploy this app targets while still bounding growth. Falls back to the default
+ * for anything that isn't a positive integer.
  */
 export function storeCacheSize(): number {
   const raw = Number(process.env.STORE_CACHE_SIZE);
@@ -69,26 +73,6 @@ function createSchema(db: DatabaseSync): void {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_life_branches_life_id ON life_branches(life_id);
-
-    CREATE TABLE IF NOT EXISTS worlds (
-      id TEXT PRIMARY KEY,
-      config_json TEXT NOT NULL,
-      original_branch_id TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS world_branches (
-      id TEXT PRIMARY KEY,
-      world_id TEXT NOT NULL REFERENCES worlds(id),
-      label TEXT NOT NULL,
-      parent_branch_id TEXT,
-      fork_year INTEGER,
-      override_json TEXT,
-      result_json BLOB NOT NULL,
-      snapshots_blob BLOB NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_world_branches_world_id ON world_branches(world_id);
 
     -- Abuse protection (per-IP rate limiting on simulation-triggering endpoints): one row per
     -- allowed attempt, so a sliding window can be computed by counting/pruning rows younger than
@@ -153,8 +137,8 @@ export function withTransaction<T>(db: DatabaseSync, fn: () => T): T {
 }
 
 // Process-wide singleton, same `globalThis` reasoning as the other stores (decision-engine.ts,
-// life-store.ts, world-store.ts): Next.js can bundle Route Handlers and Server Components
-// separately, so a plain module-level `let db` could fork into two independent connections.
+// life-store.ts): Next.js can bundle Route Handlers and Server Components separately, so a plain
+// module-level `let db` could fork into two independent connections.
 const globalDbKey = "__lifelinesDb__";
 const globalWithDb = globalThis as typeof globalThis & { [globalDbKey]?: DatabaseSync };
 

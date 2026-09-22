@@ -6,11 +6,12 @@ import { compressJson, dataDir, decompressJson, nextCounter, openDb, storeCacheS
 import { LruCache } from "./lru-cache";
 
 /**
- * Server-side state for the single-life product (round 9, decision 034). Deliberately its own
- * store, separate from `world-store.ts` — a "life" isn't a `Branch`/`WorldRecord` (different id
- * space, different default-branch rule: `GET /api/lives/:lifeId` defaults to the LATEST branch,
- * not the original one, per the contract) — but it follows the exact same pattern for the exact
- * same reason (decision 006): attached to `globalThis`, not a plain module-level variable, so
+ * Server-side state for the single-life product (round 9, decision 034). Originally deliberately
+ * its own store, separate from the legacy `world-store.ts` (removed in decision 060) — a "life"
+ * wasn't a `Branch`/`WorldRecord` (different id space, different default-branch rule: `GET
+ * /api/lives/:lifeId` defaults to the LATEST branch, not the original one, per the contract) —
+ * and now, with the legacy flow gone, this is simply the app's one store. It attaches to
+ * `globalThis`, not a plain module-level variable, for the same reason (decision 006): so
  * Next.js bundling Route Handlers and Server Components separately can never fork it into two
  * independent stores.
  *
@@ -410,7 +411,8 @@ export function newLifeBranchId(): string {
 
 /**
  * Registers a newly-simulated life. Takes an already-minted `lifeId`/`branchId` rather than
- * generating them internally (unlike `world-store.ts#createWorld`) — the SSE contract's `start`
+ * generating them internally (unlike the legacy `world-store.ts#createWorld`, removed in decision
+ * 060) — the SSE contract's `start`
  * frame must carry the real `lifeId`/`branchId` BEFORE the simulation (and so the record) exists,
  * so the route handler mints both up front with `newLifeId`/`newLifeBranchId`, sends `start`, runs
  * the simulation, then calls this once it's done.

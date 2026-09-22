@@ -2,8 +2,8 @@ import { resolveGuardedResponseError } from "@/lib/guard-error";
 
 /**
  * Consumes a POST `text/event-stream` response. Browsers' built-in
- * `EventSource` only supports GET, so a POST-driven stream (world creation
- * and forks both send a JSON body) has to be read manually from `fetch`'s
+ * `EventSource` only supports GET, so a POST-driven stream (life creation
+ * and rewrites both send a JSON body) has to be read manually from `fetch`'s
  * response body.
  */
 export async function streamSSE(url: string, body: unknown, onEvent: (event: string, data: unknown) => void, signal?: AbortSignal): Promise<void> {

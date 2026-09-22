@@ -65,8 +65,8 @@ export interface SimulateOptions {
    * Round 9 (decision 034, the single-life pivot). When set:
    *  - the extended, protagonist-only situation catalog (C1, C4, Y2, Y5, A4, A7, A9, A10, O1, O3,
    *    AP1, PIL1, the lord's levy) is gated on, purely additive — with no `protagonistId`, this
-   *    option has ZERO effect on candidate gathering, resolution or output, so every existing
-   *    `/api/worlds` endpoint and test keeps its exact byte-for-byte behavior.
+   *    option has ZERO effect on candidate gathering, resolution or output, so every non-protagonist
+   *    caller and test keeps its exact byte-for-byte behavior.
    *  - the yearly loop stops once this person has a `deathYear` (their life is what's being told).
    *  - this person's own social decisions are never diverted to the budget fallback below.
    */

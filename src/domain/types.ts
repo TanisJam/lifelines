@@ -178,16 +178,3 @@ export interface Override {
   readonly decisionId: string;
   readonly optionId: string;
 }
-
-export interface Branch {
-  readonly id: string;
-  readonly worldId: string;
-  readonly label: string;
-  /** The branch this one forked from, if any. */
-  readonly parentBranchId?: string;
-  /** The year the fork diverged at, if any. */
-  readonly forkYear?: number;
-  readonly override?: Override;
-  readonly result: SimulationResult;
-  readonly createdAt: number;
-}

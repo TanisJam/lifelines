@@ -1,5 +1,5 @@
 /**
- * A small LRU cache bounding the write-through Map caches in `life-store.ts`/`world-store.ts`
+ * A small LRU cache bounding the write-through Map cache in `life-store.ts`
  * (self-hosted Docker deploy: an unbounded cache would grow memory without limit — a full-lifespan
  * life alone holds tens of MB of snapshots uncompressed once hydrated). Backed by a plain `Map`,
  * whose keys iterate in insertion order: `get` deletes-then-reinserts the key so it becomes the
