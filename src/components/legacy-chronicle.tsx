@@ -155,14 +155,14 @@ function ChangeModal({
         <div className="cw-modal-kicker">Change this moment</div>
         <h2>{header}</h2>
 
-        <p style={{ marginBottom: 6, fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13, color: "var(--cw-muted)" }}>What happened:</p>
+        <p style={{ marginBottom: 6, fontFamily: "var(--font-crimson), Georgia, serif", fontSize: 13, color: "var(--cw-muted)" }}>What happened:</p>
         <div className="cw-options" style={{ marginBottom: 16 }}>
           <div className="cw-option-btn cw-current" style={{ cursor: "default" }}>
             <span>✓ {chosenLabel}</span>
           </div>
         </div>
 
-        <p style={{ marginBottom: 6, fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13, color: "var(--cw-muted)" }}>Other possibilities:</p>
+        <p style={{ marginBottom: 6, fontFamily: "var(--font-crimson), Georgia, serif", fontSize: 13, color: "var(--cw-muted)" }}>Other possibilities:</p>
         <div className="cw-options">
           {others.map((o) => (
             <button key={o.id} type="button" disabled={busy} onClick={() => setSelected(o.id)} className={`cw-option-btn${selected === o.id ? " cw-selected" : ""}`}>
@@ -368,7 +368,7 @@ export function LegacyChronicle({ initial }: { initial: LegacyChronicleData }) {
           </section>
 
           {rewriteError && (
-            <p style={{ margin: "16px 70px 0", color: "var(--cw-accent)", fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13 }}>{rewriteError}</p>
+            <p style={{ margin: "16px 70px 0", color: "var(--ll-danger)", fontFamily: "var(--font-crimson), Georgia, serif", fontSize: 13 }}>{rewriteError}</p>
           )}
 
           <ol className="cw-timeline" style={{ listStyle: "none", margin: 0 }}>
@@ -470,8 +470,8 @@ export function LegacyChronicle({ initial }: { initial: LegacyChronicleData }) {
 
           {p.deathYear !== undefined && (
             <section className="cw-timeline" style={{ paddingTop: 0, textAlign: "center" }}>
-              <div style={{ margin: "0 auto 18px", color: "var(--cw-accent)", font: "600 12px/1.2 var(--font-inter), Inter, sans-serif", letterSpacing: "0.16em" }}>◆ END OF LIFE</div>
-              <div style={{ display: "flex", justifyContent: "center", gap: 18, flexWrap: "wrap", fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13 }}>
+              <div style={{ margin: "0 auto 18px", color: "var(--cw-accent)", font: "600 12px/1.2 var(--font-crimson), Georgia, serif", letterSpacing: "0.16em" }}>◆ END OF LIFE</div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 18, flexWrap: "wrap", fontFamily: "var(--font-crimson), Georgia, serif", fontSize: 13 }}>
                 {closureLink && (
                   <button type="button" onClick={() => switchPerson(closureLink.personId)} className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }}>
                     View {closureLink.name.split(" ")[0]}&apos;s life
@@ -631,7 +631,7 @@ function PeopleDrawer({
             <small>{r.relation}</small>
           </button>
         ))}
-        {filtered.length === 0 && <p style={{ color: "#8e98a7", fontSize: 13, marginTop: 12 }}>No one found.</p>}
+        {filtered.length === 0 && <p style={{ color: "var(--cw-muted)", fontSize: 13, marginTop: 12 }}>No one found.</p>}
       </motion.div>
     </>
   );

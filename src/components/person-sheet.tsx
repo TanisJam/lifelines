@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getPersonSheet } from "@/lib/life-client";
 import type { PersonSheet as PersonSheetData } from "@/contracts/life";
 import { isNarrowViewport, prefersReducedMotion } from "@/lib/viewport";
+import { VineCorner } from "@/components/ornaments";
 
 /**
  * The read-only side sheet (single-life pivot, decision 041): clicking a `{{personId}}` link or a
@@ -47,6 +48,9 @@ export function PersonSheet({ lifeId, branchId, personId, onClose }: { lifeId: s
         aria-modal="true"
         aria-label={data ? data.name : "Person"}
       >
+        <VineCorner className="cw-vine-corner cw-vine-left h-7 w-7" />
+        <VineCorner className="cw-vine-corner cw-vine-right h-7 w-7" />
+        <div className="cw-sheet-grabber" aria-hidden="true" />
         <button type="button" className="cw-sheet-close" onClick={onClose} aria-label="Close">
           ×
         </button>

@@ -1,55 +1,121 @@
 @import "tailwindcss";
 
 /*
- * "Living Chronicle" theme (round 6, decision 029): contemporary editorial
- * with historical character — a warm off-white paper tone and ink text, not
- * literal parchment. The brass/crimson accents and Cormorant/Crimson/Cinzel
- * type carry the "archival" feeling; the surfaces themselves read close to
- * a modern reading app (Newsreader-adjacent), per the ui-ux-pro-max skill's
- * "Newsletter / Content First" + "Exaggerated Minimalism" guidance for an
- * editorial, content-first product.
+ * "Solarpunk Medieval" design system — see docs/design/design-system.md, which is the source of
+ * truth for every value below. An illuminated manuscript with a garden growing through it: warm
+ * parchment surfaces (never dark chrome or glass), sage/forest green for life and choice, sun
+ * gold for time and turning points, botanical vine/sprig/sun ornament, and an all-serif voice
+ * that extends from the reading content into UI chrome. Supersedes the "Living Chronicle"
+ * editorial theme (decisions 029/031) for surfaces, color, type and ornament — the interaction
+ * contracts from ui-ux-handoff.md (change flow, streaming, rewrite animation) still apply.
  */
 :root {
-  --background: #faf8f4;
-  --background-alt: #f2efe7;
-  --foreground: #201a13;
-  --muted: #efeae0;
-  --muted-foreground: #6b6152;
-  --border: #e2dccd;
-  --card: #ffffff;
-  --card-foreground: #201a13;
-  --accent-brass: #92400e;
-  --accent-crimson: #8b2635;
-  --ring: #92400e;
+  /* Solarpunk Medieval palette (design-system.md §2) — light ("illuminated page"). */
+  --ll-parchment: #f4ecdb;
+  --ll-paper: #f8f2e4;
+  --ll-paper-deep: #ece1c9;
+  --ll-ink: #2c2a22;
+  --ll-ink-soft: #5c5746;
+  --ll-ink-faint: #9c9480;
+  --ll-rule: #d6c7a3;
+  --ll-leaf: #6f8a4c;
+  --ll-forest: #3e5a3a;
+  --ll-forest-ink: #f6efdc;
+  --ll-sage-tint: #e2e5cf;
+  --ll-sun: #c8962f;
+  --ll-sun-ink: #86611a;
+  --ll-sun-tint: #f1e2bd;
+  --ll-sun-edge: #dcc186;
+  --ll-danger: #8e413d;
+
+  /* Shape & elevation (design-system.md §4). */
+  --ll-radius-sm: 6px;
+  --ll-radius: 12px;
+  --ll-radius-lg: 20px;
+  --ll-radius-pill: 999px;
+  --ll-shadow-card: 0 1px 2px rgb(60 45 20 / 0.06), 0 4px 12px rgb(60 45 20 / 0.06);
+  --ll-shadow-sheet: 0 -12px 40px rgb(40 30 10 / 0.18);
+  --ll-shadow-page: 0 1px 3px rgb(60 45 20 / 0.05), 0 20px 50px rgb(60 45 20 / 0.1);
+  --ll-scrim: rgb(30 26 18 / 0.5);
+
+  /* Base app tokens, re-pointed onto the palette above so every page (Loom/Town/World/Compare/
+   * Lives) that isn't individually restyled still reads as one coherent surface. */
+  --background: var(--ll-parchment);
+  --background-alt: var(--ll-paper-deep);
+  --foreground: var(--ll-ink);
+  --muted: var(--ll-paper-deep);
+  --muted-foreground: var(--ll-ink-soft);
+  --border: var(--ll-rule);
+  --card: var(--ll-paper);
+  --card-foreground: var(--ll-ink);
+  --accent-brass: var(--ll-forest);
+  --accent-crimson: var(--ll-danger);
+  --ring: var(--ll-forest);
 }
 
 :root[data-theme="dark"] {
-  --background: #1c1714;
-  --background-alt: #251e19;
-  --foreground: #e8dfd4;
-  --muted: #3d332b;
-  --muted-foreground: #b3a690;
-  --border: #4a3f35;
-  --card: #251e19;
-  --card-foreground: #e8dfd4;
-  --accent-brass: #c9a962;
-  --accent-crimson: #c1616f;
-  --ring: #c9a962;
+  /* "Night garden" — a moonlit garden, not an inversion: deep green-black paper, warm ivory ink,
+   * brighter leaf and gold (design-system.md §2). */
+  --ll-parchment: #1b1f18;
+  --ll-paper: #22271e;
+  --ll-paper-deep: #171a14;
+  --ll-ink: #ece4cf;
+  --ll-ink-soft: #bfb59c;
+  --ll-ink-faint: #7a7362;
+  --ll-rule: #3d4233;
+  --ll-leaf: #9cb97e;
+  --ll-forest: #a9c690;
+  --ll-forest-ink: #16200f;
+  --ll-sage-tint: #2b3424;
+  --ll-sun: #e0b457;
+  --ll-sun-ink: #e6c27a;
+  --ll-sun-tint: #3a3220;
+  --ll-sun-edge: #6b5a33;
+  --ll-danger: #d69086;
+
+  --background: var(--ll-parchment);
+  --background-alt: var(--ll-paper-deep);
+  --foreground: var(--ll-ink);
+  --muted: var(--ll-paper-deep);
+  --muted-foreground: var(--ll-ink-soft);
+  --border: var(--ll-rule);
+  --card: var(--ll-paper);
+  --card-foreground: var(--ll-ink);
+  --accent-brass: var(--ll-forest);
+  --accent-crimson: var(--ll-danger);
+  --ring: var(--ll-forest);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --background: #1c1714;
-    --background-alt: #251e19;
-    --foreground: #e8dfd4;
-    --muted: #3d332b;
-    --muted-foreground: #b3a690;
-    --border: #4a3f35;
-    --card: #251e19;
-    --card-foreground: #e8dfd4;
-    --accent-brass: #c9a962;
-    --accent-crimson: #c1616f;
-    --ring: #c9a962;
+    --ll-parchment: #1b1f18;
+    --ll-paper: #22271e;
+    --ll-paper-deep: #171a14;
+    --ll-ink: #ece4cf;
+    --ll-ink-soft: #bfb59c;
+    --ll-ink-faint: #7a7362;
+    --ll-rule: #3d4233;
+    --ll-leaf: #9cb97e;
+    --ll-forest: #a9c690;
+    --ll-forest-ink: #16200f;
+    --ll-sage-tint: #2b3424;
+    --ll-sun: #e0b457;
+    --ll-sun-ink: #e6c27a;
+    --ll-sun-tint: #3a3220;
+    --ll-sun-edge: #6b5a33;
+    --ll-danger: #d69086;
+
+    --background: var(--ll-parchment);
+    --background-alt: var(--ll-paper-deep);
+    --foreground: var(--ll-ink);
+    --muted: var(--ll-paper-deep);
+    --muted-foreground: var(--ll-ink-soft);
+    --border: var(--ll-rule);
+    --card: var(--ll-paper);
+    --card-foreground: var(--ll-ink);
+    --accent-brass: var(--ll-forest);
+    --accent-crimson: var(--ll-danger);
+    --ring: var(--ll-forest);
   }
 }
 
@@ -65,6 +131,31 @@
   --color-brass: var(--accent-brass);
   --color-crimson: var(--accent-crimson);
   --color-ring: var(--ring);
+
+  --color-ll-parchment: var(--ll-parchment);
+  --color-ll-paper: var(--ll-paper);
+  --color-ll-paper-deep: var(--ll-paper-deep);
+  --color-ll-ink: var(--ll-ink);
+  --color-ll-ink-soft: var(--ll-ink-soft);
+  --color-ll-ink-faint: var(--ll-ink-faint);
+  --color-ll-rule: var(--ll-rule);
+  --color-ll-leaf: var(--ll-leaf);
+  --color-ll-forest: var(--ll-forest);
+  --color-ll-forest-ink: var(--ll-forest-ink);
+  --color-ll-sage-tint: var(--ll-sage-tint);
+  --color-ll-sun: var(--ll-sun);
+  --color-ll-sun-ink: var(--ll-sun-ink);
+  --color-ll-sun-tint: var(--ll-sun-tint);
+  --color-ll-sun-edge: var(--ll-sun-edge);
+  --color-ll-danger: var(--ll-danger);
+
+  --radius-ll-sm: var(--ll-radius-sm);
+  --radius-ll: var(--ll-radius);
+  --radius-ll-lg: var(--ll-radius-lg);
+  --radius-ll-pill: var(--ll-radius-pill);
+  --shadow-ll-card: var(--ll-shadow-card);
+  --shadow-ll-sheet: var(--ll-shadow-sheet);
+
   --font-heading: var(--font-cormorant);
   --font-body: var(--font-crimson);
   --font-label: var(--font-cinzel);
@@ -77,8 +168,8 @@ body {
 }
 
 ::selection {
-  background: var(--accent-brass);
-  color: var(--background);
+  background: var(--ll-sun-tint);
+  color: var(--ll-ink);
 }
 
 .font-heading {
@@ -95,71 +186,47 @@ body {
 }
 
 /* =========================================================================
- * Living Chronicle — ported from docs/design/living-chronicle-mock.html
- * (round 7, decision 031). The mock's CSS is treated as the spec: these
- * are its own tokens, selectors and values, scoped under a `cw-` (Chronicle
- * mock) prefix so they can't collide with the rest of the app's Tailwind
- * theme (Loom/Town/Home keep their existing brass/crimson look). Dark mode
- * is a derived extension — the mock itself only specifies one light theme
- * plus a handful of always-dark chrome surfaces (topbar, drawer, modal
- * backdrop, regen pill); --cw-dark/--cw-dark2 are those, unchanged between
- * themes, exactly as the mock has them.
+ * Living Chronicle component system — shared by src/components/chronicle.tsx,
+ * legacy-chronicle.tsx and person-sheet.tsx, ported from docs/design/living-chronicle-mock.html
+ * (decision 031) and restyled onto the Solarpunk Medieval design system (docs/design/
+ * design-system.md, decision 047+). All surfaces are paper, all type is serif; the old always-
+ * dark chrome (`--cw-dark` topbar/drawer/person sheet/regen pill) is gone — every one of those
+ * is a paper surface now. Selectors keep their original `cw-` names so the legacy, pre-pivot
+ * chronicle (`legacy-chronicle.tsx`) inherits this restyle for free; a small number of new
+ * selectors (turning-point card, branch ribbon, option cards, primary pill, sheet grabber, tab
+ * bar, ornament placement) implement pieces the old mock didn't have.
  * ========================================================================= */
 :root {
-  --cw-paper: #efe7d8;
-  --cw-paper-deep: #e6dcc9;
-  --cw-ink: #26231f;
-  --cw-muted: #7b7369;
-  --cw-faint: #b5aa99;
-  --cw-rule: #c9bda9;
-  --cw-accent: #8e413d;
-  --cw-accent-soft: #cfa59e;
-  --cw-gold: #9a7a49;
-  --cw-ghost: #9aa0a8;
-  --cw-dark: #121418;
-  --cw-dark2: #1b1f25;
-  --cw-white: #fbf8f1;
-  --cw-shadow: 0 24px 60px rgba(50, 38, 24, 0.12);
-  --cw-body-bg: radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.7), transparent 28%), linear-gradient(180deg, #e9decc, #e2d5c1 60%, #ddd0bb);
-  --cw-grain-a: rgba(70, 52, 32, 0.15);
-  --cw-grain-b: rgba(70, 52, 32, 0.11);
+  --cw-paper: var(--ll-paper);
+  --cw-paper-deep: var(--ll-paper-deep);
+  --cw-ink: var(--ll-ink);
+  --cw-muted: var(--ll-ink-soft);
+  --cw-faint: var(--ll-ink-faint);
+  --cw-rule: var(--ll-rule);
+  --cw-accent: var(--ll-forest);
+  --cw-accent-soft: var(--ll-leaf);
+  --cw-gold: var(--ll-sun-ink);
+  --cw-ghost: var(--ll-ink-faint);
+  --cw-dark: var(--ll-paper-deep);
+  --cw-dark2: var(--ll-paper);
+  --cw-white: var(--ll-forest-ink);
+  --cw-shadow: var(--ll-shadow-page);
+  --cw-body-bg: radial-gradient(circle at 20% 0%, rgb(255 255 255 / 0.5), transparent 30%), linear-gradient(180deg, var(--ll-parchment), var(--ll-paper-deep) 60%, var(--ll-parchment));
+  --cw-grain-a: rgb(92 87 70 / 0.13);
+  --cw-grain-b: rgb(92 87 70 / 0.09);
 }
 
 :root[data-theme="dark"] {
-  --cw-paper: #211d18;
-  --cw-paper-deep: #1a1712;
-  --cw-ink: #ece3d3;
-  --cw-muted: #ab9d89;
-  --cw-faint: #6e6355;
-  --cw-rule: #423a2e;
-  --cw-accent: #d69086;
-  --cw-accent-soft: #7c4e47;
-  --cw-gold: #c9a45e;
-  --cw-ghost: #7d858e;
-  --cw-white: #17140f;
-  --cw-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  --cw-body-bg: radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.04), transparent 28%), linear-gradient(180deg, #18150f, #14110c 60%, #100d09);
-  --cw-grain-a: rgba(0, 0, 0, 0.3);
-  --cw-grain-b: rgba(0, 0, 0, 0.22);
+  --cw-body-bg: radial-gradient(circle at 20% 0%, rgb(255 255 255 / 0.03), transparent 30%), linear-gradient(180deg, var(--ll-parchment), var(--ll-paper-deep) 60%, var(--ll-parchment));
+  --cw-grain-a: rgb(0 0 0 / 0.28);
+  --cw-grain-b: rgb(0 0 0 / 0.2);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --cw-paper: #211d18;
-    --cw-paper-deep: #1a1712;
-    --cw-ink: #ece3d3;
-    --cw-muted: #ab9d89;
-    --cw-faint: #6e6355;
-    --cw-rule: #423a2e;
-    --cw-accent: #d69086;
-    --cw-accent-soft: #7c4e47;
-    --cw-gold: #c9a45e;
-    --cw-ghost: #7d858e;
-    --cw-white: #17140f;
-    --cw-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-    --cw-body-bg: radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.04), transparent 28%), linear-gradient(180deg, #18150f, #14110c 60%, #100d09);
-    --cw-grain-a: rgba(0, 0, 0, 0.3);
-    --cw-grain-b: rgba(0, 0, 0, 0.22);
+    --cw-body-bg: radial-gradient(circle at 20% 0%, rgb(255 255 255 / 0.03), transparent 30%), linear-gradient(180deg, var(--ll-parchment), var(--ll-paper-deep) 60%, var(--ll-parchment));
+    --cw-grain-a: rgb(0 0 0 / 0.28);
+    --cw-grain-b: rgb(0 0 0 / 0.2);
   }
 }
 
@@ -167,19 +234,22 @@ body {
   min-height: 100vh;
   background: var(--cw-body-bg);
   position: relative;
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-app:before {
+  /* Paper grain (design-system.md §4): a very subtle multiply noise layer over the parchment. */
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 40;
-  opacity: 0.12;
+  opacity: 0.1;
   background-image: radial-gradient(circle at 20% 30%, var(--cw-grain-a) 0 1px, transparent 1.2px), radial-gradient(circle at 80% 70%, var(--cw-grain-b) 0 1px, transparent 1.2px);
   background-size: 17px 17px, 23px 23px;
   mix-blend-mode: multiply;
 }
 
+/* Masthead (design-system.md §6): parchment, never a dark bar. */
 .cw-topbar {
   position: sticky;
   top: 0;
@@ -189,33 +259,29 @@ body {
   justify-content: space-between;
   gap: 20px;
   padding: 14px 22px;
-  color: #e7dfd1;
-  background: rgba(18, 20, 24, 0.92);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
-  font-family: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
+  color: var(--cw-ink);
+  background: var(--ll-paper);
+  border-bottom: 1px solid var(--cw-rule);
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-family: Georgia, "Times New Roman", serif;
-  letter-spacing: 0.08em;
-  font-size: 17px;
+  gap: 10px;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-size: 19px;
   cursor: pointer;
   background: none;
   border: 0;
   color: inherit;
 }
 .cw-mark {
-  width: 28px;
-  height: 28px;
-  border: 1px solid #b69a6d;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #d7bd8c;
-  font-size: 14px;
+  width: 26px;
+  height: 26px;
+  color: var(--ll-sun);
+  flex-shrink: 0;
 }
 .cw-top-actions {
   display: flex;
@@ -225,24 +291,28 @@ body {
 }
 .cw-top-actions button,
 .cw-top-actions a {
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  color: #ddd4c7;
-  background: #1a1d22;
-  border-radius: 999px;
-  padding: 7px 11px;
+  border: 1px solid var(--cw-rule);
+  color: var(--cw-muted);
+  background: var(--ll-paper);
+  border-radius: var(--ll-radius-pill);
+  padding: 7px 13px;
   font-size: 13px;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-weight: 500;
   text-decoration: none;
   display: inline-block;
   cursor: pointer;
+  min-height: 36px;
 }
 .cw-top-actions button:hover,
 .cw-top-actions a:hover {
-  background: #232831;
+  border-color: var(--ll-leaf);
+  color: var(--cw-accent);
 }
 .cw-top-actions button:focus-visible,
 .cw-top-actions a:focus-visible {
-  outline: 2px solid var(--cw-gold);
-  outline-offset: 1px;
+  outline: 2px solid var(--cw-accent);
+  outline-offset: 2px;
 }
 
 .cw-page {
@@ -259,19 +329,20 @@ body {
   position: sticky;
   top: 78px;
   align-self: start;
-  font-family: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-left {
   color: var(--cw-muted);
-  padding-top: 126px;
+  padding-top: 40px;
 }
 .cw-right {
-  padding-top: 126px;
+  padding-top: 40px;
 }
 .cw-rail-label {
   text-transform: uppercase;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   font-size: 10px;
+  font-family: var(--font-cinzel), Georgia, serif;
   color: var(--cw-muted);
   margin-bottom: 10px;
 }
@@ -290,7 +361,7 @@ body {
   font-size: 14px;
 }
 .cw-person-link:hover {
-  color: var(--cw-ink);
+  color: var(--cw-accent);
 }
 .cw-person-link small {
   display: block;
@@ -302,65 +373,100 @@ body {
   margin-top: 26px;
   padding-top: 14px;
   border-top: 1px solid var(--cw-rule);
-  font-family: Georgia, serif;
+  font-family: var(--font-crimson), Georgia, serif;
   font-style: italic;
   color: var(--cw-muted);
   font-size: 13px;
 }
 
 .cw-chronicle {
-  background: linear-gradient(180deg, var(--cw-paper), var(--cw-paper-deep));
+  background: var(--ll-paper);
   border: 1px solid var(--cw-rule);
+  border-radius: var(--ll-radius);
   box-shadow: var(--cw-shadow);
   min-height: 1200px;
   position: relative;
 }
 
 .cw-hero {
-  padding: 58px 70px 48px;
+  padding: 58px 70px 40px;
   text-align: center;
   border-bottom: 1px solid var(--cw-rule);
   position: relative;
   overflow: hidden;
-}
-.cw-hero:before {
-  content: "";
-  position: absolute;
-  left: 40px;
-  right: 40px;
-  top: 22px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cw-faint), transparent);
 }
 .cw-eyebrow {
   color: var(--cw-muted);
   text-transform: uppercase;
   letter-spacing: 0.2em;
   font-size: 11px;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-cinzel), Georgia, serif;
 }
 .cw-h1 {
-  font: 500 clamp(42px, 6vw, 74px) / 1 Georgia, serif;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(32px, 6vw, 48px);
+  line-height: 1.05;
   margin: 12px 0 8px;
-  letter-spacing: -0.03em;
   color: var(--cw-ink);
 }
 .cw-years {
-  font: italic 18px Georgia, serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
   color: var(--cw-muted);
 }
 .cw-ending {
   width: min(100%, 560px);
-  margin: 28px auto 0;
-  font: 18px/1.75 Georgia, serif;
+  margin: 20px auto 0;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-size: 17px;
+  line-height: 1.6;
   color: var(--cw-ink);
 }
 .cw-ending strong {
+  font-weight: 600;
+}
+
+/* Branch ribbon (design-system.md §6): marks that the reader is viewing an alternate history. */
+.cw-branch-ribbon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px auto 0;
+  padding: 5px 16px;
+  border-radius: var(--ll-radius-pill);
+  background: var(--ll-sun-tint);
+  border: 1px solid var(--ll-sun-edge);
+  color: var(--ll-sun-ink);
+  font-family: var(--font-crimson), Georgia, serif;
   font-weight: 500;
+  font-size: 13px;
+}
+
+/* Sprig divider (design-system.md §5): hairline rule with a small central three-leaf sprig. */
+.cw-sprig {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 20px auto;
+  width: min(100%, 260px);
+  color: var(--ll-leaf);
+}
+.cw-sprig:before,
+.cw-sprig:after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--cw-rule);
+}
+.cw-sprig svg {
+  flex-shrink: 0;
 }
 
 .cw-timeline {
-  padding: 36px 70px 90px;
+  padding: 30px 70px 90px;
 }
 
 .cw-event {
@@ -368,28 +474,45 @@ body {
   display: grid;
   grid-template-columns: 84px 1fr;
   gap: 28px;
-  padding: 25px 0 28px;
-  border-bottom: 1px solid rgba(157, 141, 119, 0.33);
+  padding: 22px 0 26px;
+  border-bottom: 1px solid var(--cw-rule);
 }
 .cw-event:last-child {
   border-bottom: 0;
 }
 .cw-event .cw-year {
-  font: 24px Georgia, serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  text-align: right;
   color: var(--cw-muted);
-  padding-top: 1px;
+  padding-top: 2px;
+  padding-right: 18px;
   position: relative;
+  border-right: 1px solid var(--cw-rule);
 }
+/* Spine + node (design-system.md §6): the year column's own right border is the 1px spine, made
+   continuous by every contiguous row sharing it; the node sits centered on that line. */
 .cw-event .cw-year:after {
   content: "";
   position: absolute;
-  right: -17px;
-  top: 10px;
-  width: 8px;
-  height: 8px;
+  right: -4px;
+  top: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--cw-paper-deep);
-  border: 1px solid var(--cw-gold);
+  background: var(--ll-paper);
+  border: 1.5px solid var(--ll-leaf);
+}
+.cw-event.cw-turn .cw-year:after {
+  /* Turning point: the node becomes the small sun glyph. */
+  width: 12px;
+  height: 12px;
+  right: -6.5px;
+  top: 3px;
+  background: var(--ll-sun);
+  border: 0;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
 }
 
 .cw-event-content {
@@ -397,15 +520,20 @@ body {
   min-width: 0;
 }
 .cw-event-title {
-  font: 500 23px/1.28 Georgia, serif;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  font-size: 23px;
+  line-height: 1.28;
   margin: 0 0 8px;
   color: var(--cw-ink);
 }
 .cw-event-text {
   margin: 0;
-  font: 16px/1.72 Georgia, serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-size: 16px;
+  line-height: 1.7;
   color: var(--cw-ink);
-  opacity: 0.85;
+  opacity: 0.88;
 }
 .cw-event-text a {
   color: var(--cw-accent);
@@ -416,20 +544,57 @@ body {
   opacity: 0.8;
 }
 
+/* Turning-point highlight card (design-system.md §6). */
+.cw-turn-card {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: var(--ll-sun-tint);
+  border: 1px solid var(--ll-sun-edge);
+  border-radius: var(--ll-radius);
+}
+.cw-turn-link {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--cw-accent);
+  font-family: var(--font-crimson), Georgia, serif;
+  font-weight: 500;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cw-turn-link:hover {
+  opacity: 0.85;
+}
+.cw-turn-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Kept for the legacy, pre-pivot chronicle (`legacy-chronicle.tsx`, light touch only — see
+ * design-system.md's scope note): the "chosen" tag + "change what happened" link pairing that
+ * `chronicle.tsx` replaced with `.cw-turn-card`/`.cw-turn-link` above. */
 .cw-decision {
   margin-top: 15px;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-chosen {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: var(--cw-accent);
-  font: 600 12px/1.2 var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-weight: 600;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.13em;
 }
@@ -446,7 +611,7 @@ body {
   padding: 4px 0;
   border-bottom: 1px solid var(--cw-faint);
   cursor: pointer;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-change-btn:hover {
   color: var(--cw-accent);
@@ -456,8 +621,9 @@ body {
 .cw-cause {
   margin-top: 12px;
   color: var(--cw-muted);
-  font-size: 12px;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-size: 13px;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-style: italic;
 }
 .cw-cause a,
 .cw-cause span.cw-cause-link {
@@ -474,10 +640,12 @@ body {
   padding-left: 14px;
   border-left: 1px solid var(--cw-ghost);
   color: var(--cw-ghost);
-  font: italic 13px Georgia, serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
 }
 .cw-event.cw-changed {
-  background: linear-gradient(90deg, rgba(142, 65, 61, 0.09), transparent 65%);
+  background: linear-gradient(90deg, var(--ll-sage-tint), transparent 65%);
 }
 .cw-event.cw-rewriting {
   /* Round 8 (decision 033, §10.B — "lose opacity; blur; desaturate; or collapse"): fade, blur AND
@@ -503,10 +671,13 @@ body {
   }
 }
 
-/* Round 8 (decision 033, §10.A): the divergence entry's ORIGINAL/NEW block. */
+/* Round 8 (decision 033, §10.A): the divergence entry's ORIGINAL/NEW block, restyled onto the
+ * "replaced events are struck-through, never deleted" language (design-system.md §6, §8). */
 .cw-divergence-mark {
-  color: var(--cw-accent);
-  font: 600 11px/1.2 var(--font-inter), Inter, sans-serif;
+  color: var(--ll-sun-ink);
+  font-family: var(--font-cinzel), Georgia, serif;
+  font-weight: 500;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   margin-bottom: 10px;
@@ -516,14 +687,20 @@ body {
   align-items: baseline;
   gap: 10px;
   padding: 6px 0;
-  font: 16px/1.5 Georgia, serif;
-  color: var(--cw-muted);
+  font-family: var(--font-crimson), Georgia, serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ll-ink-faint);
+  text-decoration: line-through;
 }
 .cw-divergence-row.cw-divergence-new {
   color: var(--cw-ink);
+  text-decoration: none;
 }
 .cw-divergence-label {
-  font: 600 10px/1.2 var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-cinzel), Georgia, serif;
+  font-weight: 500;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--cw-faint);
@@ -545,7 +722,8 @@ body {
   padding-left: 18px;
 }
 .cw-branch-name {
-  font: 18px Georgia, serif;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-size: 18px;
   margin-bottom: 7px;
   color: var(--cw-ink);
 }
@@ -570,7 +748,7 @@ body {
   cursor: pointer;
   display: block;
   width: 100%;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-branch-item:before {
   content: "";
@@ -591,14 +769,15 @@ body {
 .cw-footer-note {
   margin-top: 28px;
   color: var(--cw-muted);
-  font: italic 13px Georgia, serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
 }
 
 .cw-drawer-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(18, 19, 22, 0.4);
-  backdrop-filter: blur(3px);
+  background: var(--ll-scrim);
   z-index: 80;
 }
 .cw-drawer-panel {
@@ -607,61 +786,68 @@ body {
   top: 0;
   bottom: 0;
   width: min(380px, 88vw);
-  background: var(--cw-dark);
-  color: #e6ded0;
+  background: var(--ll-paper);
+  color: var(--cw-ink);
   padding: 22px;
-  box-shadow: 20px 0 60px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--ll-shadow-sheet);
+  border-right: 1px solid var(--cw-rule);
   z-index: 81;
   overflow-y: auto;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-drawer-panel h2 {
-  font: 34px Georgia, serif;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-size: 30px;
   margin: 8px 0 20px;
+  color: var(--cw-ink);
 }
 .cw-drawer-search {
   width: 100%;
-  border: 1px solid #333944;
-  background: #1c2026;
-  color: #eee6da;
-  border-radius: 8px;
+  border: 1px solid var(--cw-rule);
+  background: var(--ll-parchment);
+  color: var(--cw-ink);
+  border-radius: var(--ll-radius-sm);
   padding: 10px 12px;
   margin-bottom: 14px;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-drawer-person {
   width: 100%;
   text-align: left;
   border: 0;
-  border-top: 1px solid #2c323a;
+  border-top: 1px solid var(--cw-rule);
   background: transparent;
-  color: #ded5c8;
+  color: var(--cw-ink);
   padding: 13px 4px;
   cursor: pointer;
 }
+.cw-drawer-person:hover {
+  color: var(--cw-accent);
+}
 .cw-drawer-person small {
   display: block;
-  color: #8e98a7;
+  color: var(--cw-muted);
   margin-top: 2px;
 }
 
 /* Round 9 (decision 041): the read-only person side sheet, opened from a `{{personId}}` link or
- * the cast rail. There is no protagonist switch anymore — reuses the drawer's dark chrome, but
- * anchored to the right on desktop instead of the left, and becomes a bottom sheet on mobile
- * (the JS decides which, matching the change modal's own `.cw-sheet-on-mobile` breakpoint). */
+ * the cast rail. Same paper language as the change sheet (design-system.md §6) — anchored to the
+ * right on desktop, a bottom sheet on mobile (the JS decides which, matching the change sheet's
+ * own `.cw-sheet-on-mobile` breakpoint). */
 .cw-person-sheet-panel {
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
   width: min(380px, 92vw);
-  background: var(--cw-dark);
-  color: #e6ded0;
-  padding: 26px 22px;
-  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.28);
+  background: var(--ll-paper);
+  color: var(--cw-ink);
+  padding: 30px 24px 24px;
+  box-shadow: var(--ll-shadow-sheet);
+  border-left: 1px solid var(--cw-rule);
   z-index: 81;
   overflow-y: auto;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
 }
 .cw-person-sheet-panel.cw-sheet-bottom {
   top: auto;
@@ -670,12 +856,20 @@ body {
   bottom: 0;
   width: 100%;
   max-height: 80vh;
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.28);
+  border-radius: var(--ll-radius-lg) var(--ll-radius-lg) 0 0;
+  border-left: 0;
+  border-top: 1px solid var(--cw-rule);
+  box-shadow: var(--ll-shadow-sheet);
+}
+.cw-person-sheet-panel.cw-sheet-bottom .cw-sheet-grabber {
+  display: block;
 }
 .cw-person-sheet-panel h2 {
-  font: 32px Georgia, serif;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  font-size: 30px;
   margin: 6px 0 4px;
+  color: var(--cw-ink);
 }
 .cw-sheet-close {
   position: absolute;
@@ -683,22 +877,38 @@ body {
   right: 14px;
   border: 0;
   background: transparent;
-  color: #ded5c8;
+  color: var(--cw-muted);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 8px;
+  min-width: 44px;
+  min-height: 44px;
+}
+.cw-sheet-close:hover {
+  color: var(--cw-accent);
+}
+.cw-sheet-grabber {
+  display: none;
+  width: 36px;
+  height: 4px;
+  border-radius: var(--ll-radius-pill);
+  background: var(--cw-rule);
+  margin: 0 auto 14px;
 }
 .cw-sheet-job {
-  color: #8e98a7;
+  color: var(--cw-muted);
   font-size: 13px;
   margin: 4px 0 14px;
+  font-family: var(--font-cinzel), Georgia, serif;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 .cw-sheet-blurb {
-  color: #ded5c8;
-  font: 15px/1.6 Georgia, serif;
+  color: var(--cw-ink);
+  font-family: var(--font-crimson), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.6;
   margin: 0 0 20px;
 }
 .cw-sheet-moments {
@@ -712,97 +922,187 @@ body {
   display: flex;
   gap: 10px;
   font-size: 13px;
-  color: #ded5c8;
-  border-top: 1px solid #2c323a;
+  color: var(--cw-ink);
+  border-top: 1px solid var(--cw-rule);
   padding-top: 10px;
 }
 .cw-sheet-moments li span {
-  color: #8e98a7;
+  color: var(--cw-muted);
   min-width: 42px;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .cw-modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 90;
-  background: rgba(17, 18, 21, 0.68);
-  backdrop-filter: blur(5px);
+  background: var(--ll-scrim);
   display: grid;
   place-items: center;
   padding: 20px;
 }
 .cw-modal-card {
   position: relative;
-  width: min(680px, 96vw);
+  width: min(640px, 96vw);
   max-height: 90vh;
   overflow-y: auto;
-  background: var(--cw-paper-deep);
+  background: var(--ll-paper);
   color: var(--cw-ink);
   border: 1px solid var(--cw-rule);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
-  padding: 28px;
-  font-family: var(--font-inter), Inter, sans-serif;
+  border-radius: var(--ll-radius-lg);
+  box-shadow: var(--ll-shadow-page);
+  padding: 30px 28px;
+  font-family: var(--font-crimson), Georgia, serif;
+  text-align: center;
 }
 .cw-modal-kicker {
   text-transform: uppercase;
   letter-spacing: 0.16em;
   font-size: 10px;
+  font-family: var(--font-cinzel), Georgia, serif;
   color: var(--cw-muted);
 }
 .cw-modal-card h2 {
   margin: 7px 0 5px;
-  font: 36px/1.1 Georgia, serif;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(22px, 4vw, 26px);
+  line-height: 1.25;
   color: var(--cw-ink);
 }
 .cw-modal-card p {
   margin: 0 0 20px;
   color: var(--cw-muted);
-  font: 15px/1.6 Georgia, serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.6;
 }
+.cw-sheet-prompt {
+  margin: 4px 0 14px;
+  color: var(--cw-ink);
+  font-family: var(--font-crimson), Georgia, serif;
+  font-weight: 500;
+  font-size: 15px;
+}
+.cw-sheet-quote {
+  margin: 20px 0 0;
+  color: var(--cw-muted);
+  font-family: var(--font-crimson), Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+}
+
+/* Option card (design-system.md §6). */
 .cw-options {
   display: grid;
   gap: 8px;
+  text-align: left;
 }
 .cw-option-btn {
+  min-height: 56px;
   text-align: left;
   border: 1px solid var(--cw-rule);
-  background: var(--cw-paper);
+  background: var(--ll-paper);
   color: var(--cw-ink);
-  padding: 13px 14px;
+  border-radius: var(--ll-radius);
+  box-shadow: var(--ll-shadow-card);
+  padding: 12px 14px;
   display: flex;
   justify-content: space-between;
-  gap: 18px;
+  gap: 14px;
   align-items: center;
   width: 100%;
   cursor: pointer;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-weight: 500;
+  font-size: 15px;
 }
 .cw-option-btn:hover {
-  border-color: var(--cw-accent);
+  border-color: var(--ll-leaf);
+}
+.cw-option-btn:focus-visible {
+  outline: 2px solid var(--cw-accent);
+  outline-offset: 2px;
+}
+.cw-option-btn:active {
+  transform: scale(0.98);
+}
+.cw-option-leaf {
+  color: var(--ll-leaf);
+  flex-shrink: 0;
+}
+.cw-option-label {
+  flex: 1;
+  min-width: 0;
+}
+.cw-option-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--cw-muted);
+  font-family: var(--font-crimson), Georgia, serif;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 12px;
+}
+.cw-option-chevron {
+  color: var(--cw-muted);
+  flex-shrink: 0;
 }
 .cw-option-btn.cw-current {
-  border-color: var(--cw-faint);
-  background: var(--cw-paper-deep);
-  color: var(--cw-muted);
+  background: var(--ll-sage-tint);
+  border-color: var(--ll-leaf);
   cursor: default;
+}
+.cw-option-btn.cw-current .cw-option-leaf,
+.cw-option-btn.cw-current .cw-option-chevron {
+  color: var(--cw-accent);
 }
 .cw-option-btn.cw-selected {
   border-color: var(--cw-accent);
-  background: var(--cw-paper);
-  box-shadow: 0 0 0 1px var(--cw-accent);
+  border-width: 1.5px;
+  background: var(--ll-paper);
 }
-.cw-option-btn .cw-tag {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--cw-accent-soft);
-  white-space: nowrap;
+.cw-option-btn.cw-selected .cw-option-chevron {
+  color: var(--cw-accent);
 }
-.cw-modal-actions {
+.cw-option-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Primary pill button, with a gilt inner rim (design-system.md §6). */
+.cw-primary-btn {
+  width: 100%;
+  min-height: 48px;
   margin-top: 18px;
+  border: 0;
+  border-radius: var(--ll-radius-pill);
+  background: var(--cw-accent);
+  color: var(--ll-forest-ink);
+  font-family: var(--font-crimson), Georgia, serif;
+  font-weight: 500;
+  font-size: 17px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 2px var(--cw-accent), inset 0 0 0 3px var(--ll-sun);
+}
+.cw-primary-btn:hover:not(:disabled) {
+  opacity: 0.92;
+}
+.cw-primary-btn:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.cw-primary-btn:focus-visible {
+  outline: 2px solid var(--cw-ink);
+  outline-offset: 2px;
+}
+
+.cw-modal-actions {
+  margin-top: 6px;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
@@ -813,55 +1113,127 @@ body {
   color: var(--cw-muted);
   padding: 6px 0;
   cursor: pointer;
-  font-family: var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cw-modal-actions button:hover {
+  color: var(--cw-accent);
 }
 .cw-why {
-  margin-top: 4px;
+  margin-top: 18px;
   border-top: 1px solid var(--cw-rule);
   padding-top: 14px;
+  text-align: left;
 }
 .cw-why summary {
   cursor: pointer;
-  font: 600 10px/1.2 var(--font-inter), Inter, sans-serif;
+  font-family: var(--font-cinzel), Georgia, serif;
+  font-weight: 500;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.13em;
   color: var(--cw-accent);
 }
 .cw-why p {
   margin-top: 8px;
+  margin-bottom: 0;
   color: var(--cw-ink);
-  font: 15px/1.6 Georgia, serif;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
+/* "Regenerating" pill (design-system.md §6): a paper pill with a pulsing sun dot. */
 .cw-regen {
   position: fixed;
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
   z-index: 120;
-  background: var(--cw-dark);
-  color: #efe6d8;
-  padding: 11px 16px;
-  border: 1px solid #303640;
-  border-radius: 999px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  background: var(--ll-paper);
+  color: var(--cw-ink);
+  padding: 11px 18px;
+  border: 1px solid var(--cw-rule);
+  border-radius: var(--ll-radius-pill);
+  box-shadow: var(--ll-shadow-card);
   display: flex;
   gap: 10px;
   align-items: center;
-  font: 12px/1.2 var(--font-inter), Inter, sans-serif;
-  letter-spacing: 0.04em;
+  font-family: var(--font-crimson), Georgia, serif;
+  font-size: 13px;
+  line-height: 1.2;
 }
 .cw-regen-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #b99562;
+  background: var(--ll-sun);
   animation: cw-blink 1s infinite;
   flex-shrink: 0;
 }
 @keyframes cw-blink {
   50% {
     opacity: 0.25;
+  }
+}
+
+/* Vine corner ornament (design-system.md §5): placed top-left/top-right, aria-hidden, never
+   overlapping text. */
+.cw-vine-corner {
+  position: absolute;
+  top: 14px;
+  color: var(--ll-leaf);
+  opacity: 0.8;
+  pointer-events: none;
+}
+.cw-vine-corner.cw-vine-left {
+  left: 14px;
+}
+.cw-vine-corner.cw-vine-right {
+  right: 14px;
+  transform: scaleX(-1);
+}
+
+/* Bottom tab bar (design-system.md §6): mobile-only, parchment, top hairline, safe-area aware. */
+.cw-tab-bar {
+  display: none;
+}
+@media (max-width: 640px) {
+  .cw-tab-bar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    background: var(--ll-paper);
+    border-top: 1px solid var(--cw-rule);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    justify-content: space-around;
+  }
+  .cw-tab-bar-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 56px;
+    min-height: 44px;
+    padding: 4px 6px;
+    color: var(--cw-muted);
+    font-family: var(--font-crimson), Georgia, serif;
+    font-size: 11px;
+  }
+  .cw-tab-bar-item.cw-active {
+    color: var(--cw-accent);
+  }
+  .cw-tab-bar-item.cw-active .cw-tab-bar-underline {
+    height: 2px;
+    width: 16px;
+    background: var(--cw-accent);
+    margin-top: 2px;
+    border-radius: var(--ll-radius-pill);
   }
 }
 
@@ -887,8 +1259,14 @@ body {
     width: 100%;
     max-width: 100%;
     max-height: 85vh;
-    border-radius: 16px 16px 0 0;
-    animation: cw-sheet-up 0.25s ease both;
+    border-radius: var(--ll-radius-lg) var(--ll-radius-lg) 0 0;
+    animation: cw-sheet-up 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .cw-sheet-on-mobile .cw-sheet-grabber {
+    display: block;
+  }
+  .cw-app {
+    padding-bottom: 60px;
   }
 }
 @keyframes cw-sheet-up {
@@ -929,7 +1307,7 @@ body {
     padding: 18px 10px 60px;
   }
   .cw-hero {
-    padding: 44px 24px 36px;
+    padding: 44px 24px 32px;
   }
   .cw-timeline {
     padding: 22px 22px 60px;
@@ -939,7 +1317,7 @@ body {
     gap: 18px;
   }
   .cw-event .cw-year {
-    font-size: 20px;
+    font-size: 15px;
   }
   .cw-event-title {
     font-size: 20px;

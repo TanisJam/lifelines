@@ -9,6 +9,7 @@ import { parseProseMarkers } from "@/lib/prose-markers";
 import { prefersReducedMotion } from "@/lib/viewport";
 import { PersonSheet } from "@/components/person-sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CheckCircleIcon, ChevronRightIcon, LeafGlyph, SprigDivider, SunEmblem, VineCorner } from "@/components/ornaments";
 
 /**
  * The question in "Why did she choose this?"/"Why did Tomas Vell choose this?"/"Why did this
@@ -23,6 +24,13 @@ function whyQuestion(turn: NonNullable<ChronicleEntry["turn"]>, protagonistSex: 
   return `Why did ${name} choose this?`;
 }
 
+/**
+ * The change sheet (design-system.md §6): a bottom sheet on mobile, a centered card ≥640px
+ * (`.cw-sheet-on-mobile` picks the breakpoint). The current history is always the first option,
+ * sage-tinted with a check; the rest are plain option cards that arm the primary "Apply this
+ * change" button on click — "select first, then confirm" (ui-ux-handoff.md §8), so a stray click
+ * can't accidentally rewrite a life.
+ */
 function ChangeModal({
   entry,
   personSex,
@@ -37,61 +45,52 @@ function ChangeModal({
   busy: boolean;
 }) {
   const [showNumbers, setShowNumbers] = useState(false);
-  // "select first, then confirm" (ui-ux-handoff.md §8): clicking an alternative arms a single
-  // "Rewrite from here" button rather than firing the rewrite immediately, so a stray click can't
-  // accidentally rewrite a life.
   const [selected, setSelected] = useState<string | null>(null);
   const { turn } = entry;
 
   return (
     <div className="cw-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.97, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }} className="cw-modal-card cw-sheet-on-mobile" onClick={(e) => e.stopPropagation()}>
-        <div className="cw-modal-kicker">{turn.decidedBy}</div>
-        {/* The timeline itself renders `entry.title` bare (it's already a complete narrative
-            heading, with its own subject — the protagonist, an NPC, or nobody for a chance event)
-            — the modal reuses it as-is rather than re-deriving a sentence, which previously
-            prefixed the protagonist's name even onto a title that was already about someone
-            else ("Elin Marrow Tomas Vell chooses who to court" — a real bug caught live). */}
+        <VineCorner className="cw-vine-corner cw-vine-left h-7 w-7" />
+        <VineCorner className="cw-vine-corner cw-vine-right h-7 w-7" />
+        <div className="cw-sheet-grabber" aria-hidden="true" />
+
+        <div className="cw-modal-kicker">{entry.year}</div>
         <h2>{entry.title}</h2>
+        <p>Everything after this moment will be rewritten.</p>
 
-        <p style={{ marginBottom: 6, fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13, color: "var(--cw-muted)" }}>What happened:</p>
-        <div className="cw-options" style={{ marginBottom: 16 }}>
-          <div className="cw-option-btn cw-current" style={{ cursor: "default" }}>
-            <span>✓ {turn.chosen.label}</span>
-          </div>
-        </div>
+        <SprigDivider className="cw-sprig" />
 
-        <p style={{ marginBottom: 6, fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13, color: "var(--cw-muted)" }}>Other possibilities:</p>
+        <p className="cw-sheet-prompt">How does this moment unfold?</p>
         <div className="cw-options">
+          <div className="cw-option-btn cw-current" aria-current="true">
+            <LeafGlyph className="cw-option-leaf" />
+            <span className="cw-option-label">
+              {turn.chosen.label}
+              <span className="cw-option-sub">(Current history)</span>
+            </span>
+            <CheckCircleIcon className="cw-option-chevron" />
+          </div>
           {turn.alternatives.map((o) => (
             <button key={o.optionId} type="button" disabled={busy} onClick={() => setSelected(o.optionId)} className={`cw-option-btn${selected === o.optionId ? " cw-selected" : ""}`}>
-              <span>○ {o.label}</span>
+              <LeafGlyph className="cw-option-leaf" />
+              <span className="cw-option-label">{o.label}</span>
+              {selected === o.optionId ? <CheckCircleIcon className="cw-option-chevron" /> : <ChevronRightIcon className="cw-option-chevron" />}
             </button>
           ))}
         </div>
 
-        <p style={{ margin: "16px 0 0", color: "var(--cw-muted)", font: "15px/1.6 Georgia, serif" }}>Everything after {entry.year} will be simulated again.</p>
+        <button type="button" className="cw-primary-btn" disabled={!selected || busy} onClick={() => selected && onChoose(selected)}>
+          {busy ? "Rewriting…" : "Apply this change"}
+        </button>
 
         <div className="cw-modal-actions">
           <button type="button" onClick={onClose}>
             Cancel
           </button>
-          <button
-            type="button"
-            disabled={!selected || busy}
-            onClick={() => selected && onChoose(selected)}
-            style={{
-              background: selected ? "var(--cw-accent)" : "transparent",
-              color: selected ? "var(--cw-white)" : "var(--cw-faint)",
-              border: `1px solid ${selected ? "var(--cw-accent)" : "var(--cw-rule)"}`,
-              borderRadius: 4,
-              padding: "8px 16px",
-              cursor: selected ? "pointer" : "not-allowed",
-            }}
-          >
-            Rewrite from here
-          </button>
         </div>
+
+        <p className="cw-sheet-quote">A single choice can ripple through a lifetime.</p>
 
         <details className="cw-why" open={showNumbers} onToggle={(e) => setShowNumbers((e.target as HTMLDetailsElement).open)}>
           <summary>{whyQuestion(turn, personSex)}</summary>
@@ -140,6 +139,9 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
 
   const p = data.protagonist;
   const divergenceYear = rewrite?.divergenceYear ?? null;
+  // Branch ribbon (design-system.md §6): marks that the reader is viewing an alternate history —
+  // derived from existing branch data only, never a new field.
+  const currentBranch = data.branches.find((b) => b.branchId === data.branchId);
 
   async function applyChoice(optionId: string): Promise<void> {
     if (!openEntry) return;
@@ -235,7 +237,7 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
     <div className="cw-app">
       <header className="cw-topbar">
         <button type="button" className="cw-brand" onClick={() => router.push("/lives")}>
-          <span className="cw-mark">∞</span> LIFELINES
+          <SunEmblem className="cw-mark" /> Lifelines
         </button>
         <div className="cw-top-actions">
           <button type="button" onClick={() => setHistoryOpen(true)}>
@@ -263,17 +265,26 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
 
         <article className="cw-chronicle" id="chronicle">
           <section className="cw-hero">
+            <VineCorner className="cw-vine-corner cw-vine-left h-9 w-9" />
+            <VineCorner className="cw-vine-corner cw-vine-right h-9 w-9" />
             <div className="cw-eyebrow">A life already lived</div>
             <h1 className="cw-h1">{p.name}</h1>
             <div className="cw-years">
               {p.birthYear} — {isDead ? p.deathYear : "living"}
             </div>
+            {currentBranch?.forkYear != null && (
+              <div className="cw-branch-ribbon">
+                <SunEmblem className="h-3.5 w-3.5" aria-hidden="true" />
+                Branch from {currentBranch.forkYear}
+              </div>
+            )}
+            <SprigDivider className="cw-sprig" />
             <p className="cw-ending">
               <EntryProse prose={data.summary} links={data.summaryLinks} onOpenPerson={setOpenPersonId} />
             </p>
           </section>
 
-          {rewriteError && <p style={{ margin: "16px 70px 0", color: "var(--cw-accent)", fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13 }}>{rewriteError}</p>}
+          {rewriteError && <p className="text-ll-danger font-body" style={{ margin: "16px 70px 0", fontSize: 13 }}>{rewriteError}</p>}
 
           <ol className="cw-timeline" style={{ listStyle: "none", margin: 0 }}>
             {data.entries.map((entry, i) => {
@@ -281,11 +292,12 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
               const isFuture = rewrite !== null && rewrite.phase !== "A" && divergenceYear !== null && entry.year > divergenceYear;
               const isNewbornNow = justInked && ghosts[entry.id] !== undefined;
               const ghostNote = ghosts[entry.id];
+              const isTurn = !!entry.turn;
               return (
                 <li
                   key={entry.id}
                   id={`event-${entry.id}`}
-                  className={`cw-event${isFuture ? " cw-rewriting" : ""}${isNewbornNow ? " cw-newborn" : ""}`}
+                  className={`cw-event${isTurn ? " cw-turn" : ""}${isFuture ? " cw-rewriting" : ""}${isNewbornNow ? " cw-newborn" : ""}`}
                   style={isFuture ? { transitionDelay: reduceMotion ? "0ms" : `${i * 20}ms` } : isNewbornNow ? { animationDelay: `${Math.min(i, 10) * 60}ms` } : undefined}
                 >
                   <div className="cw-year">
@@ -307,21 +319,26 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
                       </div>
                     ) : (
                       <>
-                        <h2 className="cw-event-title">{entry.title}</h2>
-                        <p className="cw-event-text">
-                          <EntryProse prose={entry.prose} links={entry.links} onOpenPerson={setOpenPersonId} />
-                        </p>
-
                         {/* Three event levels (ui-ux-handoff.md §7): only a level-3 turn ever gets
-                            the "chosen" tag and "change what happened" — the contract guarantees
-                            `turn` is present on level 3 only. */}
-                        {entry.turn && (
-                          <div className="cw-decision">
-                            <span className="cw-chosen">{entry.turn.chosen.label}</span>
-                            <button type="button" className="cw-change-btn" disabled={!!rewrite} onClick={() => setOpenEntry(entry as ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> })}>
-                              ◇ change what happened
+                            the highlighted turning-point card — the contract guarantees `turn` is
+                            present on level 3 only. */}
+                        {isTurn ? (
+                          <div className="cw-turn-card">
+                            <h2 className="cw-event-title">{entry.title}</h2>
+                            <p className="cw-event-text">
+                              <EntryProse prose={entry.prose} links={entry.links} onOpenPerson={setOpenPersonId} />
+                            </p>
+                            <button type="button" className="cw-turn-link" disabled={!!rewrite} onClick={() => setOpenEntry(entry as ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> })}>
+                              Change what happened →
                             </button>
                           </div>
+                        ) : (
+                          <>
+                            <h2 className="cw-event-title">{entry.title}</h2>
+                            <p className="cw-event-text">
+                              <EntryProse prose={entry.prose} links={entry.links} onOpenPerson={setOpenPersonId} />
+                            </p>
+                          </>
                         )}
 
                         {entry.cause && (
@@ -381,7 +398,10 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
 
           {isDead && (
             <section className="cw-timeline" style={{ paddingTop: 0, textAlign: "center" }}>
-              <div style={{ margin: "0 auto 18px", color: "var(--cw-accent)", font: "600 12px/1.2 var(--font-inter), Inter, sans-serif", letterSpacing: "0.16em" }}>◆ END OF LIFE</div>
+              <div className="font-label text-ll-sun-ink" style={{ margin: "0 auto 18px", fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase" }}>
+                <SunEmblem className="h-3.5 w-3.5" style={{ display: "inline-block", verticalAlign: "-2px", marginRight: 4 }} aria-hidden="true" />
+                End of life
+              </div>
               {data.epilogue.length > 0 && (
                 <div style={{ maxWidth: 620, margin: "0 auto 24px", textAlign: "left" }}>
                   <div className="cw-rail-label" style={{ marginBottom: 8 }}>
@@ -394,11 +414,11 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
                   ))}
                 </div>
               )}
-              <div style={{ display: "flex", justifyContent: "center", gap: 18, flexWrap: "wrap", fontFamily: "var(--font-inter), Inter, sans-serif", fontSize: 13 }}>
-                <button type="button" className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }} onClick={reopenLastTurn}>
+              <div style={{ display: "flex", justifyContent: "center", gap: 18, flexWrap: "wrap" }}>
+                <button type="button" className="cw-turn-link" onClick={reopenLastTurn}>
                   Change an earlier moment
                 </button>
-                <button type="button" className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }} onClick={() => router.push("/")}>
+                <button type="button" className="cw-turn-link" onClick={() => router.push("/")}>
                   Begin a new life
                 </button>
               </div>
@@ -409,7 +429,7 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
         <aside className="cw-right">
           <div className="cw-rail-label">This history</div>
           <div className="cw-branch-box">
-            <div className="cw-branch-name">{data.branches.find((b) => b.branchId === data.branchId)?.label ?? "Original life"}</div>
+            <div className="cw-branch-name">{currentBranch?.label ?? "Original life"}</div>
             <div className="cw-branch-list">
               {data.branches.map((b) => (
                 <button
