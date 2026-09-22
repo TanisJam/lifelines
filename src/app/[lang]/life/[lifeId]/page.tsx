@@ -3,6 +3,8 @@
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Chronicle } from "@/components/chronicle";
+import type { Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { getChronicle } from "@/lib/life-client";
 import type { Chronicle as ChronicleData } from "@/contracts/life";
 
@@ -13,16 +15,17 @@ import type { Chronicle as ChronicleData } from "@/contracts/life";
  * the same way `life-client.ts` reaches every other endpoint — a plain client fetch.
  */
 export default function LifePage() {
-  const params = useParams<{ lifeId: string }>();
+  const params = useParams<{ lang: Locale; lifeId: string }>();
   const searchParams = useSearchParams();
   // Keyed on lifeId only, so navigating to a genuinely different life (e.g. from "Your lives")
   // remounts this loader — the idiomatic way to reset state on a prop change without an
   // unconditional setState at the top of an effect. `branch` is read once, below, deliberately
   // NOT as part of this key: see `ChronicleLoader`'s own comment for why.
-  return <ChronicleLoader key={params.lifeId} lifeId={params.lifeId} initialBranchId={searchParams.get("branch") ?? undefined} />;
+  return <ChronicleLoader key={params.lifeId} lifeId={params.lifeId} lang={params.lang} initialBranchId={searchParams.get("branch") ?? undefined} />;
 }
 
-function ChronicleLoader({ lifeId, initialBranchId }: { lifeId: string; initialBranchId?: string }) {
+function ChronicleLoader({ lifeId, lang, initialBranchId }: { lifeId: string; lang: Locale; initialBranchId?: string }) {
+  const dict = getDictionary(lang);
   // Frozen at mount, deliberately not re-read from the URL afterward. `<Chronicle>` owns every
   // later branch change itself — both from a rewrite and from `switchBranch` (the history rail) —
   // and syncs the address bar with a raw, write-only `history.replaceState`. Next's App Router
@@ -36,17 +39,17 @@ function ChronicleLoader({ lifeId, initialBranchId }: { lifeId: string; initialB
 
   useEffect(() => {
     let cancelled = false;
-    getChronicle(lifeId, branchIdAtMount)
+    getChronicle(lifeId, branchIdAtMount, lang)
       .then((chronicle) => {
         if (!cancelled) setData(chronicle);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Couldn't load this life.");
+        if (!cancelled) setError(err instanceof Error ? err.message : dict.life.loadError);
       });
     return () => {
       cancelled = true;
     };
-  }, [lifeId, branchIdAtMount]);
+  }, [lifeId, branchIdAtMount, lang, dict.life.loadError]);
 
   if (error) {
     return (
@@ -59,7 +62,7 @@ function ChronicleLoader({ lifeId, initialBranchId }: { lifeId: string; initialB
   if (!data) {
     return (
       <div className="mx-auto flex min-h-[50vh] max-w-xl flex-col items-center justify-center gap-3 px-4 text-center">
-        <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">Opening the chronicle&hellip;</p>
+        <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">{dict.life.opening}</p>
       </div>
     );
   }

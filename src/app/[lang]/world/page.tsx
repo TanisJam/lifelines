@@ -1,7 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import type { Locale } from "@/i18n/config";
 import { streamSSE } from "@/lib/sse";
 
 function randomSeedWord(): string {
@@ -29,8 +30,10 @@ function shortLines(newDecisions: readonly StreamedDecision[]): string[] {
  * (decision 041 — single-life pivot) behind the footer's "The village (legacy)" link, since it
  * still calls real, working endpoints (`/api/worlds/**`) that this worktree must not break.
  */
+/** Decision 059: see `world/[worldId]/page.tsx`'s own comment — this legacy page routes under `[lang]` but keeps its English-only UI. */
 export default function LegacyWorldPage() {
   const router = useRouter();
+  const { lang } = useParams<{ lang: Locale }>();
   const [seed, setSeed] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +60,8 @@ export default function LegacyWorldPage() {
           if (lines.length > 0) setRecentLines(lines);
         } else if (event === "done") {
           const d = data as { worldId: string; branchId: string; richPersonId?: string };
-          if (d.richPersonId) router.push(`/world/${d.worldId}/person/${d.richPersonId}?branch=${d.branchId}`);
-          else router.push(`/world/${d.worldId}?branch=${d.branchId}`);
+          if (d.richPersonId) router.push(`/${lang}/world/${d.worldId}/person/${d.richPersonId}?branch=${d.branchId}`);
+          else router.push(`/${lang}/world/${d.worldId}?branch=${d.branchId}`);
         } else if (event === "error") {
           throw new Error((data as { message: string }).message);
         }

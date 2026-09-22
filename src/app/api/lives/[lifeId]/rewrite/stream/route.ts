@@ -1,6 +1,7 @@
 import type { ChronicleEntry, LifeStreamEvent, RewriteRequest } from "@/contracts/life";
 import { decisionYear } from "@/domain/decisions";
 import { ForkError, getRestoreSnapshot } from "@/domain/fork";
+import { isLocale } from "@/domain/locale";
 import { simulate } from "@/domain/simulate";
 import type { Override } from "@/domain/types";
 import { validateOverride } from "@/domain/validate-override";
@@ -35,6 +36,7 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
   const baseBranch = getLifeBranch(lifeId, branchId);
   if (!baseBranch) return errorResponse("Branch not found.", 404);
   if (!body.decisionId || !body.optionId) return errorResponse('"decisionId" and "optionId" are required.');
+  const locale = body.lang && isLocale(body.lang) ? body.lang : "en";
 
   overrideCounter += 1;
   const override: Override = { id: `lov${overrideCounter}-${Date.now().toString(36)}`, decisionId: body.decisionId, optionId: body.optionId };
@@ -96,7 +98,7 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
       return;
     }
 
-    const chronicleResult = await buildLifeChronicle(lifeId, newBranchId);
+    const chronicleResult = await buildLifeChronicle(lifeId, newBranchId, locale);
     if (!chronicleResult.data) {
       send("error", { type: "error", message: chronicleResult.error ?? "Failed to build the chronicle." });
       return;

@@ -15,7 +15,7 @@ import { VineCorner } from "@/components/ornaments";
  */
 /** Callers should pass `key={personId}` so switching to a different person remounts this panel
  * (and its loading state) from scratch, instead of resetting state imperatively inside an effect. */
-export function PersonSheet({ lifeId, branchId, personId, onClose }: { lifeId: string; branchId: string; personId: string; onClose: () => void }) {
+export function PersonSheet({ lifeId, branchId, personId, lang, onClose }: { lifeId: string; branchId: string; personId: string; lang?: string; onClose: () => void }) {
   const [data, setData] = useState<PersonSheetData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mobile = isNarrowViewport();
@@ -23,7 +23,7 @@ export function PersonSheet({ lifeId, branchId, personId, onClose }: { lifeId: s
 
   useEffect(() => {
     let cancelled = false;
-    getPersonSheet(lifeId, personId, branchId)
+    getPersonSheet(lifeId, personId, branchId, lang)
       .then((sheet) => {
         if (!cancelled) setData(sheet);
       })
@@ -33,7 +33,7 @@ export function PersonSheet({ lifeId, branchId, personId, onClose }: { lifeId: s
     return () => {
       cancelled = true;
     };
-  }, [lifeId, personId, branchId]);
+  }, [lifeId, personId, branchId, lang]);
 
   return (
     <>

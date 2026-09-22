@@ -19,6 +19,8 @@ const LABEL_WIDTH = 168;
 const FRAGILE_THRESHOLD = 0.5;
 
 export interface LoomProps {
+  /** Decision 059: for locale-prefixing this component's own internal navigation (`/world/**` stays English-only UI, but every link/push must still land under the reader's `/[lang]` prefix). */
+  lang: string;
   worldId: string;
   branchId: string;
   branchLabel: string;
@@ -64,7 +66,7 @@ function isNoteworthy(d: DecisionRecord): boolean {
  */
 export function Loom(props: LoomProps): React.ReactElement {
   const router = useRouter();
-  const { worldId, branchId, townName, startYear, endYear, people, laneOrder, decisions, branches, ghost, diff } = props;
+  const { lang, worldId, branchId, townName, startYear, endYear, people, laneOrder, decisions, branches, ghost, diff } = props;
 
   const [selected, setSelected] = useState<DecisionRecord | null>(null);
   const [forking, setForking] = useState<{ optionId: string; year: number; population: number } | null>(null);
@@ -118,7 +120,7 @@ export function Loom(props: LoomProps): React.ReactElement {
         }
       });
       if (newBranchId) {
-        router.push(`/world/${worldId}?branch=${newBranchId}&compare=${branchId}`);
+        router.push(`/${lang}/world/${worldId}?branch=${newBranchId}&compare=${branchId}`);
       }
     } catch (err) {
       setForkError(err instanceof Error ? err.message : "The fork failed.");
@@ -135,7 +137,7 @@ export function Loom(props: LoomProps): React.ReactElement {
           {branches.map((b) => (
             <Link
               key={b.id}
-              href={`/world/${worldId}?branch=${b.id}`}
+              href={`/${lang}/world/${worldId}?branch=${b.id}`}
               className={`rounded-full border px-3 py-1 text-xs transition-colors ${b.id === branchId ? "border-brass bg-brass/10 text-brass" : "border-border text-muted-foreground hover:border-brass hover:text-brass"}`}
             >
               {b.label}
@@ -187,7 +189,7 @@ export function Loom(props: LoomProps): React.ReactElement {
               return (
                 <Link
                   key={id}
-                  href={`/world/${worldId}/person/${id}?branch=${branchId}`}
+                  href={`/${lang}/world/${worldId}/person/${id}?branch=${branchId}`}
                   style={{ height: LANE_HEIGHT }}
                   className={`flex items-center truncate px-2 text-xs hover:text-brass ${changed ? "font-semibold text-brass" : "text-foreground"}`}
                   title={person.name}

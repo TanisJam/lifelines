@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { resolveLang } from "@/i18n/resolve-lang";
 import { buildTownChronicle } from "@/server/town-data";
 import { getBranch, getWorld } from "@/server/world-store";
 
@@ -8,9 +9,12 @@ import { getBranch, getWorld } from "@/server/world-store";
  * replace the single-person life as the central product experience"), reachable from the top bar
  * of the Living Chronicle. Reads the same event log as every other view (decision 001): town
  * events, notable deaths, dynasties (surname groups) and the biggest feuds.
+ *
+ * Decision 059: see `world/[worldId]/page.tsx`'s own comment — this legacy page routes under `[lang]` but keeps its English-only UI.
  */
-export default async function TownPage({ params, searchParams }: { params: Promise<{ worldId: string }>; searchParams: Promise<{ branch?: string }> }) {
-  const { worldId } = await params;
+export default async function TownPage({ params, searchParams }: { params: Promise<{ lang: string; worldId: string }>; searchParams: Promise<{ branch?: string }> }) {
+  const { lang: langParam, worldId } = await params;
+  const lang = resolveLang(langParam);
   const { branch: branchParam } = await searchParams;
 
   const world = getWorld(worldId);
@@ -25,7 +29,7 @@ export default async function TownPage({ params, searchParams }: { params: Promi
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
       <div className="mb-8 flex flex-wrap items-center gap-3 border-b border-border/70 pb-4">
-        <Link href={`/world/${worldId}?branch=${branchId}`} className="font-label text-xs uppercase tracking-widest text-muted-foreground hover:text-brass">
+        <Link href={`/${lang}/world/${worldId}?branch=${branchId}`} className="font-label text-xs uppercase tracking-widest text-muted-foreground hover:text-brass">
           &larr; Tapestry
         </Link>
       </div>
@@ -56,7 +60,7 @@ export default async function TownPage({ params, searchParams }: { params: Promi
             <li key={d.personId} className="rounded-md border border-border bg-card p-3">
               <p className="font-label text-xs uppercase tracking-widest text-muted-foreground">{d.year}</p>
               <p className="text-foreground">
-                <Link href={`/world/${worldId}/person/${d.personId}?branch=${branchId}`} className="text-brass underline decoration-brass/40 underline-offset-2 hover:decoration-brass">
+                <Link href={`/${lang}/world/${worldId}/person/${d.personId}?branch=${branchId}`} className="text-brass underline decoration-brass/40 underline-offset-2 hover:decoration-brass">
                   {d.name}
                 </Link>{" "}
                 &mdash; {d.prose}

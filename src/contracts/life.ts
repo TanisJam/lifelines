@@ -14,6 +14,8 @@ export interface CreateLifeRequest {
   readonly seed?: string;
   /** Optional; a generated village name is used when omitted. */
   readonly villageName?: string;
+  /** Decision 059: the reader's locale, for the chronicle this request's `done` event carries — defaults to `"en"` when omitted. Never affects simulation or the Jev-facing decision text, only the narrated prose/title/summary built afterward. */
+  readonly lang?: string;
 }
 
 /** POST /api/lives/:lifeId/rewrite/stream request body. */
@@ -21,6 +23,8 @@ export interface RewriteRequest {
   readonly branchId: string;
   readonly decisionId: string;
   readonly optionId: string;
+  /** Decision 059: same meaning as `CreateLifeRequest.lang`. */
+  readonly lang?: string;
 }
 
 /** A person linked from prose. Prose marks links as `{{personId}}`; `links` resolves them. */

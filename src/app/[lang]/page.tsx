@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { LifeSex, LifeStreamEvent } from "@/contracts/life";
+import type { Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { createLifeStream, getLives } from "@/lib/life-client";
 
 function randomVillageName(): string {
@@ -18,19 +20,24 @@ function sleep(ms: number): Promise<void> {
 
 type Stage = "form" | "creating";
 
-const SEX_OPTIONS: { value: LifeSex | "random"; label: string }[] = [
-  { value: "f", label: "a daughter" },
-  { value: "m", label: "a son" },
-  { value: "random", label: "let fate decide" },
-];
-
 /**
  * The start screen (decision 041, product decision 034's single-life pivot). One life, one CTA:
  * name a newborn and watch their whole life get written. Village name is a collapsed, optional
  * field — the primary decision is the name and whether it's a daughter, a son, or fate's choice.
+ *
+ * Decision 059: `lang` (from the `app/[lang]` route param) both picks the UI dictionary and rides
+ * along in the create-life request body (`CreateLifeRequest.lang`), so the chronicle this life
+ * lands on is narrated in the reader's own locale from the moment it's first written.
  */
 export default function HomePage() {
   const router = useRouter();
+  const { lang } = useParams<{ lang: Locale }>();
+  const dict = getDictionary(lang);
+  const SEX_OPTIONS: { value: LifeSex | "random"; label: string }[] = [
+    { value: "f", label: dict.home.sexDaughter },
+    { value: "m", label: dict.home.sexSon },
+    { value: "random", label: dict.home.sexRandom },
+  ];
   const [name, setName] = useState("");
   const [sex, setSex] = useState<LifeSex | "random">("random");
   const [villageOpen, setVillageOpen] = useState(false);
@@ -44,14 +51,14 @@ export default function HomePage() {
   const [hasLives, setHasLives] = useState(false);
 
   useEffect(() => {
-    getLives()
+    getLives(lang)
       .then((lives) => setHasLives(lives.length > 0))
       .catch(() => setHasLives(false));
-  }, []);
+  }, [lang]);
 
   async function write(): Promise<void> {
     if (!name.trim()) {
-      setError("Name her, or him, first.");
+      setError(dict.home.nameRequiredError);
       return;
     }
     setError(null);
@@ -64,7 +71,7 @@ export default function HomePage() {
     try {
       let landedLifeId = "";
       let landedBranchId = "";
-      await createLifeStream({ name: name.trim(), sex, villageName: villageName.trim() || undefined }, (event: LifeStreamEvent) => {
+      await createLifeStream({ name: name.trim(), sex, villageName: villageName.trim() || undefined, lang }, (event: LifeStreamEvent) => {
         if (event.type === "start") {
           setProtagonistName(event.protagonist.name);
           setYear(event.protagonist.birthYear);
@@ -82,7 +89,7 @@ export default function HomePage() {
       if (landedLifeId) {
         // "On done, show '<Name>, <birth>–<death>' briefly, then transition to the chronicle."
         await sleep(900);
-        router.push(`/life/${landedLifeId}?branch=${landedBranchId}`);
+        router.push(`/${lang}/life/${landedLifeId}?branch=${landedBranchId}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -95,14 +102,14 @@ export default function HomePage() {
       <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col items-center justify-center gap-6 px-4 text-center sm:px-6">
         {done ? (
           <>
-            <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">A life, written</p>
+            <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">{dict.home.writtenKicker}</p>
             <h1 className="font-heading text-4xl font-semibold text-foreground sm:text-5xl">
               {done.name}, {done.birthYear}–{done.deathYear}
             </h1>
           </>
         ) : (
           <>
-            <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">Writing the life of {protagonistName ?? name}&hellip;</p>
+            <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">{dict.home.writingKicker(protagonistName ?? name)}</p>
             {year !== null && (
               <p className="font-heading text-5xl font-semibold tabular-nums text-foreground" aria-live="polite">
                 {year}
@@ -125,30 +132,27 @@ export default function HomePage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col items-center gap-8 px-4 py-20 text-center sm:px-6">
       <div className="space-y-4">
-        <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">A life simulator</p>
+        <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">{dict.home.kicker}</p>
         <h1 className="font-heading text-5xl font-semibold leading-tight sm:text-6xl">Lifelines</h1>
-        <p className="mx-auto max-w-xl text-lg leading-relaxed text-muted-foreground">
-          Name a newborn, and watch one life get written — year by year, birth to death — in a medieval village. Then change any
-          moment, hers or someone else&apos;s or chance&apos;s, and watch the rest of that life get rewritten.
-        </p>
+        <p className="mx-auto max-w-xl text-lg leading-relaxed text-muted-foreground">{dict.home.description}</p>
       </div>
 
       <div className="w-full max-w-md space-y-5 rounded-lg border border-border bg-card p-6 text-left shadow-sm">
         <div>
           <label htmlFor="name" className="font-label text-xs uppercase tracking-widest text-muted-foreground">
-            Name
+            {dict.home.nameLabel}
           </label>
           <input
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Elin"
+            placeholder={dict.home.namePlaceholder}
             className="mt-2 min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-base text-foreground outline-none focus:border-brass focus:ring-2 focus:ring-ring/40"
           />
         </div>
 
         <div>
-          <div className="font-label text-xs uppercase tracking-widest text-muted-foreground">A daughter, a son, or fate</div>
+          <div className="font-label text-xs uppercase tracking-widest text-muted-foreground">{dict.home.sexLabel}</div>
           <div className="mt-2 flex gap-2">
             {SEX_OPTIONS.map((opt) => (
               <button
@@ -168,14 +172,14 @@ export default function HomePage() {
 
         <div>
           <button type="button" onClick={() => setVillageOpen((v) => !v)} className="cursor-pointer text-xs text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-brass">
-            {villageOpen ? "Hide village" : "Choose a village (optional)"}
+            {villageOpen ? dict.home.hideVillage : dict.home.chooseVillage}
           </button>
           {villageOpen && (
             <div className="mt-2 flex gap-2">
               <input
                 value={villageName}
                 onChange={(e) => setVillageName(e.target.value)}
-                placeholder="leave blank to randomize"
+                placeholder={dict.home.villagePlaceholder}
                 className="min-h-11 flex-1 rounded-md border border-border bg-background px-3 py-2 text-base text-foreground outline-none focus:border-brass focus:ring-2 focus:ring-ring/40"
               />
               <button
@@ -183,7 +187,7 @@ export default function HomePage() {
                 onClick={() => setVillageName(randomVillageName())}
                 className="min-h-11 cursor-pointer rounded-md border border-border px-3 font-label text-xs uppercase tracking-widest text-muted-foreground transition-colors hover:border-brass hover:text-brass"
               >
-                Randomize
+                {dict.home.randomize}
               </button>
             </div>
           )}
@@ -194,15 +198,15 @@ export default function HomePage() {
           onClick={write}
           className="min-h-11 w-full cursor-pointer rounded-md bg-brass px-4 py-2.5 font-label text-sm uppercase tracking-widest text-background transition-opacity hover:opacity-90"
         >
-          Write their life
+          {dict.home.submit}
         </button>
 
         {error && <p className="text-center text-sm text-crimson">{error}</p>}
       </div>
 
       {hasLives && (
-        <Link href="/lives" className="font-label text-xs uppercase tracking-widest text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-brass">
-          Your lives
+        <Link href={`/${lang}/lives`} className="font-label text-xs uppercase tracking-widest text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-brass">
+          {dict.home.yourLivesLink}
         </Link>
       )}
     </div>

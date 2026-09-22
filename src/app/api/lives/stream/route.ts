@@ -1,4 +1,5 @@
 import type { ChronicleEntry, CreateLifeRequest, LifeSex, LifeStreamEvent } from "@/contracts/life";
+import { isLocale } from "@/domain/locale";
 import { simulate } from "@/domain/simulate";
 import { generateWorld, resolveProtagonistSex } from "@/domain/worldgen";
 import { activeEngineName, decisionMakerRunStats, getDecisionMaker, snapshotDecisionMakerStats } from "@/server/decision-engine";
@@ -8,7 +9,7 @@ import { sseResponse } from "@/server/sse";
 
 export const runtime = "nodejs";
 
-const START_YEAR = 1500;
+const START_YEAR = 1498;
 /** A generous safety cap (see mortality.ts): the sim always stops earlier, at the protagonist's death, but the actuarial curve alone never guarantees that before some fixed year. */
 const MAX_LIFESPAN_YEARS = 100;
 
@@ -44,6 +45,7 @@ export async function POST(request: Request): Promise<Response> {
   const seed = body.seed?.trim() || randomSeed();
   const startYear = START_YEAR;
   const endYear = startYear + MAX_LIFESPAN_YEARS;
+  const locale = body.lang && isLocale(body.lang) ? body.lang : "en";
 
   const decisionMaker = getDecisionMaker();
   const engineSource = activeEngineName();
@@ -77,7 +79,7 @@ export async function POST(request: Request): Promise<Response> {
     const report = await simulate(config, people, events, { decisionMaker, engineSource, protagonistId: "protagonist" });
     registerLife(lifeId, branchId, config, protagonist.name, protagonist.sex as LifeSex, report.result, report.snapshots);
 
-    const chronicleResult = await buildLifeChronicle(lifeId, branchId);
+    const chronicleResult = await buildLifeChronicle(lifeId, branchId, locale);
     if (!chronicleResult.data) {
       send("error", { type: "error", message: chronicleResult.error ?? "Failed to build the chronicle." });
       return;

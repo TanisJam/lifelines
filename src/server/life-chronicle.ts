@@ -2,9 +2,10 @@ import type { BranchInfo, Chronicle, ChronicleEntry, EntryLevel, LifeSex, Person
 import { ageInYear } from "@/domain/actuarial";
 import { isRealTurn } from "@/domain/chronicle-view";
 import type { DecisionRecord } from "@/domain/decisions";
+import { DEFAULT_LOCALE, type Locale } from "@/domain/locale";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "@/domain/mortality";
 import { renderPortrait } from "@/domain/mind";
-import { familyRelation, lifeSummary, narratePersonTimeline } from "@/domain/narrate";
+import { deathCauseDisplay, familyRelation, lifeSummary, narratePersonTimeline } from "@/domain/narrate";
 import type { Event, Person } from "@/domain/types";
 import { causeNounPhrase } from "@/server/chronicle-data";
 import { getDecisionMaker } from "@/server/decision-engine";
@@ -123,7 +124,14 @@ export interface ChronicleResult {
  * `DecisionRecord`s (with the protagonist's death forced to level 3 regardless of `isRealTurn`),
  * and deterministic period summaries for quiet stretches.
  */
-export async function buildLifeChronicle(lifeId: string, branchIdParam?: string): Promise<ChronicleResult> {
+/**
+ * Decision 059: `locale` defaults to English (byte-identical to this function's pre-059 behavior)
+ * and flows into every narration call below — the reader-facing prose/title/summary re-derive fresh
+ * from structured events per the requested locale, exactly like the pre-059 English-only path did
+ * for a single implicit locale. `error` strings below stay English regardless (a small, disclosed
+ * gap — see docs/decisions.md's "059" entry): they're operational/debug text, not narrative prose.
+ */
+export async function buildLifeChronicle(lifeId: string, branchIdParam?: string, locale: Locale = DEFAULT_LOCALE): Promise<ChronicleResult> {
   const branch = branchIdParam ? getLifeBranch(lifeId, branchIdParam) : getLatestBranch(lifeId);
   if (!branch) return { error: "Life not found.", status: 404 };
 
@@ -140,11 +148,11 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string)
   const decisionByEventId = new Map<string, DecisionRecord>();
   for (const decision of decisions) for (const eventId of decision.resultingEventIds) decisionByEventId.set(eventId, decision);
 
-  const timeline = await narratePersonTimeline(PROTAGONIST_ID, events, people, getDecisionMaker(), 8, seed, townName);
+  const timeline = await narratePersonTimeline(PROTAGONIST_ID, events, people, getDecisionMaker(), 8, seed, townName, locale);
 
   const deathEvent = events.find((e) => e.kind === "death" && e.actors[0] === PROTAGONIST_ID);
   const causeCode = deathEvent && typeof deathEvent.payload.cause === "string" ? (deathEvent.payload.cause as DeathCause) : undefined;
-  const causeOfDeath = causeCode && causeCode in DEATH_CAUSE_PHRASE ? DEATH_CAUSE_PHRASE[causeCode] : "misfortune";
+  const causeOfDeath = causeCode && causeCode in DEATH_CAUSE_PHRASE ? deathCauseDisplay(locale, causeCode) : locale === "es" ? "mala fortuna" : "misfortune";
 
   const entries: ChronicleEntry[] = timeline.map(({ event, title, prose, significance }) => {
     const decision = decisionByEventId.get(event.id);
@@ -178,7 +186,7 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string)
   // — sorting by year is all that's left to do.
   const sorted = [...entries].sort((a, b) => a.year - b.year);
 
-  const summaryRaw = lifeSummary(protagonist, people, events, townName);
+  const summaryRaw = lifeSummary(protagonist, people, events, townName, locale);
   const { text: summary, links: summaryLinks } = markLinks(summaryRaw, Object.keys(people), people, PROTAGONIST_ID);
 
   const protagonistInfo: ProtagonistInfo = {
@@ -220,7 +228,7 @@ export interface PersonSheetResult {
 }
 
 /** `GET /api/lives/:lifeId/people/:personId?branchId=` — a read-only side sheet, from the protagonist's point of view. */
-export async function buildPersonSheet(lifeId: string, personId: string, branchIdParam?: string): Promise<PersonSheetResult> {
+export async function buildPersonSheet(lifeId: string, personId: string, branchIdParam?: string, locale: Locale = DEFAULT_LOCALE): Promise<PersonSheetResult> {
   const branch = branchIdParam ? getLifeBranch(lifeId, branchIdParam) : getLatestBranch(lifeId);
   if (!branch) return { error: "Life not found.", status: 404 };
 
@@ -234,7 +242,7 @@ export async function buildPersonSheet(lifeId: string, personId: string, branchI
       ? "self"
       : (familyRelation(protagonist, person) ?? protagonist.mind.relationships.find((r) => r.personId === personId)?.bond ?? "acquaintance");
 
-  const timeline = await narratePersonTimeline(personId, branch.result.events, people, getDecisionMaker(), 8, branch.result.config.seed, branch.result.config.town.name);
+  const timeline = await narratePersonTimeline(personId, branch.result.events, people, getDecisionMaker(), 8, branch.result.config.seed, branch.result.config.town.name, locale);
   const moments = [...timeline]
     .sort((a, b) => b.significance - a.significance)
     .slice(0, 5)

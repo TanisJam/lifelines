@@ -2,19 +2,22 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { diffBranches } from "@/domain/diff";
 import { narratePersonTimeline } from "@/domain/narrate";
+import { resolveLang } from "@/i18n/resolve-lang";
 import { getDecisionMaker } from "@/server/decision-engine";
 import { getBranch, getWorld } from "@/server/world-store";
 
 const FIELD_LABELS: Record<string, string> = { alive: "Life", job: "Career", spouse: "Marriage", location: "Location" };
 
+/** Decision 059: see `world/[worldId]/page.tsx`'s own comment — this legacy page routes under `[lang]` but keeps its English-only UI. */
 export default async function ComparePage({
   params,
   searchParams,
 }: {
-  params: Promise<{ worldId: string }>;
+  params: Promise<{ lang: string; worldId: string }>;
   searchParams: Promise<{ a?: string; b?: string; person?: string }>;
 }) {
-  const { worldId } = await params;
+  const { lang: langParam, worldId } = await params;
+  const lang = resolveLang(langParam);
   const { a, b, person: personId } = await searchParams;
 
   const world = getWorld(worldId);
@@ -29,7 +32,7 @@ export default async function ComparePage({
     return (
       <div className="mx-auto max-w-3xl px-4 py-10 text-center sm:px-6">
         <p className="text-muted-foreground">No fork to compare yet. Open a person&apos;s chronicle and rewrite a moment in their history first.</p>
-        <Link href={`/world/${worldId}?branch=${branchAId}`} className="mt-4 inline-block text-brass underline underline-offset-4">
+        <Link href={`/${lang}/world/${worldId}?branch=${branchAId}`} className="mt-4 inline-block text-brass underline underline-offset-4">
           &larr; Back to the town
         </Link>
       </div>
@@ -50,7 +53,7 @@ export default async function ComparePage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-      <Link href={`/world/${worldId}?branch=${branchB.id}`} className="mb-6 inline-block font-label text-xs uppercase tracking-widest text-muted-foreground hover:text-brass">
+      <Link href={`/${lang}/world/${worldId}?branch=${branchB.id}`} className="mb-6 inline-block font-label text-xs uppercase tracking-widest text-muted-foreground hover:text-brass">
         &larr; {world.config.town.name}
       </Link>
 
@@ -84,7 +87,7 @@ export default async function ComparePage({
             {diff.diffs.map((d, i) => (
               <tr key={`${d.personId}-${d.field}-${i}`} className="border-t border-border">
                 <td className="px-3 py-2">
-                  <Link href={`/world/${worldId}/compare?a=${branchAId}&b=${branchB.id}&person=${d.personId}`} className="text-brass underline underline-offset-4">
+                  <Link href={`/${lang}/world/${worldId}/compare?a=${branchAId}&b=${branchB.id}&person=${d.personId}`} className="text-brass underline underline-offset-4">
                     {d.name}
                   </Link>
                 </td>
@@ -104,7 +107,7 @@ export default async function ComparePage({
             {diff.newPeople.map((p) => (
               <tr key={`new-${p.personId}`} className="border-t border-border bg-brass/5">
                 <td className="px-3 py-2">
-                  <Link href={`/world/${worldId}/compare?a=${branchAId}&b=${branchB.id}&person=${p.personId}`} className="text-brass underline underline-offset-4">
+                  <Link href={`/${lang}/world/${worldId}/compare?a=${branchAId}&b=${branchB.id}&person=${p.personId}`} className="text-brass underline underline-offset-4">
                     {p.name}
                   </Link>
                 </td>

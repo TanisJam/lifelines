@@ -1,9 +1,12 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Chronicle as ChronicleData, ChronicleEntry, LifeStreamEvent } from "@/contracts/life";
+import type { Dictionary } from "@/i18n/dictionary";
+import type { Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { getChronicle, rewriteStream } from "@/lib/life-client";
 import { parseProseMarkers } from "@/lib/prose-markers";
 import { prefersReducedMotion } from "@/lib/viewport";
@@ -17,11 +20,11 @@ import { CheckCircleIcon, ChevronRightIcon, LeafGlyph, SprigDivider, SunEmblem, 
  * already a ready-made phrase ("Tomas Vell's choice") per the contract; stripping the trailing
  * "'s choice" recovers the name for an NPC decider without guessing a pronoun for them.
  */
-function whyQuestion(turn: NonNullable<ChronicleEntry["turn"]>, protagonistSex: "f" | "m"): string {
-  if (turn.deciderId === "chance") return "Why did this happen?";
-  if (turn.deciderId === "self") return `Why did ${protagonistSex === "f" ? "she" : "he"} choose this?`;
+function whyQuestion(turn: NonNullable<ChronicleEntry["turn"]>, protagonistSex: "f" | "m", dict: Dictionary): string {
+  if (turn.deciderId === "chance") return dict.chronicle.modal.whyChance;
+  if (turn.deciderId === "self") return dict.chronicle.modal.whySelf(protagonistSex);
   const name = turn.decidedBy.replace(/'s choice$/i, "");
-  return `Why did ${name} choose this?`;
+  return dict.chronicle.modal.whyOther(name);
 }
 
 /**
@@ -34,12 +37,14 @@ function whyQuestion(turn: NonNullable<ChronicleEntry["turn"]>, protagonistSex: 
 function ChangeModal({
   entry,
   personSex,
+  dict,
   onClose,
   onChoose,
   busy,
 }: {
   entry: ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> };
   personSex: "f" | "m";
+  dict: Dictionary;
   onClose: () => void;
   onChoose: (optionId: string) => void;
   busy: boolean;
@@ -57,17 +62,17 @@ function ChangeModal({
 
         <div className="cw-modal-kicker">{entry.year}</div>
         <h2>{entry.title}</h2>
-        <p>Everything after this moment will be rewritten.</p>
+        <p>{dict.chronicle.modal.willBeRewritten}</p>
 
         <SprigDivider className="cw-sprig" />
 
-        <p className="cw-sheet-prompt">How does this moment unfold?</p>
+        <p className="cw-sheet-prompt">{dict.chronicle.modal.howDoesThisUnfold}</p>
         <div className="cw-options">
           <div className="cw-option-btn cw-current" aria-current="true">
             <LeafGlyph className="cw-option-leaf" />
             <span className="cw-option-label">
               {turn.chosen.label}
-              <span className="cw-option-sub">(Current history)</span>
+              <span className="cw-option-sub">{dict.chronicle.modal.currentHistory}</span>
             </span>
             <CheckCircleIcon className="cw-option-chevron" />
           </div>
@@ -81,19 +86,19 @@ function ChangeModal({
         </div>
 
         <button type="button" className="cw-primary-btn" disabled={!selected || busy} onClick={() => selected && onChoose(selected)}>
-          {busy ? "Rewriting…" : "Apply this change"}
+          {busy ? dict.chronicle.modal.rewriting : dict.chronicle.modal.applyThisChange}
         </button>
 
         <div className="cw-modal-actions">
           <button type="button" onClick={onClose}>
-            Cancel
+            {dict.chronicle.modal.cancel}
           </button>
         </div>
 
-        <p className="cw-sheet-quote">A single choice can ripple through a lifetime.</p>
+        <p className="cw-sheet-quote">{dict.chronicle.modal.rippleQuote}</p>
 
         <details className="cw-why" open={showNumbers} onToggle={(e) => setShowNumbers((e.target as HTMLDetailsElement).open)}>
-          <summary>{whyQuestion(turn, personSex)}</summary>
+          <summary>{whyQuestion(turn, personSex, dict)}</summary>
           <p>{turn.whyPhrase}</p>
           {showNumbers && turn.probabilities && (
             <ul style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 12, color: "var(--cw-muted)" }}>
@@ -127,6 +132,8 @@ function sleep(ms: number): Promise<void> {
 
 export function Chronicle({ initial }: { initial: ChronicleData }) {
   const router = useRouter();
+  const { lang } = useParams<{ lang: Locale }>();
+  const dict = getDictionary(lang);
   const [data, setData] = useState(initial);
   const [openEntry, setOpenEntry] = useState<(ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> }) | null>(null);
   const [rewrite, setRewrite] = useState<RewriteState | null>(null);
@@ -165,7 +172,7 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
     setRewrite((r) => (r ? { ...r, phase: "C" } : r));
     try {
       let finished = false;
-      await rewriteStream(data.lifeId, { branchId: data.branchId, decisionId: entry.turn.decisionId, optionId }, (event: LifeStreamEvent) => {
+      await rewriteStream(data.lifeId, { branchId: data.branchId, decisionId: entry.turn.decisionId, optionId, lang }, (event: LifeStreamEvent) => {
         if (event.type === "tick") {
           setRewrite((r) => (r ? { ...r, tickYear: event.year, streamed: [...r.streamed, ...event.entries] } : r));
         } else if (event.type === "done") {
@@ -177,12 +184,12 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
           // North star item 7, "stay on the same page": sync the address bar via the raw History
           // API, never `router.replace`/`router.push`. Next's App Router observes the History API
           // globally, so routing this through Next would re-trigger the URL-keyed loader in
-          // `/life/[lifeId]/page.tsx` and refetch from the plain GET endpoint — which doesn't
+          // `/[lang]/life/[lifeId]/page.tsx` and refetch from the plain GET endpoint — which doesn't
           // carry `ghosts` — silently overwriting the in-memory state this handler just set. The
           // loader only ever reads the branch it was mounted with (see its own comment); every
           // later branch change, from a rewrite or from `switchBranch` below, updates this
           // component's own state directly and treats the URL as write-only.
-          window.history.replaceState(null, "", `/life/${event.chronicle.lifeId}?branch=${event.chronicle.branchId}`);
+          window.history.replaceState(null, "", `/${lang}/life/${event.chronicle.lifeId}?branch=${event.chronicle.branchId}`);
           // §11, scroll anchoring: the divergence entry's own id can change (it's a different
           // event in the new branch), so re-anchor by YEAR rather than the top of the biography.
           setTimeout(() => {
@@ -193,9 +200,9 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
           throw new Error(event.message);
         }
       });
-      if (!finished) throw new Error("The rewrite didn't complete.");
+      if (!finished) throw new Error(dict.chronicle.rewriteIncomplete);
     } catch (err) {
-      setRewriteError(err instanceof Error ? err.message : "The rewrite failed.");
+      setRewriteError(err instanceof Error ? err.message : dict.chronicle.rewriteFailed);
     } finally {
       setRewrite(null);
     }
@@ -210,7 +217,7 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
    * Switches to a different branch of THIS SAME life in place, exactly like the end of a rewrite
    * (fetch, `setData`, sync the address bar) — never `router.push`/`router.replace`. Next's App
    * Router observes the History API globally (even a raw `history.replaceState` call), so routing
-   * a branch change through it remounts the URL-keyed loader in `/life/[lifeId]/page.tsx` and
+   * a branch change through it remounts the URL-keyed loader in `/[lang]/life/[lifeId]/page.tsx` and
    * silently discards this component's own in-memory state (`ghosts`, in particular — a real bug
    * caught live: after a rewrite settled correctly, `router.replace` would re-fetch the branch a
    * moment later from the plain GET endpoint, which doesn't carry `ghosts`, wiping them out).
@@ -221,30 +228,29 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
     setOpenEntry(null);
     setRewriteError(null);
     try {
-      const fresh = await getChronicle(data.lifeId, branchId);
+      const fresh = await getChronicle(data.lifeId, branchId, lang);
       setData(fresh);
       setGhosts({});
-      window.history.replaceState(null, "", `/life/${fresh.lifeId}?branch=${fresh.branchId}`);
+      window.history.replaceState(null, "", `/${lang}/life/${fresh.lifeId}?branch=${fresh.branchId}`);
     } catch (err) {
-      setRewriteError(err instanceof Error ? err.message : "Couldn't load that branch.");
+      setRewriteError(err instanceof Error ? err.message : dict.chronicle.branchLoadError);
     }
   }
 
   const isDead = typeof p.deathYear === "number";
-  const afterDeathPronoun = p.sex === "f" ? "her" : "his";
 
   return (
     <div className="cw-app">
       <header className="cw-topbar">
-        <button type="button" className="cw-brand" onClick={() => router.push("/lives")}>
-          <SunEmblem className="cw-mark" /> Lifelines
+        <button type="button" className="cw-brand" onClick={() => router.push(`/${lang}/lives`)}>
+          <SunEmblem className="cw-mark" /> {dict.chronicle.brand}
         </button>
         <div className="cw-top-actions">
           <button type="button" onClick={() => setHistoryOpen(true)}>
-            History ▾
+            {dict.chronicle.historyToggle}
           </button>
-          <button type="button" onClick={() => router.push("/")}>
-            New life
+          <button type="button" onClick={() => router.push(`/${lang}`)}>
+            {dict.chronicle.newLife}
           </button>
           <ThemeToggle />
         </div>
@@ -252,7 +258,7 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
 
       <main className="cw-page">
         <aside className="cw-left">
-          <div className="cw-rail-label">People in this life</div>
+          <div className="cw-rail-label">{dict.chronicle.peopleInThisLife}</div>
           <div className="cw-cast">
             {data.cast.map((c) => (
               <button key={c.personId} type="button" className="cw-person-link" onClick={() => setOpenPersonId(c.personId)}>
@@ -267,15 +273,15 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
           <section className="cw-hero">
             <VineCorner className="cw-vine-corner cw-vine-left h-9 w-9" />
             <VineCorner className="cw-vine-corner cw-vine-right h-9 w-9" />
-            <div className="cw-eyebrow">A life already lived</div>
+            <div className="cw-eyebrow">{dict.chronicle.eyebrow}</div>
             <h1 className="cw-h1">{p.name}</h1>
             <div className="cw-years">
-              {p.birthYear} — {isDead ? p.deathYear : "living"}
+              {p.birthYear} — {isDead ? p.deathYear : dict.chronicle.living}
             </div>
             {currentBranch?.forkYear != null && (
               <div className="cw-branch-ribbon">
                 <SunEmblem className="h-3.5 w-3.5" aria-hidden="true" />
-                Branch from {currentBranch.forkYear}
+                {dict.chronicle.branchFrom(currentBranch.forkYear)}
               </div>
             )}
             <SprigDivider className="cw-sprig" />
@@ -307,13 +313,13 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
                   <div className="cw-event-content">
                     {isDivergenceEntry && rewrite.phase === "A" ? (
                       <div className="cw-divergence">
-                        <div className="cw-divergence-mark">◆ history diverges here</div>
+                        <div className="cw-divergence-mark">{dict.chronicle.modal.diverges}</div>
                         <div className="cw-divergence-row">
-                          <span className="cw-divergence-label">ORIGINAL</span>
+                          <span className="cw-divergence-label">{dict.chronicle.modal.original}</span>
                           <span>{rewrite.originalLabel}</span>
                         </div>
                         <div className="cw-divergence-row cw-divergence-new">
-                          <span className="cw-divergence-label">NEW</span>
+                          <span className="cw-divergence-label">{dict.chronicle.modal.new}</span>
                           <span>{rewrite.newLabel}</span>
                         </div>
                       </div>
@@ -329,7 +335,7 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
                               <EntryProse prose={entry.prose} links={entry.links} onOpenPerson={setOpenPersonId} />
                             </p>
                             <button type="button" className="cw-turn-link" disabled={!!rewrite} onClick={() => setOpenEntry(entry as ChronicleEntry & { turn: NonNullable<ChronicleEntry["turn"]> })}>
-                              Change what happened →
+                              {dict.chronicle.changeWhatHappened}
                             </button>
                           </div>
                         ) : (
@@ -346,12 +352,10 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
                             {"↳ "}
                             {entry.cause.entryId ? (
                               <a href={`#event-${entry.cause.entryId}`} className="cw-cause-link">
-                                Follows {entry.cause.phrase} ({entry.cause.year})
+                                {dict.chronicle.follows(entry.cause.phrase, entry.cause.year)}
                               </a>
                             ) : (
-                              <>
-                                Follows {entry.cause.phrase} ({entry.cause.year})
-                              </>
+                              dict.chronicle.follows(entry.cause.phrase, entry.cause.year)
                             )}
                           </div>
                         )}
@@ -400,12 +404,12 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
             <section className="cw-timeline" style={{ paddingTop: 0, textAlign: "center" }}>
               <div className="font-label text-ll-sun-ink" style={{ margin: "0 auto 18px", fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase" }}>
                 <SunEmblem className="h-3.5 w-3.5" style={{ display: "inline-block", verticalAlign: "-2px", marginRight: 4 }} aria-hidden="true" />
-                End of life
+                {dict.chronicle.endOfLife}
               </div>
               {data.epilogue.length > 0 && (
                 <div style={{ maxWidth: 620, margin: "0 auto 24px", textAlign: "left" }}>
                   <div className="cw-rail-label" style={{ marginBottom: 8 }}>
-                    After {afterDeathPronoun} death
+                    {dict.chronicle.afterDeath(p.sex)}
                   </div>
                   {data.epilogue.map((line, i) => (
                     <p key={i} className="cw-event-text" style={{ marginBottom: 8 }}>
@@ -416,10 +420,10 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
               )}
               <div style={{ display: "flex", justifyContent: "center", gap: 18, flexWrap: "wrap" }}>
                 <button type="button" className="cw-turn-link" onClick={reopenLastTurn}>
-                  Change an earlier moment
+                  {dict.chronicle.changeAnEarlierMoment}
                 </button>
-                <button type="button" className="cw-turn-link" onClick={() => router.push("/")}>
-                  Begin a new life
+                <button type="button" className="cw-turn-link" onClick={() => router.push(`/${lang}`)}>
+                  {dict.chronicle.beginANewLife}
                 </button>
               </div>
             </section>
@@ -427,9 +431,9 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
         </article>
 
         <aside className="cw-right">
-          <div className="cw-rail-label">This history</div>
+          <div className="cw-rail-label">{dict.chronicle.thisHistory}</div>
           <div className="cw-branch-box">
-            <div className="cw-branch-name">{currentBranch?.label ?? "Original life"}</div>
+            <div className="cw-branch-name">{currentBranch?.label ?? dict.chronicle.originalLife}</div>
             <div className="cw-branch-list">
               {data.branches.map((b) => (
                 <button
@@ -443,7 +447,7 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
                 </button>
               ))}
             </div>
-            <div className="cw-footer-note">Change any turn and everything after it can be rewritten.</div>
+            <div className="cw-footer-note">{dict.chronicle.footerNote}</div>
           </div>
         </aside>
       </main>
@@ -451,21 +455,19 @@ export function Chronicle({ initial }: { initial: ChronicleData }) {
       {rewrite && rewrite.phase !== "A" && (
         <div className="cw-regen">
           <span className="cw-regen-dot" />
-          <span>
-            Rewriting {p.name.split(" ")[0]}&apos;s life from {rewrite.divergenceYear}&hellip; now at {rewrite.tickYear}
-          </span>
+          <span>{dict.chronicle.regenerating(p.name.split(" ")[0]!, rewrite.divergenceYear, rewrite.tickYear)}</span>
         </div>
       )}
 
       <AnimatePresence>
-        {openEntry && <ChangeModal entry={openEntry} personSex={p.sex} onClose={() => setOpenEntry(null)} onChoose={applyChoice} busy={!!rewrite} />}
+        {openEntry && <ChangeModal entry={openEntry} personSex={p.sex} dict={dict} onClose={() => setOpenEntry(null)} onChoose={applyChoice} busy={!!rewrite} />}
       </AnimatePresence>
 
       <AnimatePresence>
         {historyOpen && (
-          <HistoryDrawer lifeId={data.lifeId} branches={data.branches} onClose={() => setHistoryOpen(false)} onNavigate={switchBranch} />
+          <HistoryDrawer lifeId={data.lifeId} branches={data.branches} dict={dict} onClose={() => setHistoryOpen(false)} onNavigate={switchBranch} />
         )}
-        {openPersonId && <PersonSheet key={openPersonId} lifeId={data.lifeId} branchId={data.branchId} personId={openPersonId} onClose={() => setOpenPersonId(null)} />}
+        {openPersonId && <PersonSheet key={openPersonId} lifeId={data.lifeId} branchId={data.branchId} personId={openPersonId} lang={lang} onClose={() => setOpenPersonId(null)} />}
       </AnimatePresence>
     </div>
   );
@@ -495,13 +497,13 @@ function EntryProse({ prose, links, onOpenPerson }: { prose: string; links: Chro
   );
 }
 
-function HistoryDrawer({ branches, onClose, onNavigate }: { lifeId: string; branches: ChronicleData["branches"]; onClose: () => void; onNavigate: (branchId: string) => void }) {
+function HistoryDrawer({ branches, dict, onClose, onNavigate }: { lifeId: string; branches: ChronicleData["branches"]; dict: Dictionary; onClose: () => void; onNavigate: (branchId: string) => void }) {
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="cw-drawer-backdrop" onClick={onClose} />
       <motion.div initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ duration: 0.25, ease: "easeOut" }} className="cw-drawer-panel">
-        <div className="cw-modal-kicker">History</div>
-        <h2>This history</h2>
+        <div className="cw-modal-kicker">{dict.chronicle.modal.history}</div>
+        <h2>{dict.chronicle.thisHistory}</h2>
         {branches.map((b) => (
           <button
             key={b.branchId}
@@ -514,7 +516,7 @@ function HistoryDrawer({ branches, onClose, onNavigate }: { lifeId: string; bran
             }}
           >
             {b.label}
-            {b.forkYear ? <small>Changed in {b.forkYear}</small> : <small>The life that was first simulated.</small>}
+            {b.forkYear ? <small>{dict.chronicle.changedInYear(b.forkYear)}</small> : <small>{dict.chronicle.firstSimulated}</small>}
           </button>
         ))}
       </motion.div>

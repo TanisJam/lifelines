@@ -3,7 +3,10 @@ import { Cinzel, Cormorant_Garamond, Crimson_Pro } from "next/font/google";
 import Script from "next/script";
 import type { ReactNode } from "react";
 import { GlobalFooter, GlobalHeader } from "@/components/global-header";
-import "./globals.css";
+import { locales, type Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/get-dictionary";
+import { resolveLang } from "@/i18n/resolve-lang";
+import "../globals.css";
 
 const cormorant = Cormorant_Garamond({
   variable: "--font-cormorant",
@@ -23,10 +26,16 @@ const cinzel = Cinzel({
   weight: ["500", "600"],
 });
 
-export const metadata: Metadata = {
-  title: "Lifelines — a chronicle simulator",
-  description: "Simulate a small town's lives year by year, then rewrite one moment and watch the butterfly effect unfold.",
-};
+/** Decision 059: both locales are known statically, so every `app/[lang]/**` route is pre-rendered for each (the internationalization guide's own `generateStaticParams` pattern). */
+export async function generateStaticParams(): Promise<{ lang: Locale }[]> {
+  return locales.map((lang) => ({ lang }));
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
+  const { lang } = await params;
+  const dict = getDictionary(resolveLang(lang));
+  return { title: dict.meta.title, description: dict.meta.description };
+}
 
 const THEME_INIT_SCRIPT = `
 (function () {
@@ -39,9 +48,11 @@ const THEME_INIT_SCRIPT = `
 })();
 `;
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children, params }: { children: ReactNode; params: Promise<{ lang: string }> }) {
+  const { lang } = await params;
+  const locale = resolveLang(lang);
   return (
-    <html lang="en" className={`${cormorant.variable} ${crimson.variable} ${cinzel.variable} h-full`}>
+    <html lang={locale} className={`${cormorant.variable} ${crimson.variable} ${cinzel.variable} h-full`}>
       <body className="min-h-full flex flex-col pb-20 antialiased sm:pb-0">
         <Script id="theme-init" strategy="beforeInteractive">
           {THEME_INIT_SCRIPT}

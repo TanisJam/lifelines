@@ -3,17 +3,20 @@ import { notFound } from "next/navigation";
 import { diffBranches } from "@/domain/diff";
 import { buildLoomPeople } from "@/domain/loom-data";
 import { Loom } from "@/components/loom";
+import { resolveLang } from "@/i18n/resolve-lang";
 import { pickRichPerson } from "@/server/rich-person";
 import { getBranch, getWorld, listBranches } from "@/server/world-store";
 
+/** Decision 059: the legacy multi-town flow (`app/[lang]/world/**`) still routes correctly under `[lang]` (every internal link below is locale-prefixed), but keeps its English-only UI copy — a disclosed, deliberate scope cut (see `docs/decisions.md`'s "059" entry); the primary reading experience (`/[lang]/life/[lifeId]`) is what's fully localized. */
 export default async function WorldPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ worldId: string }>;
+  params: Promise<{ lang: string; worldId: string }>;
   searchParams: Promise<{ branch?: string; compare?: string }>;
 }) {
-  const { worldId } = await params;
+  const { lang: langParam, worldId } = await params;
+  const lang = resolveLang(langParam);
   const { branch: branchParam, compare: compareParam } = await searchParams;
 
   const world = getWorld(worldId);
@@ -37,11 +40,11 @@ export default async function WorldPage({
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
       <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-border/70 pb-4">
         {richPersonId && (
-          <Link href={`/world/${worldId}/person/${richPersonId}?branch=${branchId}`} className="font-label text-xs uppercase tracking-widest text-muted-foreground hover:text-brass">
+          <Link href={`/${lang}/world/${worldId}/person/${richPersonId}?branch=${branchId}`} className="font-label text-xs uppercase tracking-widest text-muted-foreground hover:text-brass">
             &larr; Chronicle
           </Link>
         )}
-        <Link href={`/world/${worldId}/town?branch=${branchId}`} className="font-label text-xs uppercase tracking-widest text-muted-foreground hover:text-brass">
+        <Link href={`/${lang}/world/${worldId}/town?branch=${branchId}`} className="font-label text-xs uppercase tracking-widest text-muted-foreground hover:text-brass">
           Town
         </Link>
       </div>
@@ -57,6 +60,7 @@ export default async function WorldPage({
       </div>
 
       <Loom
+        lang={lang}
         worldId={worldId}
         branchId={branchId}
         branchLabel={branch.label}

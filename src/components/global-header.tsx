@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { OpenBookIcon, SproutIcon, SunEmblem, VineCorner } from "@/components/ornaments";
+import type { Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/get-dictionary";
+import { stripLocale } from "@/i18n/pathname";
 
 /**
  * The generic site header/footer, hidden on the Living Chronicle page (round 7, decision 031 —
@@ -13,28 +16,31 @@ import { OpenBookIcon, SproutIcon, SunEmblem, VineCorner } from "@/components/or
  * chrome. Round 9 (decision 041) adds `/life/[lifeId]`, the new single-life chronicle route,
  * alongside the legacy `/world/.../person/...` chronicle it superseded — both are full-bleed
  * `.cw-app` shells.
+ *
+ * Decision 059: every pathname now carries a `/en`/`/es` prefix (`app/[lang]/**`), so the
+ * chronicle-path/active-nav checks below run against `stripLocale(pathname)`, not the raw
+ * pathname — otherwise `/es/life/abc` would no longer match `isChroniclePath`'s regex at all.
  */
 function isChroniclePath(pathname: string | null): boolean {
-  return !!pathname && (/^\/world\/[^/]+\/person\/[^/]+/.test(pathname) || /^\/life\/[^/]+/.test(pathname));
+  const path = stripLocale(pathname);
+  return /^\/world\/[^/]+\/person\/[^/]+/.test(path) || /^\/life\/[^/]+/.test(path);
 }
 
-/**
- * Top-level destinations reachable from the app's persistent chrome (design-system.md §6, the
- * masthead nav and the mobile bottom tab bar) — no new routes, just the ones that already exist:
- * the start screen and "Your lives". The legacy village (`/world`) is intentionally not linked.
- */
-const NAV_ITEMS = [
-  { href: "/", label: "Home", icon: SproutIcon },
-  { href: "/lives", label: "Your lives", icon: OpenBookIcon },
-] as const;
-
 function isActive(pathname: string | null, href: string): boolean {
-  if (href === "/") return pathname === "/";
-  return !!pathname && pathname.startsWith(href);
+  const path = stripLocale(pathname);
+  if (href === "/") return path === "/";
+  return path.startsWith(href);
 }
 
 export function GlobalHeader() {
   const pathname = usePathname();
+  const { lang } = useParams<{ lang: Locale }>();
+  const dict = getDictionary(lang);
+  const navItems = [
+    { href: "/", label: dict.nav.home, icon: SproutIcon },
+    { href: "/lives", label: dict.nav.yourLives, icon: OpenBookIcon },
+  ] as const;
+
   if (isChroniclePath(pathname)) return null;
   return (
     <>
@@ -42,16 +48,16 @@ export function GlobalHeader() {
         <VineCorner className="pointer-events-none absolute top-2 left-2 h-8 w-8 text-ll-leaf opacity-70 sm:h-10 sm:w-10" />
         <VineCorner className="pointer-events-none absolute top-2 right-2 h-8 w-8 -scale-x-100 text-ll-leaf opacity-70 sm:h-10 sm:w-10" />
         <div className="mx-auto flex max-w-6xl flex-col items-center gap-1">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href={`/${lang}`} className="flex items-center gap-2">
             <SunEmblem className="h-6 w-6 text-ll-sun" />
             <span className="font-heading text-2xl font-medium tracking-wide text-foreground">Lifelines</span>
           </Link>
-          <p className="font-label text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Same people. Brighter tomorrows.</p>
+          <p className="font-label text-[10px] tracking-[0.14em] text-muted-foreground uppercase">{dict.nav.tagline}</p>
           <nav className="mt-2 hidden items-center gap-5 sm:flex">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <Link
                 key={item.href}
-                href={item.href}
+                href={`/${lang}${item.href === "/" ? "" : item.href}`}
                 className={`font-label text-xs tracking-widest uppercase transition-colors ${
                   isActive(pathname, item.href) ? "text-brass" : "text-muted-foreground hover:text-brass"
                 }`}
@@ -68,13 +74,13 @@ export function GlobalHeader() {
 
       {/* Bottom tab bar (design-system.md §6): mobile only, ≤5 items, icon + serif label. */}
       <nav className="fixed inset-x-0 bottom-0 z-50 flex justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] sm:hidden">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = isActive(pathname, item.href);
           const Icon = item.icon;
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={`/${lang}${item.href === "/" ? "" : item.href}`}
               className={`flex min-h-11 min-w-14 flex-col items-center gap-0.5 px-2 py-2 font-body text-[11px] ${active ? "text-brass" : "text-muted-foreground"}`}
             >
               <Icon className={active ? "text-brass" : "text-muted-foreground"} />
@@ -90,10 +96,12 @@ export function GlobalHeader() {
 
 export function GlobalFooter() {
   const pathname = usePathname();
+  const { lang } = useParams<{ lang: Locale }>();
+  const dict = getDictionary(lang);
   if (isChroniclePath(pathname)) return null;
   return (
     <footer className="border-t border-border/70 py-6 text-center font-label text-xs uppercase tracking-widest text-muted-foreground">
-      <p>Simulate first, then describe.</p>
+      <p>{dict.nav.footerTagline}</p>
     </footer>
   );
 }

@@ -90,37 +90,44 @@ export async function rewriteStream(lifeId: string, req: RewriteRequest, onEvent
   return consumeStream(`/api/lives/${encodeURIComponent(lifeId)}/rewrite/stream`, req, onEvent, signal);
 }
 
-/** GET /api/lives — "Your lives". */
-export async function getLives(): Promise<LifeListItem[]> {
+/** GET /api/lives?lang= — "Your lives". */
+export async function getLives(lang?: string): Promise<LifeListItem[]> {
   if (fixtureMode()) {
     const { fixtureLives } = await import("@/lib/fixtures");
     return fixtureLives();
   }
-  const res = await fetch("/api/lives");
+  const res = await fetch(`/api/lives${lang ? `?lang=${encodeURIComponent(lang)}` : ""}`);
   if (!res.ok) throw new Error(await readErrorMessage(res));
   return (await res.json()) as LifeListItem[];
 }
 
-/** GET /api/lives/:lifeId?branchId= — the full chronicle (defaults to the latest branch). */
-export async function getChronicle(lifeId: string, branchId?: string): Promise<Chronicle> {
+/** Builds a `?branchId=&lang=` query string, omitting either part when absent — shared by `getChronicle`/`getPersonSheet` (decision 059 added `lang`; both params stay optional so an un-migrated caller keeps working). */
+function branchAndLangQuery(branchId?: string, lang?: string): string {
+  const params = new URLSearchParams();
+  if (branchId) params.set("branchId", branchId);
+  if (lang) params.set("lang", lang);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
+/** GET /api/lives/:lifeId?branchId=&lang= — the full chronicle (defaults to the latest branch, English). */
+export async function getChronicle(lifeId: string, branchId?: string, lang?: string): Promise<Chronicle> {
   if (fixtureMode()) {
     const { fixtureChronicle } = await import("@/lib/fixtures");
     return fixtureChronicle(lifeId, branchId);
   }
-  const qs = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
-  const res = await fetch(`/api/lives/${encodeURIComponent(lifeId)}${qs}`);
+  const res = await fetch(`/api/lives/${encodeURIComponent(lifeId)}${branchAndLangQuery(branchId, lang)}`);
   if (!res.ok) throw new Error(await readErrorMessage(res));
   return (await res.json()) as Chronicle;
 }
 
-/** GET /api/lives/:lifeId/people/:personId?branchId= — the read-only side sheet. */
-export async function getPersonSheet(lifeId: string, personId: string, branchId?: string): Promise<PersonSheet> {
+/** GET /api/lives/:lifeId/people/:personId?branchId=&lang= — the read-only side sheet. */
+export async function getPersonSheet(lifeId: string, personId: string, branchId?: string, lang?: string): Promise<PersonSheet> {
   if (fixtureMode()) {
     const { fixturePersonSheet } = await import("@/lib/fixtures");
     return fixturePersonSheet(lifeId, personId, branchId);
   }
-  const qs = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
-  const res = await fetch(`/api/lives/${encodeURIComponent(lifeId)}/people/${encodeURIComponent(personId)}${qs}`);
+  const res = await fetch(`/api/lives/${encodeURIComponent(lifeId)}/people/${encodeURIComponent(personId)}${branchAndLangQuery(branchId, lang)}`);
   if (!res.ok) throw new Error(await readErrorMessage(res));
   return (await res.json()) as PersonSheet;
 }

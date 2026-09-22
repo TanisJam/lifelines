@@ -233,7 +233,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function LegacyChronicle({ initial }: { initial: LegacyChronicleData }) {
+export function LegacyChronicle({ initial, lang }: { initial: LegacyChronicleData; lang: string }) {
   const router = useRouter();
   const [data, setData] = useState(initial);
   const [openDecision, setOpenDecision] = useState<LegacyChronicleEntry | null>(null);
@@ -315,7 +315,7 @@ export function LegacyChronicle({ initial }: { initial: LegacyChronicleData }) {
   }
 
   function switchPerson(personId: string): void {
-    router.push(`/world/${data.worldId}/person/${personId}?branch=${data.branchId}`);
+    router.push(`/${lang}/world/${data.worldId}/person/${personId}?branch=${data.branchId}`);
   }
 
   const closureLink = data.relationships.find((r) => r.relation === "husband" || r.relation === "wife") ?? data.relationships.find((r) => r.relation === "son" || r.relation === "daughter");
@@ -327,18 +327,18 @@ export function LegacyChronicle({ initial }: { initial: LegacyChronicleData }) {
   return (
     <div className="cw-app">
       <header className="cw-topbar">
-        <button type="button" className="cw-brand" onClick={() => router.push(`/world/${data.worldId}?branch=${data.branchId}`)}>
+        <button type="button" className="cw-brand" onClick={() => router.push(`/${lang}/world/${data.worldId}?branch=${data.branchId}`)}>
           <span className="cw-mark">∞</span> LIFELINES
         </button>
         <div className="cw-top-actions">
           <button type="button" onClick={() => setPeopleDrawerOpen(true)}>
             People
           </button>
-          <Link href={`/world/${data.worldId}/town?branch=${data.branchId}`}>{data.townName}</Link>
+          <Link href={`/${lang}/world/${data.worldId}/town?branch=${data.branchId}`}>{data.townName}</Link>
           <button type="button" onClick={() => setHistoryOpen(true)}>
             History
           </button>
-          <Link href={`/world/${data.worldId}?branch=${data.branchId}`}>Tapestry</Link>
+          <Link href={`/${lang}/world/${data.worldId}?branch=${data.branchId}`}>Tapestry</Link>
           <ThemeToggle />
         </div>
       </header>
@@ -477,7 +477,7 @@ export function LegacyChronicle({ initial }: { initial: LegacyChronicleData }) {
                     View {closureLink.name.split(" ")[0]}&apos;s life
                   </button>
                 )}
-                <Link href={`/world/${data.worldId}?branch=${data.branchId}`} className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }}>
+                <Link href={`/${lang}/world/${data.worldId}?branch=${data.branchId}`} className="cw-change-btn" style={{ borderColor: "var(--cw-rule)" }}>
                   Return to {data.townName}
                 </Link>
                 <button
@@ -541,7 +541,7 @@ export function LegacyChronicle({ initial }: { initial: LegacyChronicleData }) {
         {peopleDrawerOpen && (
           <PeopleDrawer worldId={data.worldId} branchId={data.branchId} townName={data.townName} relationships={data.relationships} onClose={() => setPeopleDrawerOpen(false)} onNavigate={switchPerson} />
         )}
-        {historyOpen && <HistoryDrawer data={data} personId={p.id} onClose={() => setHistoryOpen(false)} />}
+        {historyOpen && <HistoryDrawer data={data} personId={p.id} lang={lang} onClose={() => setHistoryOpen(false)} />}
       </AnimatePresence>
     </div>
   );
@@ -637,7 +637,7 @@ function PeopleDrawer({
   );
 }
 
-function HistoryDrawer({ data, personId, onClose }: { data: LegacyChronicleData; personId: string; onClose: () => void }) {
+function HistoryDrawer({ data, personId, lang, onClose }: { data: LegacyChronicleData; personId: string; lang: string; onClose: () => void }) {
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="cw-drawer-backdrop" onClick={onClose} />
@@ -645,7 +645,7 @@ function HistoryDrawer({ data, personId, onClose }: { data: LegacyChronicleData;
         <div className="cw-modal-kicker">Branches</div>
         <h2>History</h2>
         {data.branches.map((b) => (
-          <Link key={b.id} href={`/world/${data.worldId}/person/${personId}?branch=${b.id}`} className="cw-drawer-person" style={{ display: "block" }} onClick={onClose}>
+          <Link key={b.id} href={`/${lang}/world/${data.worldId}/person/${personId}?branch=${b.id}`} className="cw-drawer-person" style={{ display: "block" }} onClick={onClose}>
             {humanizeBranchLabel(b.forkYear)}
           </Link>
         ))}
