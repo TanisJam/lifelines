@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand } from "./population-stats";
+import { inNeverMarriedCohort, meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand } from "./population-stats";
 
 describe("rateByAgeBand", () => {
   const bands = [
@@ -54,5 +54,21 @@ describe("neverMarriedSharePercent", () => {
 
   it("returns NaN for an empty cohort", () => {
     expect(neverMarriedSharePercent([])).toBeNaN();
+  });
+});
+
+describe("inNeverMarriedCohort", () => {
+  it("excludes a person who died before the cohort age — a dead child is not 'never married'", () => {
+    expect(inNeverMarriedCohort({ birthYear: 1330, deathYear: 1331 }, 1427, 45)).toBe(false);
+    expect(inNeverMarriedCohort({ birthYear: 1330, deathYear: 1374 }, 1427, 45)).toBe(false);
+  });
+
+  it("includes a person who survived to the cohort age, alive or dead afterwards", () => {
+    expect(inNeverMarriedCohort({ birthYear: 1330, deathYear: 1375 }, 1427, 45)).toBe(true);
+    expect(inNeverMarriedCohort({ birthYear: 1330 }, 1427, 45)).toBe(true);
+  });
+
+  it("excludes a person the window cannot follow up to the cohort age", () => {
+    expect(inNeverMarriedCohort({ birthYear: 1400 }, 1427, 45)).toBe(false);
   });
 });

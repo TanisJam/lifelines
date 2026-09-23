@@ -65,6 +65,16 @@ export interface MarriageEligibility {
   readonly everMarried: boolean;
 }
 
+/**
+ * Whether a person belongs to the never-married cohort: the window follows them up to `cohortAge`
+ * AND they survived to it. The historical "never married by 45" share is measured among survivors;
+ * counting people who died as children inflates it with deaths that had nothing to do with marriage.
+ */
+export function inNeverMarriedCohort(person: { readonly birthYear: number; readonly deathYear?: number }, endYear: number, cohortAge: number): boolean {
+  if (endYear - person.birthYear < cohortAge) return false;
+  return person.deathYear === undefined || person.deathYear - person.birthYear >= cohortAge;
+}
+
 /** Percent of `cohort` (already restricted by the caller to people who reached marriageable age with real follow-up time) who never married. `NaN` for an empty cohort. */
 export function neverMarriedSharePercent(cohort: readonly MarriageEligibility[]): number {
   if (cohort.length === 0) return NaN;

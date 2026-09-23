@@ -36,7 +36,7 @@ import { hasMovedAway } from "../src/domain/events";
 import { FERTILITY_HAZARD_BANDS, MORTALITY_BY_AGE_BAND } from "../src/domain/params/demography";
 import { CALIBRATION_TARGETS } from "../src/domain/params/targets";
 import { BLACK_DEATH_YEARS, SECOND_PESTILENCE_YEARS } from "../src/domain/period/events";
-import { meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand, type AgeBand, type AgeBandObservation, type AgeBandRate } from "../src/domain/population-stats";
+import { inNeverMarriedCohort, meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand, type AgeBand, type AgeBandObservation, type AgeBandRate } from "../src/domain/population-stats";
 import { simulate } from "../src/domain/simulate";
 import type { Event, Person, SocialClass } from "../src/domain/types";
 import { generateWorld } from "../src/domain/worldgen";
@@ -406,12 +406,12 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
     }
     mergeAgeBandRates(adultMortalityAccumulated, rateByAgeBand(adultMortalityObservations, ADULT_MORTALITY_BANDS));
 
-    // --- PR10: never-married share (motherId-set cohort, fully observable by window end) -----------
+    // --- PR10: never-married share (motherId-set cohort, survived to and observable at the cohort age) -
     const everMarriedIds = new Set<string>();
     for (const e of events) if (e.kind === "marriage") for (const actorId of e.actors) everMarriedIds.add(actorId);
     for (const person of Object.values(finalPeople)) {
       if (person.motherId === undefined) continue;
-      if (endYear - person.birthYear < NEVER_MARRIED_COHORT_AGE) continue;
+      if (!inNeverMarriedCohort(person, endYear, NEVER_MARRIED_COHORT_AGE)) continue;
       const entry = { everMarried: everMarriedIds.has(person.id) };
       (person.sex === "f" ? neverMarriedCohortF : neverMarriedCohortM).push(entry);
     }
