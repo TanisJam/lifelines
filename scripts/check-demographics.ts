@@ -19,6 +19,7 @@
  * any band is missed (never silently passes a red calibration run).
  */
 import { RuleDecisionMaker } from "../src/adapters/decision/rule-decision-maker";
+import { cohortConditionalDeathShare, cohortDeathShareByAge } from "../src/domain/cohort-stats";
 import { CALIBRATION_TARGETS } from "../src/domain/params/targets";
 import { simulate } from "../src/domain/simulate";
 import type { SocialClass } from "../src/domain/types";
@@ -105,10 +106,11 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
   let infantDeaths = 0;
   const ageAtDeathFromBirth: number[] = [];
   const ageAtDeathAll: number[] = [];
-  let under15Deaths = 0;
-  let under15Resolved = 0;
-  let survivedInfancy = 0;
-  let diedBy7 = 0;
+  // Accumulated across every seed, then resolved ONCE against the shared `window.endYear` by
+  // `cohortDeathShareByAge`/`cohortConditionalDeathShare` (see src/domain/cohort-stats.ts) — every
+  // seed shares the same window, so cross-seed accumulation is equivalent to per-seed accumulation
+  // and avoids duplicating the cohort-completeness rule here.
+  const motherIdCohort: { birthYear: number; deathYear?: number }[] = [];
 
   const marriageAges: Record<"f" | "m", number[]> = { f: [], m: [] };
   const marriageAgesByClassSex: Record<string, number[]> = {};
@@ -141,19 +143,10 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
       if (person.deathYear !== undefined) ageAtDeathAll.push(person.deathYear - person.birthYear);
       if (person.motherId === undefined) continue;
 
-      if (person.deathYear !== undefined) {
-        const ageAtDeath = person.deathYear - person.birthYear;
-        ageAtDeathFromBirth.push(ageAtDeath);
-        under15Resolved++;
-        if (ageAtDeath < 15) under15Deaths++;
-        if (ageAtDeath >= 2) {
-          survivedInfancy++;
-          if (ageAtDeath <= 7) diedBy7++;
-        }
-      } else if (endYear - person.birthYear >= 15) {
-        under15Resolved++;
-        if (endYear - person.birthYear >= 2) survivedInfancy++;
-      }
+      const ageAtDeath = person.deathYear !== undefined ? person.deathYear - person.birthYear : undefined;
+      if (ageAtDeath !== undefined) ageAtDeathFromBirth.push(ageAtDeath);
+
+      motherIdCohort.push({ birthYear: person.birthYear, deathYear: person.deathYear });
 
       if (person.literate !== undefined) {
         literacyResolved++;
@@ -197,12 +190,25 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
     }
   }
 
+  // Cohort-completeness rule (PR9, fixing the right-censoring bias engram #6142 flagged): a person
+  // is only added to an age-X denominator once their BIRTH COHORT is fully observable to age X,
+  // i.e. `window.endYear - birthYear >= X`, regardless of whether they died or are still alive.
+  // The old inline code counted every resolved death (however recently born — dying is a fast,
+  // fully-observed event) but only counted a LIVING person once they had already survived the full
+  // window — a living, not-yet-X-years-old person was silently dropped instead of being treated as
+  // "not yet resolved". Because the simulated population is not static (recent birth cohorts are
+  // frequently the largest, especially pre-plague), that asymmetry structurally over-represented
+  // deaths relative to survivors and inflated every death-share metric below. See
+  // src/domain/cohort-stats.ts for the shared, unit-tested implementation.
+  const under15 = cohortDeathShareByAge(motherIdCohort, window.endYear, 15);
+  const under7Additional = cohortConditionalDeathShare(motherIdCohort, window.endYear, 2, 7);
+
   const avg = (samples: readonly number[]) => mean(samples);
   const imrPer1000 = observedBirths > 0 ? (1000 * infantDeaths) / observedBirths : NaN;
   const e0 = avg(ageAtDeathFromBirth);
   const e0AllDeaths = avg(ageAtDeathAll);
-  const under15Pct = under15Resolved > 0 ? (100 * under15Deaths) / under15Resolved : NaN;
-  const under7AdditionalDeathPct = survivedInfancy > 0 ? (100 * diedBy7) / survivedInfancy : NaN;
+  const under15Pct = under15.resolved > 0 ? (100 * under15.deaths) / under15.resolved : NaN;
+  const under7AdditionalDeathPct = under7Additional.resolved > 0 ? (100 * under7Additional.deaths) / under7Additional.resolved : NaN;
   const literacyPct = literacyResolved > 0 ? (100 * literateCount) / literacyResolved : NaN;
 
   const marriageAgeByClassSex: Record<string, number> = {};
