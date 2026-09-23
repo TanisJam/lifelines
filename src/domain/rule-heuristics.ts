@@ -1,6 +1,14 @@
 import type { DecisionQuestion, Distribution } from "./decisions";
-import { OUTCOME_PROBABILITY_FLOOR } from "./hazards";
-import type { JsonValue } from "./types";
+import { OUTCOME_PROBABILITY_FLOOR, onsetAge } from "./hazards";
+import {
+  A1_OUTCOME_PRESSURE_CAP_YEARS,
+  A1_OUTCOME_PRESSURE_SLOPE,
+  OUTCOME_TIME_PRESSURE_CEILING,
+  Y1_OUTCOME_PRESSURE_CAP_YEARS,
+  Y1_OUTCOME_PRESSURE_SLOPE,
+} from "./params/demography";
+import { FALLBACK_CLASS } from "./period/classes";
+import type { JsonValue, Sex, SocialClass } from "./types";
 
 /**
  * Deterministic heuristic weights over a `DecisionQuestion`'s state. Pure
@@ -58,6 +66,37 @@ function f(rec: Record<string, number>, key: string, fallback = 50): number {
   return rec[key] ?? fallback;
 }
 
+/** Plain (non-facet) record accessor — `state.self`/`state.situation` carry raw fields (age, sex, socialClass, yearsMarriageable, courtshipYears), not the nested `mind.facets` shape `facets()` reads. */
+function record(state: Readonly<Record<string, JsonValue>>, key: string): Record<string, JsonValue> {
+  const value = state[key];
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, JsonValue>) : {};
+}
+
+function numberField(rec: Record<string, JsonValue>, key: string, fallback = 0): number {
+  const value = rec[key];
+  return typeof value === "number" ? value : fallback;
+}
+
+/**
+ * PR12 STEP 2 (decision 073 finding 2, decision 074, option (b) — see `params/demography.ts`'s own
+ * doc comment on the constants below for the full rationale and citations): the growing "marriage
+ * pressure" term added to Y1's "encourage" and A1's "propose" base probability. `timeInStateYears` is
+ * the kind's own clock (`yearsMarriageable` for Y1, `courtshipYears` for A1, already stamped into
+ * `state.situation` by `simulate.ts`); `ageOverOnset` is years already past this person's own
+ * class/sex marriage-onset age (`hazards.ts#onsetAge`), floored at 0 for anyone still below onset.
+ * Pure and deterministic — reads only the already-present `DecisionQuestion.state`, no RNG, no new
+ * dependency on `hazards.ts`'s prior/clamp machinery (only the pure `onsetAge` lookup).
+ */
+function outcomeTimePressure(state: Readonly<Record<string, JsonValue>>, timeInStateYears: number, slope: number, capYears: number): number {
+  const self = record(state, "self");
+  const age = numberField(self, "age");
+  const sex: Sex = self.sex === "m" ? "m" : "f";
+  const socialClass = (typeof self.socialClass === "string" ? (self.socialClass as SocialClass) : FALLBACK_CLASS) as SocialClass;
+  const ageOverOnset = Math.max(0, age - onsetAge(socialClass, sex).value);
+  const pressureYears = Math.min(capYears, Math.max(0, timeInStateYears) + ageOverOnset);
+  return slope * pressureYears;
+}
+
 export function ruleDistribution(question: DecisionQuestion): Distribution {
   const self = facets(question.state, "self");
   const selfValues = values(question.state, "self");
@@ -80,6 +119,13 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
       // decades — matching `effectiveSelectionHazard`'s own floor so the two halves of the chain
       // share one consistent "how reluctant can a real person plausibly be" floor.
       encourage = Math.max(OUTCOME_PROBABILITY_FLOOR, clamp01(encourage));
+      // PR12 STEP 2 (decision 073/074, option (b)): "encourage" grows with time already spent
+      // marriageable-and-single plus years already past this person's own onset age — see
+      // `outcomeTimePressure`'s own doc comment. Capped at `OUTCOME_TIME_PRESSURE_CEILING`, never
+      // certainty; the added mass comes out of decline/wait below (their SAME relative 0.6/0.4 split
+      // is preserved, just over a smaller remaining share).
+      const yearsMarriageable = numberField(record(question.state, "situation"), "yearsMarriageable");
+      encourage = Math.min(OUTCOME_TIME_PRESSURE_CEILING, encourage + outcomeTimePressure(question.state, yearsMarriageable, Y1_OUTCOME_PRESSURE_SLOPE, Y1_OUTCOME_PRESSURE_CAP_YEARS));
       const decline = clamp01((1 - encourage) * 0.6);
       const wait = Math.max(0.02, 1 - encourage - decline);
       return { encourage, decline, wait };
@@ -89,6 +135,12 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
       let endIt = 0.15 + (f(self, "anger") - 50) / 300;
       // PR6 corrective: same floor as Y1's "encourage" above, for the same reason.
       propose = Math.max(OUTCOME_PROBABILITY_FLOOR, clamp01(propose));
+      // PR12 STEP 2 (decision 073/074, option (b)): "propose" grows with courtship years plus years
+      // past onset — A1's own raw hazard (Weibull) climbs much faster per courtship-year than Y1's
+      // logistic ramp climbs per eligible-year, hence its own steeper slope/shorter cap (see
+      // `params/demography.ts`'s doc comment).
+      const courtshipYears = numberField(record(question.state, "situation"), "courtshipYears");
+      propose = Math.min(OUTCOME_TIME_PRESSURE_CEILING, propose + outcomeTimePressure(question.state, courtshipYears, A1_OUTCOME_PRESSURE_SLOPE, A1_OUTCOME_PRESSURE_CAP_YEARS));
       endIt = clamp01(endIt);
       const delay = Math.max(0.02, 1 - propose - endIt);
       return { propose, delay, "end-it": endIt };

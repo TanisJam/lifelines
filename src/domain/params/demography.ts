@@ -90,6 +90,47 @@ export const COURTSHIP_WEIBULL_LAMBDA = 1.5;
 export const COURTSHIP_BASE_HAZARD = 0.45;
 
 /**
+ * PR12 STEP 2 (decision 073's finding 2, decision 074, option (b)): `rule-heuristics.ts`'s Y1
+ * "encourage" and A1 "propose" outcome answers previously had NO age or time-in-state term at all —
+ * a person offered courtship for the first time and one offered it for the twelfth consecutive year
+ * got the identical distribution. Decision 073 measured this as the dominant truncation cause: once
+ * `hazards.ts#y1Hazard`'s own time-in-state ramp pushes the raw hazard above a static ~0.15-0.4
+ * outcome answer, `effectiveSelectionHazard`'s `min(1, raw/outcome)` clamp caps the REALIZED rate at
+ * the outcome answer for the rest of that person's marriageable life (~30% of sampled person-years).
+ * Historically grounded: the social and economic pressure to marry rose the longer someone stayed
+ * eligible past their class's expected marrying age (research.md Family §rules synthesis; the same
+ * "age/status-linked marriage pressure" already cited for `MARRIAGE_FLOORS`' own onset ages) — an older
+ * bachelor(ette), or a longer-established courtship, faced mounting kin/community pressure to commit.
+ *
+ * Shape (`outcomeTimePressure`, `rule-heuristics.ts`): `pressureYears = min(cap, timeInStateYears +
+ * max(0, age - onset))` — time already spent in the relevant clock (`yearsMarriageable` for Y1,
+ * `courtshipYears` for A1) PLUS years already past this person's own class/sex onset age
+ * (`hazards.ts#onsetAge`), both >= 0 by construction, summed then capped. `increment = slope *
+ * pressureYears`, added to the existing facet-driven base/floor, then capped at
+ * `OUTCOME_TIME_PRESSURE_CEILING` (never certainty). The added mass is taken proportionally from the
+ * SAME kind's own decline/wait (Y1) or delay/end-it (A1) split (`Math.max(0.02, 1 - encourage -
+ * decline)`-style remainder, unchanged) — mechanically, this can only ever REDUCE how much
+ * `effectiveSelectionHazard` truncates (a larger outcome answer can never push the realized rate above
+ * the raw hazard: `min(1, raw/outcome) * outcome` is mathematically bounded by `raw` for every
+ * `outcome > 0` — see decision 074), so this curve cannot cause an overshoot (e.g. "everyone marries
+ * at the minimum age") on its own; the raw hazard (already near-zero before onset) stays the sole gate
+ * for anyone not yet under real pressure.
+ *
+ * A1's Weibull raw hazard (above) grows far faster in early courtship years than Y1's logistic ramp
+ * grows in early eligible years (measured: A1 raw reaches ~0.64 by courtshipYears=3 vs Y1's ~0.54
+ * ASYMPTOTE reached only after ~5 years past onset) — so A1 needs its own, steeper slope and a shorter
+ * cap to track it; a shared single slope was tried first and left A1 badly under-tracked (see
+ * `provenance.ts`). Calibrated empirically against `hazards.ts#computeHazard`'s own Y1/A1 curves (no
+ * sourced figure for the exact slope magnitude — see `provenance.ts`), not against a historical
+ * marriage-pressure-by-year dataset (none was located).
+ */
+export const OUTCOME_TIME_PRESSURE_CEILING = 0.9;
+export const Y1_OUTCOME_PRESSURE_SLOPE = 0.012;
+export const Y1_OUTCOME_PRESSURE_CAP_YEARS = 13;
+export const A1_OUTCOME_PRESSURE_SLOPE = 0.07;
+export const A1_OUTCOME_PRESSURE_CAP_YEARS = 8;
+
+/**
  * A2's fertility-band hazard by mother's age — how likely THIS is the year a couple tries, not the
  * conception odds itself (see `simulate.ts#conceptionProbability`).
  *

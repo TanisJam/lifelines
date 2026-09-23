@@ -105,6 +105,31 @@ export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
     range: "Provisional (0.45), calibrated toward the 18-22/21-25 marriage-age target alongside the Weibull shape.",
     confidence: "low",
   },
+  OUTCOME_TIME_PRESSURE_CEILING: {
+    source: "PR12 STEP 2 (decision 073/074): a bounded ceiling below certainty, matching the design's own 'never over-correct past raw hazard' clamp intent (decision 066) applied to the outcome side instead of the selection side.",
+    range: "0.9 -- high enough that Y1's own raw-hazard asymptote (~0.54) is comfortably reachable, low enough to always leave decline/wait (or delay/end-it) a nonzero share.",
+    confidence: "low",
+  },
+  Y1_OUTCOME_PRESSURE_SLOPE: {
+    source: "PR12 STEP 2 (decision 073 finding 2, decision 074): calibrated empirically against hazards.ts#y1Hazard's own ramp so 'encourage' tracks at or above Y1's raw hazard once pressureYears accumulates -- no sourced historical marriage-pressure-by-year curve was located.",
+    range: "0.012/year of combined pressure; at the cap (13 years) adds +0.156 to the facet-driven base, landing near Y1's own ~0.54 raw-hazard asymptote for villein women.",
+    confidence: "low",
+  },
+  Y1_OUTCOME_PRESSURE_CAP_YEARS: {
+    source: "PR12 STEP 2 (decision 074): sized so the combined (time-in-state + age-over-onset) pressure saturates around the age Y1's own raw hazard reaches its asymptote (MARRIAGE_RAMP_CAP_YEARS=8 plus a typical 4-5-year onset gap).",
+    range: "13 combined years; not independently sourced.",
+    confidence: "low",
+  },
+  A1_OUTCOME_PRESSURE_SLOPE: {
+    source: "PR12 STEP 2 (decision 074): A1's Weibull raw hazard grows far faster per courtship-year than Y1's logistic ramp grows per eligible-year (measured: raw ~0.64 by courtshipYears=3) -- a shared Y1 slope left 'propose' badly under-tracking it, so A1 gets its own, steeper empirical slope.",
+    range: "0.07/year of combined pressure; no sourced figure, tuned against hazards.ts#a1Hazard's own curve.",
+    confidence: "low",
+  },
+  A1_OUTCOME_PRESSURE_CAP_YEARS: {
+    source: "PR12 STEP 2 (decision 074): sized shorter than Y1's cap since A1's own raw hazard saturates (approaches 1) much sooner in courtship years than Y1's does in eligibility years.",
+    range: "8 combined years; not independently sourced. Real truncation remains for the rare, very long (7+ year) courtship tail -- reported, not chased further (see decision 074).",
+    confidence: "low",
+  },
   Y3_PEAK_HAZARD: {
     source: "Design revision 2 hazard-shapes table ('Y3 peaks 16-30'); lowered by PR10 (decision 071) after measuring Y3's peak window overlapping the marrying-age window and competing directly against Y1/A2 for the same person-year selection, measured to meaningfully depress both the marriage rate and realized marital fertility (see FERTILITY_HAZARD_BANDS's own doc comment).",
     range: "Provisional peak-window annual hazard; no sourced migration-rate figure for 1327-1361 was located. Lowered 0.12 -> 0.05.",

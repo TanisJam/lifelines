@@ -316,3 +316,54 @@ describe("PR6: competing-risk resolution (task 6.3)", () => {
     expect(first).toEqual(second);
   });
 });
+
+describe("PR12 STEP 2 (decision 074): the Jev boundary — computeHazardPrior/clampJevSelection never read rule-heuristics.ts", () => {
+  // `jev-decision-maker.ts` imports only from `hazards.ts` (buildHazardContext/clampJevSelection/
+  // computeHazard/describeHazardBand/describeTimeInState) — it never imports `ruleDistribution`.
+  // decision 074's option (b) (rule-heuristics.ts's new time-pressure curve on Y1 "encourage"/A1
+  // "propose") therefore cannot reach Jev's own hazard baseline OR its clamp: `computeHazardPrior`'s
+  // `response` argument is Jev's OWN judged outcome answer for the Jev path (decision 067's "each
+  // adapter's baseline is scaled against the same judgment its selection will be compared to"), never
+  // `ruleDistribution`'s. This test fixes a Jev-style response by hand (NOT via `ruleDistribution`) at
+  // a long time-in-state where the rule adapter's own new curve would now differ sharply from before,
+  // and asserts `computeHazardPrior`/`clampJevSelection` still reduce to exactly
+  // `effectiveSelectionHazard(rawHazard, judgedOutcome)` — bit-for-bit the same formula decision 067
+  // shipped, unaffected by this slice.
+  function longEligibleY1Situation(id: string): PersonYearSituation {
+    return {
+      kind: "Y1",
+      question: {
+        id,
+        kind: "Y1",
+        personId: "p1",
+        year: 1340,
+        state: { self: { age: 24, sex: "f", socialClass: "villein" }, situation: { code: "Y1", yearsMarriageable: 8 } },
+        options: ["encourage", "decline", "wait"],
+      },
+    };
+  }
+
+  // 0.6 (not 0.3) so `effectiveSelectionHazard`'s own ratio stays under 1 and `resolveCompetingRisks`'
+  // own >0.95-sum rescale (a SEPARATE, unrelated mechanism) doesn't also fire and obscure the equality
+  // this test is actually about.
+  const JEV_ENCOURAGE_ANSWER = 0.6;
+
+  it("computeHazardPrior's Y1 baseline is exactly effectiveSelectionHazard(rawHazard, Jev's own judged outcome) — never the rule adapter's own curve", () => {
+    const situations = { y1: longEligibleY1Situation("y1") };
+    const jevResponse = { y1: { encourage: JEV_ENCOURAGE_ANSWER, decline: 0.25, wait: 0.15 } };
+    const rawHazard = computeHazard({ kind: "Y1", age: 24, sex: "f", socialClass: "villein", year: 1340, yearsMarriageable: 8 }).value;
+    const prior = computeHazardPrior(situations, jevResponse);
+    expect(prior.selection.y1!).toBeCloseTo(effectiveSelectionHazard(rawHazard, JEV_ENCOURAGE_ANSWER), 10);
+  });
+
+  it("clampJevSelection built from that same Jev-only response is unaffected by rule-heuristics.ts's curve", () => {
+    const situations = { y1: longEligibleY1Situation("y1") };
+    const jevResponse = { y1: { encourage: JEV_ENCOURAGE_ANSWER, decline: 0.25, wait: 0.15 } };
+    const rawHazard = computeHazard({ kind: "Y1", age: 24, sex: "f", socialClass: "villein", year: 1340, yearsMarriageable: 8 }).value;
+    const expectedBaseline = effectiveSelectionHazard(rawHazard, JEV_ENCOURAGE_ANSWER);
+    const result = clampJevSelection(situations, { y1: 0.9, nothing: 0.1 }, jevResponse);
+    // The clamp bounds Jev's judged selection to within K_MAX of the SAME baseline computed above —
+    // still driven only by hazards.ts + Jev's own response, never rule-heuristics.ts.
+    expect(result.selection.y1!).toBeLessThanOrEqual(expectedBaseline * HAZARD_CLAMP_K_MAX + 1e-9);
+  });
+});

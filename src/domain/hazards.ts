@@ -94,7 +94,14 @@ export function minEligibleAge(socialClass: SocialClass, sex: Sex): number {
   return Math.max(looked.value, CANON_MINIMUM_MARRIAGE_AGE[sex]);
 }
 
-function onsetAge(socialClass: SocialClass, sex: Sex): HazardResult {
+/**
+ * The logistic ramp's own midpoint age (`MARRIAGE_FLOORS[socialClass][sex].onset`, via the same
+ * miss-degrading `lookupHazard` chain `y1Hazard` uses). Exported (PR12 STEP 2, decision 074) so the
+ * RULE adapter's own outcome-probability curve (`rule-heuristics.ts`) can read "years past this
+ * person's own class/sex onset" without duplicating the floor table or its miss-chain — a pure lookup,
+ * not a change to this file's hazard-prior/clamp machinery.
+ */
+export function onsetAge(socialClass: SocialClass, sex: Sex): HazardResult {
   return lookupHazard(marriageFloorField("onset"), "onset", socialClass, sex);
 }
 
