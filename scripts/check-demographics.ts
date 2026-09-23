@@ -144,8 +144,12 @@ interface StatsResult {
   /** Mean age at first marriage, non-widowed, `motherId`-set cohort, by sex. */
   readonly marriageAgeBySex: Readonly<Record<"f" | "m", number>>;
   readonly marriageAgeSamples: Readonly<Record<"f" | "m", number>>;
+  /** PR11 (decision 072): median age at first marriage, same cohort, by sex — the mean is pulled up by a long right tail (decision 070's own finding), so the median is reported alongside it, not as a replacement. */
+  readonly marriageAgeMedianBySex: Readonly<Record<"f" | "m", number>>;
   /** Mean age at first marriage, same cohort, by social class + sex — task 8.1's per-class view. */
   readonly marriageAgeByClassSex: Readonly<Record<string, number>>;
+  /** PR11 (decision 072): median age at first marriage, same cohort, by social class + sex. */
+  readonly marriageAgeMedianByClassSex: Readonly<Record<string, number>>;
   readonly merchantMenMarriageAge: number;
   /** PR10 (GOAL B): gentry's own per-class marriage-age bands (`marriageAgeByClassSex`'s gentry cells, surfaced explicitly for `--assert`). */
   readonly gentryWomenMarriageAge: number;
@@ -189,6 +193,14 @@ interface StatsResult {
 
 function mean(samples: readonly number[]): number {
   return samples.length > 0 ? samples.reduce((a, b) => a + b, 0) / samples.length : NaN;
+}
+
+/** PR11 (decision 072): median alongside mean — decision 070's own precedent ("the mean is pulled up by a long right tail... report regardless of pass/fail") reported this by hand; now a first-class field of `--stats`'s own output. */
+function median(samples: readonly number[]): number {
+  if (samples.length === 0) return NaN;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
 /** Sums every band's `exposure`/`events` across per-seed partial tables, then recomputes each band's rate once — mirrors how every other aggregate below accumulates across seeds before dividing. */
@@ -435,7 +447,11 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
   const literacyPct = literacyResolved > 0 ? (100 * literateCount) / literacyResolved : NaN;
 
   const marriageAgeByClassSex: Record<string, number> = {};
-  for (const [key, ages] of Object.entries(marriageAgesByClassSex)) marriageAgeByClassSex[key] = avg(ages);
+  const marriageAgeMedianByClassSex: Record<string, number> = {};
+  for (const [key, ages] of Object.entries(marriageAgesByClassSex)) {
+    marriageAgeByClassSex[key] = avg(ages);
+    marriageAgeMedianByClassSex[key] = median(ages);
+  }
 
   const population = Object.fromEntries(TRAJECTORY_YEARS.map((y) => [y, avg(populationSamples[y]!)])) as Record<(typeof TRAJECTORY_YEARS)[number], number>;
   const percentChange = (from: number, to: number) => (100 * (to - from)) / from;
@@ -452,7 +468,9 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
     e0AllDeaths,
     marriageAgeBySex: { f: avg(marriageAges.f), m: avg(marriageAges.m) },
     marriageAgeSamples: { f: marriageAges.f.length, m: marriageAges.m.length },
+    marriageAgeMedianBySex: { f: median(marriageAges.f), m: median(marriageAges.m) },
     marriageAgeByClassSex,
+    marriageAgeMedianByClassSex,
     merchantMenMarriageAge: avg(marriageAgesByClassSex["merchant/m"] ?? []),
     gentryWomenMarriageAge: avg(marriageAgesByClassSex["gentry/f"] ?? []),
     gentryMenMarriageAge: avg(marriageAgesByClassSex["gentry/m"] ?? []),
@@ -491,7 +509,9 @@ function printStats(result: StatsResult, set: CalibrationSet): void {
   console.log(`  Additional share dying by age 7, of those surviving infancy: ${result.under7AdditionalDeathPct.toFixed(1)}%.`);
   console.log(`  (Context only — population-wide avg age at death incl. adult founders): ${result.e0AllDeaths.toFixed(1)} years.`);
   console.log(`  Mean age at first marriage: F=${result.marriageAgeBySex.f.toFixed(1)} (n=${result.marriageAgeSamples.f}), M=${result.marriageAgeBySex.m.toFixed(1)} (n=${result.marriageAgeSamples.m}).`);
+  console.log(`  Median age at first marriage: F=${result.marriageAgeMedianBySex.f.toFixed(1)}, M=${result.marriageAgeMedianBySex.m.toFixed(1)}.`);
   console.log(`  Mean age at first marriage by class/sex: ${JSON.stringify(Object.fromEntries(Object.entries(result.marriageAgeByClassSex).map(([k, v]) => [k, Number(v.toFixed(1))])))}`);
+  console.log(`  Median age at first marriage by class/sex: ${JSON.stringify(Object.fromEntries(Object.entries(result.marriageAgeMedianByClassSex).map(([k, v]) => [k, Number(v.toFixed(1))])))}`);
   console.log(`  Merchant men mean first-marriage age: ${result.merchantMenMarriageAge.toFixed(1)}.`);
   console.log(`  Gentry mean first-marriage age: F=${result.gentryWomenMarriageAge.toFixed(1)}, M=${result.gentryMenMarriageAge.toFixed(1)}.`);
   console.log(`  Widow remarriage: pre-1349=${result.widowRemarriagePre1349Pct.toFixed(1)}%, post-1349=${result.widowRemarriagePost1349Pct.toFixed(1)}%.`);
