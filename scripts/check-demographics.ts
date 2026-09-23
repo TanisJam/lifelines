@@ -363,15 +363,15 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
       const husband = a.sex === "m" ? a : b.sex === "m" ? b : undefined;
       if (!wife || !husband) continue;
 
-      // Cohort-completeness (PR9 precedent, cohort-stats.ts): a marriage's completed family size is
-      // a settled fact once EITHER the wife has died (her fertile window ended then, fully resolved,
-      // same as `cohortDeathShareByAge`'s "dying is always fully observed" rule) OR she's had time
-      // to pass through her whole fertile window while alive. Counting ONLY the second half (as an
-      // earlier version of this script did) wrongly treated "100 years have passed since this window
-      // ended" as completeness regardless of how long the wife actually lived — silently including
-      // marriages cut short by early death (plague, maternal mortality) with near-zero children, the
-      // same asymmetry `cohort-stats.ts` was written to avoid.
-      if (wife.deathYear !== undefined || endYear - wife.birthYear >= FEMALE_FERTILE_WINDOW_END_AGE) {
+      // PR13 STEP 0 (decision 075, metric audit): the historical "~6-7 children ever born per
+      // completed marriage" anchor is specifically for a woman who married and SURVIVED to the end
+      // of her fertile window (45) — a marriage cut short by early death (plague, maternal
+      // mortality) never "completed" in that sense, and counting it deflates the figure below what
+      // it's meant to compare against. The PREVIOUS version of this cohort filter counted EITHER
+      // outcome (wife died at any age, OR reached 45) as "completed", which is the mismatch this
+      // fix corrects — reusing `inNeverMarriedCohort`'s own survival-to-cohort-age semantics (same
+      // predicate the never-married share already uses, see that function's own doc comment).
+      if (inNeverMarriedCohort(wife, endYear, FEMALE_FERTILE_WINDOW_END_AGE)) {
         const childCount = Object.values(finalPeople).filter((c) => c.motherId === wife.id && c.fatherId === husband.id).length;
         completedMarriageChildCounts.push(childCount);
       }

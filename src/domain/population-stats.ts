@@ -66,9 +66,16 @@ export interface MarriageEligibility {
 }
 
 /**
- * Whether a person belongs to the never-married cohort: the window follows them up to `cohortAge`
+ * Whether a person belongs to a cohort resolved by `cohortAge`: the window follows them up to it
  * AND they survived to it. The historical "never married by 45" share is measured among survivors;
  * counting people who died as children inflates it with deaths that had nothing to do with marriage.
+ *
+ * PR13 STEP 0 (decision 075): the same survival semantics apply to "children ever born per
+ * completed marriage" — the historical ~6-7 anchor is specifically for a woman who married and
+ * SURVIVED to the end of her fertile window (45), not one cut short by early death. Before this
+ * slice, `check-demographics.ts` counted EITHER outcome as "completed", deflating the figure below
+ * what it's meant to compare against. `check-demographics.ts` reuses this same predicate (with
+ * `cohortAge = FEMALE_FERTILE_WINDOW_END_AGE`) to gate that cohort too, not just never-married.
  */
 export function inNeverMarriedCohort(person: { readonly birthYear: number; readonly deathYear?: number }, endYear: number, cohortAge: number): boolean {
   if (endYear - person.birthYear < cohortAge) return false;

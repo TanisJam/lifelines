@@ -71,4 +71,17 @@ describe("inNeverMarriedCohort", () => {
   it("excludes a person the window cannot follow up to the cohort age", () => {
     expect(inNeverMarriedCohort({ birthYear: 1400 }, 1427, 45)).toBe(false);
   });
+
+  // PR13 STEP 0 (decision 075): the same predicate gates "children ever born per completed
+  // marriage" — a wife who died before 45 had her childbearing cut short by death, not by
+  // completing her fertile window, so she should not count toward the ~6-7-per-completed-marriage
+  // historical figure, which is specifically about wives who survived to the end of it.
+  it("excludes a wife who died mid-fertile-window from the 'completed marriage' cohort", () => {
+    expect(inNeverMarriedCohort({ birthYear: 1330, deathYear: 1360 }, 1427, 45)).toBe(false); // died at 30
+  });
+
+  it("includes a wife who survived to the end of her fertile window, alive or dead afterwards", () => {
+    expect(inNeverMarriedCohort({ birthYear: 1330, deathYear: 1380 }, 1427, 45)).toBe(true); // died at 50, after 45
+    expect(inNeverMarriedCohort({ birthYear: 1330 }, 1427, 45)).toBe(true); // still alive, past 45 by window end
+  });
 });
