@@ -1338,3 +1338,130 @@ New tests: `hazards.test.ts` (+2, the A2 compounding fix, mirroring Y1/A1's own
 (A1's `annotateSituationState` branch, `describeHazardBand`/`describeTimeInState`'s boundary values,
 `clampJevSelection`'s `everyday` vignette residual) — all three passed immediately, confirming they
 were coverage gaps, not bugs.
+
+## 069 — PR9: demographic structure follow-up (partner scarcity, infant mortality, literacy — engine-life-course)
+
+**Decision:** Extend engine-life-course past PR8's declared `params/demography.ts` +
+`check-demographics.ts`-only boundary into `simulate.ts`, `worldgen.ts` and `actuarial.ts`, per
+PR8's own recorded gap (decision 068, engram #6142). Five steps, each committed separately on
+`elc/pr9-demography`: (0) fix a right-censoring measurement bug, (1) partner scarcity, (2) infant
+mortality, (3) literacy — diagnosed, not fixed, see below, (4) confirm the onset+5 marriage-age
+bound still cannot restore.
+
+**Step 0 — right-censoring fix (commit `b8b6274`):** `check-demographics.ts`'s under15/infancy death
+shares counted a resolved DEATH from any birth cohort (dying is fast — fully observed almost
+immediately) but only counted a LIVING person once their birth cohort had already survived the full
+observation window to the threshold age. In a population where recent birth cohorts are often the
+largest, that asymmetry structurally over-represents deaths. Fixed with a proper life-table
+cohort-completeness rule (`src/domain/cohort-stats.ts`, unit-tested — the script itself is outside
+`pnpm test`'s glob): only count a cohort member once `endYear - birthYear >= ageThreshold`, dead or
+alive alike. Re-measured baseline (60 seeds, before any model change): under15DeathShare 23.1% ->
+22.9% (still PASS) — the bug was real but modest here. infantMortality and lifeExpectancyAtBirth
+were unaffected (their own denominators were already correctly censored by a different mechanism).
+
+**Step 1 — partner scarcity (commit `85a644f`):** diagnosed (engram #6142/#6311): 56.7% of widows in
+a 25-seed sample never got a single local `Y1` candidate across 15+ years, and first-marriage age
+ran above target. `simulate.ts`'s `eligible()` search is village-scoped only; the engine's own
+"marriage market beyond the village" mechanism already existed (`spawnImmigrant`, joins the general
+village pool as a normal unmarried adult) but its arrival chance was a hardcoded, undocumented
+`const p = 0.05` — too thin to matter (~1.7 expected immigrants over a 34-year run). Promoted to a
+named `IMMIGRATION_ANNUAL_PROBABILITY` (`params/demography.ts`, provenance recorded) and raised to
+0.10 — not `DEFAULT_FOUNDER_COUNT`/village size, which stays a product decision outside this fix's
+boundary. A more surgical "spawn a migrant only for someone with zero local candidates after a long
+wait" mechanism was tried FIRST and reverted: it crashed `protagonist.test.ts` ("Illegal residence
+transition: away -> away") and timed out the marriage-age regression test, both confirmed caused by
+the change via `git stash` (root cause not fully traced — likely candidate-pool/decision-budget
+ordering shifts from adding people mid-year; see engram #6314). Measured (60 seeds):
+widowRemarriagePostBlackDeath 16.4% -> 24.5% (FAIL -> PASS, band 23-29%); widowRemarriagePreBlackDeath
+27.2% -> 30.8% (still far below 60-66%). Real, reproducible COST: firstMarriageAgeWomen/Men got
+WORSE, not better (24.1/26.9 -> 26.2/27.9, band 18-22/21-25) — more concurrent marriageable people in
+the same local search pool appears to raise per-year contention, not just supply (mechanism not
+fully explained). Reported, not hidden.
+
+**Step 2 — infant/child mortality (commit `787d3be`):** `actuarial.ts#deathProbabilityAtAge` was
+still decision 050's Tudor (1498-1558) table (~15-17% effective infant mortality) against the actual
+1327-1361 period's own research target of ~30% by age 1. Moved the table into a named
+`MORTALITY_BY_AGE_BAND` (`params/demography.ts`, provenance recorded) and raised ONLY the age<2 band
+0.14 -> 0.30; every other band (2-5, 5-15, 15-40, 40-60, 60-75, 75-90, 90+) stays at decision 050's
+Tudor figure, since `under15DeathShare` (the conditional age 2-7 share) already met its own 20-30%
+target under those figures. Measured (60 seeds): infantMortality 13.4% -> 29.1% (the target is a
+degenerate point band, exactly 30-30 — structurally unhittable by any stochastic run; 29.1% is as
+close as tuning got it). `lifeExpectancyAtBirth` moved from comfortably inside 22-35 (23.7) to a
+small honest undershoot (21.9, 0.07 below the floor) — an expected consequence of more early deaths
+pulling the cohort average down, reported rather than chased further (that target is itself flagged
+"low confidence" in `targets.ts`). `widowRemarriagePostBlackDeath` improved again as a side effect of
+more widowing overall (24.5% -> 24.5%, stable PASS). Reseeded three curated protagonist tests the
+higher rate broke — all three had ALREADY been reseeded once before by decision 050 for the identical
+reason at the OLD Tudor rate: `artisan-widow-trade-3` -> `artisan-widow-trade-13` (widow-keeps-trade,
+found via `scripts/find-seeds.ts#findSeed` with a custom "has a keptTrade widowed event" predicate),
+`hier-determinism-5` -> `hier-determinism-7`, `noop-turn-4` -> `noop-turn-8` (shared by two tests;
+both found via a one-off script mirroring `findSeed`'s pattern with a "protagonist survives to age
+>=40" predicate, since that helper doesn't parametrize a protagonist).
+
+**Step 3 — literacy: diagnosed, NOT fixed (stop-and-report).** Measured (30 seeds): gentry are 35.0%
+of the born-in-sim cohort and account for 76.1% of all literate people in it — against
+`worldgen.ts`'s OWN documented sourced target, "gentry under 5%". Root cause: `assignFounderClasses`
+always draws 1-2 gentry COUPLES (`gentryCount = min(coupleCount, 1 + coinflip)`, never 0) out of only
+~4 total founder couples at the default founder count — a fixed small absolute headcount that was
+calibrated for a much larger real village, not a ~18-30 person simulated one, and gentry's lower
+`CLASS_MORTALITY_MULTIPLIER` (0.85) likely compounds the overrepresentation across generations. This
+matches (and confirms) PR8's own unconfirmed hypothesis, and a hand-calc against
+`COMMON_CLASS_WEIGHTS` alone (~4.1%) matches the 4-6% target almost exactly — the gap is essentially
+ALL gentry. NOT fixed here: `worldgen.ts`'s comment frames "always at least one gentry household" as
+an intentional STRUCTURAL/narrative design choice (decision 049), not a bug — every village always
+having its own local gentry family. Making gentry presence probabilistic (to hit the sourced <5%
+population share) means some simulated villages would have NO gentry household at all, a real,
+visible change to village composition — the same class of product decision this slice's own
+instructions said to stop and report rather than choose. Two prior, both-intentional design decisions
+are in direct tension (always-present gentry vs. gentry under 5% of population); resolving that is a
+product decision for the orchestrator/user, not this slice.
+
+**Step 4 — onset+5 restore: could not.** Measured (15 seeds, the test's own methodology): women's
+(age - onset) gap is 7.41 years (n=29, meanAge=25.55, meanOnset=18.14) — under the current +8 ceiling
+but well over +5. Men's gap is 4.70 (n=23, meanAge=26.78, meanOnset=22.09) — would satisfy +5 alone.
+Consistent with step 1's own finding that more immigration WORSENED first-marriage age rather than
+improving it — the gap did not narrow. Left `simulate.test.ts`'s bound at onset+8 (no logic change),
+recorded the measured gap inline in the test's own comment rather than loosening it further.
+
+**Population curve, the slice's own stated goal — NOT met.** Measured (25 seeds, 1327-1361 default
+play window, average living population): before PR9 (main@`23fa774`) 1327: 23.4, 1347: 14.7 (pre-
+plague decline -37.2%), 1350: 8.8 (Black Death shock -40.1%), 1361: 6.0 (further decline -31.8%,
+NO recovery). After steps 0-4: 1327: 24.4, 1347: 15.3 (-37.3%), 1350: 9.3 (-39.2%), 1361: 6.2
+(-33.3%, still NO recovery). The plague-year shock is already close to the ~40% target (coincidental,
+unrelated to this slice's changes — it comes from `period/events.ts`'s own Black Death mortality
+curve, untouched here). But pre-plague decline stays severe (target: flat or mild) and there is no
+post-plague partial recovery (population keeps falling 1350->1361) — PR9's fixes moved individual
+calibration bands but left the population TRAJECTORY essentially unchanged. The likely remaining
+driver is adult-year fertility/mortality balance (an aging founder population with still-insufficient
+replacement, per decision 068's own four-cause breakdown, cause 4) — out of this slice's remaining
+budget; flagged as the next, largest open item.
+
+**Final calibration state (60 seeds, `--stats 60 --assert`, period 1327-1427):**
+
+| Band | Before PR9 (068's gap) | After PR9 | Target | Status |
+|---|---|---|---|---|
+| firstMarriageAgeWomen | 24.1 | 26.2 | 18-22 | FAIL (worse) |
+| firstMarriageAgeMen | 26.9 | 28.5 | 21-25 | FAIL (worse) |
+| merchant-men (explicit) | 32.0 | 33.7 | <=25 | FAIL (unaddressed) |
+| widowRemarriagePreBlackDeath | 27.2% | 30.8% | 60-66% | FAIL (improved) |
+| widowRemarriagePostBlackDeath | 16.4% | 24.5% | 23-29% | **PASS** (was FAIL) |
+| lifeExpectancyAtBirth | 24.6 | 21.9 | 22-35 | FAIL (was PASS; small undershoot) |
+| infantMortality | 12.4% | 29.1% | exactly 30% | FAIL (point band, ~unhittable; near target) |
+| under15DeathShare | 23.1% | 21.8% | 20-30% | PASS (was PASS) |
+| literacyOverall | 13.3% | 12.8% | 4-6% | FAIL (unaddressed — see step 3) |
+| hazardFallbacks | 0 | 0 | 0 | PASS |
+
+**Open items for the orchestrator/user:** (1) literacy's gentry-overrepresentation tension (step 3);
+(2) whether `infantMortality`'s degenerate point band (`targets.ts`, min=max=30) should become a real
+range, since exact equality is unreachable by any stochastic run; (3) the population-curve trajectory
+itself, which needs adult fertility/mortality work beyond this slice.
+
+**Grounding:** `sdd/engine-life-course/state` (engram #6142, PR9's resume point); PR8 diagnosis
+(engram #6311) and decision 068 (the precedent this slice extends); PR9's own instrumented findings
+(engram #6314, the reverted migrant-match mechanism).
+
+**Verified:** `pnpm test` (477 passing, 0 regressions from PR8's 462 baseline plus PR9's own new
+tests), `pnpm exec tsc --noEmit`, `pnpm lint` clean, batch-vs-drained determinism test included and
+passing. New/changed tests: `src/domain/cohort-stats.test.ts` (new, 10 tests), `src/domain/
+actuarial.test.ts` (new, 4 tests), `src/domain/simulate.test.ts` (+1 immigration-rate wiring test,
+1 reseed), `src/domain/simulate-decide-year.test.ts` (2 reseeds).
