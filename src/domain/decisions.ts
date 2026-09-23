@@ -174,6 +174,13 @@ export interface DecisionMakerStats {
   outputTokens?: number;
   /** Round 12 (decision 045): cumulative individual questions asked across all real calls — e.g. one `decideYear` request asks one `pick` Choice plus one `resp:<id>` Choice per eligible situation, so a single request can carry several questions. Distinct from `calls` (HTTP requests); used to report per-life `jevQuestions` (see `contracts/life.ts`'s `done` event `stats`). */
   questions?: number;
+  /**
+   * Engine life course PR6 (event-hazards capability, design decision 15): cumulative hazard-table
+   * lookup misses, keyed `${kind}:${socialClass}` — surfaced in `SimulateReport.hazardFallbacks`.
+   * Adapters that don't consult `hazards.ts` (a minimal test double, or `JevDecisionMaker` before
+   * PR7 wires its own clamp baseline lookups) omit this, same optional convention as `inputTokens`.
+   */
+  hazardFallbacks?: Readonly<Record<string, number>>;
 }
 
 /** Where a decision's `final` distribution came from. */
