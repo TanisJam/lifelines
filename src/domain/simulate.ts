@@ -9,7 +9,7 @@ import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createM
 import type { Locale } from "./locale";
 import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
-import { IMMIGRATION_ANNUAL_PROBABILITY, IMMIGRATION_POPULATION_CAP_RATIO } from "./params/demography";
+import { IMMIGRATION_ANNUAL_PROBABILITY, IMMIGRATION_POPULATION_CAP_RATIO, RETURN_HOME_MIN_AWAY_YEARS, RETURN_HOME_PROBABILITY } from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import {
   BLACK_DEATH_YEARS,
@@ -684,6 +684,17 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       const lastIllness = lastIllnessYear(events, id);
       const offCooldown = lastIllness === undefined || year - lastIllness >= ILLNESS_COOLDOWN_YEARS;
       if (offCooldown) candidates.push({ decisionId: `illness:${id}:${year}`, kind: "illness", personId: id, options: ["illness", "healthy"] });
+    } else {
+      // PR10 (decision 071, population-trajectory diagnosis): "return home" — previously offered
+      // ONLY to the narrated protagonist (see the old away-catalog block this replaces), which made
+      // leaving home (`Y3`) a permanent, one-way population sink for every other villager: measured
+      // (20-seed diagnostic) 0 of 188 general-village emigrants ever came back. Code-rolled like
+      // immigration/levy, not a considered choice — see `RETURN_HOME_PROBABILITY`'s own doc comment
+      // for the full measured diagnosis and provenance.
+      const awaySince = awayMoveYear(events, id);
+      if (awaySince !== undefined && year - awaySince >= RETURN_HOME_MIN_AWAY_YEARS) {
+        candidates.push({ decisionId: `return:${id}:${year}`, kind: "return", personId: id, options: ["return", "stay"] });
+      }
     }
     // A moved-away person still faces mortality (see decision log: they
     // must not become immortal), just not illness or social decisions.
@@ -1243,13 +1254,10 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         }
       }
 
-      // Return home: code-rolled, like immigration/levy — not a real DecisionMaker question, since
-      // it's a small yearly chance rather than a considered choice. Offered every year from three
-      // years after leaving; resolving to "return" pushes a fresh `move` event with `away: false`,
-      // which is all `hasMovedAway` needs to see them as home again from next year on.
-      if (awaySince !== undefined && year - awaySince >= 3) {
-        candidates.push({ decisionId: `return:${protagonist.id}:${year}`, kind: "return", personId: protagonist.id, options: ["return", "stay"] });
-      }
+      // Return home: PR10 (decision 071) moved this into the general biology loop above (the
+      // `livingIds`/`movedAway` block), which now covers the protagonist too — `awaySince` (already
+      // computed above for the work/A3 check) is unused here as of this change, but the away-catalog
+      // block still needs it for those other candidates, so it stays.
     }
   }
 
@@ -2159,9 +2167,10 @@ export async function* simulateYears(
           commitId(people, events, descriptor.personId, minted, pushed);
         }
       } else if (descriptor.kind === "return") {
-        // Returning home (decision 040) — a small yearly chance, not a considered choice, so it's
-        // code-rolled like immigration/levy rather than sent to a DecisionMaker.
-        const p = 0.08;
+        // Returning home (decision 040; generalized to the whole village by PR10/decision 071 — see
+        // `RETURN_HOME_PROBABILITY`'s own doc comment) — a small yearly chance, not a considered
+        // choice, so it's code-rolled like immigration/levy rather than sent to a DecisionMaker.
+        const p = RETURN_HOME_PROBABILITY;
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "return") {

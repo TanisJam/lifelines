@@ -191,3 +191,29 @@ export const IMMIGRATION_ANNUAL_PROBABILITY = 0.05;
  * proportionally.
  */
 export const IMMIGRATION_POPULATION_CAP_RATIO = 38 / 18;
+
+/**
+ * PR10 (decision 071, population-trajectory diagnosis, `sdd/engine-life-course/state`): named
+ * here, unchanged in VALUE — this was already a hardcoded, undocumented `0.08` in `simulate.ts`'s
+ * "return" biology candidate, but PROTAGONIST-ONLY. Measured (20-seed `--stats` diagnostic, GENERAL
+ * village, no protagonist): `Y3` ("leave home") fires for every eligible adult, every year, peaking
+ * (`Y3_PEAK_HAZARD`) at ages 16-30 — the SAME window most classes' marriage floors sit in — and
+ * across a 100-year run, 0 of the 188 people who left home (20 seeds) ever came back, because
+ * `simulate.ts`'s own "return" candidate generation lived entirely inside its `if (protagonistId)`
+ * away-catalog block (round 10, decision 040): only the single narrated protagonist could ever be
+ * offered a way home again. The general village's own `never-married` share was 70-75% by age 45 in
+ * that same run — consistent with a large share of the marriageable population drawing "leave" at
+ * least once during their prime marrying years and then never being eligible for `Y1`/`A2` again
+ * (`aliveNonMoved` excludes anyone `hasMovedAway`). This is a real, previously-undiagnosed
+ * asymmetry, not a calibration gap: the protagonist getting to come home was never a deliberate
+ * narrative-only design choice (the "return" roll itself has no narrative dependency, unlike the
+ * away-CAST machinery Y1/A2/Y5 reuse there, which genuinely does need the protagonist's own lightweight
+ * away cast) — it was a side effect of the single-life pivot only ever wiring biology-style rolls
+ * (immigration, levy, illness, death) for the general population, and forgetting "return" belonged
+ * in that same general-population set. Generalizing it (see `simulate.ts`'s `gatherCandidatesForYear`)
+ * closes the population's single largest one-way emigration sink.
+ */
+export const RETURN_HOME_PROBABILITY = 0.08;
+
+/** Companion to `RETURN_HOME_PROBABILITY` above — also promoted from an inline `3` in `simulate.ts`'s protagonist-only "return" gate, unchanged in value, now shared by the generalized general-village check. */
+export const RETURN_HOME_MIN_AWAY_YEARS = 3;
