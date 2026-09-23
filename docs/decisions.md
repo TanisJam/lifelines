@@ -1465,3 +1465,156 @@ tests), `pnpm exec tsc --noEmit`, `pnpm lint` clean, batch-vs-drained determinis
 passing. New/changed tests: `src/domain/cohort-stats.test.ts` (new, 10 tests), `src/domain/
 actuarial.test.ts` (new, 4 tests), `src/domain/simulate.test.ts` (+1 immigration-rate wiring test,
 1 reseed), `src/domain/simulate-decide-year.test.ts` (2 reseeds).
+
+## 070 — PR9 demography follow-up: enlarging the village (engine-life-course)
+
+**Decision:** Extend engine-life-course past decision 069's own three open items, per the
+orchestrator-verified root cause: `worldgen.ts`'s `DEFAULT_FOUNDER_COUNT` of 18 (~20-24 initial
+population) is far too small for a real 14th-century English village (~150-400 people), which
+structurally explained decision 069's three failing symptoms (no marriage market, structural gentry
+overrepresentation, no post-plague recovery). User approved enlarging to ~60-100 initial people.
+Four steps, each committed separately on `elc/pr9-demography`: (1) cost sweep to pick a size, (2)
+enlarge the village, (3) revisit the immigration mechanism, (4) re-run the bands and re-check the
+onset+5 bound.
+
+**Step 1 — cost sweep (measurement only, no code change).** Measured (10 seeds, 1327-1361,
+`RuleDecisionMaker`, wall time + `decideYear` call/situation counts as a Jev-call proxy):
+
+| founderCount | avg start pop | avg wall time | avg `decideYear` calls | avg situations |
+|---|---|---|---|---|
+| 18 (old default) | 24.1 | 212ms | 378 | 681 |
+| 46 | 57.5 | 556ms | 907 | 1,812 |
+| **62** | **80.8** | **757ms** | **1,279** | **2,531** |
+| 77 | 98.1 | 914ms | 1,485 | 3,000 |
+| 100 (context only) | 129.2 | 1,211ms | 2,010 | 4,068 |
+
+Then measured the `period` calibration set (60-seed `--stats --assert`) at 46/62/77 before touching
+the immigration mechanism: literacy 8.2%/6.8%/6.9% (target 4-6%), firstMarriageAgeWomen
+23.8/24.3/24.5 (target 18-22), firstMarriageAgeMen 27.7/26.9/27.2 (target 21-25). **62 chosen**: its
+bands match or beat 77's at meaningfully lower cost (757ms vs 914ms/seed, ~35% fewer `decideYear`
+calls), and clearly beat 46's literacy overshoot for the identical 4-6% target. `familyShape`/
+`familyCount` already scale linearly with `founderCount`; the gentry/clergy structural-household
+logic needed no code change — `gentryCount = min(coupleCount, 1 + coinflip)` still draws only 1-2
+gentry couples, but `coupleCount` itself grows with `founderCount`, so gentry's founder share
+dilutes automatically (was up to ~29% of founders at 18, comfortably under worldgen.test.ts's own
+new <15% check at 62 — see below). Old stored lives are unaffected: `founderCount` is never
+persisted on `WorldConfig`; only new generations pick up the new default. Commit `83886e4`.
+
+**Step 2 — immigration re-measurement, and a second bug found along the way.** Re-measuring PR9's
+step 1 (85a644f, rate 0.05->0.10) at the new village size surfaced that `simulate.ts`'s immigration
+candidate had ALSO been gated on a hardcoded `livingIds.length < 38` since the engine's original
+commit (`ba10883`) — calibrated, unnamed, to the OLD 18-founder default (38/18 ≈ 2.11×). Confirmed
+by measurement: a `founderCount: 62` village starts at ~81 people, already above 38, so immigration
+NEVER fired from year one regardless of the rate — the whole mechanism was silently dead at any of
+the new candidate sizes. Fixed first (RED test, then GREEN): named `IMMIGRATION_POPULATION_CAP_RATIO
+= 38/18` and derived the cap from the village's own founder headcount in `people` (not `config`,
+which doesn't carry `founderCount`) — old lives (founderCount 18) keep the identical ~38 cap, larger
+villages scale proportionally. Reseeded `artisan-widow-trade-13` -> `artisan-widow-trade-6`
+(founderCount:30 test; the wider cap shifted that seed's candidate composition — found via
+`scripts/find-seeds.ts#findSeed`, a custom "has a keptTrade widowed event" predicate). Commit
+`f8a5fc3`.
+
+With the cap fixed, immigration could fire again — so the rate question (0.10 vs 0.05) became
+answerable at the real village size. Re-measured (60-seed `--stats`, founderCount 62, cap fix
+applied both times):
+
+| | rate=0.10 | rate=0.05 |
+|---|---|---|
+| firstMarriageAgeWomen | 24.28 | 24.28 |
+| firstMarriageAgeMen | 27.31 | 26.98 |
+| merchant men | 28.69 | 29.82 |
+| widowRemarriagePost | 25.20% | 24.03% (both PASS, band 23-29%) |
+| literacyOverall | 6.70% | 6.77% |
+| lifeExpectancyAtBirth | 20.89 | 21.17 |
+
+No meaningful difference either way, and men's marriage age is marginally WORSE at 0.10 — with a
+real village-scale marriage market now doing the work, PR9's extra immigrants buy nothing
+measurable and only grow simulated population (and so `decideYear` cost) faster. **Reverted to
+0.05.** Commit `e8599a3`.
+
+**Step 3 — onset+5 re-check (decision 069's step 4, retried).** Re-measured the same methodology
+(`simulate.test.ts`, 15 seeds, founderCount:30, gentry/clergy excluded) with the cap fix and rate
+revert in place: women's (age - onset) gap narrowed from 7.41 to **6.32** (n=25, meanAge=24.40,
+meanOnset=18.08); men's gap narrowed from 4.70 to **3.70** (already well under +5). Tried tightening
+the bound to onset+5 directly (RED): still fails (24.40 > 23.08). Left at onset+8, updated the
+comment with the new numbers — real, measurable progress, just not enough to close the class-tail
+gap this test's own comment already attributes to genuine, structural partner scarcity for some
+classes. Commit `e8599a3`.
+
+**Population curve — still NOT met, confirmed to be size-independent.** Measured (25 seeds,
+1327-1361, average living population), before (founderCount 18, rate 0.10 — decision 069's own end
+state) vs after (founderCount 62, rate 0.05, cap fix):
+
+| Year | Before | After | Change |
+|---|---|---|---|
+| 1327 | 22.0 | 75.0 | — |
+| 1347 | 14.4 (-34.5%) | 45.2 (-39.7%) | pre-plague decline, essentially the same % |
+| 1350 | 7.7 (-46.5%) | 23.6 (-47.8%) | plague shock, essentially the same % |
+| 1361 | 5.8 (-24.7%, still falling) | 15.5 (-34.3%, still falling) | still NO recovery |
+
+The percentage declines are essentially identical before and after — confirms decision 069's own
+hypothesis: the trajectory is driven by an adult-year fertility/mortality imbalance (decision 068's
+cause 4), NOT by absolute village size. Enlarging the village made every band's absolute numbers
+bigger without changing the underlying growth-rate problem. Still flagged as the largest open item,
+still out of this slice's scope (a fertility/mortality-curve rebalance, not a village-size or
+immigration-mechanism fix).
+
+**Final calibration state (60 seeds, `--stats 60 --assert`, period 1327-1427):**
+
+| Band | Before this follow-up (069) | After | Target | Status |
+|---|---|---|---|---|
+| firstMarriageAgeWomen | 26.2 | 24.28 | 18-22 | FAIL (improved) |
+| firstMarriageAgeMen | 28.5 | 26.98 | 21-25 | FAIL (improved) |
+| merchant-men (explicit) | 33.7 | 29.82 | <=25 | FAIL (improved) |
+| widowRemarriagePreBlackDeath | 30.8% | 35.09% | 60-66% | FAIL (closer) |
+| widowRemarriagePostBlackDeath | 24.5% | 24.03% | 23-29% | PASS (still) |
+| lifeExpectancyAtBirth | 21.9 | 21.17 | 22-35 | FAIL (roughly flat) |
+| infantMortality | 29.1% | 30.91% | exactly 30% | FAIL (point band, ~unhittable; still near target) |
+| under15DeathShare | 21.8% | 22.49% | 20-30% | PASS (still) |
+| literacyOverall | 12.8% | 6.77% | 4-6% | FAIL (big improvement, close now) |
+| hazardFallbacks | 0 | 0 | 0 | PASS |
+
+**Marriage-age distribution (60 seeds, mean AND median, by sex then class/sex — reported regardless
+of pass/fail, per this slice's own instruction):**
+
+By sex: F mean=24.28, median=22.50 (n=350); M mean=26.98, median=25.00 (n=285). The median is
+consistently well below the mean for both sexes (F 22.5 vs 24.3, right at/near the 18-22 target's
+upper edge) — the mean is pulled up by a long right tail (the same partner-scarcity effect the
+onset+8 test's own comment documents), not a uniformly-shifted distribution.
+
+By class/sex (mean/median): artisan f 23.94/22.00 (n=52), artisan m 29.78/28.00 (n=32); cottar f
+25.84/24.00 (n=63), cottar m 27.37/26.00 (n=57); freeholder f 24.50/22.00 (n=36), freeholder m
+25.60/24.00 (n=25); gentry f 24.21/21.00 (n=29), gentry m 26.55/25.00 (n=40); merchant f 23.52/22.00
+(n=27), merchant m 29.82/27.00 (n=17); villein f 23.81/22.00 (n=143), villein m 26.04/25.00 (n=114).
+
+**UI/perf: no regressions, no product concern found.** No UI view lists every villager —
+`Chronicle` (src/components/chronicle.tsx) renders only the protagonist's own narrated timeline;
+`buildPersonSheet` (src/server/life-chronicle.ts) is a single-person side sheet opened by a
+family/relationship link, never a village roster. The SSE tick stream
+(`src/app/api/lives/stream/route.ts`) sends only the protagonist's own narrated entries for that
+year (`buildProvisionalTickEntries`, gated to `entries.length > 0`) — never the full `people` dict —
+so per-tick payload size is unaffected by village population. Server-side cost is real but bounded:
+`simulate()` wall time per life rose from ~212ms to ~757ms (rules engine, 34-year run) at the new
+default; real Jev-backed runs are additionally capped by the pre-existing `LIFE_DECISION_BUDGET =
+2000` (simulate.ts), unrelated to this change, which already bounds real DecisionMaker call volume
+regardless of village size.
+
+**Reseed log (this slice):** `artisan-widow-trade-13` -> `artisan-widow-trade-6`
+(`src/domain/simulate.test.ts`, founderCount:30 test; immigration-cap fix shifted candidate
+composition; found via `scripts/find-seeds.ts#findSeed`, custom keptTrade predicate).
+
+**Grounding:** `sdd/engine-life-course/apply-progress` (engram, this slice's resume point);
+decision 069 (the precedent and open items this slice extends).
+
+**Verified:** `pnpm test` (481 passing, up from decision 069's 479 baseline plus this slice's own 4
+new tests: 2 for the default village size/gentry share in `worldgen.test.ts`, 2 for the immigration
+cap scaling in `simulate.test.ts`), `pnpm exec tsc --noEmit` clean, `pnpm lint` clean,
+`pnpm exec tsx scripts/check-demographics.ts --stats 60 --assert` still exits non-zero (7 of 9 bands
+still fail, as tabulated above) — an honest, unchanged-from-069 assertion failure, not a regression.
+
+**Open items for the orchestrator/user (unchanged from decision 069, still not this slice's to
+resolve):** (1) the population-curve trajectory itself — confirmed size-independent this slice,
+needs an adult fertility/mortality-curve rebalance; (2) literacy's gentry-overrepresentation
+tension (decision 069 step 3) — much closer now (12.8% -> 6.8%, vs. a 4-6% target) but not fully
+closed; (3) whether `infantMortality`'s degenerate point band (`targets.ts`, min=max=30) should
+become a real range.
