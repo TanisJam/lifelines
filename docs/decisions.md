@@ -1773,3 +1773,210 @@ marginal new miss (29.10% vs. a 29% ceiling) and `lifeExpectancyAtBirth`'s furth
 both small, honest side effects of the fertility increase, not chased further; (4) `literacyOverall`
 and `firstMarriageAgeWomen`/`Men` (the general, non-gentry bands) remain open from prior slices,
 unaffected by this one.
+
+## 072 — PR11: the marriage funnel, instrumented (engine-life-course)
+
+**Decision:** Four prior PRs (068-071) each independently traced their own remaining demographic gap
+— population decline, late marriage, the gentry band, low widow remarriage — back to marriage
+FORMATION (68-75% of the born-in-sim/under-14-at-1327 cohort never marries by 45, against a 10-20%
+research target) without measuring the formation mechanism itself directly. This slice does that:
+instruments the funnel from "eligible" through "married" (STEP 1), fixes the ONE mechanism bug the
+data clearly and dominantly supports (STEP 2), and re-measures honestly rather than chasing every
+named suspect without evidence. Branch `elc/pr11-marriage-funnel`, off main `756716f`.
+
+**STEP 0 — fix the measurement first (commit `a3d5660`).** Two real bugs in
+`scripts/check-demographics.ts`, both immortal-time-bias variants: an immigrant's `birthYear` is
+back-computed from their arrival age (`simulate.ts#spawnImmigrant`), not a real developmental clock
+— `aliveAtYear` and the adult-mortality-by-age-band loop both credited an immigrant with years of
+risk-free "survival" BEFORE they ever joined the village. Fixed via a new `immigrantArrivalYears(events)`
+lookup (reads each immigrant's own `move`/`arrived: true` event) threaded into both. Founders and
+in-sim births are unaffected (no arrival event). Direction confirmed by the re-measurement: population
+checkpoints shifted down slightly (immigrants no longer pre-counted) and adult mortality ticked up
+slightly (immortal time removed) — both the expected sign.
+
+Also re-measured `FERTILITY_HAZARD_BANDS` (demography.ts:127-133) against `effectiveSelectionHazard`'s
+clamp directly, rather than trusting the PR10 RDD advisory's "past the ceiling, dead" framing at face
+value: a 15-seed diagnostic sampling every real `A2` "try" answer (n=3,379) gives outcomeProbability
+mean=0.404, p50=0.400, p75=0.548, p90=0.715 — the flagged <30/<35/<40 bands (hazard 0.6/0.5/0.4) are
+82.8%/68.4%/50.1% clamped, NOT fully dead. Left the values UNCHANGED and replaced the doc comment with
+this precise measurement — retuning a component with no funnel evidence it's the bottleneck (see STEP
+1) would risk destabilizing curated seeds for the wrong lever.
+
+**Re-baseline (60 seeds, `--stats --assert`, after STEP 0, before any behavior change):** 4/14 bands
+pass. Population 1327=77.9, 1347=48.7(-37.5%), 1350=26.8(-45.0%), 1361=19.0(-29.1%). Never-married by
+45: F=71.4%, M=74.6%. Marriage age F=24.14/M=27.52. Widow remarriage pre-1349=38.55%, post=29.10%.
+
+**STEP 1 — instrument the funnel (commit `a5d7dfc`).** A new `MarriageFunnelCollector` type plus
+`createMarriageFunnelCollector()` and an optional `SimulateOptions.marriageFunnelDebug` field, gated
+behind a single `undefined` check at every instrumentation site — every existing caller passes
+nothing, so this is a no-op measured at zero (`simulate.test.ts`'s own new determinism test proves
+attaching a collector produces byte-identical `people`/`events`/`decisions` output). Tracks, per
+person-year, restricted to the `motherId`-set-or-under-14-at-`config.startYear` cohort (decision 066's
+own exclusion, for the same reason): eligible (age/canMarry/mourning gate) -> a partner was found by
+`eligible()` (identical to "a Y1 candidate was emitted" by construction) -> Y1 won its person-year's
+competing-risk draw -> outcome (encourage/decline/wait) -> a romance was created -> A1 was offered ->
+A1 won its own draw -> married. Also a candidate-level tally of why `eligible()`'s six tiers all failed
+(mirrors its own predicate chain exactly, with a hard `unclassified` invariant that must stay 0).
+
+**Funnel results (25 seeds, 1327-1361, cohort as defined above, pre-STEP-2 code):**
+
+| Stage | Count | % of previous stage |
+|---|---|---|
+| 1. Eligible person-years | 3,885 | — |
+| 2. Partner found (`eligible()` succeeded) | 2,728 | 70.2% of 1 |
+| 3. Y1 candidate emitted | 2,728 | 100% of 2 (identical by construction) |
+| 4. Y1 won its competing-risk draw | 1,039 | 38.1% of 2/3 |
+| 5. Outcome: encourage=318 / decline=428 / wait=293 | 1,039 | 30.6% / 41.2% / 28.2% of 4 |
+| 6. Romance created | 318 | 100% of encourage |
+| 7. A1 offered | 664 | — (accumulates across a romance's own multi-year courtship) |
+| 8. A1 won its competing-risk draw | 500 | 75.3% of 7 |
+| 9. Outcome: propose=203 / delay=227 / end-it=70 | 500 | 40.6% / 45.4% / 14.0% of 8 |
+| 10. Married | 201 | 99.0% of propose |
+
+Match tier: same-class=1,284 (47.1% of stage 2), cross-class fallback=1,444 (52.9%) — the status-
+endogamy soft preference is overridden by scarcity more often than not.
+
+**No-partner reasons (candidate-level tally, n=25,785, one increment per opposite-sex candidate
+examined for a person-year where all six `eligible()` tiers failed):**
+
+| Reason | Count | % |
+|---|---|---|
+| Already married | 12,701 | 49.3% |
+| Not marriageable age (candidate-side age/canMarry/mourning gate) | 5,772 | 22.4% |
+| Claimed by another seeker this year (`claimedPartners`) | 4,105 | 15.9% |
+| Already courting someone else | 2,485 | 9.6% |
+| Age window (>40 years apart even at the widest tier) | 389 | 1.5% |
+| Related (consanguinity) | 333 | 1.3% |
+| No living opposite-sex candidate at all / away-only | 0 / 0 | 0% |
+| Unclassified (invariant, must stay 0) | 0 | 0% |
+
+A separate diagnostic (Y1 decision history, not part of the committed collector) confirmed the
+**dominant, clearly-fixable** leak directly: mean 23.3 Y1 attempts per person against only 8.1
+DISTINCT partners ever offered — `eligible()`'s `aliveNonMoved.find(...)` deterministically returned
+the exact same first id-sorted candidate every year regardless of outcome. 48% of a person's
+consecutive Y1 offers repeated the exact same partner (n=5,554 year-over-year transitions), max
+observed streak 13 consecutive years, 29 people offered 5+ Y1s ALL to the same partner.
+
+**STEP 2 — fix (a), the sticky match (commit `f5ecd6a`).** Replaced `eligible()`'s `.find()` (first
+match in fixed id-sorted order) with `eligiblePool()` (every candidate meeting that tier's predicates,
+unchanged) plus `pickWeightedPartner()` — a seeded, deterministic, age-proximity-weighted draw over
+the tied pool (`keyedRng(seed, personId, year, tierKey)`, same pattern as every other per-person-year
+draw in this file). The six-tier age-window/same-class-first structure (status endogamy as a soft
+preference) is byte-for-byte unchanged; only WHICH candidate wins a tie changes. RED test first
+(`simulate.test.ts`, "varies the offered Y1 partner across years..."), confirmed failing pre-fix
+(1 distinct partner offered across 12 years), GREEN after. Zero regressions: 495/495 tests pass,
+including the batch-vs-drained determinism test and the pre-existing endogamy-preference test — no
+curated seed needed reseeding.
+
+**Items (b)/(c)/(d) investigated with real data, NOT fixed — the funnel data doesn't support them as
+the dominant lever, and the task's own instruction was to fix only what the data shows matters:**
+
+- **(b) `claimedPartners` reserves both people for the whole year.** Real (15.9% of the no-partner
+  tally, ~4.7% of all eligible person-years) but a SAFE fix needs more than removing the reservation:
+  dropping `person.id` from `claimedPartners` reopens the exact double-courting bug decision 066
+  documented and tolerates via `life-state.ts` self-loops ("a correct fix needs an actual
+  stable-matching pass over candidate pairs... outside this corrective's scope" — decision 066, item
+  3). Fix (a) already shrinks this indirectly: a partner who was "wasted" on a repeatedly-declining
+  pairing in the old sticky-match code is no longer guaranteed to be re-claimed by the SAME seeker
+  every year. Left alone rather than risk reintroducing a documented crash-adjacent bug for a modest
+  measured gain.
+- **(c) chain-compounding regression, or a widow-remarriage gap in the fix.** NOT regressed:
+  `hazards.test.ts`'s own `expectedMarriageChain` analytic regression guard (decision 066's PRIMARY
+  guard against exactly this class of bug) still passes unchanged. The 38.1% Y1-wins-its-draw rate is
+  a by-design consequence of many competing situations sharing one person-year "slot", not a broken
+  mechanism. Widow remarriage's own shortfall (pre-1349: 38.55% -> 39.61% after fix (a), barely moved)
+  traces to `WIDOW_REMARRIAGE_BASE`'s raw magnitude (0.12 women / 0.2 men — well below
+  `effectiveSelectionHazard`'s ceiling, unlike the fertility bands), a SEPARATE tunable fix (a) doesn't
+  touch. NOT raised here: decisions 068/069 already measured widows' dominant issue directly as
+  availability (56.7% of a 25-seed widow sample never got a single Y1 candidate offered across 15+
+  years), not hazard magnitude — raising `WIDOW_REMARRIAGE_BASE` without funnel evidence it's the
+  actual bottleneck would be exactly the "shotgun" this slice's own instruction warned against.
+- **(d) decline/wait creating long lockouts.** No explicit lockout/cooldown mechanism exists in the
+  code after a "decline" or "wait" outcome (confirmed by reading `gatherCandidatesForYear`'s Y1 block
+  end to end). The sticky-match pattern (item a) WAS the de facto lockout — a declined pairing kept
+  being re-offered, unchanged, for years — and is fixed by (a).
+
+**STEP 3 — re-run the bands.** Tried restoring `simulate.test.ts`'s marriage-age regression bound from
+onset+9 to onset+5 (RED): still fails (women's gap 7.32 years, n=37, meanAge=25.46, meanOnset=18.14).
+Left at onset+9 (both sexes measured comfortably within it post-fix: women 7.32, men 5.35, n=31),
+comment updated inline with today's measurement and the funnel-based explanation for why fixing WHICH
+partner is offered doesn't close this specific gap (the bottleneck is stages 4/5 of the funnel and
+raw partner scarcity, not stage 2). No reseeds needed anywhere in this slice.
+
+**Population trajectory (60 seeds, 1327/1347/1350/1361, matching decision 070/071's own methodology):**
+
+| Year | STEP 0 baseline (measurement fix only) | After STEP 2 fix (a) |
+|---|---|---|
+| 1327 | 77.9 | 77.9 |
+| 1347 | 48.7 (-37.5%) | 49.0 (-37.1%) |
+| 1350 | 26.8 (-45.0%) | 27.1 (-44.6%) |
+| 1361 | 19.0 (-29.1%, still falling) | 19.4 (-28.6%, still falling) |
+
+Essentially flat — confirms the funnel diagnosis: fixing WHICH partner is offered doesn't materially
+move population, because the dominant leaks (Y1 not winning its own draw, and raw partner scarcity)
+are unaffected by matching order.
+
+**Final calibration state (60 seeds, `--stats 60 --assert`, period 1327-1427):**
+
+| Band | STEP 0 baseline | After STEP 2 fix (a) | Target | Status |
+|---|---|---|---|---|
+| firstMarriageAgeWomen | 24.14 | 24.36 | 18-22 | FAIL |
+| firstMarriageAgeMen | 27.52 | 27.97 | 21-25 | FAIL |
+| firstMarriageAgeMen (merchant, explicit) | 28.23 | 27.19 | 0-25 | FAIL |
+| firstMarriageAgeWomenGentry | 23.28 | 23.66 | 14-18 | FAIL |
+| firstMarriageAgeMenGentry | 27.48 | 28.37 | 20-24 | FAIL |
+| widowRemarriagePreBlackDeath | 38.55% | 39.61% | 60-66% | FAIL |
+| widowRemarriagePostBlackDeath | 29.10% | 31.01% | 23-29% | FAIL (was marginal) |
+| lifeExpectancyAtBirth | 19.13 | 19.54 | 22-35 | FAIL |
+| infantMortality | 31.84% | 30.86% | 25-35% | PASS |
+| under15DeathShare | 24.92% | 24.34% | 20-30% | PASS |
+| literacyOverall | 7.11% | 7.45% | 4-6% | FAIL |
+| populationPrePlagueChangePercent | -37.53% | -37.15% | -10 to 10 | FAIL |
+| populationPlagueShockPercent | -44.95% | -44.61% | -50 to -40 | PASS |
+| populationRecoveryChangePercent | -29.10% | -28.62% | -10 to 60 | FAIL |
+| hazardFallbacks | 0 | 0 | 0 | PASS |
+
+4/14 bands pass, unchanged from the STEP 0 baseline — an honest, essentially-flat result. Never-married
+by 45 moved only slightly: F 71.4% -> 70.6%, M 74.6% -> 72.5% (target 10-20%). Marriage age medians
+(new this slice, 60 seeds): F=22.0, M=26.0 — both well below their own means (24.36/27.97), the same
+long-right-tail partner-scarcity signature decision 070 first identified, now confirmed with harder
+per-candidate evidence (the no-partner-reason tally above) rather than inferred from the aggregate
+alone. By class/sex (median): villein f=22/m=26, cottar f=24/m=25, gentry f=21/m=26, merchant
+f=22/m=25.5, freeholder f=24/m=27, artisan f=22/m=29.
+
+**Why the headline numbers barely moved, despite a real, well-evidenced mechanism fix:** the STEP 1
+funnel proves the sticky-match bug (item a) was real and dominant AMONG THE STAGES IT TOUCHES (stage
+2, which candidate `eligible()` returns) — but the stages that actually gate whether a marriage
+happens at all are further downstream (stage 4: only 38.1% of Y1 candidates win their own person-
+year's competing-risk draw; and stage 1->2 itself: ~49% of failed match attempts fail because the
+examined candidate is already married, a population-composition fact, not a matching-order bug).
+Fixing (a) makes the search fairer and less wasteful, but the population genuinely does not contain
+enough unmarried, eligible people relative to how many are searching — the SAME "genuine partner
+scarcity" conclusion decisions 068, 069, 070 and 071 each independently reached, now with harder,
+per-candidate evidence rather than an inferred aggregate rate.
+
+**Grounding:** `sdd/engine-life-course/state` (engram, this slice's resume point); decisions 066 (the
+marriage-chain/dead-suitor-lockout precedent and the `expectedMarriageChain` regression guard this
+slice's item (c) check relies on), 068 (widows' own 56.7%-never-offered finding), 069/070 (partner-
+scarcity as the repeatedly-confirmed root cause), 071 (the population-trajectory diagnostic tooling
+this slice extends and the `FERTILITY_HAZARD_BANDS` ceiling this slice re-measured rather than
+retuned).
+
+**Verified:** `pnpm test` (495 passing, up from decision 071's 491 baseline plus this slice's own 4 new
+tests: 2 funnel-instrumentation tests, 2 sticky-match tests — 0 regressions, 0 reseeds), `pnpm exec tsc
+--noEmit` clean, `pnpm lint` clean, `pnpm exec tsx scripts/check-demographics.ts --stats 60 --assert`
+still exits non-zero (10 of 14 bands fail, tabulated above) — unchanged from the STEP 0 baseline, an
+honest report of a mechanism fix that didn't move the top-line numbers, not a hidden regression.
+
+**Open items for the orchestrator/user:** (1) the dominant remaining constraint is genuine population-
+level partner scarcity (mostly "already married" and "not marriageable age" at the very first funnel
+stage) — closing it needs either a larger simulated village (worldgen scale, decision 070's own
+already-explored and reverted lever) or a fundamentally different matching architecture (a real
+stable-matching/assignment pass across the whole village per year, replacing the current per-person
+sequential search entirely) — both substantially larger changes than this slice's own scope; (2)
+`claimedPartners`' full-year reservation (item b) has a real, modest, measured cost but no safe fix
+without that same stable-matching redesign; (3) `WIDOW_REMARRIAGE_BASE`'s raw magnitude (item c) may
+independently be under-calibrated for the pre-1349 target specifically, but decisions 068/069 already
+attribute widows' gap to availability, not magnitude — raising it without widow-specific funnel
+evidence would be an unsupported guess, flagged instead of guessed; (4) literacy, life expectancy and
+the general (non-gentry) marriage-age bands remain open from prior slices, unaffected by this one.
