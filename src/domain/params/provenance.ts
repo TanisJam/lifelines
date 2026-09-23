@@ -130,6 +130,21 @@ export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
     range: "8 combined years; not independently sourced. Real truncation remains for the rare, very long (7+ year) courtship tail -- reported, not chased further (see decision 074).",
     confidence: "low",
   },
+  A2_FERTILE_WINDOW_SPAN: {
+    source: "actuarial.ts#isFertileAge's own f-sex span (16-45), reused as the denominator for A2's own outcome-pressure clock (decision 075) instead of a new, separate figure.",
+    range: "29 years (45 - 16); not independently sourced beyond the existing isFertileAge span.",
+    confidence: "low",
+  },
+  A2_OUTCOME_PRESSURE_SLOPE: {
+    source: "PR13 STEP 1 (decision 075): A2's 'try' has the same effectiveSelectionHazard truncation Y1/A1 had (decision 073/074's own addendum flagged it) -- calibrated empirically against FERTILITY_HAZARD_BANDS' own age-banded raw hazard so 'try' tracks toward it once fertileYearsLeft has shrunk meaningfully. No sourced fertility-specific marriage-pressure-by-year curve was located.",
+    range: "0.02/year of 'years into the fertile window'; at the cap (20 years) adds +0.4 to the facet-driven base.",
+    confidence: "low",
+  },
+  A2_OUTCOME_PRESSURE_CAP_YEARS: {
+    source: "PR13 STEP 1 (decision 075): sized so a couple in their late 20s/early 30s (roughly 10-20 years into the 16-45 fertile window) has cleared most of the truncation, mirroring Y1/A1's own cap-sizing logic (decision 074) applied to A2's own, wider raw-hazard plateau (ages 20-35).",
+    range: "20 years; not independently sourced.",
+    confidence: "low",
+  },
   Y3_PEAK_HAZARD: {
     source: "Design revision 2 hazard-shapes table ('Y3 peaks 16-30'); lowered by PR10 (decision 071) after measuring Y3's peak window overlapping the marrying-age window and competing directly against Y1/A2 for the same person-year selection, measured to meaningfully depress both the marriage rate and realized marital fertility (see FERTILITY_HAZARD_BANDS's own doc comment).",
     range: "Provisional peak-window annual hazard; no sourced migration-rate figure for 1327-1361 was located. Lowered 0.12 -> 0.05.",

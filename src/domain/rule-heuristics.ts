@@ -3,6 +3,9 @@ import { OUTCOME_PROBABILITY_FLOOR, onsetAge } from "./hazards";
 import {
   A1_OUTCOME_PRESSURE_CAP_YEARS,
   A1_OUTCOME_PRESSURE_SLOPE,
+  A2_FERTILE_WINDOW_SPAN,
+  A2_OUTCOME_PRESSURE_CAP_YEARS,
+  A2_OUTCOME_PRESSURE_SLOPE,
   OUTCOME_TIME_PRESSURE_CEILING,
   Y1_OUTCOME_PRESSURE_CAP_YEARS,
   Y1_OUTCOME_PRESSURE_SLOPE,
@@ -97,6 +100,17 @@ function outcomeTimePressure(state: Readonly<Record<string, JsonValue>>, timeInS
   return slope * pressureYears;
 }
 
+/**
+ * PR13 STEP 1 (decision 075): A2's own outcome-pressure term — see `params/demography.ts`'s doc
+ * comment on `A2_OUTCOME_PRESSURE_SLOPE` for the full rationale. Unlike `outcomeTimePressure` (Y1/A1),
+ * there's no onset concept to add on top — just the closing fertile window itself, so this is its own
+ * small function rather than a call to `outcomeTimePressure` with an unused onset term.
+ */
+function fertilityWindowPressure(fertileYearsLeft: number, slope: number, capYears: number): number {
+  const yearsIntoWindow = Math.max(0, A2_FERTILE_WINDOW_SPAN - fertileYearsLeft);
+  return slope * Math.min(capYears, yearsIntoWindow);
+}
+
 export function ruleDistribution(question: DecisionQuestion): Distribution {
   const self = facets(question.state, "self");
   const selfValues = values(question.state, "self");
@@ -164,6 +178,13 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
     case "A2": {
       let tryFor = 0.4 + f(selfValues, "family", 0) / 150 + (f(self, "lovePropensity") - 50) / 200;
       tryFor = clamp01(tryFor);
+      // PR13 STEP 1 (decision 075, option (b) extended to A2 — same effectiveSelectionHazard
+      // truncation decision 073/074 fixed for Y1/A1, per decision 074's own addendum): "try" grows
+      // with pressure from the closing fertile window, read from `state.situation.fertileYearsLeft`
+      // (already stamped by simulate.ts's A2 candidate `extra`). Capped at the shared
+      // OUTCOME_TIME_PRESSURE_CEILING like Y1/A1's own curves.
+      const fertileYearsLeft = numberField(record(question.state, "situation"), "fertileYearsLeft", A2_FERTILE_WINDOW_SPAN);
+      tryFor = Math.min(OUTCOME_TIME_PRESSURE_CEILING, tryFor + fertilityWindowPressure(fertileYearsLeft, A2_OUTCOME_PRESSURE_SLOPE, A2_OUTCOME_PRESSURE_CAP_YEARS));
       const refuse = clamp01((1 - tryFor) * 0.3);
       const wait = Math.max(0.02, 1 - tryFor - refuse);
       return { try: tryFor, wait, refuse };

@@ -131,6 +131,36 @@ export const A1_OUTCOME_PRESSURE_SLOPE = 0.07;
 export const A1_OUTCOME_PRESSURE_CAP_YEARS = 8;
 
 /**
+ * PR13 STEP 1 (decision 075): A2's "try" has the SAME `effectiveSelectionHazard` truncation decision
+ * 073/074 diagnosed and fixed for Y1/A1 — `FERTILITY_HAZARD_BANDS`' raw hazard (0.5/0.6/0.5/0.4/0.25
+ * by age band) routinely exceeds `rule-heuristics.ts`'s static ~0.4-0.5 "try" answer, with NO
+ * time-pressure term at all before this fix (decision 074's own addendum flagged this exact gap).
+ *
+ * A2 has no "onset" concept (`hazards.ts#onsetAge` is a marriage-timing lookup, not applicable to an
+ * already-married couple) and no stamped courtship-style duration clock, so this reuses the
+ * ALREADY-stamped `state.situation.fertileYearsLeft` (`simulate.ts`'s A2 candidate `extra`, `= max(0,
+ * 45 - age)`) as the pressure clock instead: as a married woman's fertile window narrows, the
+ * pressure to try for a(nother) child before it closes grows — the same "family-size completion
+ * pressure" already informing the birth-spacing rules (`eligibleForAnotherChild`'s own Davenport
+ * citation), not a new, unsourced mechanism. `A2_FERTILE_WINDOW_SPAN` mirrors
+ * `actuarial.ts#isFertileAge`'s own f-sex span (45 - 16 = 29 years) so `yearsIntoWindow = max(0,
+ * A2_FERTILE_WINDOW_SPAN - fertileYearsLeft)` reads as "years already spent inside the fertile
+ * window". Honest limitation (documented, not hidden): this clock cannot distinguish a newly-married
+ * older bride from one who has tried unsuccessfully for years — no `yearsMarried`/`yearsTrying` state
+ * is currently stamped for A2 to do better; a future slice could add one.
+ *
+ * Shape: identical to `outcomeTimePressure`'s own `increment = slope * min(cap, pressureYears)`,
+ * capped at the shared `OUTCOME_TIME_PRESSURE_CEILING` — the same "never over-correct past raw
+ * hazard" mechanical safety (decision 066/074) applies here too. Slope/cap chosen empirically (no
+ * sourced marriage-pressure-by-year dataset for fertility specifically exists, same honesty standard
+ * as Y1/A1's own — see `provenance.ts`) so a couple in their late 20s/early 30s clears most of the
+ * truncation while a newly-eligible teenager still tracks the low raw hazard.
+ */
+export const A2_FERTILE_WINDOW_SPAN = 29; // isFertileAge's own f-sex span: 45 - 16
+export const A2_OUTCOME_PRESSURE_SLOPE = 0.02;
+export const A2_OUTCOME_PRESSURE_CAP_YEARS = 20;
+
+/**
  * A2's fertility-band hazard by mother's age — how likely THIS is the year a couple tries, not the
  * conception odds itself (see `simulate.ts#conceptionProbability`).
  *

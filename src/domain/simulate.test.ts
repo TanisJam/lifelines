@@ -414,7 +414,15 @@ describe("decision 051: maternal mortality at childbirth", () => {
     // corrective's own marriage-chain fix (`effectiveSelectionHazard`, the lowered
     // `COURTSHIP_WEIBULL_LAMBDA`, the Y1/A1 outcome floor) shifted WHEN marriages/pregnancies happen
     // enough that `maternal-widow-41` no longer reproduces either — `maternal-widow2-7` does.
-    for (const seed of ["maternal-check-37", "maternal-check-38", "maternal-check-39", "maternal-check-40", "maternal-widow2-7", "maternal-check-42", "maternal-check-43"]) {
+    // PR13 STEP 1 reseed (decision 075, `scripts/find-seeds.ts`): A2's own new outcome-pressure term
+    // shifted the RNG branch for `maternal-widow2-7` — the widower now goes on to remarry within the
+    // same 60-year window (a real, intended effect of reducing the fertility outcome-probability
+    // truncation, not a bug: `resolveWidowhood` still clears `spouseId` correctly at the moment of
+    // widowing, this test's final-state check just now observes a later remarriage instead). Replaced
+    // with `maternal-widow3-2` (found via `findSeed("maternal-widow3", ..., {startYear:1498,
+    // endYear:1558, founderCount:30})`, first of 80 attempts to satisfy "widowed husband and mother
+    // both stay unmarried through window end").
+    for (const seed of ["maternal-check-37", "maternal-check-38", "maternal-check-39", "maternal-check-40", "maternal-widow3-2", "maternal-check-42", "maternal-check-43"]) {
       const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 30 });
       const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 

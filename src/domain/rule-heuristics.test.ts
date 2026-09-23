@@ -20,9 +20,9 @@ function questionWithFacets(kind: DecisionQuestion["kind"], selfFacets: Record<s
   };
 }
 
-/** A facet-typical Y1/A1 question at a given age/class/sex, with the situation's own time-in-state extra set. */
+/** A facet-typical Y1/A1/A2 question at a given age/class/sex, with the situation's own time-in-state extra set. */
 function questionWithTime(
-  kind: "Y1" | "A1",
+  kind: "Y1" | "A1" | "A2",
   age: number,
   socialClass: SocialClass,
   sex: Sex,
@@ -39,7 +39,7 @@ function questionWithTime(
       suitor: { mind: { facets: {}, values: {} } },
       situation: { code: kind, ...timeInState },
     },
-    options: kind === "Y1" ? ["encourage", "decline", "wait"] : ["propose", "delay", "end-it"],
+    options: kind === "Y1" ? ["encourage", "decline", "wait"] : kind === "A1" ? ["propose", "delay", "end-it"] : ["try", "wait", "refuse"],
   };
 }
 
@@ -114,5 +114,42 @@ describe("PR12 STEP 2 (decision 073/074, option (b)): Y1/A1 outcome probability 
     // The whole point of option (b): once time pressure has accumulated, "encourage" should be close
     // to (here, at or above) the raw hazard so `effectiveSelectionHazard` stops truncating.
     expect(encourage).toBeGreaterThanOrEqual(raw - 0.02);
+  });
+});
+
+describe("PR13 STEP 1 (decision 075): A2 'try' grows with closing-fertile-window pressure", () => {
+  it("a woman at the very start of her fertile window (fertileYearsLeft at its max) gets the facet-neutral base (no pressure yet)", () => {
+    const q = questionWithTime("A2", 16, "villein", "f", { fertileYearsLeft: 29 });
+    expect(ruleDistribution(q).try).toBeCloseTo(0.4, 5);
+  });
+
+  it("'try' grows strictly as fertileYearsLeft shrinks (the window closing)", () => {
+    const early = ruleDistribution(questionWithTime("A2", 20, "villein", "f", { fertileYearsLeft: 25 })).try;
+    const later = ruleDistribution(questionWithTime("A2", 35, "villein", "f", { fertileYearsLeft: 10 })).try;
+    expect(later).toBeGreaterThan(early);
+  });
+
+  it("'try' never exceeds the shared OUTCOME_TIME_PRESSURE_CEILING, even at the very end of the fertile window", () => {
+    const q = questionWithTime("A2", 44, "villein", "f", { fertileYearsLeft: 1 });
+    expect(ruleDistribution(q).try).toBeLessThanOrEqual(OUTCOME_TIME_PRESSURE_CEILING);
+  });
+
+  it("try/wait/refuse still sum to exactly 1 once time pressure is applied", () => {
+    const q = questionWithTime("A2", 40, "villein", "f", { fertileYearsLeft: 5 });
+    const { try: tryFor, wait, refuse } = ruleDistribution(q);
+    expect(tryFor + wait + refuse).toBeCloseTo(1, 10);
+  });
+
+  it("the growing 'try' probability tracks toward the raw A2 hazard once the window pressure is saturated, reducing effectiveSelectionHazard's truncation", () => {
+    const age = 32;
+    const q = questionWithTime("A2", age, "villein", "f", { fertileYearsLeft: 13 });
+    const tryFor = ruleDistribution(q).try;
+    const raw = computeHazard({ kind: "A2", age, sex: "f", socialClass: "villein", year: 1340 }).value;
+    expect(tryFor).toBeGreaterThanOrEqual(raw - 0.02);
+  });
+
+  it("missing fertileYearsLeft in state defaults to zero pressure (a safe fallback, not a crash)", () => {
+    const q = questionWithTime("A2", 30, "villein", "f", {});
+    expect(ruleDistribution(q).try).toBeCloseTo(0.4, 5);
   });
 });
