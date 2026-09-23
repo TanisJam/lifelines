@@ -933,6 +933,16 @@ describe("PR6 corrective task 4: mean first-marriage age stays within onset + 5 
       // the partner-scarcity-bound actual age does, so the (age - onset) gap actually WIDENS. Real
       // partner-matching capacity is `simulate.ts`'s eligibility search and `worldgen.ts`'s founder
       // count, both outside PR8's declared `params/demography.ts` + `check-demographics.ts` boundary.
+      //
+      // PR9 (step 4, engram #6142/#6311, decision 069): tried restoring onset+5 now that
+      // IMMIGRATION_ANNUAL_PROBABILITY addresses SOME partner scarcity — could NOT restore it.
+      // Measured (15 seeds, this exact methodology): women's gap is 7.41 (n=29, meanAge=25.55,
+      // meanOnset=18.14) — under +8 but well over +5. Men's gap is 4.70 (n=23, meanAge=26.78,
+      // meanOnset=22.09) — would actually satisfy +5 on its own. Consistent with PR9's own finding
+      // that raising immigration measurably WORSENED first-marriage age for this cohort (more
+      // concurrent marriageable people appears to raise per-year contention, not just supply) — the
+      // gap did not narrow, so +8 stays. Reporting the measured gap here rather than loosening it
+      // further, per this slice's own instruction.
       expect(meanAge).toBeLessThanOrEqual(meanOnset + 8);
     }
   }, 40000); // PR9: raising IMMIGRATION_ANNUAL_PROBABILITY grows the simulated population faster,
