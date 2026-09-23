@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PersonYearBatch } from "@/domain/decisions";
+import { computeHazardPrior, HAZARD_CLAMP_K_MAX } from "@/domain/hazards";
 import { JevDecisionMaker } from "./jev-decision-maker";
 
 const BASE_STATE = { name: "Mira", age: 30, job: "healer" };
@@ -147,5 +148,104 @@ describe("JevDecisionMaker.decideYear", () => {
     const questions = (calls[0]!.body as { questions: Record<string, unknown> }).questions;
     expect(questions.vignettePick).toBeUndefined();
     expect(result.vignetteSelection).toEqual({});
+  });
+});
+
+describe("PR7: hybrid Jev clamp (spec's 'Hybrid clamp on judged probability' requirement)", () => {
+  /** A fetch double this describe block controls directly, so `pick`'s judged probability can be set per test (the shared `fakeAnswers` helper above hardcodes one fixed answer for every batch shape). */
+  function extremeFetch(pickProbabilities: Record<string, number>): { fetch: typeof fetch; calls: { body: unknown }[] } {
+    const calls: { body: unknown }[] = [];
+    const fetchImpl = (async (_input: string, init?: RequestInit) => {
+      const body = JSON.parse(init!.body as string) as { model: string; questions: Record<string, unknown> };
+      calls.push({ body });
+      const answers: Record<string, unknown> = {};
+      for (const name of Object.keys(body.questions)) {
+        if (name === "pick") answers[name] = { type: "choice", choice: Object.keys(pickProbabilities)[0], confidence: 0.9, probabilities: pickProbabilities };
+        else if (name.startsWith("resp:")) answers[name] = { type: "choice", choice: "encourage", confidence: 0.8, probabilities: { encourage: 0.5, decline: 0.2, wait: 0.3 } };
+      }
+      return new Response(JSON.stringify({ model: body.model, answers, usage: { input_tokens: 100, output_tokens: 10 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    return { fetch: fetchImpl, calls };
+  }
+
+  it("never lets an extreme Jev judgment through unclamped — the engine's own hazard baseline still bounds the selection", async () => {
+    const situationId = "Y1:p001::p002:1524";
+    const { fetch } = extremeFetch({ [situationId]: 0.99, nothing: 0.01 });
+    const maker = new JevDecisionMaker({ apiKey: "test", fetch });
+    const batch = makeBatch(situationId);
+
+    const result = await maker.decideYear(batch);
+
+    const baseline = computeHazardPrior({ [situationId]: batch.situations[situationId]! }, result.response).selection[situationId]!;
+    expect(result.selection[situationId]!).toBeLessThanOrEqual(baseline * HAZARD_CLAMP_K_MAX + 1e-9);
+    expect(result.selection[situationId]!).not.toBeCloseTo(0.99, 2);
+  });
+
+  it("passes through a judgment that already sits within the clamp bounds", async () => {
+    const situationId = "Y1:p001::p002:1524";
+    // "encourage": 0.5 keeps this comparable to the "answers every situation" test's own baseline math.
+    const { fetch } = extremeFetch({ [situationId]: 0.4, nothing: 0.6 });
+    const maker = new JevDecisionMaker({ apiKey: "test", fetch });
+    const result = await maker.decideYear(makeBatch(situationId));
+    expect(result.selection[situationId]).toBeCloseTo(0.4, 5);
+  });
+
+  it("reports hazard-lookup fallbacks via getStats(), same as the rule adapter (spec: identically for both adapters)", async () => {
+    const situationId = "Y1:p001::p002:1524";
+    const { fetch } = extremeFetch({ [situationId]: 0.5, nothing: 0.5 });
+    const maker = new JevDecisionMaker({ apiKey: "test", fetch });
+    const batch = makeBatch(situationId, "p1", 1524, false);
+    // An unrecognized socialClass on `self` forces the marriage-floor lookup to fall back.
+    (batch.self as Record<string, unknown>).socialClass = "not-a-real-class";
+    await maker.decideYear(batch);
+    const stats = maker.getStats();
+    expect(stats.hazardFallbacks).toBeDefined();
+    expect(Object.keys(stats.hazardFallbacks!).length).toBeGreaterThan(0);
+  });
+});
+
+describe("PR7: Jev's prompt never sees raw time-in-state numbers (design decision 3)", () => {
+  it("replaces yearsMarriageable with a qualitative timeInState fact and a rare/uncommon/common baseRate label", async () => {
+    const { fetch, calls } = fakeFetch();
+    const maker = new JevDecisionMaker({ apiKey: "test", fetch });
+    const situationId = "Y1:p001::p002:1524";
+    const batch: PersonYearBatch = {
+      personId: "p1",
+      year: 1524,
+      self: BASE_STATE,
+      isProtagonist: false,
+      situations: {
+        [situationId]: {
+          kind: "Y1",
+          question: {
+            id: situationId,
+            kind: "Y1",
+            personId: "p1",
+            year: 1524,
+            state: { self: BASE_STATE, situation: { code: "Y1", question: "Do I encourage it?", yearsMarriageable: 6 }, town: "Oakhaven", year: 1524 },
+            options: ["encourage", "decline", "wait"],
+          },
+        },
+      },
+    };
+
+    await maker.decideYear(batch);
+
+    const body = calls[0]!.body as { state: { situations: Record<string, { situation: Record<string, unknown> }> } };
+    const sentSituation = body.state.situations[situationId]!.situation;
+    expect(sentSituation.yearsMarriageable).toBeUndefined();
+    expect(typeof sentSituation.timeInState).toBe("string");
+    expect(sentSituation.timeInState).toBe("long-standing");
+    expect(["rare", "uncommon", "common"]).toContain(sentSituation.baseRate);
+  });
+
+  it("leaves a situation with no time-in-state field untouched (nothing to strip or annotate)", async () => {
+    const { fetch, calls } = fakeFetch();
+    const maker = new JevDecisionMaker({ apiKey: "test", fetch });
+    await maker.decideYear(makeBatch("Y1:p001::p002:1524"));
+    const body = calls[0]!.body as { state: { situations: Record<string, { situation: Record<string, unknown> }> } };
+    const sentSituation = body.state.situations["Y1:p001::p002:1524"]!.situation;
+    expect(sentSituation.timeInState).toBeUndefined();
+    expect(sentSituation.baseRate).toBeUndefined();
   });
 });

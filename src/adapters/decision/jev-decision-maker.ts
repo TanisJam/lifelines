@@ -1,9 +1,13 @@
 import { TypeSafeClient, choice, score, type ChoiceCriteria, type Fetch, type Questions } from "@typesafe-ai/sdk";
-import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution, PersonYearBatch, PersonYearResult } from "@/domain/decisions";
+import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution, PersonYearBatch, PersonYearResult, PersonYearSituation } from "@/domain/decisions";
+import { buildHazardContext, clampJevSelection, computeHazard, describeHazardBand, describeTimeInState } from "@/domain/hazards";
 import type { JsonValue } from "@/domain/types";
 import { VIGNETTE_OPTION_DESCRIPTIONS } from "@/domain/vignettes";
 import { decisionCacheKey, FileBackedCache } from "./cache";
 import { DEFAULT_BURST, DEFAULT_RATE_PER_SECOND, TokenBucket } from "./rate-limiter";
+
+/** `situation.<field>` names that carry a time-in-state count for a hazard-governed kind, keyed by `DecisionQuestion["kind"]`. Only Y1/A1 have one today (design decision 3). */
+const TIME_IN_STATE_FIELDS: Readonly<Partial<Record<DecisionQuestion["kind"], string>>> = { Y1: "yearsMarriageable", A1: "courtshipYears" };
 
 /**
  * A pinned, concrete model version rather than the `jev-latest` alias.
@@ -223,6 +227,8 @@ export class JevDecisionMaker implements DecisionMaker {
   private outputTokens = 0;
   /** Round 12 (decision 045): individual Noul/Choice/Score questions asked across every REAL (non-cached) call — a batched `decideYear` request usually carries several. */
   private questions = 0;
+  /** Engine life course PR7 (design decision 15, "identically for both adapters"): cumulative hazard-table lookup misses `clampJevSelection`'s own `computeHazardPrior` call surfaced, keyed `${kind}:${socialClass}`. */
+  private readonly hazardFallbacks: Record<string, number> = {};
 
   constructor(options: JevDecisionMakerOptions = {}) {
     this.client = new TypeSafeClient({
@@ -295,15 +301,44 @@ export class JevDecisionMaker implements DecisionMaker {
     const chunks = this.splitByTokenBudget(batch, situationIds);
     const chunkResults = await Promise.all(chunks.map((ids, i) => this.decideYearChunk(batch, ids, i === 0)));
 
-    const selection: Record<string, number> = {};
+    const rawSelection: Record<string, number> = {};
     const vignetteSelection: Record<string, number> = {};
     const response: Record<string, Distribution> = {};
     for (const result of chunkResults) {
-      Object.assign(selection, result.selection);
+      Object.assign(rawSelection, result.selection);
       Object.assign(vignetteSelection, result.vignetteSelection);
       Object.assign(response, result.response);
     }
+    // Spec's "Hybrid clamp on judged probability" requirement (design decision 2): Jev's own judged
+    // `selection` can only tilt each situation's hazard baseline by a documented bounded multiplier,
+    // never override it outright — applied identically to the rule adapter's own hazard math (the
+    // raw, unclamped `rawSelection` is never returned to a caller). The raw Jev answer is still what
+    // gets cached (see `decideYearChunk`), so this clamp is pure and re-derived fresh on a cache hit
+    // too — a future clamp tunable change takes effect without invalidating the cache.
+    const { selection, hazardFallbacks } = clampJevSelection(batch.situations, rawSelection, response);
+    for (const [key, count] of Object.entries(hazardFallbacks)) this.hazardFallbacks[key] = (this.hazardFallbacks[key] ?? 0) + count;
     return { selection, vignetteSelection, response };
+  }
+
+  /**
+   * Design decision 3 ("Jev sees time-in-state facts plus a qualitative base-rate band
+   * (rare/uncommon/common), never numbers"): strips a hazard-governed situation's raw time-in-state
+   * count (e.g. Y1's `yearsMarriageable`) from what's sent to Jev, replacing it with a qualitative
+   * `timeInState` label plus a `baseRate` label derived from the SAME hazard baseline the clamp uses —
+   * so Jev's judgment is never anchored on a probability or year-count figure it never has access to.
+   * A situation with no time-in-state field (every kind besides Y1/A1) is returned unchanged.
+   */
+  private annotateSituationState(situation: PersonYearSituation, situationState: Record<string, JsonValue>): Record<string, JsonValue> {
+    const timeInStateField = TIME_IN_STATE_FIELDS[situation.kind];
+    const rawSituation = situationState.situation;
+    if (!timeInStateField || !rawSituation || typeof rawSituation !== "object" || Array.isArray(rawSituation)) return situationState;
+    const years = rawSituation[timeInStateField];
+    if (typeof years !== "number") return situationState;
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit the raw number from `restSituation`
+    const { [timeInStateField]: _omitted, ...restSituation } = rawSituation;
+    const baseRate = describeHazardBand(computeHazard(buildHazardContext(situation)).value);
+    return { ...situationState, situation: { ...restSituation, timeInState: describeTimeInState(years), baseRate } };
   }
 
   /**
@@ -380,7 +415,7 @@ export class JevDecisionMaker implements DecisionMaker {
       delete situationState.self;
       delete situationState.town;
       delete situationState.year;
-      situationsState[id] = situationState;
+      situationsState[id] = this.annotateSituationState(situation, situationState);
 
       const criteria: ChoiceCriteria = {};
       for (const option of situation.question.options) criteria[option] = describeOption(situation.kind, option);
@@ -452,6 +487,14 @@ export class JevDecisionMaker implements DecisionMaker {
   }
 
   getStats(): DecisionMakerStats {
-    return { calls: this.calls, cacheHits: this.cacheHits, wallTimeMs: this.wallTimeMs, inputTokens: this.inputTokens, outputTokens: this.outputTokens, questions: this.questions };
+    return {
+      calls: this.calls,
+      cacheHits: this.cacheHits,
+      wallTimeMs: this.wallTimeMs,
+      inputTokens: this.inputTokens,
+      outputTokens: this.outputTokens,
+      questions: this.questions,
+      hazardFallbacks: { ...this.hazardFallbacks },
+    };
   }
 }
