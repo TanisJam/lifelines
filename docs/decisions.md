@@ -2303,3 +2303,201 @@ pre-existing formula given a Jev-style response, unaffected by the rule adapter'
 - **What actually remains** (it is not marriage): e0 is ~19 (band 22–35), and pre-plague population
   change is −36% even with near-universal marriage. Both point to marital fertility, where A2's "try" has the same
   `effectiveSelectionHazard` truncation that 073 fixed for Y1/A1, and to child/adult mortality.
+
+## 075 — PR13: the metric audit, A2's own outcome-pressure fix, and the age 5-14 mortality band (engine-life-course)
+
+**Decision:** Before diagnosing anything, audit every metric this slice would rely on
+(`scripts/check-demographics.ts`, `src/domain/population-stats.ts`) against its historical
+definition, per decision 074's own addendum lesson (the "~70% never marry" figure that drove PR11/
+PR12 was a metric bug, not a real defect). Then fix the two real, evidence-backed problems the task
+named: A2's fertility outcome-probability truncation (STEP 1) and the age 5-14 mortality band (STEP
+2). Branch `elc/pr13-fertility-mortality`, off main `1f3a272`.
+
+**STEP 0 — metric audit (commit `98101dc`).** Checked every metric's cohort filter, denominator,
+survival conditioning, and right-censoring against its target's own historical definition:
+
+| Metric | Definition found | Historical match | Status |
+|---|---|---|---|
+| e0 (life expectancy at birth) | mean age at death, `motherId`-set (born-in-sim) cohort, resolved deaths only, 100-year window | matches "e0 from birth"; right-censoring for late-born long-lived people is small and window-mitigated | OK |
+| CBR/CDR pre-plague | births\|deaths / person-years × 1000, whole population, `PRE_PLAGUE_WINDOW` | matches "per 1,000 person-years" | OK |
+| Infant mortality | deaths by age ≤1 (operationally age 1, per the documented engine-timing gap) / live births with follow-up | matches "deaths under 1 per live birth" | OK |
+| `under15DeathShare` (assert label) | actually the CONDITIONAL age 2-7 death share among infancy survivors | matches its own research citation ("a further 20-30% by age 7"); the label is a historical misnomer, not a calc bug | OK, but flagged a coverage gap for STEP 2: `MORTALITY_BY_AGE_BAND` applies a flat hazard through age 14 with nothing asserting ages 7-14 |
+| Children ever born per completed marriage | **was:** either the wife died at any age OR reached 45 counted as "completed" | task's own definition: "a woman married and surviving to 45" | **MISMATCH, FIXED** — reused `inNeverMarriedCohort`'s survival-to-cohort-age predicate instead of the either/or check |
+| ASMFR (`maritalFertilityByAgeBand`) | births / married-woman-years by age band, 16-44 | matches the historical ASMFR definition | OK |
+| Never-married by 45 | requires survival to the cohort age | matches "never married by 45, among survivors" | OK (decision 074 addendum's own fix, verified unchanged) |
+| Widow remarriage pre/post-1349 | requires 15-year follow-up past widowing | matches "remarriage among widows with real follow-up time" | OK |
+| `person.away` (protagonist-only away-catalog NPCs) | bounded, one protagonist's own excursion per seed | checked; negligible population share, not a measurable contributor | OK |
+
+Fixed the one real mismatch: `check-demographics.ts`'s `meanChildrenPerCompletedMarriage` cohort
+filter now reuses `population-stats.ts#inNeverMarriedCohort` (doc comment updated to note the dual
+use) instead of its old either/or condition. 2 new tests in `population-stats.test.ts` document the
+reuse. No other metric mismatch was found — the never-married fix from decision 074's addendum
+stands, unchanged.
+
+**STEP 1 — fertility, A2's own truncation (commit `2c9754a`).** Decision 074's own addendum
+predicted this: A2 ("have a child") has the exact same `effectiveSelectionHazard` truncation
+decision 073/074 diagnosed and fixed for Y1/A1 — `FERTILITY_HAZARD_BANDS`' raw hazard (0.5/0.6/0.5/
+0.4/0.25 by age band) routinely exceeds `rule-heuristics.ts`'s static ~0.4-0.5 "try" answer, with no
+time-pressure term at all before this fix.
+
+A2 has no marriage "onset" concept and no stamped courtship-style duration clock (unlike Y1's
+`yearsMarriageable`/A1's `courtshipYears`), so the fix reuses the already-stamped
+`state.situation.fertileYearsLeft` (`simulate.ts`'s A2 candidate `extra`, `= max(0, 45 - age)`) as
+the pressure clock instead: as a married woman's fertile window narrows, pressure to try before it
+closes grows — the same family-size-completion pressure already informing the birth-spacing rules'
+own Davenport citation, not a new mechanism. New constants `A2_FERTILE_WINDOW_SPAN` (29, mirroring
+`isFertileAge`'s own f-sex span), `A2_OUTCOME_PRESSURE_SLOPE` (0.02/year), `A2_OUTCOME_PRESSURE_CAP_
+YEARS` (20) — same shared `OUTCOME_TIME_PRESSURE_CEILING` (0.9) as Y1/A1, same "never over-correct
+past raw hazard" mechanical safety. TDD: RED confirmed (2 of 6 new `rule-heuristics.test.ts` tests
+failed before the fix), then GREEN.
+
+**Truncation impact, measured (30 seeds, same seed set, isolated via `git stash` — STEP 0 baseline
+vs. STEP 0+1, before any mortality change):**
+
+| Metric | Before (STEP 0 only) | After (+ STEP 1) |
+|---|---|---|
+| ASMFR <20 / <30 / <35 / <40 / 40+ | 10.6% / 15.1% / 18.5% / 11.5% / 5.0% | 9.7% / 21.7% / 22.0% / 16.1% / 6.2% |
+| Children ever born per completed marriage (n) | 0.68 (656) | 0.91 (716) |
+| Pre-plague CBR (per 1,000/yr) | 18.9 | 23.8 |
+| Population 1327/1347/1350/1361 | 77.6/49.8/26.7/19.6 | 78.2/54.0/29.2/22.4 |
+| e0 | 18.7 | 18.2 (small, expected side effect — more births into a cohort whose infant/child mortality is unchanged, per decision 074's own explanation for the same mechanism) |
+
+A real, meaningful improvement on the core marital-fertility bands (+40-45% relative), but ASMFR
+still sits well below the ~35-45% (ages 20-34) research target the task cites, and children per
+completed marriage (0.91) remains far below the ~6-7 historical anchor — reported as an open item,
+not chased further this slice (see "what remains," below).
+
+Reseeded one curated test: `simulate.test.ts`'s "a husband whose wife dies in childbirth ends up
+widowed" used seed `maternal-widow2-7`, whose widower now remarries within the 60-year window under
+the new RNG branch (a real effect — `resolveWidowhood` still clears `spouseId` correctly at the
+moment of widowing; the test's own final-state check just now observes a later remarriage). Replaced
+with `maternal-widow3-2`, found via `scripts/find-seeds.ts`'s `findSeed()` (2nd of 80 attempts,
+custom predicate: "widowed husband and mother both stay unmarried through window end", same config
+as the test: `startYear: 1498, endYear: 1558, founderCount: 30`).
+
+**STEP 2 — mortality, the age 5-14 band (commit `da2ba85`).** Diagnosed child (1-14) and adult death
+rates against `actuarial.ts` and the existing calibration targets before touching anything. Adult
+bands (15+) already track `MORTALITY_BY_AGE_BAND` closely (30-seed `--stats`: <40 1.7%/1.6%, <60
+3.2%/3.2%, <75 7.6%/7.0%, <90 22.8%/20.0%) with no double-counting found in `simulate.ts`'s death
+resolution — Black Death/second pestilence are deliberately excluded from `HARDSHIP_TOWN_EVENTS`'s
+flat multiplier and combined as an absolute per-year probability instead
+(`blackDeathMortalityForYear`/`secondPestilenceMortalityForYear`), confirmed never leaking outside
+1348-49/1361-62 (`townEventForYear` returns the dated shock deterministically only in those years).
+
+The age 5-14 band (0.027/year for 10 straight years) was the one band with **zero direct
+calibration-target coverage** — `under15DeathShare` only measures the CONDITIONAL age 2-7 death
+share (STEP 0's own audit finding), so ages 7-14 were invisible to every `--assert` run — and it was
+still decision 050's original Tudor figure, never revisited when decision 069 doubled the age<2 band
+for the period. A hand-computed life table using the unchanged bands (matching the engine's actual
+mechanics: a single infant-year evaluation at age 1, per `deathProbabilityAtAge`'s own age<2
+band-width note) gives ~56-57% cumulative death by 15 — matching the measured `under15Pct` field
+(already computed by `check-demographics.ts`, just never asserted) — well above research.md line
+112's own "~30% of children die before 15" citation (an UNVERIFIED single source, but the only
+sourced anchor for that specific cumulative figure).
+
+Lowered the 5-14 band 0.027 → 0.02, sized so `under15DeathShare` (which shares ages 5-6 with this
+band) stays inside its own 20-30% band with real margin rather than chased to the 20% floor. Did
+**not** touch the infant band (0.30 — an explicit, deliberately period-recalibrated, currently-
+passing target) or the age 2-4 band (0.065 — also feeds the same 2-7 conditional window, and the
+margin left after this slice's own change, ~5-6 points above the 20% floor, was judged too thin to
+risk further without new evidence). TDD: RED confirmed (`actuarial.test.ts`'s two pinned-value
+assertions failed before the change), then GREEN.
+
+**Mortality impact, measured (30 seeds, same seed set, STEP 0+1 baseline vs. STEP 0+1+2):**
+
+| Metric | Before (+ STEP 1 only) | After (+ STEP 2) | Target | Status |
+|---|---|---|---|---|
+| e0 | 18.2 | 18.8 | 22-35 | FAIL (improved) |
+| `under15Pct` (diagnostic, not asserted) | 57.2% | 54.3% | (research.md: ~30%, UNVERIFIED) | not asserted |
+| `under15DeathShare` (asserted, age 2-7) | 27.0% | 25.6% | 20-30 | PASS (margin preserved) |
+| Infant mortality | 29.2% | 29.3% | 25-35 | PASS (unaffected, as intended) |
+| Adult mortality bands | unchanged | unchanged | — | tracking table |
+| Population 1361 | 22.4 | 22.8 | (shape check) | small further improvement |
+
+**Why e0 didn't move further (reported, not chased).** e0's shortfall is structurally dominated by
+the COMBINATION of the deliberately-high, currently-passing infant band (30%) and the age 2-4 band
+(6.5%/year for 3 years, cumulative ~18%) — by age 4, cumulative death is already ~43% under the
+current tables, before the 5-14 band's own contribution. Fully closing the e0 gap would need
+touching one of those two bands, both judged out of this slice's safe evidence-based scope (the
+infant band is an explicit period target; the 2-4 band's remaining margin above `under15DeathShare`'s
+20% floor was too thin to spend without new evidence). This is the same kind of honest, reported
+residual gap decisions 069/071/074 each left rather than chasing unsafely.
+
+**STEP 3 — full re-measurement (60 seeds, `demo-stats-{0..59}`, `--stats 60 --assert`, period
+1327-1427):**
+
+| Band | Value | Target | Status |
+|---|---|---|---|
+| firstMarriageAgeWomen | 23.36 | 18-22 | FAIL |
+| firstMarriageAgeMen | 26.79 | 21-25 | FAIL |
+| firstMarriageAgeMen (merchant men) | 26.92 | ≤25 | FAIL |
+| firstMarriageAgeWomenGentry | 22.45 | 14-18 | FAIL |
+| firstMarriageAgeMenGentry | 27.34 | 20-24 | FAIL |
+| widowRemarriagePreBlackDeath | 43.63 | 60-66 | FAIL |
+| widowRemarriagePostBlackDeath | 39.05 | 23-29 | FAIL |
+| lifeExpectancyAtBirth (e0) | 18.90 | 22-35 | FAIL |
+| infantMortality | 31.17 | 25-35 | **PASS** |
+| under15DeathShare (age 2-7) | 24.43 | 20-30 | **PASS** |
+| literacyOverall | 6.16 | 4-6 | FAIL |
+| populationPrePlagueChangePercent | -29.48 | -10 to 10 | FAIL |
+| populationPlagueShockPercent | -43.36 | -50 to -40 | **PASS** |
+| populationRecoveryChangePercent | -22.33 | -10 to 60 | FAIL |
+| hazardFallbacks | 0 | 0 | **PASS** |
+
+4 of 14 bands pass — the SAME 4 as decision 074's own baseline (`infantMortality`,
+`under15DeathShare`, `populationPlagueShockPercent`, `hazardFallbacks`); no gate newly regressed,
+none newly passed either, but every continuous metric this slice targeted moved in the right
+direction (see below). **Population curve, 1327/1347/1350/1361:**
+78.5/55.4/31.4/24.4 — every checkpoint improved over decision 074's own 60-seed baseline
+(77.9/49.9/27.6/19.9): pre-plague decline shallower (-37.5% → -29.5%), the plague shock still
+correctly inside its band (-43.4%, vs. the band's own -50 to -40), and 1361's population (24.4) is
+the highest this engine has measured at that checkpoint across every prior decision's own reported
+figures — still declining, but not accelerating, and the recovery leg improved too (-27.7% →
+-22.3%). Adult mortality (60-seed): <40 1.75%/1.60%, <60 3.25%/3.20%, <75 7.66%/7.00%, <90
+22.25%/20.00% — still tracking the table, unaffected by the age 5-14 change as intended.
+
+**Marriage metrics, checked for regression (they did not regress):** never-married by 45, F=5.2%/
+M=10.5% — comfortably under the 20% ceiling this task required (decision 074's addendum's own
+corrected figure was F=4.6%/M=7.2%; the small rise is consistent with this slice's own fertility fix
+shifting who's in the cohort, not a marriage-formation regression). Marriage-age medians held
+exactly at F=22.0/M=25.0, matching decision 074's own baseline. `widowRemarriagePostBlackDeath`
+drifted further from its band across this slice's runs (29.10% at decision 074's baseline → 39.05%
+here) — not touched by either STEP 1 or STEP 2 directly; the same marriage-timing/fertility
+composition side effect decision 074 already documented for this exact metric ("earlier first
+marriage shifts the age-at-widowing distribution younger, raising cumulative remarriage odds"),
+compounded further by this slice's own fertility fix. Reported, not chased — outside STEP 1/STEP 2's
+own named scope.
+
+**No new product decision surfaced this slice.** Both fixes were evidence-driven within their own
+named scope; the residual gaps (ASMFR, children per completed marriage, e0) all trace to either (a)
+the same partner-scarcity/rare-class tail decisions 068-071 already documented, or (b) further
+mortality-band retuning this slice judged too risky without new evidence (see above) — reported per
+the task's own instruction, not chased.
+
+**Grounding:** decision 074 (the addendum that predicted both this slice's fixes: the never-married
+metric lesson STEP 0 generalizes, and A2's own truncation STEP 1 fixes); decision 073 (the option
+(b) pattern STEP 1 reuses); decision 069/071 (the mortality table's own history, STEP 2 extends);
+research.md line 112 (the "~30% by 15" citation STEP 2's diagnosis is measured against);
+`sdd/engine-life-course/apply-progress` (engram, this slice's resume point).
+
+**Verified:** `pnpm test` (518 passing, up from 511 — 8 new tests, 0 regressions), `pnpm exec tsc
+--noEmit` clean, `pnpm lint` clean, `pnpm exec tsx scripts/check-demographics.ts --stats 60 --assert`
+exits non-zero (4 of 14 bands pass, same 4 as decision 074's own baseline — an honest, partially-
+improved assertion state, not a silently hidden regression, same convention decision 071 established
+for a red gate with real, measured, reported improvement underneath it). New tests: `population-
+stats.test.ts` (+2), `rule-heuristics.test.ts` (+6), `actuarial.test.ts` (2 pinned values changed).
+One curated test reseeded (`simulate.test.ts`, `maternal-widow2-7` → `maternal-widow3-2`, via
+`scripts/find-seeds.ts`, logged inline).
+
+**Open items for the orchestrator/user:** (1) ASMFR and children-per-completed-marriage remain well
+below their historical anchors even after STEP 1's fix — the residual truncation and the marriage-
+timing/exposure-duration gap (average marriage age ~23-27, shortening the effective fertile window)
+were not investigated further this slice; (2) e0 remains the largest gap (18.9 vs. 22-35) — closing
+it needs either loosening the infant band (an explicit, deliberately period-recalibrated, currently-
+passing target) or spending more of the age 2-4 band's thin remaining margin above `under15DeathShare`'s
+floor, both judged out of this slice's safe, evidence-based scope; (3) `widowRemarriagePostBlackDeath`
+has now drifted from a marginal miss (decision 074: 29.10%, band ≤29) to a clear one (39.05%) as a
+compounding side effect of both PR12's and this slice's own fertility-timing changes — reported, not
+chased, same as decision 074's own precedent for this exact metric; (4) `firstMarriageAgeMenGentry`
+newly reads 27.34 (band 20-24, further from target than decision 074's 27.48 — noise-level, same
+structural one-household-per-village gentry scarcity decisions 049/071/074 already documented).
