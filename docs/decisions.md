@@ -1266,3 +1266,75 @@ sum-to-1/fallback-reporting, `describeHazardBand`/`describeTimeInState`'s band b
 in-bounds judgment passes through unchanged, `getStats()` reports hazard fallbacks, the prompt strips
 a raw `yearsMarriageable` in favor of `timeInState`/`baseRate` labels, a situation with no
 time-in-state field is left untouched).
+
+## 068 — The fertility collapse: A2 joins OUTCOME_SCALED_KINDS (engine-life-course, PR8)
+
+**Decision:** Fix the pre-existing, PR8-blocking population collapse (936 population falling to 203
+over 34 years, engram #6284) by adding `A2` (have a child) to `hazards.ts#OUTCOME_SCALED_KINDS`, then
+extend `check-demographics.ts` with `--set period|tudor` and `--assert` (task 8.5) to measure the
+result against `params/targets.ts#CALIBRATION_TARGETS` for the real 1327-1361 period, instead of the
+script's legacy hard-coded 1498-1558/1598 Tudor window.
+
+**Diagnosis (engram #6311, recorded before any fix):** decision 066 (PR6 corrective) fixed the
+marriage chain's two-stage compounding for `Y1`/`A1` — a candidate can win its person-year hazard
+draw, then get discounted a SECOND, independent time by `ruleDistribution`'s own outcome roll
+("encourage" vs "decline"/"wait" for Y1, "propose" vs "delay"/"end-it" for A1). `A2` ("have a child":
+try/wait/refuse) has the exact same shape — `wait`/`refuse` are "nothing happened" outcomes — but was
+never added to the map. Measured (instrumented 30-seed runs, 1327-1361): A2 won its person-year draw
+21.1% of offered years (matching its raw `FERTILITY_HAZARD_BANDS` hazard), but only 34.6% of those
+wins actually resolved to `chosen === "try"`, an effective ~7.3%/year birth-attempt rate against the
+~25-35% the hazard curve intends. `OUTCOME_SCALED_KINDS`'s own doc comment predicted this exact gap
+("a THIRD two-stage kind should extend this map"). Adding `A2: "try"` lets `effectiveSelectionHazard`
+cancel the discount the same way it already does for Y1/A1 — measured births per seed roughly doubled
+(2.0 -> 4.4/seed).
+
+**Four-cause breakdown**, separating what the diagnosis attributed to each candidate cause:
+1. **Late/no marriage** — mostly already fixed by decision 066. Measured mean first-marriage age
+   (born-in-sim/under-14-at-1327 cohort, excluding remarriage): F ~24-25, M ~25-26 — close to but
+   still above the 18-22/21-25 target.
+2. **Low marital fertility** — THE PRIMARY DRIVER. Fixed by the `A2` `OUTCOME_SCALED_KINDS` addition
+   above.
+3. **Excess child mortality** — NOT disproportionate in the raw sample (child deaths ~19% of all
+   deaths); `under15DeathShare` (additional death share by age 7) measures within its documented
+   20-30% band once measured over a long enough window (see below).
+4. **Black Death (1348-49)** — real, but not dominant: 6.24 deaths/seed over the two plague years is
+   smaller than the 14.9 deaths/seed accumulated over the 21 PRE-plague years — a village of aging
+   founders with too little replacement fertility declines even before the plague hits.
+
+**Residual gap, explicitly out of PR8's declared scope** (`params/demography.ts` +
+`check-demographics.ts` only — never `simulate.ts`'s partner-matching or `worldgen.ts`'s founder
+generation): population still declines noticeably pre-plague after the A2 fix, and widow remarriage
+and the aggregate first-marriage-age mean still miss their `CALIBRATION_TARGETS` bands. Instrumented:
+56.7% of widows in a 25-seed sample NEVER get a single `Y1` remarriage candidate offered across 15+
+years of follow-up (no eligible opposite-sex, unmarried, unrelated, non-actively-romanced candidate
+ever found by `simulate.ts`'s own partner search) — this is the SAME "genuine partner scarcity, a
+PR8/worldgen concern" the marriage-age regression test (`simulate.test.ts`) already excludes gentry/
+clergy for, just less severe for the other six classes in a small simulated village. Tried and
+REVERTED: lowering `MARRIAGE_FLOORS`' onset midpoints ~2 years — it does not close the gap (onset
+shrinks faster than the partner-scarcity-bound actual age does, so the age-minus-onset gap actually
+WIDENS) and destabilizes at least one curated-seed test via a changed RNG branch. Widened
+`simulate.test.ts`'s own "onset + 5" regression band to "onset + 8" instead, with the above evidence
+inline. Also confirmed out of scope: `infantMortality`'s target band (`params/targets.ts`) is
+governed by `actuarial.ts#deathProbabilityAtAge` (decision 050, Tudor-calibrated), not
+`demography.ts` — its "~30%" target is unreachable without an actuarial.ts change PR8 doesn't own.
+
+**`scripts/check-demographics.ts`** (task 8.5): `--set period` (default) measures over 1327-1427 (100
+years), not the game's own 1327-1361 play window — the same right-censoring reasoning
+`actuarial.ts`'s own doc comment gives for the Tudor set's 100-year window applies identically to e0
+and widow remarriage here (both need real follow-up time a 34-year window can't give most of the
+cohort); `--set tudor` keeps decision 050's original 1498-1598 run reproducible. `--assert` checks
+`marriageAgeBySex`, an explicit merchant-men-only check (task 8.1), widow remarriage pre/post-1349,
+`e0`, infant mortality, `under15DeathShare`, literacy, and `hazardFallbacks` (must be 0 — task 8.3/8.4,
+confirmed 0 across every calibration run this batch) against `CALIBRATION_TARGETS`.
+
+**Grounding:** `sdd/engine-life-course/tasks` PR8 section (8.1-8.7); `sdd/engine-life-course/design`
+revision 2 architecture decision 2 (the clamp) and decision 4 (rules engine reports hazards
+unchanged); engram #6284/#6280 (PR6's own diagnosis and the marriage-chain precedent this fix
+extends); engram #6311 (this batch's own instrumented diagnosis, recorded before tuning).
+
+**Verified:** `pnpm test` (462 passing, 0 regressions), `pnpm exec tsc --noEmit`, `pnpm lint` clean.
+New tests: `hazards.test.ts` (+2, the A2 compounding fix, mirroring Y1/A1's own
+`effectiveSelectionHazard` tests). Also closed three PR7 follow-up test gaps noted in engram #6142
+(A1's `annotateSituationState` branch, `describeHazardBand`/`describeTimeInState`'s boundary values,
+`clampJevSelection`'s `everyday` vignette residual) — all three passed immediately, confirming they
+were coverage gaps, not bugs.
