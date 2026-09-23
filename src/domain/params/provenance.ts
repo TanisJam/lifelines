@@ -85,4 +85,44 @@ export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
     range: "Fixed defensive default, not a research figure.",
     confidence: "high",
   },
+  MARRIAGE_RAMP_CAP_YEARS: {
+    source: "Design revision 2 hazard-shapes table (D_k(t) = 1 + rho*min(t,8)).",
+    range: "Fixed by design (the ramp's own cap, t=8); not a research figure.",
+    confidence: "high",
+  },
+  WIDOW_REMARRIAGE_FACTOR_YEAR: {
+    source: "period/events.ts#BLACK_DEATH_YEARS (the pandemic's first dated year, 1348-49).",
+    range: "Fixed to the Black Death's own onset year, not independently tunable.",
+    confidence: "high",
+  },
+  COURTSHIP_WEIBULL_LAMBDA: {
+    source: "PR6 corrective (engram #6280, 'the marriage chain'): lowered from 3 to 1.5 so the Weibull's characteristic timescale matches the design's intended courtship length once effectiveSelectionHazard corrects the two-stage compounding.",
+    range: "No sourced shape parameter located; calibrated against the measured mean courtship-to-marriage interval.",
+    confidence: "low",
+  },
+  COURTSHIP_BASE_HAZARD: {
+    source: "Design revision 2 hazard-shapes table (A1's Weibull base rate).",
+    range: "Provisional (0.45), calibrated toward the 18-22/21-25 marriage-age target alongside the Weibull shape.",
+    confidence: "low",
+  },
+  Y3_PEAK_HAZARD: {
+    source: "Design revision 2 hazard-shapes table ('Y3 peaks 16-30').",
+    range: "Provisional peak-window annual hazard; no sourced migration-rate figure for 1327-1361 was located.",
+    confidence: "low",
+  },
+  Y3_OFF_PEAK_HAZARD: {
+    source: "Design revision 2 hazard-shapes table ('lower for the unfree ... after the Statute').",
+    range: "Provisional off-peak annual hazard, directionally lower than the peak-window value.",
+    confidence: "low",
+  },
+  Y3_PEAK_MIN_AGE: {
+    source: "Design revision 2 hazard-shapes table ('Y3 peaks 16-30').",
+    range: "Fixed peak-window bound, matching working-age onset (`isWorkingAge`).",
+    confidence: "medium",
+  },
+  Y3_PEAK_MAX_AGE: {
+    source: "Design revision 2 hazard-shapes table ('Y3 peaks 16-30').",
+    range: "Fixed peak-window bound; young-adulthood mobility, not sourced to a specific age-30 cutoff.",
+    confidence: "low",
+  },
 } as const;

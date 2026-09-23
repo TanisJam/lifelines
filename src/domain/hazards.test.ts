@@ -10,11 +10,15 @@ import {
   describeTimeInState,
   effectiveSelectionHazard,
   expectedMarriageChain,
+  HAZARD_BAND_RARE_MAX,
+  HAZARD_BAND_UNCOMMON_MAX,
   HAZARD_CLAMP_K_MAX,
   HAZARD_CLAMP_K_MIN,
   lookupHazard,
   OUTCOME_PROBABILITY_FLOOR,
   resolveCompetingRisks,
+  TIME_IN_STATE_ESTABLISHED_MAX_YEARS,
+  TIME_IN_STATE_RECENT_MAX_YEARS,
 } from "./hazards";
 import type { JsonValue, SocialClass, Sex } from "./types";
 
@@ -218,6 +222,32 @@ describe("PR7: clampJevSelection (the clamp applied to a whole person-year batch
     const result = clampJevSelection(situations, { y1: 0.5, nothing: 0.5 }, response);
     expect(Object.keys(result.hazardFallbacks).length).toBeGreaterThan(0);
   });
+
+  // PR8 follow-up (task list note, engram #6142): every prior test's batch has no D1 vignette, so
+  // `hasVignette` is always false and only the `selection.nothing` branch (line 400) ever ran — the
+  // protagonist's own `selection.everyday` branch (line 399) was never exercised.
+  it("uses 'everyday' as the residual key (not 'nothing') when a D1 vignette situation rides along", () => {
+    const situations: Record<string, PersonYearSituation> = {
+      y1: y1Situation("y1"),
+      d1: {
+        kind: "D1",
+        question: {
+          id: "d1",
+          kind: "D1",
+          personId: "p1",
+          year: 1340,
+          state: { self: { age: 30, sex: "f", socialClass: "villein" }, situation: { code: "share-grain-vignette" } },
+          options: ["share-grain", "keep-grain"],
+        },
+      },
+    };
+    const response = { y1: { encourage: 0.5, decline: 0.3, wait: 0.2 }, d1: { "share-grain": 0.5, "keep-grain": 0.5 } };
+    const result = clampJevSelection(situations, { y1: 0.3, everyday: 0.7 }, response);
+    expect(result.selection.everyday).toBeGreaterThan(0);
+    expect(result.selection.nothing).toBeUndefined();
+    const total = Object.values(result.selection).reduce((a, b) => a + b, 0);
+    expect(total).toBeCloseTo(1, 10);
+  });
 });
 
 describe("PR7: describeHazardBand / describeTimeInState (design decision 3, qualitative facts for Jev's prompt)", () => {
@@ -231,6 +261,23 @@ describe("PR7: describeHazardBand / describeTimeInState (design decision 3, qual
     expect(describeTimeInState(0)).toBe("recent");
     expect(describeTimeInState(3)).toBe("established");
     expect(describeTimeInState(10)).toBe("long-standing");
+  });
+
+  // PR8 follow-up (task list note, engram #6142): the two existing tests above only sample INSIDE
+  // each band, never the documented threshold values themselves (`HAZARD_BAND_RARE_MAX`,
+  // `HAZARD_BAND_UNCOMMON_MAX`, `TIME_IN_STATE_RECENT_MAX_YEARS`, `TIME_IN_STATE_ESTABLISHED_MAX_YEARS`)
+  // — both functions use a strict `<`/inclusive `<=` mix, so the exact boundary is exactly where an
+  // off-by-one would hide.
+  it("describeHazardBand: the boundary value itself belongs to the band ABOVE (strict < comparisons)", () => {
+    expect(describeHazardBand(HAZARD_BAND_RARE_MAX)).toBe("uncommon");
+    expect(describeHazardBand(HAZARD_BAND_UNCOMMON_MAX)).toBe("common");
+  });
+
+  it("describeTimeInState: the boundary value itself still belongs to the LOWER band (inclusive <= comparisons)", () => {
+    expect(describeTimeInState(TIME_IN_STATE_RECENT_MAX_YEARS)).toBe("recent");
+    expect(describeTimeInState(TIME_IN_STATE_RECENT_MAX_YEARS + 1)).toBe("established");
+    expect(describeTimeInState(TIME_IN_STATE_ESTABLISHED_MAX_YEARS)).toBe("established");
+    expect(describeTimeInState(TIME_IN_STATE_ESTABLISHED_MAX_YEARS + 1)).toBe("long-standing");
   });
 });
 

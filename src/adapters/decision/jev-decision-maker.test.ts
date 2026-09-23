@@ -239,6 +239,40 @@ describe("PR7: Jev's prompt never sees raw time-in-state numbers (design decisio
     expect(["rare", "uncommon", "common"]).toContain(sentSituation.baseRate);
   });
 
+  it("replaces courtshipYears (A1) with a qualitative timeInState fact and a baseRate label, same as Y1", async () => {
+    const { fetch, calls } = fakeFetch();
+    const maker = new JevDecisionMaker({ apiKey: "test", fetch });
+    const situationId = "A1:p001::p002:1524";
+    const batch: PersonYearBatch = {
+      personId: "p1",
+      year: 1524,
+      self: BASE_STATE,
+      isProtagonist: false,
+      situations: {
+        [situationId]: {
+          kind: "A1",
+          question: {
+            id: situationId,
+            kind: "A1",
+            personId: "p1",
+            year: 1524,
+            state: { self: BASE_STATE, situation: { code: "A1", question: "Do I propose?", courtshipYears: 4 }, town: "Oakhaven", year: 1524 },
+            options: ["propose", "delay", "end-it"],
+          },
+        },
+      },
+    };
+
+    await maker.decideYear(batch);
+
+    const body = calls[0]!.body as { state: { situations: Record<string, { situation: Record<string, unknown> }> } };
+    const sentSituation = body.state.situations[situationId]!.situation;
+    expect(sentSituation.courtshipYears).toBeUndefined();
+    expect(typeof sentSituation.timeInState).toBe("string");
+    expect(sentSituation.timeInState).toBe("established");
+    expect(["rare", "uncommon", "common"]).toContain(sentSituation.baseRate);
+  });
+
   it("leaves a situation with no time-in-state field untouched (nothing to strip or annotate)", async () => {
     const { fetch, calls } = fakeFetch();
     const maker = new JevDecisionMaker({ apiKey: "test", fetch });
