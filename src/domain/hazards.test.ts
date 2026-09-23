@@ -99,19 +99,30 @@ describe("PR8 fix: A2 joins OUTCOME_SCALED_KINDS (engram #6284/#6280, the fertil
     };
   }
 
+  // PR10 (decision 071): age 42 (the 40+ band), not 25 -- FERTILITY_HAZARD_BANDS' own core bands
+  // (<20/<30/<35) were deliberately raised close to `effectiveSelectionHazard`'s own clamp ceiling
+  // (raw hazard / outcomeProbability >= 1), a real, measured, documented tuning finding (see that
+  // constant's own doc comment) -- exercising this invariant at age 25 would now hit BOTH the
+  // per-candidate clamp AND `resolveCompetingRisks`' RESCALE_THRESHOLD (a single, saturated
+  // candidate's own sum already exceeds 0.95), which is a second, different, already-covered
+  // mechanism, not what this test is about. Age 42 stays comfortably under the ceiling, so the
+  // invariant this test actually asserts (compound = selection x outcome recovers the raw hazard)
+  // still holds exactly.
+  const UNSATURATED_TEST_AGE = 42;
+
   it("scales A2's raw fertility hazard by the try-outcome probability, the same as Y1/A1", () => {
-    const situations = { a2: a2Situation("a2") };
+    const situations = { a2: a2Situation("a2", { age: UNSATURATED_TEST_AGE, sex: "f", socialClass: "villein" }) };
     const response = { a2: { try: 0.4, wait: 0.4, refuse: 0.2 } };
-    const rawHazard = computeHazard({ kind: "A2", age: 25, sex: "f", socialClass: "villein", year: 1340 }).value;
+    const rawHazard = computeHazard({ kind: "A2", age: UNSATURATED_TEST_AGE, sex: "f", socialClass: "villein", year: 1340 }).value;
     const prior = computeHazardPrior(situations, response);
     expect(prior.selection.a2!).toBeCloseTo(effectiveSelectionHazard(rawHazard, 0.4), 10);
   });
 
   it("the compound (selection wins x try chosen) probability recovers the raw fertility hazard on average", () => {
     const tryProb = 0.4;
-    const situations = { a2: a2Situation("a2") };
+    const situations = { a2: a2Situation("a2", { age: UNSATURATED_TEST_AGE, sex: "f", socialClass: "villein" }) };
     const response = { a2: { try: tryProb, wait: 0.4, refuse: 0.2 } };
-    const rawHazard = computeHazard({ kind: "A2", age: 25, sex: "f", socialClass: "villein", year: 1340 }).value;
+    const rawHazard = computeHazard({ kind: "A2", age: UNSATURATED_TEST_AGE, sex: "f", socialClass: "villein", year: 1340 }).value;
     const prior = computeHazardPrior(situations, response);
     const compound = prior.selection.a2! * tryProb;
     expect(compound).toBeCloseTo(rawHazard, 10);

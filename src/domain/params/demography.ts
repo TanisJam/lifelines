@@ -21,9 +21,21 @@ export interface MarriageFloor {
  * 1498-1558 figures made an 18-22 women's mean impossible for a cottar woman with a floor of 25).
  * `clergy` never actually reaches a Y1 candidate (`canMarry` excludes them) — its row carries the
  * villein figures only so this stays a total function over `SocialClass`.
+ *
+ * PR10 (GOAL B, decision 071): gentry's own floor is per-class band `firstMarriageAgeWomenGentry`
+ * (14-18) / `firstMarriageAgeMenGentry` (20-24), `params/targets.ts` — gentry/noble women married
+ * markedly earlier via arranged matches (`docs/research.md` line 340: Hollingsworth's 14th c.
+ * interpolation, women ~17; Follett narrative reference, Tilly's arranged marriage at 14, engram
+ * #6321/#6149). `minEligible`/`onset` were already gentry's youngest row (decision 14/053) — men's
+ * `onset` moved 20 -> 22 here to center on that SAME research.md table's 14th c. male anchor (~22,
+ * "early-to-mid 20s", matching the task's own framing of noble men marrying later than their
+ * brides); women's floor was already well-positioned and is unchanged. As with every other class's
+ * onset (see decision 068's own finding), the REALIZED mean stays well above onset — gentry is
+ * structurally "one household per village" in worldgen (decision 049), so partner scarcity, not the
+ * hazard floor, dominates the remaining gap; see decision 071 for the measured before/after.
  */
 export const MARRIAGE_FLOORS: Readonly<Record<SocialClass, Readonly<Record<Sex, MarriageFloor>>>> = {
-  gentry: { f: { minEligible: 14, onset: 16 }, m: { minEligible: 16, onset: 20 } },
+  gentry: { f: { minEligible: 14, onset: 16 }, m: { minEligible: 16, onset: 22 } },
   merchant: { f: { minEligible: 15, onset: 18 }, m: { minEligible: 18, onset: 23 } },
   artisan: { f: { minEligible: 15, onset: 18 }, m: { minEligible: 18, onset: 22 } },
   freeholder: { f: { minEligible: 15, onset: 18 }, m: { minEligible: 18, onset: 22 } },
@@ -77,18 +89,68 @@ export const COURTSHIP_WEIBULL_K = 1.5;
 export const COURTSHIP_WEIBULL_LAMBDA = 1.5;
 export const COURTSHIP_BASE_HAZARD = 0.45;
 
-/** A2's fertility-band hazard by mother's age — how likely THIS is the year a couple tries, not the conception odds itself (see `simulate.ts#conceptionProbability`). */
+/**
+ * A2's fertility-band hazard by mother's age — how likely THIS is the year a couple tries, not the
+ * conception odds itself (see `simulate.ts#conceptionProbability`).
+ *
+ * PR10 (decision 071, population-trajectory diagnosis): raised from the design's original
+ * 0.28/0.35/0.28/0.18/0.1. Diagnosed first (20-seed `check-demographics.ts --stats` run, before any
+ * tuning): the REALIZED age-specific marital fertility rate (births per married-woman-year,
+ * `scripts/check-demographics.ts`'s own ASMFR diagnostic) was only ~30-45% of this table's own
+ * intended hazard across every band (e.g. the core <30 band: 12.4% observed vs. 35% intended) —
+ * `effectiveSelectionHazard` (hazards.ts) is designed to cancel the two-stage
+ * selection-then-outcome compounding exactly, but the SAME person-year categorical draw also
+ * competes against every other eligible situation that fires for a married woman (`Y3` leave-home,
+ * `PIL1` pilgrimage, and the ~16 `OTHER_KIND_BASE_HAZARD` kinds when eligible) — enough simultaneous
+ * competing mass to meaningfully shrink A2's realized share even before `RESCALE_THRESHOLD` clips
+ * an oversized sum. Pre-plague CBR measured only 11.4 per 1,000/yr against a 30-40 per 1,000/yr CDR
+ * (already close to research #6144's own ~30-40‰ pre-plague target, unchanged here) — a population
+ * that structurally cannot replace itself even before the plague, decision 068's own "cause 4"
+ * finally quantified. Raised toward the research brief's own ~35-45‰ CBR / ~6-7 births-per-completed-
+ * marriage targets, empirically (this is a magnitude tunable, not a sourced age-specific fecundity
+ * curve — see `provenance.ts`), alongside `Y3_PEAK_HAZARD`/`Y3_OFF_PEAK_HAZARD` below (which reduces
+ * how much of A2's own effective share gets crowded out in the first place).
+ *
+ * A real ceiling was found and measured while tuning this: `effectiveSelectionHazard` clamps the
+ * scaled selection weight at 1 (`Math.min(1, rawHazard / outcomeProbability)`), so once a band's
+ * raw hazard exceeds roughly `outcomeProbability` (the rule adapter's own A2 "try" answer, centered
+ * ~0.4), MORE raw hazard buys literally nothing further -- the compound birth-attempt probability is
+ * then bounded by `outcomeProbability` itself, not by this table. Measured directly: pushing these
+ * bands from ~0.45-0.55 to ~0.7-0.85 moved the observed <30 ASMFR by well under a percentage point.
+ * The values here sit close to that natural ceiling rather than past it -- going further is not just
+ * unhistorical, it is measurably inert. The residual gap to the research targets is NOT closable by
+ * this table alone; it traces mostly to the marriage rate itself (68-72% of the cohort never
+ * married in the same diagnostic run) -- genuine partner scarcity in `simulate.ts`'s own `eligible()`
+ * search, already flagged out of scope by three prior PRs (decisions 068/069/070) -- see decision 071
+ * for the full accounting.
+ */
 export const FERTILITY_HAZARD_BANDS: readonly { readonly maxAge: number; readonly hazard: number }[] = [
-  { maxAge: 20, hazard: 0.28 },
-  { maxAge: 30, hazard: 0.35 },
-  { maxAge: 35, hazard: 0.28 },
-  { maxAge: 40, hazard: 0.18 },
-  { maxAge: Infinity, hazard: 0.1 },
+  { maxAge: 20, hazard: 0.5 },
+  { maxAge: 30, hazard: 0.6 },
+  { maxAge: 35, hazard: 0.5 },
+  { maxAge: 40, hazard: 0.4 },
+  { maxAge: Infinity, hazard: 0.25 },
 ];
 
-/** Y3 (leave-or-stay): peaks in young adulthood, lower for the unfree (chevage), further restricted after the Statute of Labourers (1351) — the mobility factor PR5 deferred to this slice. */
-export const Y3_PEAK_HAZARD = 0.12;
-export const Y3_OFF_PEAK_HAZARD = 0.04;
+/**
+ * Y3 (leave-or-stay): peaks in young adulthood, lower for the unfree (chevage), further restricted
+ * after the Statute of Labourers (1351) — the mobility factor PR5 deferred to this slice.
+ *
+ * PR10 (decision 071): lowered from 0.12/0.04. Diagnosed (20-seed `check-demographics.ts --stats`
+ * run): `Y3`'s peak window (16-30) is the SAME window most classes marry in, and it fires for
+ * EVERY eligible adult EVERY year as one of many competing person-year candidates — unlike `Y1`/`A2`,
+ * it has no historical population-level migration-RATE source (`provenance.ts` already flags it
+ * "no sourced migration-rate figure... was located", confidence low), so a lower value is not a
+ * departure from any sourced figure. Measured: 68-72% of the `motherId`-set cohort never married by
+ * age 45, and marital fertility ran at ~30-45% of `FERTILITY_HAZARD_BANDS`' own intended rate (see
+ * that constant's doc comment) — `Y3` competing for the same person-year "slot" as `Y1`/`A2` is a
+ * real, measured contributor to both. Lowering it (rather than only raising `FERTILITY_HAZARD_BANDS`
+ * in isolation) reduces how much of that pie an emigration roll consumes, without inventing a new
+ * mechanism; genuine emigration (apprenticeship away, service, migration) still happens, just less
+ * often relative to marriage/fertility.
+ */
+export const Y3_PEAK_HAZARD = 0.05;
+export const Y3_OFF_PEAK_HAZARD = 0.02;
 export const Y3_PEAK_MIN_AGE = 16;
 export const Y3_PEAK_MAX_AGE = 30;
 export const Y3_UNFREE_MOBILITY_FACTOR = 0.6;

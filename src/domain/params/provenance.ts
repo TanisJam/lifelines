@@ -21,8 +21,8 @@ export interface ParamProvenance {
  */
 export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
   MARRIAGE_FLOORS: {
-    source: "Design revision 2, decision 14 (supersedes decision 053's 1498-1558 floors); research.md Family §rules synthesis for direction only.",
-    range: "Women 18-22 mean, men 21-25 mean, per the confirmed marriage band (research-request rev 8).",
+    source: "Design revision 2, decision 14 (supersedes decision 053's 1498-1558 floors); research.md Family §rules synthesis for direction only. Gentry row: PR10 (GOAL B, decision 071) -- docs/research.md line 340 (Hollingsworth 14th c. interpolation: women ~17, men ~22) and the Follett narrative reference (Tilly m. 14, engram #6321/#6149).",
+    range: "Women 18-22 mean, men 21-25 mean, per the confirmed marriage band (research-request rev 8). Gentry: women 14-18, men 20-24 (params/targets.ts's own per-class bands); men's onset moved 20 -> 22 by PR10 to center on the research.md anchor.",
     confidence: "low",
   },
   CANON_MINIMUM_MARRIAGE_AGE: {
@@ -56,8 +56,8 @@ export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
     confidence: "low",
   },
   FERTILITY_HAZARD_BANDS: {
-    source: "Design revision 2 hazard-shapes table ('fertility bands by age').",
-    range: "Provisional age bands; distinct from `actuarial.ts#conceptionProbability`'s own age curve.",
+    source: "Design revision 2 hazard-shapes table ('fertility bands by age'); raised by PR10 (decision 071) toward research #6144's own ~35-45‰ pre-plague CBR / ~6-7 births-per-completed-marriage targets, after measuring the REALIZED rate at only ~30-45% of the table's own prior values (see the constant's own doc comment for the full diagnosis).",
+    range: "Provisional age bands; distinct from `actuarial.ts#conceptionProbability`'s own age curve. Raised 0.28/0.35/0.28/0.18/0.1 -> 0.5/0.6/0.5/0.4/0.25, empirically, alongside the Y3 reduction below -- a real ceiling was found near this level (see the constant's own doc comment); the residual gap traces to the marriage rate, not this table.",
     confidence: "low",
   },
   Y3_UNFREE_MOBILITY_FACTOR: {
@@ -106,13 +106,13 @@ export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
     confidence: "low",
   },
   Y3_PEAK_HAZARD: {
-    source: "Design revision 2 hazard-shapes table ('Y3 peaks 16-30').",
-    range: "Provisional peak-window annual hazard; no sourced migration-rate figure for 1327-1361 was located.",
+    source: "Design revision 2 hazard-shapes table ('Y3 peaks 16-30'); lowered by PR10 (decision 071) after measuring Y3's peak window overlapping the marrying-age window and competing directly against Y1/A2 for the same person-year selection, measured to meaningfully depress both the marriage rate and realized marital fertility (see FERTILITY_HAZARD_BANDS's own doc comment).",
+    range: "Provisional peak-window annual hazard; no sourced migration-rate figure for 1327-1361 was located. Lowered 0.12 -> 0.05.",
     confidence: "low",
   },
   Y3_OFF_PEAK_HAZARD: {
-    source: "Design revision 2 hazard-shapes table ('lower for the unfree ... after the Statute').",
-    range: "Provisional off-peak annual hazard, directionally lower than the peak-window value.",
+    source: "Design revision 2 hazard-shapes table ('lower for the unfree ... after the Statute'); lowered by PR10 (decision 071) alongside Y3_PEAK_HAZARD, same reasoning.",
+    range: "Provisional off-peak annual hazard, directionally lower than the peak-window value. Lowered 0.04 -> 0.02.",
     confidence: "low",
   },
   Y3_PEAK_MIN_AGE: {

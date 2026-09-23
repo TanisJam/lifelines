@@ -143,7 +143,7 @@ interface StatsResult {
   /** Crude birth/death rate, per 1,000 person-years, over `PRE_PLAGUE_WINDOW`. */
   readonly cbrPrePlaguePer1000: number;
   readonly cdrPrePlaguePer1000: number;
-  /** Children ever born to a marriage with real follow-up time (wife observable to the end of her fertile window). */
+  /** Children ever born to a marriage whose family size is a settled fact — the wife has died (fertility ended then, fully resolved) or lived to the end of her fertile window. Includes marriages cut short by early death, so it's a "family size at resolution" figure, not a mortality-free "intact marriage" one — comparable in spirit to the ~6-7 research anchor, but read alongside the adult-mortality figures above, not in isolation. */
   readonly meanChildrenPerCompletedMarriage: number;
   readonly completedMarriageSamples: number;
   /** Age-specific marital fertility rate (births per married-woman-year), banded like `FERTILITY_HAZARD_BANDS`. */
@@ -325,9 +325,15 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
       const husband = a.sex === "m" ? a : b.sex === "m" ? b : undefined;
       if (!wife || !husband) continue;
 
-      // Cohort-completeness (PR9 precedent, cohort-stats.ts): only count a marriage's completed
-      // family size once the wife has had time to pass through her whole fertile window.
-      if (endYear - wife.birthYear >= FEMALE_FERTILE_WINDOW_END_AGE) {
+      // Cohort-completeness (PR9 precedent, cohort-stats.ts): a marriage's completed family size is
+      // a settled fact once EITHER the wife has died (her fertile window ended then, fully resolved,
+      // same as `cohortDeathShareByAge`'s "dying is always fully observed" rule) OR she's had time
+      // to pass through her whole fertile window while alive. Counting ONLY the second half (as an
+      // earlier version of this script did) wrongly treated "100 years have passed since this window
+      // ended" as completeness regardless of how long the wife actually lived — silently including
+      // marriages cut short by early death (plague, maternal mortality) with near-zero children, the
+      // same asymmetry `cohort-stats.ts` was written to avoid.
+      if (wife.deathYear !== undefined || endYear - wife.birthYear >= FEMALE_FERTILE_WINDOW_END_AGE) {
         const childCount = Object.values(finalPeople).filter((c) => c.motherId === wife.id && c.fatherId === husband.id).length;
         completedMarriageChildCounts.push(childCount);
       }
