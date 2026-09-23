@@ -1199,3 +1199,67 @@ probability), `rule-heuristics.test.ts` (new file, 3 cases: the encourage/propos
 typical-facet behavior), `life-state.test.ts` (+4: the self-loop/cross-fire legality, now documented
 as measured-necessary rather than assumed), `simulate.test.ts` (+3: `resolveCourtshipOnDeath` unit +
 live-simulation zero-lockout check, the mean-first-marriage-age band test).
+
+## 067 — The hybrid Jev clamp (engine-life-course, PR7)
+
+The brief (`engine-life-course` proposal/spec/design, PR7 of 8): PR6 gave the rule adapter absolute
+per-kind hazards, reported unchanged (`t=1`); `JevDecisionMaker.decideYear` still handed back Jev's
+own judged `selection` untouched, with no bound at all, and its prompt leaked raw `yearsMarriageable`/
+`courtshipYears` numbers straight into `state.situations.<id>.situation`. Spec's "Hybrid clamp on
+judged probability" requirement: the engine, not the adapter, must clamp a judged probability to a
+documented bounded multiplier of the hazard baseline, identically for both adapters, and design
+decision 3 forbids sending Jev the raw numbers a clamp bound could otherwise leak back through the
+prompt as an anchor.
+
+- **`src/domain/hazards.ts`**: `buildHazardContext`, `OUTCOME_SCALED_KINDS`, and the
+  `computeHazardPrior(situations, response)` loop moved here from `rule-decision-maker.ts` (unchanged
+  logic, only relocated — see the refactor note below) so both adapters build their hazard baseline
+  the same way. New: `HAZARD_CLAMP_K_MIN`/`HAZARD_CLAMP_K_MAX` (0.5/2, design's "C=2 per kind"),
+  `clampJudgedSelection(judged, baseline)` — `t = clamp(judged/baseline, K_MIN, K_MAX)`, `clamped =
+  baseline * t`, zero baseline always clamps to zero — and `clampJevSelection(situations,
+  judgedSelection, response)`, the batch-level version: computes the prior via `computeHazardPrior`
+  (scaling Y1/A1 against the SAME judge's own outcome-roll answer, so the clamp target itself doesn't
+  recompound decision 066's marriage chain for whichever adapter is being clamped), clamps each
+  situation independently, then re-normalizes through the existing `resolveCompetingRisks` for a
+  fresh, valid distribution. Also new: `describeHazardBand` (rare/uncommon/common, thresholds
+  0.05/0.2) and `describeTimeInState` (recent/established/long-standing, thresholds 1/4 years) — the
+  qualitative labels design decision 3 requires in place of raw numbers.
+- **`src/adapters/decision/rule-decision-maker.ts`** (refactor, no behavior change — verified by its
+  own unmodified test suite staying green before AND after): `decideYear` now calls
+  `computeHazardPrior` instead of the inline loop PR6 wrote; `asRecord`/`numberField`/
+  `buildHazardContext`/`OUTCOME_SCALED_KINDS` deleted here (moved to `hazards.ts`). The reported
+  hazard is still unclamped (`t=1`) — only `JevDecisionMaker` calls the clamp.
+- **`src/adapters/decision/jev-decision-maker.ts`**: `decideYear` merges every chunk's raw `selection`
+  as before, then calls `clampJevSelection(batch.situations, rawSelection, response)` once on the
+  merged result before returning — never the raw judged value. The clamp is pure and applied AFTER
+  the per-chunk cache lookup (`decideYearChunk`'s `yearCache` still stores Jev's RAW, unclamped
+  answer, unchanged cache key), so it's re-derived fresh even on a cache hit — a future change to
+  `HAZARD_CLAMP_K_MIN`/`K_MAX` takes effect on a fork's re-simulation without invalidating the cache.
+  New `annotateSituationState(situation, situationState)`: for a Y1/A1 situation whose `situation`
+  state carries a numeric `yearsMarriageable`/`courtshipYears`, replaces it with a qualitative
+  `timeInState` label (via `describeTimeInState`) plus a `baseRate` label (via `describeHazardBand`
+  on the same hazard the clamp uses) — every other kind's situation state is returned unchanged.
+  `getStats()` now reports `hazardFallbacks`, same as the rule adapter (previously omitted — the type
+  comment in `decisions.ts` had already flagged this as "before PR7 wires its own clamp baseline
+  lookups").
+- **No reseeding needed this batch.** `JevDecisionMaker` is never exercised by a curated fixed-seed
+  test (real Jev calls need `TYPESAFE_API_KEY`; every curated seed test uses `RuleDecisionMaker`), and
+  the rule adapter's own refactor is behavior-preserving (its pre-existing test suite passed unchanged
+  both before and after the extraction). The full suite (441 pre-batch, 455 post-batch) confirms zero
+  regressions elsewhere.
+
+**Grounding:** `sdd/engine-life-course/spec` (event-hazards capability, "Hybrid clamp on judged
+probability" requirement and its scenario); `sdd/engine-life-course/design` revision 2, architecture
+decisions #2 (the clamp formula) and #3 (qualitative time-in-state and base-rate facts, never
+numbers); `sdd/engine-life-course/apply-progress` (PR6 corrective's own note that a third two-stage
+kind should extend `OUTCOME_SCALED_KINDS`, not invent a new pattern — followed here by relocating,
+not duplicating, that map).
+
+**Verified:** `pnpm test` (455 passing, up from 441 pre-batch — 14 new tests, 0 regressions),
+`pnpm exec tsc --noEmit`, `pnpm lint` clean. New tests: `hazards.test.ts` (+9: `clampJudgedSelection`'s
+spec scenario plus above/below/within/zero-baseline cases, `clampJevSelection`'s batch-level clamp/
+sum-to-1/fallback-reporting, `describeHazardBand`/`describeTimeInState`'s band boundaries),
+`jev-decision-maker.test.ts` (+5: an extreme judgment stays within `K_MAX` of the baseline, an
+in-bounds judgment passes through unchanged, `getStats()` reports hazard fallbacks, the prompt strips
+a raw `yearsMarriageable` in favor of `timeInState`/`baseRate` labels, a situation with no
+time-in-state field is left untouched).
