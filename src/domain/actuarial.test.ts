@@ -15,11 +15,24 @@ describe("deathProbabilityAtAge", () => {
     expect(deathProbabilityAtAge(1)).toBe(0.3);
   });
 
-  it("the child bands (age 2-15) are unchanged from decision 050's Tudor figures", () => {
+  it("the age 2-4 band is unchanged from decision 050's Tudor figures", () => {
     expect(deathProbabilityAtAge(2)).toBe(0.065);
     expect(deathProbabilityAtAge(4)).toBe(0.065);
-    expect(deathProbabilityAtAge(5)).toBe(0.027);
-    expect(deathProbabilityAtAge(14)).toBe(0.027);
+  });
+
+  // PR13 STEP 2 (decision 075): the age 5-14 band was STILL decision 050's original Tudor figure
+  // (0.027/yr for 10 straight years) -- the ONLY band with zero direct calibration-target coverage
+  // (under15DeathShare only measures the conditional age 2-7 death share; ages 7-14 were invisible to
+  // every --assert run). A hand-computed life table using the unchanged bands gave ~56-57% cumulative
+  // death by 15 (matching the measured under15Pct), well above research.md line 112's own "~30% of
+  // children die before 15" citation (UNVERIFIED, but the only sourced anchor for that cumulative
+  // figure) and contributing directly to e0's shortfall (target 22-35, measured ~18-19). Lowered to
+  // 0.02, chosen so the age 2-7 conditional death share (under15DeathShare) stays inside its own
+  // 20-30% band with real margin (measured ~21-22%, not chased to the floor) while meaningfully
+  // raising survival to 15.
+  it("the age 5-14 band is lowered from decision 050's Tudor figure, PR13 STEP 2 (decision 075)", () => {
+    expect(deathProbabilityAtAge(5)).toBe(0.02);
+    expect(deathProbabilityAtAge(14)).toBe(0.02);
   });
 
   it("the adult and elderly bands are unchanged from decision 050's Tudor figures", () => {

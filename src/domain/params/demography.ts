@@ -280,11 +280,33 @@ export const FALLBACK_HAZARD = 0.02;
  * at death) — just under its own 22 floor, reported rather than chased further; that target is
  * itself flagged "low confidence" in `targets.ts`. `widowRemarriagePostBlackDeath` moved from FAIL
  * to PASS at this same measurement (24.5%, band 23-29) as a side effect of more widowing overall.
+ *
+ * PR13 STEP 2 (decision 075): with `e0` measured at ~18-19 (well under its 22-35 target) after
+ * PR11/PR12's marriage fixes and this slice's own A2 fertility fix raised birth volume (decision
+ * 074's own explanation: more births -> a larger from-birth cohort exposed to child mortality ->
+ * lower cohort-average age at death), the 5-14 band was diagnosed directly: it is the ONLY band
+ * with zero direct `CALIBRATION_TARGETS` coverage (`under15DeathShare` measures only the
+ * CONDITIONAL age 2-7 death share; ages 7-14 were never checked by any `--assert` run) and it was
+ * STILL decision 050's original Tudor figure, never revisited for the period recalibration above.
+ * A hand-computed life table using the unchanged bands (single infant-year evaluation at age 1, per
+ * `deathProbabilityAtAge`'s own age<2 band-width note) gives ~56-57% cumulative death by 15 —
+ * matching the measured `check-demographics.ts#under15Pct` — well above research.md line 112's own
+ * "~30% of children die before 15" citation (UNVERIFIED single source, but the only sourced anchor
+ * for that specific cumulative figure). Adult bands (15+) were diagnosed too and are NOT changed:
+ * measured (30-seed `--stats`) adult mortality already tracks this table closely (<40 1.7%/1.6%,
+ * <60 3.2%/3.2%, <75 7.6-7.7%/7.0%, <90 22.7-22.8%/20.0%) with no double-counting found in
+ * `simulate.ts`'s death resolution (Black Death/second pestilence are deliberately excluded from
+ * `HARDSHIP_TOWN_EVENTS`'s flat multiplier and combined as an absolute per-year probability instead,
+ * confirmed never leaking outside 1348-49/1361-62). Lowered 0.027 -> 0.02: chosen so
+ * `under15DeathShare` (the age 2-7 conditional share, which shares ages 5-6 with this band) stays
+ * inside its own 20-30% band with real margin (measured ~21-22%, not chased to the 20% floor) while
+ * meaningfully raising survival to 15 and, with it, `e0`.
  */
 export const MORTALITY_BY_AGE_BAND: readonly { readonly maxAge: number; readonly hazard: number }[] = [
   { maxAge: 2, hazard: 0.3 }, // infant/toddler year: see actuarial.ts#deathProbabilityAtAge's age<2 band-width note
   { maxAge: 5, hazard: 0.065 },
-  { maxAge: 15, hazard: 0.027 },
+  { maxAge: 15, hazard: 0.02 }, // PR13 STEP 2 (decision 075): lowered from 0.027 -- see this constant's own doc comment
+
   { maxAge: 40, hazard: 0.016 },
   { maxAge: 60, hazard: 0.032 },
   { maxAge: 75, hazard: 0.07 },
