@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
+import type { PersonYearSituation } from "./decisions";
 import { FALLBACK_HAZARD, MARRIAGE_FLOORS } from "./params/demography";
-import { computeHazard, effectiveSelectionHazard, expectedMarriageChain, lookupHazard, OUTCOME_PROBABILITY_FLOOR, resolveCompetingRisks } from "./hazards";
-import type { SocialClass, Sex } from "./types";
+import {
+  clampJevSelection,
+  clampJudgedSelection,
+  computeHazard,
+  computeHazardPrior,
+  describeHazardBand,
+  describeTimeInState,
+  effectiveSelectionHazard,
+  expectedMarriageChain,
+  HAZARD_CLAMP_K_MAX,
+  HAZARD_CLAMP_K_MIN,
+  lookupHazard,
+  OUTCOME_PROBABILITY_FLOOR,
+  resolveCompetingRisks,
+} from "./hazards";
+import type { JsonValue, SocialClass, Sex } from "./types";
 
 describe("PR6 corrective: effectiveSelectionHazard (engram #6280, the marriage chain)", () => {
   it("scales a raw hazard up so the compound (selection x outcome) chain matches the raw hazard on average", () => {
@@ -115,6 +130,73 @@ describe("PR6 corrective task 4: the analytic marriage-chain expectation stays w
       });
     }
   }
+});
+
+describe("PR7: clampJudgedSelection (design decision 2, the hybrid clamp)", () => {
+  it("spec scenario: a 0.05 baseline clamped [0.5x, 2x] bounds a 0.9 judgment to 0.10", () => {
+    expect(clampJudgedSelection(0.9, 0.05)).toBeCloseTo(0.1, 10);
+  });
+
+  it("clamps a judgment far BELOW the baseline up to baseline * K_MIN", () => {
+    expect(clampJudgedSelection(0.001, 0.05)).toBeCloseTo(0.05 * HAZARD_CLAMP_K_MIN, 10);
+  });
+
+  it("passes a judgment through unchanged when its ratio to the baseline is already inside [K_MIN, K_MAX]", () => {
+    expect(clampJudgedSelection(0.06, 0.05)).toBeCloseTo(0.06, 10);
+  });
+
+  it("a zero baseline (the hazard says this cannot happen) clamps to zero regardless of the judgment", () => {
+    expect(clampJudgedSelection(0.5, 0)).toBe(0);
+    expect(clampJudgedSelection(0, 0)).toBe(0);
+  });
+});
+
+describe("PR7: clampJevSelection (the clamp applied to a whole person-year batch)", () => {
+  function y1Situation(id: string, self: Record<string, JsonValue> = { age: 30, sex: "f", socialClass: "villein" }): PersonYearSituation {
+    return {
+      kind: "Y1",
+      question: { id, kind: "Y1", personId: "p1", year: 1340, state: { self, situation: { code: "Y1" } }, options: ["encourage", "decline", "wait"] },
+    };
+  }
+
+  it("never lets an extreme Jev judgment through unclamped — it stays within K_MAX of the hazard baseline", () => {
+    const situations = { y1: y1Situation("y1") };
+    const response = { y1: { encourage: 0.5, decline: 0.3, wait: 0.2 } };
+    const baseline = computeHazardPrior(situations, response).selection.y1!;
+    const result = clampJevSelection(situations, { y1: 0.99, nothing: 0.01 }, response);
+    expect(result.selection.y1!).toBeLessThanOrEqual(baseline * HAZARD_CLAMP_K_MAX + 1e-9);
+    expect(result.selection.y1!).not.toBeCloseTo(0.99, 2);
+  });
+
+  it("the clamped selection plus its residual still sums to exactly 1", () => {
+    const situations = { y1: y1Situation("y1") };
+    const response = { y1: { encourage: 0.5, decline: 0.3, wait: 0.2 } };
+    const result = clampJevSelection(situations, { y1: 0.02, nothing: 0.98 }, response);
+    const total = Object.values(result.selection).reduce((a, b) => a + b, 0);
+    expect(total).toBeCloseTo(1, 10);
+    expect(result.selection.y1!).toBeGreaterThan(0);
+  });
+
+  it("reports hazard-lookup fallbacks from the underlying prior computation", () => {
+    const situations = { y1: y1Situation("y1", { age: 30, sex: "f", socialClass: "not-a-real-class" }) };
+    const response = { y1: { encourage: 0.5, decline: 0.3, wait: 0.2 } };
+    const result = clampJevSelection(situations, { y1: 0.5, nothing: 0.5 }, response);
+    expect(Object.keys(result.hazardFallbacks).length).toBeGreaterThan(0);
+  });
+});
+
+describe("PR7: describeHazardBand / describeTimeInState (design decision 3, qualitative facts for Jev's prompt)", () => {
+  it("bands a hazard value into rare/uncommon/common by the documented thresholds", () => {
+    expect(describeHazardBand(0.01)).toBe("rare");
+    expect(describeHazardBand(0.1)).toBe("uncommon");
+    expect(describeHazardBand(0.5)).toBe("common");
+  });
+
+  it("bands years-in-state into recent/established/long-standing", () => {
+    expect(describeTimeInState(0)).toBe("recent");
+    expect(describeTimeInState(3)).toBe("established");
+    expect(describeTimeInState(10)).toBe("long-standing");
+  });
 });
 
 describe("PR6: competing-risk resolution (task 6.3)", () => {

@@ -30,9 +30,12 @@ import {
   Y3_STATUTE_MOBILITY_FACTOR,
   Y3_UNFREE_MOBILITY_FACTOR,
 } from "./params/demography";
+import type { Distribution, PersonYearSituation } from "./decisions";
+import { FALLBACK_CLASS } from "./period/classes";
 import { isUnfree } from "./period/markers";
 import { STATUTE_OF_LABOURERS_YEAR } from "./period/events";
-import type { Sex, SocialClass } from "./types";
+import { normalizeDistribution } from "./rng";
+import type { JsonValue, Sex, SocialClass } from "./types";
 
 /** The decision kinds design revision 2 gives an explicit hazard shape to. Every other social kind uses `OTHER_KIND_BASE_HAZARD`. */
 export type HazardKind = "Y1" | "A1" | "A2" | "Y3" | "AP1" | "A3" | "C3";
@@ -254,4 +257,162 @@ export function resolveCompetingRisks(rawHazards: Readonly<Record<string, number
   for (const [id, h] of entries) selection[id] = Math.max(0, h) * scale;
   const residual = 1 - sum * scale;
   return { selection, residual };
+}
+
+function asRecord(value: JsonValue | undefined): Record<string, JsonValue> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, JsonValue>) : undefined;
+}
+
+function numberField(record: Record<string, JsonValue> | undefined, key: string): number | undefined {
+  const value = record?.[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+/**
+ * Engine life course PR7 (moved from `rule-decision-maker.ts`, which introduced this in PR6, so both
+ * adapters build a `HazardContext` the same way — spec's "identically for both adapters" requirement):
+ * builds the `HazardContext` `computeHazard` needs from a `PersonYearSituation`'s own
+ * `DecisionQuestion.state` — `self.age/sex/socialClass` (already there for every kind, see
+ * `simulate.ts#personSummary`) plus the kind-specific time-in-state extras `simulate.ts` attaches to
+ * `situation` (`yearsMarriageable`, `courtshipYears`, `isWidowed`).
+ */
+export function buildHazardContext(situation: PersonYearSituation): HazardContext {
+  const self = asRecord(situation.question.state.self);
+  const situationState = asRecord(situation.question.state.situation);
+  return {
+    kind: situation.kind,
+    age: numberField(self, "age") ?? 0,
+    sex: (self?.sex as Sex | undefined) ?? "f",
+    socialClass: (self?.socialClass as SocialClass | undefined) ?? FALLBACK_CLASS,
+    year: situation.question.year,
+    isWidowed: situationState?.isWidowed === true,
+    yearsMarriageable: numberField(situationState, "yearsMarriageable"),
+    courtshipYears: numberField(situationState, "courtshipYears"),
+  };
+}
+
+/**
+ * PR6 corrective (engram #6280, "the marriage chain"), moved here in PR7: the two-stage
+ * marriage-track kinds — `Y1` (courtship offer, "encourage") and `A1` (proposal, "propose") — each
+ * gate their hazard's effect behind a SECOND, independent outcome roll (a `resp:<id>` Choice, or
+ * `ruleDistribution`'s own branch for the rule adapter). Naming the "positive" option here lets
+ * `computeHazardPrior` scale the raw hazard by `effectiveSelectionHazard` so the COMPOUND
+ * (selection-wins x this-option-chosen) probability matches the design's own single stated per-year
+ * rate — a THIRD two-stage kind should extend this map, per the PR6-corrective precedent, not invent a
+ * new pattern.
+ */
+export const OUTCOME_SCALED_KINDS: Readonly<Record<string, string>> = { Y1: "encourage", A1: "propose" };
+
+export interface HazardPriorResult extends CompetingRiskResolution {
+  /** Cumulative hazard-table lookup misses this call surfaced, keyed `${kind}:${socialClass}` (design decision 15). */
+  readonly hazardFallbacks: Readonly<Record<string, number>>;
+}
+
+/**
+ * Engine life course PR7 (extracted from `rule-decision-maker.ts`'s PR6 `decideYear`, unchanged
+ * logic — spec's "identically for both adapters" requirement): the shared hazard-baseline computation
+ * both `RuleDecisionMaker` (unclamped, `t=1`) and `JevDecisionMaker` (clamped, see
+ * `clampJevSelection`) build their `PersonYearResult.selection` from. Skips `D1` (no hazard shape;
+ * vignettes are judged separately). `response` supplies each situation's own outcome-roll answer for
+ * `OUTCOME_SCALED_KINDS` — the RULE adapter passes its own `ruleDistribution` answers; the JEV adapter
+ * passes Jev's own `resp:<id>` answers, so each adapter's baseline is scaled against the same
+ * judgment its selection will be compared to (never a foreign one).
+ */
+export function computeHazardPrior(situations: Readonly<Record<string, PersonYearSituation>>, response: Readonly<Record<string, Distribution>>): HazardPriorResult {
+  const rawHazards: Record<string, number> = {};
+  const hazardFallbacks: Record<string, number> = {};
+  for (const [id, situation] of Object.entries(situations)) {
+    if (situation.kind === "D1") continue;
+    const hazard = computeHazard(buildHazardContext(situation));
+    if (hazard.fallbackKey) hazardFallbacks[hazard.fallbackKey] = (hazardFallbacks[hazard.fallbackKey] ?? 0) + 1;
+    const outcomeOption = OUTCOME_SCALED_KINDS[situation.kind];
+    const outcomeProbability = outcomeOption ? response[id]?.[outcomeOption] : undefined;
+    rawHazards[id] = outcomeProbability !== undefined ? effectiveSelectionHazard(hazard.value, outcomeProbability) : hazard.value;
+  }
+  const { selection, residual } = resolveCompetingRisks(rawHazards);
+  return { selection, residual, hazardFallbacks };
+}
+
+/**
+ * Engine life course PR7 (spec's "Hybrid clamp on judged probability" requirement, design decision 2):
+ * how far a decision maker's judged selection weight for one situation may diverge, either direction,
+ * from that situation's own hazard baseline for this person-year. Named per design's "C=2 per kind" —
+ * currently the same multiplier for every kind; a future kind-specific override would extend a lookup
+ * here, not change callers.
+ */
+export const HAZARD_CLAMP_K_MIN = 0.5;
+export const HAZARD_CLAMP_K_MAX = 2;
+
+/**
+ * `t = clamp(judged / baseline, kMin, kMax)`, `clamped = baseline * t` (design decision 2). A zero
+ * baseline (the hazard says this genuinely can't happen this person-year) clamps to zero regardless of
+ * the judgment — there is no multiplier of zero that lets a judgment through.
+ */
+export function clampJudgedSelection(judged: number, baseline: number, kMin: number = HAZARD_CLAMP_K_MIN, kMax: number = HAZARD_CLAMP_K_MAX): number {
+  if (baseline <= 0) return 0;
+  const ratio = Math.min(kMax, Math.max(kMin, judged / baseline));
+  return baseline * ratio;
+}
+
+export interface ClampedSelectionResult {
+  readonly selection: Readonly<Record<string, number>>;
+  readonly hazardFallbacks: Readonly<Record<string, number>>;
+}
+
+/**
+ * Spec's "Hybrid clamp on judged probability" requirement, applied to a whole person-year batch:
+ * bounds a decision maker's own judged `selection` distribution to within `[baseline*K_MIN,
+ * baseline*K_MAX]` of `computeHazardPrior`'s baseline for each situation, then hands the clamped raw
+ * values back to `resolveCompetingRisks` for a fresh, valid distribution (never a `sum(selection) >
+ * 1`, and the `nothing`/`everyday` residual absorbs whatever the clamp freed up or removed). Scaling
+ * the baseline against `response` (the SAME judge's own outcome-roll answers) before clamping is what
+ * stops the compound chain from recompounding for whichever adapter is being clamped (see
+ * `computeHazardPrior`'s doc comment) — `JevDecisionMaker.decideYear` is this function's only caller
+ * today, but it takes no adapter-specific input, so a future clamped adapter reuses it unchanged.
+ */
+export function clampJevSelection(
+  situations: Readonly<Record<string, PersonYearSituation>>,
+  judgedSelection: Readonly<Record<string, number>>,
+  response: Readonly<Record<string, Distribution>>,
+): ClampedSelectionResult {
+  const prior = computeHazardPrior(situations, response);
+  const normalizedJudged = normalizeDistribution(judgedSelection as Record<string, number>);
+  const clampedRaw: Record<string, number> = {};
+  for (const [id, baseline] of Object.entries(prior.selection)) {
+    clampedRaw[id] = clampJudgedSelection(normalizedJudged[id] ?? 0, baseline);
+  }
+  const { selection: scaled, residual } = resolveCompetingRisks(clampedRaw);
+  const selection: Record<string, number> = { ...scaled };
+  const hasVignette = Object.values(situations).some((situation) => situation.kind === "D1");
+  if (hasVignette) selection.everyday = residual;
+  else if (Object.keys(selection).length > 0) selection.nothing = residual;
+  return { selection, hazardFallbacks: prior.hazardFallbacks };
+}
+
+/**
+ * Engine life course PR7 (spec's "Time-in-state MUST still be passed as prompt context to Jev"
+ * requirement, design decision 3: "Jev sees time-in-state facts plus a qualitative base-rate band
+ * (rare/uncommon/common), never numbers"). Named thresholds, not magic numbers — a "recent" courtship
+ * or eligibility is one that just started; "long-standing" is well past `MARRIAGE_RAMP_CAP_YEARS`'
+ * own ramp-cap timescale (8), so the label space stays meaningfully distinct from the ramp itself.
+ */
+export const TIME_IN_STATE_RECENT_MAX_YEARS = 1;
+export const TIME_IN_STATE_ESTABLISHED_MAX_YEARS = 4;
+export type TimeInStateBand = "recent" | "established" | "long-standing";
+
+export function describeTimeInState(years: number): TimeInStateBand {
+  if (years <= TIME_IN_STATE_RECENT_MAX_YEARS) return "recent";
+  if (years <= TIME_IN_STATE_ESTABLISHED_MAX_YEARS) return "established";
+  return "long-standing";
+}
+
+/** Design decision 3's qualitative base-rate band — Jev's prompt sees this label, never the underlying hazard number, so its judgment is never anchored on a probability figure it never has access to. */
+export const HAZARD_BAND_RARE_MAX = 0.05;
+export const HAZARD_BAND_UNCOMMON_MAX = 0.2;
+export type HazardBand = "rare" | "uncommon" | "common";
+
+export function describeHazardBand(value: number): HazardBand {
+  if (value < HAZARD_BAND_RARE_MAX) return "rare";
+  if (value < HAZARD_BAND_UNCOMMON_MAX) return "uncommon";
+  return "common";
 }
