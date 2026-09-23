@@ -113,16 +113,32 @@ export const COURTSHIP_BASE_HAZARD = 0.45;
  *
  * A real ceiling was found and measured while tuning this: `effectiveSelectionHazard` clamps the
  * scaled selection weight at 1 (`Math.min(1, rawHazard / outcomeProbability)`), so once a band's
- * raw hazard exceeds roughly `outcomeProbability` (the rule adapter's own A2 "try" answer, centered
- * ~0.4), MORE raw hazard buys literally nothing further -- the compound birth-attempt probability is
+ * raw hazard exceeds `outcomeProbability` (the rule adapter's own A2 "try" answer), MORE raw hazard
+ * buys nothing further for that specific person-year -- the compound birth-attempt probability is
  * then bounded by `outcomeProbability` itself, not by this table. Measured directly: pushing these
  * bands from ~0.45-0.55 to ~0.7-0.85 moved the observed <30 ASMFR by well under a percentage point.
- * The values here sit close to that natural ceiling rather than past it -- going further is not just
- * unhistorical, it is measurably inert. The residual gap to the research targets is NOT closable by
- * this table alone; it traces mostly to the marriage rate itself (68-72% of the cohort never
- * married in the same diagnostic run) -- genuine partner scarcity in `simulate.ts`'s own `eligible()`
- * search, already flagged out of scope by three prior PRs (decisions 068/069/070) -- see decision 071
- * for the full accounting.
+ *
+ * PR11 (STEP 0, an RDD advisory carried over from PR10 flagged the <30/<35/<40 bands below as
+ * potentially "past the ceiling and inert"): re-measured directly rather than assumed. A 15-seed
+ * diagnostic run sampling every real `A2` "try" answer the rule adapter produced (n=3,379, the SAME
+ * `RuleDecisionMaker` this table is calibrated against) gives outcomeProbability mean=0.404,
+ * p10=0.107, p25=0.257, **p50=0.400**, p75=0.548, p90=0.715 -- confirming decision 071's "centered
+ * ~0.4" estimate precisely, but also showing the clamp is NOT a hard, fully-dead ceiling at any one
+ * of these band values: the <30 band (0.6) is already selection=1 (fully clamped) for 82.8% of
+ * observed person-years, <35 (0.5) for 68.4%, <40 (0.4) for 50.1% -- real, if shrinking, headroom
+ * remains for each band's own upper-tail person-years (those with an above-median "try" answer),
+ * which is exactly why decision 071's own empirical test (pushing these bands further, to 0.7-0.85)
+ * still moved the observed rate slightly, just under a percentage point. The values here are left
+ * UNCHANGED by this slice: they already sit close to, not meaningfully past, the natural ceiling for
+ * the bulk of the population, and PR11's own diagnosis (STEP 1, `sdd/engine-life-course/state`)
+ * traces the dominant remaining gap to the marriage rate itself, not fertility magnitude -- retuning
+ * this table with no accompanying funnel evidence that it's the bottleneck would risk destabilizing
+ * curated test seeds for a component that isn't the actual constraint. The residual gap to the
+ * research targets is NOT closable by this table alone; it traces mostly to the marriage rate itself
+ * (68-72% of the cohort never married in the same diagnostic run) -- genuine partner scarcity in
+ * `simulate.ts`'s own `eligible()` search, already flagged out of scope by three prior PRs (decisions
+ * 068/069/070) and the direct target of PR11's own STEP 1/2 -- see decision 071 for the full
+ * accounting and decision 072 for PR11's own funnel diagnosis.
  */
 export const FERTILITY_HAZARD_BANDS: readonly { readonly maxAge: number; readonly hazard: number }[] = [
   { maxAge: 20, hazard: 0.5 },

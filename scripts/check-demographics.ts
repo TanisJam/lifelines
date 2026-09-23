@@ -38,7 +38,7 @@ import { CALIBRATION_TARGETS } from "../src/domain/params/targets";
 import { BLACK_DEATH_YEARS, SECOND_PESTILENCE_YEARS } from "../src/domain/period/events";
 import { meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand, type AgeBand, type AgeBandObservation, type AgeBandRate } from "../src/domain/population-stats";
 import { simulate } from "../src/domain/simulate";
-import type { Person, SocialClass } from "../src/domain/types";
+import type { Event, Person, SocialClass } from "../src/domain/types";
 import { generateWorld } from "../src/domain/worldgen";
 
 /**
@@ -101,8 +101,33 @@ const MORTALITY_TABLE_HAZARD_BY_LABEL: Readonly<Record<string, number>> = Object
 const FERTILITY_AGE_BANDS: readonly AgeBand[] = FERTILITY_HAZARD_BANDS.map((b) => ({ maxAge: b.maxAge, label: b.maxAge === Infinity ? "40+" : `<${b.maxAge}` }));
 const FERTILITY_TABLE_HAZARD_BY_LABEL: Readonly<Record<string, number>> = Object.fromEntries(FERTILITY_AGE_BANDS.map((b) => [b.label, FERTILITY_HAZARD_BANDS.find((f) => f.maxAge === b.maxAge)!.hazard]));
 
-/** Whether `person` was alive during calendar year `y` — same convention as the single-seed mode's `endAlive` (a death in year Y is no longer "alive" as of Y). */
-function aliveAtYear(person: Person, y: number): boolean {
+/**
+ * PR11 (STEP 0 fix, RDD advisory carried over from PR10): an immigrant's `birthYear` is
+ * back-computed from their arrival age (`simulate.ts#spawnImmigrant`, "18 + a spread of years"),
+ * NOT a real developmental clock — the same fact decision 066's marriage-age cohort exclusion and
+ * this script's own e0/marriage-age measurements already document. Before this fix, `aliveAtYear`
+ * used ONLY `birthYear <= y`, so an immigrant who arrives in, say, 1350 at age 25 (birthYear
+ * back-computed to 1325) read as "alive" at 1327 — three years before they ever joined the
+ * village — inflating every population-trajectory checkpoint and CBR/CDR person-year count that
+ * falls before their real arrival. Fixed by looking up each immigrant's REAL arrival year from
+ * their own `move`/`arrived: true` event (the same event `immigrantArrivals` below already counts)
+ * and refusing to count them alive before it. Founders and in-sim births have no such event and are
+ * unaffected (`arrivalYear` is `undefined` for them, so the check is a no-op).
+ */
+function immigrantArrivalYears(events: readonly Event[]): ReadonlyMap<string, number> {
+  const arrivals = new Map<string, number>();
+  for (const e of events) {
+    if (e.kind === "move" && e.payload.arrived === true) {
+      const id = e.actors[0];
+      if (id) arrivals.set(id, e.year);
+    }
+  }
+  return arrivals;
+}
+
+/** Whether `person` was alive during calendar year `y` — same convention as the single-seed mode's `endAlive` (a death in year Y is no longer "alive" as of Y). `arrivalYear`, when given, refuses to count an immigrant as alive before they actually joined the village (see `immigrantArrivalYears`'s own doc comment). */
+function aliveAtYear(person: Person, y: number, arrivalYear?: number): boolean {
+  if (arrivalYear !== undefined && y < arrivalYear) return false;
   return person.birthYear <= y && (person.deathYear === undefined || person.deathYear > y);
 }
 
@@ -294,12 +319,13 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
     }
 
     // --- PR10: population trajectory + CBR/CDR -----------------------------------------------------
+    const arrivalYears = immigrantArrivalYears(events); // PR11 STEP 0: immortal-time-before-arrival fix
     if (trackTrajectory) {
       for (const y of TRAJECTORY_YEARS) {
-        populationSamples[y]!.push(Object.values(finalPeople).filter((p) => aliveAtYear(p, y)).length);
+        populationSamples[y]!.push(Object.values(finalPeople).filter((p) => aliveAtYear(p, y, arrivalYears.get(p.id))).length);
       }
       for (let y = PRE_PLAGUE_WINDOW.startYear; y < PRE_PLAGUE_WINDOW.endYear; y++) {
-        prePlaguePersonYears += Object.values(finalPeople).filter((p) => aliveAtYear(p, y)).length;
+        prePlaguePersonYears += Object.values(finalPeople).filter((p) => aliveAtYear(p, y, arrivalYears.get(p.id))).length;
       }
       prePlagueBirths += events.filter((e) => e.kind === "birth" && e.year >= PRE_PLAGUE_WINDOW.startYear && e.year < PRE_PLAGUE_WINDOW.endYear).length;
       prePlagueDeaths += events.filter((e) => e.kind === "death" && e.year >= PRE_PLAGUE_WINDOW.startYear && e.year < PRE_PLAGUE_WINDOW.endYear).length;
@@ -350,9 +376,16 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
     mergeAgeBandRates(maritalFertilityAccumulated, rateByAgeBand(fertilityObservations, FERTILITY_AGE_BANDS));
 
     // --- PR10: adult mortality by age band, vs actuarial.ts's own table -----------------------------
+    // PR11 (STEP 0 fix, RDD advisory carried over from PR10): this loop walked from
+    // `person.birthYear + 16` for EVERY person, including immigrants — whose `birthYear` is
+    // back-computed, not real (see `immigrantArrivalYears`'s own doc comment above). That credited
+    // an immigrant with years of risk-free "survival" exposure BEFORE they ever joined the village
+    // (classic immortal-time bias: person-years with zero possible death events, deflating the
+    // observed rate). `arrivalYears.get(person.id)` is `undefined` for founders/in-sim births (no
+    // `move`/`arrived` event), so `Math.max` with it is a no-op for them.
     const adultMortalityObservations: AgeBandObservation[] = [];
     for (const person of Object.values(finalPeople)) {
-      const from = Math.max(person.birthYear + 16, window.startYear);
+      const from = Math.max(person.birthYear + 16, window.startYear, arrivalYears.get(person.id) ?? -Infinity);
       const to = person.deathYear !== undefined ? Math.min(person.deathYear, window.endYear) : window.endYear;
       for (let y = from; y <= to; y++) {
         if (BLACK_DEATH_YEARS.has(y) || SECOND_PESTILENCE_YEARS.has(y)) continue;
