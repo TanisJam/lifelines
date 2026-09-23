@@ -130,4 +130,9 @@ export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
     range: "Raised 0.05 -> 0.10; measured to help widow remarriage (post-1349 band now passes) but worsen first-marriage age for the born-in-sim cohort — a real, reported tradeoff, not fully closed. See apply-progress for the measured before/after and the reverted targeted-mechanism attempt.",
     confidence: "low",
   },
+  MORTALITY_BY_AGE_BAND: {
+    source: "Decision 050 (research.md, Wrigley & Schofield 1981 / Galley 2019) for every band except age<2; PR9 (step 2, engram #6142/#6311, decision 069) recalibrated ONLY the age<2 band for the engine's actual 1327-1361 period against research #6144's own infantMortality target (`targets.ts`, ~30% by age 1, roughly double the Tudor 1498-1558 rate).",
+    range: "age<2 raised 0.14 -> 0.30; every other band unchanged from decision 050, since under15DeathShare (the conditional age 2-7 share) already met its own 20-30% target under the Tudor figures. Measured infantMortality 13.4% -> 29.1% (point target 30%, effectively unhittable exactly by a stochastic run); lifeExpectancyAtBirth moved from comfortably inside 22-35 to a small under-shoot at 21.9 as an expected side effect.",
+    confidence: "low",
+  },
 } as const;

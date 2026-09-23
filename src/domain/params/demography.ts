@@ -113,6 +113,37 @@ export const OTHER_KIND_BASE_HAZARD = 0.08;
 export const FALLBACK_HAZARD = 0.02;
 
 /**
+ * PR9 (step 2, engram #6142/#6311): `actuarial.ts#deathProbabilityAtAge`'s per-age-band annual
+ * death probability, moved out of that function's inline if-chain into a named, documented table —
+ * decision 050 originally calibrated it against research.md's TUDOR figures (1498-1558: e0 ~35,
+ * infant mortality ~150-171/1000), but PR9's period is 1327-1361, whose own research target
+ * (`params/targets.ts#CALIBRATION_TARGETS.infantMortality`) is ~30% by age 1 — roughly double the
+ * Tudor rate. Only the age<2 band changes here (0.14 -> 0.30); every other band is left at decision
+ * 050's Tudor figure, since `under15DeathShare` (the CONDITIONAL age 2-7 death share, among infancy
+ * survivors) already met its own 20-30% target under those unchanged figures — raising them too
+ * would risk overshooting an already-passing band with no diagnosed reason to.
+ *
+ * Measured (60-seed `--stats --assert`, period 1327-1427, this table's age<2 band alone raised):
+ * infantMortality 13.4% -> 29.1% (the point target is 30% exactly — effectively unhittable by any
+ * stochastic simulation; 29.1% is as close as repeated tuning got it). `lifeExpectancyAtBirth`
+ * moved from 23.7 (comfortably inside 22-35) to 21.9 — a small, expected, honest side effect of
+ * correcting infant mortality upward (more early deaths mechanically lower the cohort's average age
+ * at death) — just under its own 22 floor, reported rather than chased further; that target is
+ * itself flagged "low confidence" in `targets.ts`. `widowRemarriagePostBlackDeath` moved from FAIL
+ * to PASS at this same measurement (24.5%, band 23-29) as a side effect of more widowing overall.
+ */
+export const MORTALITY_BY_AGE_BAND: readonly { readonly maxAge: number; readonly hazard: number }[] = [
+  { maxAge: 2, hazard: 0.3 }, // infant/toddler year: see actuarial.ts#deathProbabilityAtAge's age<2 band-width note
+  { maxAge: 5, hazard: 0.065 },
+  { maxAge: 15, hazard: 0.027 },
+  { maxAge: 40, hazard: 0.016 },
+  { maxAge: 60, hazard: 0.032 },
+  { maxAge: 75, hazard: 0.07 },
+  { maxAge: 90, hazard: 0.2 },
+  { maxAge: Infinity, hazard: 0.47 },
+];
+
+/**
  * PR9 (partner-scarcity fix, engram #6142/#6311): the annual chance a new immigrant arrives in the
  * village (`simulate.ts`'s "immigration" biology candidate, gated to `livingIds.length < 38`) —
  * previously a hardcoded, undocumented `const p = 0.05` inline in `simulate.ts`. This IS the

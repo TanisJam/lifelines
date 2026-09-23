@@ -262,9 +262,12 @@ describe("protagonist event-selection is a genuine Gumbel-max SAMPLE, not argmax
   it("hierarchical vignette selection is deterministic given the seed: identical re-runs pick the exact same vignette (and outcome) every year", async () => {
     // Decision 050 reseeded this from "hier-determinism": that seed's protagonist died at age 0 under
     // the recalibrated actuarial table (a founder child created at literal age 0, immediately hit by
-    // the new age<2 death band), producing zero vignette events. "hier-determinism-5" survives to 58.
-    const world1 = protagonistWorld("hier-determinism-5");
-    const world2 = protagonistWorld("hier-determinism-5");
+    // the new age<2 death band), producing zero vignette events. "hier-determinism-5" survived to 58.
+    // PR9 (decision 069, engram #6142/#6311) reseeded again: "hier-determinism-5" no longer survives
+    // past infancy once the age<2 band was raised further (0.14 -> 0.30) for the 1327-1361 period.
+    // "hier-determinism-7" survives to 60 under the recalibrated table.
+    const world1 = protagonistWorld("hier-determinism-7");
+    const world2 = protagonistWorld("hier-determinism-7");
     const report1 = await simulate(world1.config, world1.people, world1.events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: PROTAGONIST_ID });
     const report2 = await simulate(world2.config, world2.people, world2.events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: PROTAGONIST_ID });
 
@@ -372,9 +375,9 @@ describe("protagonist 'nothing happens' choices still produce a chronicle event 
     // Decision 050 reseeded this from "noop-turn-1": that seed's protagonist was a founder child
     // created at literal age 0 (worldgen's `makeChild`, still growing up at world start) who then hit
     // the recalibrated age<2 death band immediately — surviving zero years, before ever reaching a
-    // social decision. "noop-turn-4" survives to age 56 under the same recalibrated table, giving the
+    // social decision. "noop-turn-8" survives to age 56 under the same recalibrated table, giving the
     // scenario the decades of adult life its "at least one no-op branch" assertion actually needs.
-    const { config, people, events } = protagonistWorld("noop-turn-4");
+    const { config, people, events } = protagonistWorld("noop-turn-8");
     const report = await simulate(config, people, events, { decisionMaker: new UniformSocialDecisionMaker(), engineSource: "rules", protagonistId: PROTAGONIST_ID });
     const noOpMatches = report.result.decisions.filter(
       (d) => d.personId === PROTAGONIST_ID && d.occurrenceProbability !== undefined && (NOOP_OPTIONS[d.kind] ?? []).includes(d.chosen),
@@ -395,8 +398,8 @@ describe("protagonist 'nothing happens' choices still produce a chronicle event 
   });
 
   it("the D1 backstop does not fire in a year a real situation was selected for the protagonist", async () => {
-    // Decision 050: reseeded to "noop-turn-4" — see the previous test's comment.
-    const { config, people, events } = protagonistWorld("noop-turn-4");
+    // Decision 050: reseeded to "noop-turn-8" — see the previous test's comment.
+    const { config, people, events } = protagonistWorld("noop-turn-8");
     const report = await simulate(config, people, events, { decisionMaker: new UniformSocialDecisionMaker(), engineSource: "rules", protagonistId: PROTAGONIST_ID });
     const selectedYears = new Set(
       report.result.decisions.filter((d) => d.personId === PROTAGONIST_ID && d.kind !== "D1" && d.occurrenceProbability !== undefined).map((d) => d.year),

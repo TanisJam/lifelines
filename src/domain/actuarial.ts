@@ -1,3 +1,4 @@
+import { MORTALITY_BY_AGE_BAND } from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import type { SocialClass } from "./types";
 
@@ -9,19 +10,22 @@ import type { SocialClass } from "./types";
  */
 
 /**
- * Decision 050: annual probability of death at a given age, recalibrated against research.md's
- * "Mortality and life expectancy" synthesis for the general English population, 1498-1558 (proxy
- * years, per the doc's own caveat): e0 ~35 (range 28-42, Wrigley & Schofield 1981) and infant
- * mortality ~150-171/1000 (Galley 2019, 170.7/1000 for 1580-99). These per-age numbers already
- * SIT ABOVE their historical per-age counterparts in a couple of deliberate ways: `simulate.ts`'s
- * death resolution also applies an illness x3 multiplier (when a same-year illness occurred) and
- * hardship/epidemic multipliers (plague/famine/fire x1.6, and decision 052's dated shocks), AND the
- * age<2 band below has to cover a real engine-timing gap (next paragraph) — so the EFFECTIVE,
- * simulated rate, not a naive reading of this table against a life-table textbook, is what was tuned
- * to land in the historical band. Measured (not guessed) via `scripts/check-demographics.ts --stats
- * <seedCount>`, a full multi-generation village run (not just the protagonist), across 50+ seeds: see
- * docs/decisions.md 050 for the exact before/after figures from the run this table was calibrated
- * against.
+ * Decision 050 originally calibrated this table against research.md's "Mortality and life
+ * expectancy" synthesis for the general English population, 1498-1558 (proxy years, per the doc's
+ * own caveat): e0 ~35 (range 28-42, Wrigley & Schofield 1981) and infant mortality ~150-171/1000
+ * (Galley 2019, 170.7/1000 for 1580-99). PR9 (step 2, engram #6142/#6311, decision 069) recalibrated
+ * the age<2 band for the engine's actual 1327-1361 period, whose own research target is roughly
+ * double the Tudor rate (~30% by age 1) — see `params/demography.ts#MORTALITY_BY_AGE_BAND`'s own
+ * doc comment for the exact before/after figures and which bands stayed at decision 050's Tudor
+ * values. These per-age numbers already SIT ABOVE their historical per-age counterparts in a couple
+ * of deliberate ways: `simulate.ts`'s death resolution also applies an illness x3 multiplier (when a
+ * same-year illness occurred) and hardship/epidemic multipliers (plague/famine/fire x1.6, and
+ * decision 052's dated shocks), AND the age<2 band below has to cover a real engine-timing gap (next
+ * paragraph) — so the EFFECTIVE, simulated rate, not a naive reading of this table against a
+ * life-table textbook, is what was tuned to land in the historical band. Measured (not guessed) via
+ * `scripts/check-demographics.ts --stats <seedCount>`, a full multi-generation village run (not just
+ * the protagonist): see docs/decisions.md 050 and 069 for the exact before/after figures from the
+ * runs this table was calibrated against.
  *
  * The age<2 band (not age<1): `simulate.ts` gathers a year's death candidates BEFORE that year's
  * births are applied, so a child born in-sim is never death-evaluated in its own birth year — its
@@ -36,14 +40,8 @@ import type { SocialClass } from "./types";
  * against a 60-year measurement).
  */
 export function deathProbabilityAtAge(age: number): number {
-  if (age < 2) return 0.14; // infant/toddler year: see the age<2 band-width note above
-  if (age < 5) return 0.065;
-  if (age < 15) return 0.027;
-  if (age < 40) return 0.016;
-  if (age < 60) return 0.032;
-  if (age < 75) return 0.07;
-  if (age < 90) return 0.2;
-  return 0.47;
+  const band = MORTALITY_BY_AGE_BAND.find((b) => age < b.maxAge) ?? MORTALITY_BY_AGE_BAND[MORTALITY_BY_AGE_BAND.length - 1]!;
+  return band.hazard;
 }
 
 /**
