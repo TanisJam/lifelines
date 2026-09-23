@@ -59,6 +59,7 @@ The design decisions behind Lifelines. Each entry records what we chose, why, an
 | 054 | [Widowhood and remarriage (bug fix)](#054--widowhood-and-remarriage-bug-fix) | Implemented (batch C of 4) |
 | 058 | [Scheduled period events (England)](#058--scheduled-period-events-england) | Implemented (batch C of 4) |
 | 065 | [Absolute per-kind hazards and the competing-risk draw (engine-life-course, PR6)](#065--absolute-per-kind-hazards-and-the-competing-risk-draw-engine-life-course-pr6) | Implemented |
+| 066 | [The marriage chain and the dead-suitor lockout (engine-life-course, PR6 corrective)](#066--the-marriage-chain-and-the-dead-suitor-lockout-engine-life-course-pr6-corrective) | Implemented |
 
 ---
 
@@ -1082,3 +1083,119 @@ one-decision-per-year invariant.
   was tuned against. See the apply-progress artifact for the full measured numbers.
 - **`check-demographics.ts` was not extended in this PR** (that's task 8.5/8.6) — it still measures
   against `startYear:1498` for `--stats`, not the product's actual 1327-1361 window.
+
+## 066 — The marriage chain and the dead-suitor lockout (engine-life-course, PR6 corrective)
+
+PR6 failed its phase gate (validator diagnosis, engram #6280): measured over 100 years, mean first
+marriage for people born in-sim (or under 14 at 1327) was women 33.4 / men 36.6, against the design
+band of 18-22 / 21-25 — a MECHANISM problem, not just calibration. This is the one allowed corrective
+re-run, on the same `elc/pr6-hazards` branch, addressing exactly the validator's four items.
+
+- **1. CRITICAL — the marriage chain.** The design treats Y1's own hazard as THE marriage hazard
+  (mean ≈ onset + 2-3 years), but the code multiplied Y1 winning the competing-risk draw (~26.5%) x
+  "encourage" (~0.4, `rule-heuristics.ts`'s Y1 branch) x A1 winning its OWN draw x "propose" (~0.45,
+  vs "end-it" 0.15) — four probabilities where the design intends roughly one. Fixed with THREE
+  changes, keeping the port contract (adapter judges, engine samples) unchanged:
+  1. `hazards.ts#effectiveSelectionHazard(rawHazard, outcomeProbability, floor=0.15)`: scales the
+     SELECTION weight fed into the competing-risk draw so `selection x P(positive outcome)` recovers
+     the raw hazard on average — `rule-decision-maker.ts` applies it to Y1 ("encourage") and A1
+     ("propose") specifically, reading each situation's own `response[id]` (already computed for
+     `PersonYearResult.response`) rather than inventing a second RNG-free estimate.
+  2. `COURTSHIP_WEIBULL_LAMBDA` lowered 3 → 1.5 (`params/demography.ts`): the original value put A1's
+     characteristic timescale at ~3 courtship years, so even after scaling A1 stayed weak for several
+     years (measured mean courtship-to-marriage: 7.8 years). The smaller `lambda` makes A1 substantial
+     from the FIRST eligible courtship year (t=1 — A1 is never actually offered at t=0).
+  3. `rule-heuristics.ts`'s Y1 "encourage" and A1 "propose" are now floored at
+     `OUTCOME_PROBABILITY_FLOOR` (0.15), not `clamp01`'s own 0.02: a facet-worst-case person (all
+     relevant facets near 0) can reach the 0.02 floor, and dividing SELECTION by 1/0.02 caps at a
+     bounded scale-up (0.15 floor already limited that side), but the ACTUAL "encourage" draw still
+     only wins ~2% of the time regardless of selection scaling — traced directly to a real case: a
+     specific woman was offered Y1 at an ~85-94% selection win rate for 18+ CONSECUTIVE years, "decline"
+     winning every single time because her own `encourage` was pinned at 0.02. Raising this floor
+     bounds the worst case at a ~6.7-year expected wait instead of ~50.
+  - New: `hazards.ts#expectedMarriageChain(socialClass, sex)` — an ANALYTIC (no RNG, instant) estimate
+    of expected age-at-courtship and age-at-marriage using each year's raw hazard directly (valid by
+    construction, since `effectiveSelectionHazard` makes `selection x outcome = raw hazard`). Used as
+    a fast, deterministic regression test (`hazards.test.ts`, one case per class/sex) asserting the
+    analytic chain lands within onset + 5 years for every class — this is the task 4 test's
+    "injected-hazard... deterministic-enough" half, guarding the exact mechanism this item fixes.
+- **2. HIGH — the dead-suitor lockout.** `activeRomancePair` (`events.ts`) only treats a romance as
+  resolved via a `breakup`/`marriage` event for that SPECIFIC pair — a partner's DEATH never closed
+  it, so the survivor stayed barred from Y1 (`!person.spouseId && activeRomancePair(...) ===
+  undefined`) and from A1 (which needs a living partner). Measured: 26 of 53 romances ended this way,
+  18 of 91 unmarried adults locked out ~12.9 years on average. Fixed with a new
+  `simulate.ts#resolveCourtshipOnDeath(events, people, deceased, year, deathEventId)`, called from
+  BOTH death paths (the general biology death-resolution block and decision 051's maternal-death
+  path, mirroring how `resolveWidowhood` is already shared between them): pushes a `breakup` event for
+  the deceased's still-unresolved romance (closing it for `activeRomancePair`'s purposes) and, if the
+  living partner's `lifeState.marital.status` is still `"courting"` (not already moved on to a
+  DIFFERENT relationship — the pre-existing multi-suitor property, see item 3), returns them to
+  `"single"`. Verified: `stuck.mts` (the validator's own script) now reports
+  `blockedByDeadSuitor: 0` (was 18-26) across 20 seeds.
+- **3. MEDIUM — reverting the widened self-loops (attempted, partially kept on measured necessity).**
+  The original PR6 pass widened `LEGAL_MARITAL_TRANSITIONS` with several self-loops/cross-fires
+  (`single -> single`, `courting -> courting`, `married -> married`, `widowed -> widowed`, `single ->
+  widowed`) to survive crashes from two bugs this corrective's items 1/2 were expected to fix at the
+  root. Reverting to the tight, design-sanctioned table was TRIED and MEASURED: it still crashes 11 of
+  the full suite's tests (`courting -> courting` dominant, plus a residual `single ->
+  single`/`single -> widowed`) — a THIRD, still-open root cause: candidate gathering's
+  `claimedPartners` set prevents a person being claimed as a Y1 partner twice within one gather pass,
+  but does NOT prevent that SAME person from ALSO independently becoming the SEEKING "person" of
+  their own, separate Y1 candidate the same year (each belongs to a different, independent
+  per-personId `decideYear` batch — design decision 1's own architecture — so both can legitimately
+  "occur"). Excluding a claimed person from also seeking (the direct one-line fix) was tried too, but
+  it changes WHICH of two contested candidates wins purely by outer-loop iteration order (alphabetical
+  id), breaking a real, load-bearing test (decision 053's same-class-endogamy-preference test) — a
+  correct fix needs an actual stable-matching pass over candidate pairs, a genuine redesign outside
+  both this corrective's scope (chain + lockout) and PR6's own (hazards + rule adapter). The self-loops
+  are KEPT, now documented as a MEASURED-necessary safety net for this specific, still-open gap —
+  `widowed -> single` remains illegal (skipping back to "never married" is never sensible).
+- **4. Test: mean first-marriage age within onset + 5 years.** Two tests, per the corrective's own
+  "injected-hazard or deterministic-enough... not flaky or slow" framing:
+  1. `hazards.test.ts`'s new `expectedMarriageChain` describe block (analytic, instant, exact — see
+     item 1) — the PRIMARY, deterministic regression guard against this exact mechanism bug.
+  2. `simulate.test.ts`'s new "mean first-marriage age stays within onset + 5 years" test: 15 real
+     seeds, 1327-1427, founderCount 30, ~19-20s. Two measurement-methodology bugs were found and fixed
+     while building it: (a) the cohort must use `person.motherId !== undefined` (a genuine birth) to
+     exclude immigrants/away-spawns, who arrive already adult with a back-computed `birthYear` that is
+     NOT a real developmental clock — an immigrant arriving at 62 and marrying a year later otherwise
+     reads as "married at 63"; (b) gentry/clergy are deliberately "one per village" structural roles
+     (decision 049/063) whose marriage timing is dominated by genuine partner SCARCITY, a worldgen
+     population-composition property unrelated to the hazard mechanism this corrective fixes — traced
+     directly: a lone gentry founder's child went 20+ years with LITERALLY no Y1 candidate ever
+     offered (no eligible partner within reach for that whole span). Excluded from this test's cohort
+     for the same reason fertility collapse and the 1498-window `check-demographics.ts` measurement
+     are separately out of scope: real, pre-existing demographic effects this corrective's two named
+     mechanism items were never meant to solve.
+
+**Measured improvement** (validator's own `marriage-diag.mts`, 20 seeds, 1327-1427, default
+founder count, genuine in-sim births only): mean first-marriage age women 33.4 → 26.0, men 36.6 →
+31.0. Courtship-to-marriage fell from a measured 7.8 years to 2-4 years; the dead-suitor lockout is
+fully closed (0 of 91+ unmarried adults blocked, was 18-26). The remaining gap above the design's own
+18-22/21-25 band reflects `rule-heuristics.ts`'s pre-existing personality-driven heterogeneity (a
+population where SOME individuals have genuinely low romantic facets will, by Jensen's inequality
+alone, always show a higher MEAN time-to-marriage than a single "population-average" hazard would
+suggest) plus real demographic scarcity for rare classes — fine calibration of the base hazard
+constants (`MARRIAGE_BASE_AT_FULL_RAMP`, explicitly marked "provisional" in design revision 2) against
+`check-demographics --stats --assert` remains PR8's own job (task 8.2), not this corrective's.
+
+**Reseeding**: `maternal-widow-41` (PR6's own reseed) no longer reproduces a maternal-death widowing
+under the corrective's changed hazard values — replaced with `maternal-widow2-7`, found via the same
+`scripts/find-seeds.ts`-style search matching the test's own exact harness
+(`simulate(config, people, [], {...})` — critically, NOT `generateWorld`'s own returned `events`,
+which `find-seeds.ts`'s bare `findSeed()` helper passes and which does not reproduce for a test using
+the `[]`-events pattern).
+
+**Grounding:** engram #6280 (the validator's own diagnosis and scratch scripts —
+`marriage-diag.mts`/`pop.mts`/`a2.mts`/`stuck.mts`, reused as instructed); `sdd/engine-life-course/
+design` revision 2 (Hazard shapes, architecture decision 1); `sdd/engine-life-course/spec`
+(event-hazards capability, "Hazard varies by time-in-state" scenario).
+
+**Verified:** `pnpm test` (441 passing, up from 415 pre-corrective — 26 new tests, 0 regressions),
+`pnpm exec tsc --noEmit`, `pnpm lint` clean. New tests: `hazards.test.ts` (+15: `effectiveSelectionHazard`
+scaling/floor/cap, 12 `expectedMarriageChain` class/sex cases, competing-risk unaffected),
+`rule-decision-maker.test.ts` (+2: Y1/A1 selection recovers the raw hazard via the outcome
+probability), `rule-heuristics.test.ts` (new file, 3 cases: the encourage/propose floor, unaffected
+typical-facet behavior), `life-state.test.ts` (+4: the self-loop/cross-fire legality, now documented
+as measured-necessary rather than assumed), `simulate.test.ts` (+3: `resolveCourtshipOnDeath` unit +
+live-simulation zero-lockout check, the mean-first-marriage-age band test).
