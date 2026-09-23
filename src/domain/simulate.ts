@@ -9,7 +9,7 @@ import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createM
 import type { Locale } from "./locale";
 import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
-import { IMMIGRATION_ANNUAL_PROBABILITY } from "./params/demography";
+import { IMMIGRATION_ANNUAL_PROBABILITY, IMMIGRATION_POPULATION_CAP_RATIO } from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import {
   BLACK_DEATH_YEARS,
@@ -700,8 +700,13 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     }
   }
 
-  // Immigration: one world-level decision opportunity per year, capped once the town is comfortably sized.
-  if (livingIds.length < 38) {
+  // Immigration: one world-level decision opportunity per year, capped once the town is comfortably
+  // sized. PR9 demography follow-up: the cap scales with the village's OWN founder headcount (see
+  // `IMMIGRATION_POPULATION_CAP_RATIO`'s doc comment) rather than the old fixed `38`, which silently
+  // disabled immigration entirely once the default village grew past it.
+  const founderCount = Object.values(people).filter((p) => p.founder).length;
+  const immigrationPopulationCap = founderCount * IMMIGRATION_POPULATION_CAP_RATIO;
+  if (livingIds.length < immigrationPopulationCap) {
     candidates.push({ decisionId: `immigration:world:${year}`, kind: "immigration", personId: "world", options: ["arrive", "no-arrival"] });
   }
 

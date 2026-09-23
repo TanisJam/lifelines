@@ -163,3 +163,20 @@ export const MORTALITY_BY_AGE_BAND: readonly { readonly maxAge: number; readonly
  * smaller change, landed with the tradeoff reported rather than hidden.
  */
 export const IMMIGRATION_ANNUAL_PROBABILITY = 0.1;
+
+/**
+ * PR9 demography follow-up (village-size enlargement, decision 069/070): `simulate.ts`'s immigration
+ * candidate was gated on a hardcoded `livingIds.length < 38` since the engine's original commit
+ * (`ba10883`) -- calibrated, unnamed, to the OLD `DEFAULT_FOUNDER_COUNT` of 18 adult founders
+ * (~20-24 people at world start; 38/18 ≈ 2.11, "comfortably sized" meant roughly double the founder
+ * headcount). Once `DEFAULT_FOUNDER_COUNT` was raised for a realistic village, that fixed 38 became
+ * a silent kill switch: a ~80-person village starts ABOVE 38, so immigration never fires from year
+ * one regardless of `IMMIGRATION_ANNUAL_PROBABILITY`'s value -- confirmed by measurement (a
+ * `founderCount: 62` run offered zero immigration candidates across 1327-1330 before this fix).
+ * Named and scaled here so the cap tracks the ACTUAL village a life was generated with (via its
+ * founders' headcount in `people`, never `config` -- `WorldConfig` doesn't carry `founderCount`),
+ * preserving the original ratio exactly: old lives (founderCount 18) keep the identical ~38 cap they
+ * always had (no migration, no behavior change for anything already stored), new lives scale
+ * proportionally.
+ */
+export const IMMIGRATION_POPULATION_CAP_RATIO = 38 / 18;

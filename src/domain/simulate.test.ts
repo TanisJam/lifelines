@@ -680,7 +680,12 @@ describe("decision 054: widowhood and remarriage", () => {
     // produces a kept-trade widowing once IMMIGRATION_ANNUAL_PROBABILITY raised 0.05 -> 0.10 (more
     // immigrants shift this seed's population/candidate composition). Found via
     // scripts/find-seeds.ts#findSeed with a custom "has a keptTrade widowed event" predicate.
-    const { config, people } = generateWorld({ seed: "artisan-widow-trade-13", startYear: 1498, endYear: 1558, founderCount: 30 });
+    // Reseeded again by the PR9 demography follow-up (decision 070): "artisan-widow-trade-13" no
+    // longer produces a kept-trade widowing once the immigration population cap started scaling with
+    // founder count instead of the old fixed 38 (this test's own founderCount:30 now gets a ~63
+    // cap, not 38 -- more immigration opportunity shifts this seed's candidate composition again).
+    // Found the same way, via scripts/find-seeds.ts#findSeed.
+    const { config, people } = generateWorld({ seed: "artisan-widow-trade-6", startYear: 1498, endYear: 1558, founderCount: 30 });
     const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 
     const keptTrade = report.result.events.find((e) => e.kind === "widowed" && e.payload.keptTrade === true);
@@ -1059,5 +1064,21 @@ describe("PR9: immigration rate is a named, documented tunable (partner-scarcity
     for (const decision of immigrationDecisions) {
       expect(decision.final.arrive).toBeCloseTo(IMMIGRATION_ANNUAL_PROBABILITY, 6);
     }
+  });
+});
+
+describe("PR9 demography follow-up: the immigration population cap scales with founder count, not the fixed old-engine 38", () => {
+  it("a village generated at the new, larger default village size still gets immigration candidates (starts above the old fixed 38 cap)", async () => {
+    const { config, people } = generateWorld({ seed: "immigration-cap-scale-check", startYear: 1327, endYear: 1330, founderCount: 62 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    const immigrationDecisions = report.result.decisions.filter((d) => d.kind === "immigration");
+    expect(immigrationDecisions.length).toBeGreaterThan(0);
+  });
+
+  it("a village generated at the OLD default founder count (18) keeps its original cap behavior (immigration still offered)", async () => {
+    const { config, people } = generateWorld({ seed: "immigration-cap-legacy-check", startYear: 1327, endYear: 1330, founderCount: 18 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    const immigrationDecisions = report.result.decisions.filter((d) => d.kind === "immigration");
+    expect(immigrationDecisions.length).toBeGreaterThan(0);
   });
 });
