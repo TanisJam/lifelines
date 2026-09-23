@@ -6,7 +6,19 @@ import { forkWorld } from "./fork";
 import { createMind } from "./mind";
 import { activeRomancePair } from "./events";
 import { IMMIGRATION_ANNUAL_PROBABILITY, MARRIAGE_FLOORS } from "./params/demography";
-import { canMarry, drainSimulation, eligibleForAnotherChild, gatherCandidatesForYear, resolveCourtshipOnDeath, simulate, SimulationAbortedError, simulateYears, townEventMortalityMultiplier, type YearTick } from "./simulate";
+import {
+  canMarry,
+  createMarriageFunnelCollector,
+  drainSimulation,
+  eligibleForAnotherChild,
+  gatherCandidatesForYear,
+  resolveCourtshipOnDeath,
+  simulate,
+  SimulationAbortedError,
+  simulateYears,
+  townEventMortalityMultiplier,
+  type YearTick,
+} from "./simulate";
 import type { Event, Override, Person, SocialClass } from "./types";
 import { generateWorld } from "./worldgen";
 
@@ -1155,5 +1167,44 @@ describe("PR10 (decision 071): 'return home' is offered to the general village, 
     // At least one of them is NOT the (nonexistent, no protagonistId here) protagonist — i.e. this
     // really is a general-village decision, not something only reachable via `protagonistId`.
     expect(returnDecisions.some((d) => d.personId !== "protagonist")).toBe(true);
+  });
+});
+
+describe("PR11 STEP 1: marriage-funnel diagnostic instrumentation (debug-gated, must have zero effect on simulation output)", () => {
+  it("attaching a marriageFunnelDebug collector does not change simulate()'s people/events output for the same seed", async () => {
+    const { config, people } = generateWorld({ seed: "funnel-determinism", startYear: 1327, endYear: 1355, founderCount: 30 });
+    const withoutDebug = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    const withDebug = await simulate(config, people, [], {
+      decisionMaker: new RuleDecisionMaker(),
+      engineSource: "rules",
+      marriageFunnelDebug: createMarriageFunnelCollector(),
+    });
+    expect(withDebug.result.events).toEqual(withoutDebug.result.events);
+    expect(withDebug.result.people).toEqual(withoutDebug.result.people);
+    expect(withDebug.result.decisions).toEqual(withoutDebug.result.decisions);
+  });
+
+  it("collects internally-consistent funnel counts over a real run (eligible -> partner found -> Y1 wins draw -> outcome -> romance -> A1 wins draw -> married)", async () => {
+    const { config, people } = generateWorld({ seed: "funnel-counts", startYear: 1327, endYear: 1360, founderCount: 30 });
+    const collector = createMarriageFunnelCollector();
+    await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", marriageFunnelDebug: collector });
+
+    expect(collector.eligiblePersonYears).toBeGreaterThan(0);
+    // "partner found" and "Y1 emitted" are identical by construction (see the collector's own doc
+    // comment) — one counter stands in for both funnel stages.
+    expect(collector.partnerFoundPersonYears).toBeLessThanOrEqual(collector.eligiblePersonYears);
+    expect(collector.y1WonDraw).toBeLessThanOrEqual(collector.partnerFoundPersonYears);
+    const y1OutcomeSum = collector.y1Outcomes.encourage + collector.y1Outcomes.decline + collector.y1Outcomes.wait;
+    expect(y1OutcomeSum).toBe(collector.y1WonDraw);
+    expect(collector.romancesCreated).toBeLessThanOrEqual(collector.y1Outcomes.encourage);
+    expect(collector.a1WonDraw).toBeLessThanOrEqual(collector.a1Offered);
+    const a1OutcomeSum = collector.a1Outcomes.propose + collector.a1Outcomes.delay + collector.a1Outcomes["end-it"];
+    expect(a1OutcomeSum).toBe(collector.a1WonDraw);
+    expect(collector.married).toBeLessThanOrEqual(collector.a1Outcomes.propose);
+    // Invariant: `classifyNoPartnerReasons` mirrors `eligible()`'s own predicate chain exactly, so a
+    // candidate that passes every bucket (and would therefore contradict "no partner found") should
+    // never occur — see the collector's own doc comment for why this is a hard invariant, not a guess.
+    expect(collector.noPartnerReasons.unclassified).toBe(0);
+    expect(collector.matchesBySameClassTier + collector.matchesByCrossClassTier).toBe(collector.partnerFoundPersonYears);
   });
 });

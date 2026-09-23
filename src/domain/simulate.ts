@@ -84,6 +84,159 @@ export interface SimulateOptions {
    *  - this person's own social decisions are never diverted to the budget fallback below.
    */
   readonly protagonistId?: string;
+  /**
+   * PR11 (STEP 1, `sdd/engine-life-course/state`): a one-time diagnostic collector for the marriage
+   * FUNNEL (eligible -> partner found -> Y1 emitted -> Y1 wins the competing-risk draw -> outcome ->
+   * romance -> A1 offered -> A1 wins its own draw -> married), plus reasons no partner was found.
+   * `undefined` (the default, every existing caller) means every instrumentation check below is a
+   * single falsy branch — zero behavioral or measurable perf effect on a normal run; nothing here
+   * reads or influences any RNG draw, so attaching a collector cannot change `people`/`events`/
+   * `decisions` output for a given seed (see `simulate.test.ts`'s own determinism check for this).
+   */
+  readonly marriageFunnelDebug?: MarriageFunnelCollector;
+}
+
+/** PR11 (STEP 1) marriage-funnel diagnostic counters — see `SimulateOptions.marriageFunnelDebug`'s own doc comment. */
+export interface MarriageFunnelCollector {
+  /** Person-years where a single person passed Y1's own age/canMarry/mourning gate (simulate.ts's `if` right before `eligible()` is tried), restricted to `marriageFunnelCohort`. */
+  eligiblePersonYears: number;
+  /**
+   * Person-years where `eligible()` found a partner. Identical to "a Y1 candidate was emitted" BY
+   * CONSTRUCTION — `gatherCandidatesForYear` only pushes a `Y1` candidate when `eligible()` returns
+   * someone (see the `if (partner)` guard) — so one counter stands in for both funnel stages the
+   * task asked for; reported under both names in `check-demographics.ts`'s funnel table.
+   */
+  partnerFoundPersonYears: number;
+  /** Of those, how many actually won that person-year's competing-risk selection draw (i.e. the Y1 candidate was the one thing that happened to this person that year). */
+  y1WonDraw: number;
+  /** Outcome breakdown among `y1WonDraw` — sums to `y1WonDraw`. */
+  readonly y1Outcomes: { encourage: number; decline: number; wait: number };
+  /** Of the "encourage" outcomes, how many actually created a romance event (guarded by neither side already being married that same year — see the Y1 "encourage" case). */
+  romancesCreated: number;
+  /** A1 (proposal) candidates emitted for a person in the cohort (once per established, >=1-year-old romance per year). */
+  a1Offered: number;
+  /** Of those, how many won their own person-year's competing-risk draw. */
+  a1WonDraw: number;
+  /** Outcome breakdown among `a1WonDraw` — sums to `a1WonDraw`. */
+  readonly a1Outcomes: { propose: number; delay: number; "end-it": number };
+  /** Of the "propose" outcomes, how many actually resolved to a marriage event (guarded the same way as `romancesCreated`). */
+  married: number;
+  /**
+   * Candidate-level tally of why `eligible()`'s six tiers all failed for a person who WAS otherwise
+   * eligible — one increment per opposite-sex village candidate examined (not one per person-year),
+   * classified by the first predicate `eligible()` itself checks that this specific candidate fails,
+   * at the widest window (age gap <= 40, any class). "Different class only" never appears here: since
+   * `eligible()` always retries at `sameClassOnly=false` before giving up, a candidate blocked ONLY by
+   * class would already have been matched — see `matchesByCrossClassTier` for that preference-only
+   * signal instead. `unclassified` must stay 0 (see `classifyNoPartnerReasons`'s own doc comment) —
+   * a nonzero value means this classifier's predicate chain has drifted from `eligible()`'s own.
+   */
+  readonly noPartnerReasons: {
+    /** Zero living opposite-sex people in the whole village (dead or never generated). */
+    noLivingCandidate: number;
+    /** Opposite-sex living people exist, but every one of them has moved away (`hasMovedAway`). */
+    awayOnly: number;
+    claimed: number;
+    alreadyMarried: number;
+    alreadyCourting: number;
+    related: number;
+    notMarriageableAge: number;
+    ageWindow: number;
+    unclassified: number;
+  };
+  /** Of `partnerFoundPersonYears`, how many matched within the same social class (tiers 1-3: age gap 10/20/40, `sameClassOnly=true`). */
+  matchesBySameClassTier: number;
+  /** Of `partnerFoundPersonYears`, how many matched only after falling back to any class (tiers 4-6). */
+  matchesByCrossClassTier: number;
+}
+
+export function createMarriageFunnelCollector(): MarriageFunnelCollector {
+  return {
+    eligiblePersonYears: 0,
+    partnerFoundPersonYears: 0,
+    y1WonDraw: 0,
+    y1Outcomes: { encourage: 0, decline: 0, wait: 0 },
+    romancesCreated: 0,
+    a1Offered: 0,
+    a1WonDraw: 0,
+    a1Outcomes: { propose: 0, delay: 0, "end-it": 0 },
+    married: 0,
+    noPartnerReasons: {
+      noLivingCandidate: 0,
+      awayOnly: 0,
+      claimed: 0,
+      alreadyMarried: 0,
+      alreadyCourting: 0,
+      related: 0,
+      notMarriageableAge: 0,
+      ageWindow: 0,
+      unclassified: 0,
+    },
+    matchesBySameClassTier: 0,
+    matchesByCrossClassTier: 0,
+  };
+}
+
+/**
+ * PR11 (STEP 1) diagnostic cohort: people whose own developmental history the engine actually
+ * controls — born in-sim (`motherId` set), or under 14 at `startYear` (config's real start year, not
+ * a fork's `fromYear`). Excludes founders/immigrants who arrive already adult with a back-computed
+ * `birthYear` that is not a real clock — the SAME exclusion decision 066's marriage-age regression
+ * test already uses, for the same reason (see that test's own comment in `simulate.test.ts`).
+ */
+function inMarriageFunnelCohort(person: Person, startYear: number): boolean {
+  return person.motherId !== undefined || person.birthYear > startYear - 14;
+}
+
+/**
+ * PR11 (STEP 1) diagnostic: `person` passed Y1's own age/canMarry/mourning gate this person-year,
+ * but `eligible()` (all six tiers) found nobody. Classifies WHY, per candidate examined, using the
+ * exact same predicates `eligible()` checks itself, evaluated at the widest window (age gap <= 40,
+ * any class) so a candidate only lands in `ageWindow` if nothing else blocks it. Read-only: takes no
+ * part in the actual match (that's still `eligible()`, untouched) — purely reconstructs why it came
+ * back empty, for the funnel report's own "no-partner reason" breakdown.
+ */
+function classifyNoPartnerReasons(
+  person: Person,
+  age: number,
+  year: number,
+  people: Readonly<Record<string, Person>>,
+  events: readonly Event[],
+  aliveNonMoved: readonly Person[],
+  claimedPartners: ReadonlySet<string>,
+  collector: MarriageFunnelCollector,
+): void {
+  const oppositeSexLiving = Object.values(people).filter((p) => p.id !== person.id && p.sex !== person.sex && p.deathYear === undefined);
+  if (oppositeSexLiving.length === 0) {
+    collector.noPartnerReasons.noLivingCandidate++;
+    return;
+  }
+  const oppositeSexNonMoved = aliveNonMoved.filter((p) => p.id !== person.id && p.sex !== person.sex);
+  if (oppositeSexNonMoved.length === 0) {
+    collector.noPartnerReasons.awayOnly++;
+    return;
+  }
+  for (const candidate of oppositeSexNonMoved) {
+    if (claimedPartners.has(candidate.id)) {
+      collector.noPartnerReasons.claimed++;
+    } else if (candidate.spouseId) {
+      collector.noPartnerReasons.alreadyMarried++;
+    } else if (isRelatedForMarriage(person, candidate, people)) {
+      collector.noPartnerReasons.related++;
+    } else if (activeRomancePair(events, candidate.id) !== undefined) {
+      collector.noPartnerReasons.alreadyCourting++;
+    } else if (ageInYear(candidate.birthYear, year) < minMarriageAge(candidate) || !canMarry(candidate) || !mourningOver(candidate, events, year)) {
+      collector.noPartnerReasons.notMarriageableAge++;
+    } else if (Math.abs(ageInYear(candidate.birthYear, year) - age) > 40) {
+      collector.noPartnerReasons.ageWindow++;
+    } else {
+      // This candidate passes every predicate eligible() checks at the widest tier — a contradiction
+      // with "no partner found" (eligible(40, false) would have matched them). Counted, not thrown,
+      // so a classifier/eligible() drift surfaces as a visible 0-should-stay-0 stat instead of
+      // crashing a real run — see the collector field's own doc comment.
+      collector.noPartnerReasons.unclassified++;
+    }
+  }
 }
 
 /** Round 9: a decision call budget for a single life (see docs/decisions.md 037). Once the running total of REAL DecisionMaker calls for this run reaches this, any further social decision NOT about the protagonist is resolved with the deterministic rule heuristic instead of calling `decisionMaker` — the protagonist's own decisions (and decisions about them) are never throttled. */
@@ -666,7 +819,14 @@ function baseIllnessChance(age: number): number {
  * deterministic given `seed` + state, so re-deriving them here always
  * agrees with the real run.
  */
-function gatherCandidatesForYear(year: number, people: Readonly<Record<string, Person>>, events: readonly Event[], seed: string, protagonistId?: string): CandidateDescriptor[] {
+function gatherCandidatesForYear(
+  year: number,
+  people: Readonly<Record<string, Person>>,
+  events: readonly Event[],
+  seed: string,
+  protagonistId?: string,
+  marriageFunnelDebug?: { readonly collector: MarriageFunnelCollector; readonly startYear: number },
+): CandidateDescriptor[] {
   const candidates: CandidateDescriptor[] = [];
 
   // Lightweight away-NPCs (decision 040) are narrative props for the protagonist's own away
@@ -748,6 +908,11 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // same-class-first across the three age windows, only falling back to any class if nobody
     // eligible shares this person's own class at any age gap.
     if (age >= minMarriageAge(person) && age <= 65 && !person.spouseId && activeRomancePair(events, person.id) === undefined && canMarry(person) && mourningOver(person, events, year)) {
+      // PR11 (STEP 1) diagnostic: gated behind `marriageFunnelDebug` — see `MarriageFunnelCollector`'s
+      // own doc comment. `undefined` in every existing caller/test, so this whole block is a single
+      // falsy check with zero effect otherwise.
+      const funnelInCohort = marriageFunnelDebug !== undefined && inMarriageFunnelCohort(person, marriageFunnelDebug.startYear);
+      if (funnelInCohort) marriageFunnelDebug!.collector.eligiblePersonYears++;
       // PR6 (design's Y1 hazard ramp, D_k(t) = 1 + rho*min(t,8)): stamp the time-in-state clock the
       // FIRST year this person is observed marriageable and single, regardless of whether a partner
       // is found this year — a no-op once already set (see `life-state.ts#markMarriageable`).
@@ -770,6 +935,19 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
             (!sameClassOnly || (candidate.socialClass ?? "cottar") === (person.socialClass ?? "cottar")),
         );
       const partner = eligible(10, true) ?? eligible(20, true) ?? eligible(40, true) ?? eligible(10, false) ?? eligible(20, false) ?? eligible(40, false);
+      if (funnelInCohort) {
+        if (partner) {
+          marriageFunnelDebug!.collector.partnerFoundPersonYears++;
+          // Redundant re-derivation, gated behind the same debug flag as everything else here (see
+          // this block's own opening comment) — `eligible()` is pure, so calling it again to learn
+          // WHICH tier matched costs nothing except when this collector is actually attached.
+          const foundSameClass = eligible(10, true) !== undefined || eligible(20, true) !== undefined || eligible(40, true) !== undefined;
+          if (foundSameClass) marriageFunnelDebug!.collector.matchesBySameClassTier++;
+          else marriageFunnelDebug!.collector.matchesByCrossClassTier++;
+        } else {
+          classifyNoPartnerReasons(person, age, year, people, events, aliveNonMoved, claimedPartners, marriageFunnelDebug!.collector);
+        }
+      }
       if (partner) {
         claimedPartners.add(partner.id);
         claimedPartners.add(person.id);
@@ -804,6 +982,7 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       // just the anniversary year plus a probabilistic `reconsiderDraw` — deterministic eligibility
       // only; Jev's event-selection Choice decides whether the proposal actually comes up this year.
       if (romanceEvent && year - romanceEvent.year >= 1) {
+        if (marriageFunnelDebug !== undefined && inMarriageFunnelCohort(person, marriageFunnelDebug.startYear)) marriageFunnelDebug.collector.a1Offered++;
         candidates.push({
           decisionId: `A1:${pairKey(person.id, romancePartnerId)}:${year}`,
           kind: "A1",
@@ -1987,6 +2166,9 @@ export async function* simulateYears(
   // shorthand) — referencing `options.protagonistId` inside that loop would hit the TDZ instead of
   // this function's `SimulateOptions` parameter.
   const protagonistId = options.protagonistId;
+  // PR11 (STEP 1): same shadowing hazard as `protagonistId` above — captured once here, outside the
+  // per-candidate loop that shadows `options`.
+  const marriageFunnelDebug = options.marriageFunnelDebug;
 
   const startYear = options.fromYear ?? config.startYear;
 
@@ -2003,7 +2185,14 @@ export async function* simulateYears(
       if (person.deathYear === undefined) decayMindForYear(person.mind);
     }
 
-    const candidates = gatherCandidatesForYear(year, people, events, seed, options.protagonistId);
+    const candidates = gatherCandidatesForYear(
+      year,
+      people,
+      events,
+      seed,
+      options.protagonistId,
+      marriageFunnelDebug ? { collector: marriageFunnelDebug, startYear: config.startYear } : undefined,
+    );
     const biologyCandidates = candidates.filter((c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy" || c.kind === "away-arrival" || c.kind === "return");
     // D1 is excluded here even though it's in `SOCIAL_KINDS` (used for `validate-override.ts`'s
     // reconstruction, round 10 decision 043) — it has its own dedicated call site below
@@ -2461,7 +2650,16 @@ export async function* simulateYears(
       if (occurs && person.deathYear === undefined) {
       switch (descriptor.kind) {
         case "Y1": {
+          // PR11 (STEP 1) diagnostic: reaching this `case` body means `occurs` was true (see the
+          // guard around this whole switch) — i.e. this Y1 candidate WON its person-year's
+          // competing-risk draw. `marriageFunnelDebug` is `undefined` for every existing caller.
+          const funnelInCohort = marriageFunnelDebug !== undefined && inMarriageFunnelCohort(person, config.startYear);
+          if (funnelInCohort) {
+            marriageFunnelDebug!.y1WonDraw++;
+            marriageFunnelDebug!.y1Outcomes[chosen as "encourage" | "decline" | "wait"]++;
+          }
           if (chosen === "encourage" && !person.spouseId && !partner!.spouseId) {
+            if (funnelInCohort) marriageFunnelDebug!.romancesCreated++;
             const causeA = recentUnresolvedBreakup(events, person.id, year, 3);
             const causeB = recentUnresolvedBreakup(events, partner!.id, year, 3);
             for (const c of [causeA, causeB]) if (c) causes.push(c.id);
@@ -2494,9 +2692,17 @@ export async function* simulateYears(
           break;
         }
         case "A1": {
+          // PR11 (STEP 1) diagnostic: same reasoning as the Y1 case above — reaching this body means
+          // this A1 candidate won its own person-year's competing-risk draw.
+          const funnelInCohort = marriageFunnelDebug !== undefined && inMarriageFunnelCohort(person, config.startYear);
+          if (funnelInCohort) {
+            marriageFunnelDebug!.a1WonDraw++;
+            marriageFunnelDebug!.a1Outcomes[chosen as "propose" | "delay" | "end-it"]++;
+          }
           const romanceEvent = events.filter((e) => e.kind === "romance" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
           if (romanceEvent) causes.push(romanceEvent.id);
           if (chosen === "propose" && !person.spouseId && !partner!.spouseId) {
+            if (funnelInCohort) marriageFunnelDebug!.married++;
             // Read each lifeState BEFORE setting spouseId below — `ensureLifeState` derives a
             // missing lifeState from `spouseId` (see `life-state.ts#deriveLifeState`), so deriving
             // AFTER the assignment would already see "married" and make the transition a no-op self-loop.
