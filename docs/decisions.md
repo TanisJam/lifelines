@@ -1618,3 +1618,158 @@ needs an adult fertility/mortality-curve rebalance; (2) literacy's gentry-overre
 tension (decision 069 step 3) — much closer now (12.8% -> 6.8%, vs. a 4-6% target) but not fully
 closed; (3) whether `infantMortality`'s degenerate point band (`targets.ts`, min=max=30) should
 become a real range.
+
+## 071 — PR10: the population trajectory, a real life-table view, and the gentry marriage band (engine-life-course)
+
+**Decision:** Extend `scripts/check-demographics.ts` into a real life-table / accounting view
+(births, deaths by age band, marriages, migration) and use it to diagnose decision 070's own
+largest open item — the population trajectory — BEFORE tuning anything (per this slice's own
+instruction). Fix the dominant, measured causes with named, documented tunables. Add per-class
+gentry marriage bands (GOAL B) and widen `infantMortality`'s degenerate point band to a real range.
+All on branch `elc/pr10-population`, off main `882d8ce`.
+
+**Diagnostic tooling (commit `67a40aa`):** `src/domain/population-stats.ts` (new, unit-tested:
+`rateByAgeBand`, `meanChildrenPerMarriage`, `neverMarriedSharePercent`) plus a large
+`check-demographics.ts --stats` extension, all derived from the SAME `--set period` run every seed
+already does (no second `simulate()` call): population at the trajectory checkpoints
+(1327/1347/1350/1361), pre-plague CBR/CDR, children ever born per completed marriage,
+age-specific marital fertility (ASMFR) vs. `FERTILITY_HAZARD_BANDS`' own hazard, adult mortality by
+age band (excluding Black Death/second-pestilence years) vs. `MORTALITY_BY_AGE_BAND`, the
+never-married share, and migration accounting (arrivals/leavers/returns).
+
+**Diagnosis (20-seed run, before any tuning — the four causes the task asked to separate quantitatively):**
+1. **Adult mortality: NOT a cause.** Observed vs. `MORTALITY_BY_AGE_BAND`: <40 1.63%/1.60%, <60
+   3.21%/3.20%, <75 7.69%/7.00%, <90 22.02%/20.00% — already tracking the table closely. Pre-plague
+   CDR measured 39.1 per 1,000/yr, already inside the research brief's own ~30-40‰ target.
+2. **Marital fertility: THE primary driver.** Pre-plague CBR was only 11.4 per 1,000/yr — a village
+   that cannot replace itself even before the plague (decision 068's own "cause 4", finally
+   quantified). ASMFR ran at only ~30-45% of `FERTILITY_HAZARD_BANDS`' own intended hazard across
+   every age band (e.g. the core <30 band: 12.4% observed vs. 35% intended).
+3. **A previously-undiagnosed one-way emigration sink.** `simulate.ts`'s "return home" biology
+   candidate was generated ONLY inside the protagonist-only away-catalog block — of 188
+   general-village people who left home (`Y3`) across the 20-seed run, 0 ever returned. `Y3`'s peak
+   hazard window (16-30) overlaps most classes' own marrying window and competes for the same
+   person-year "slot" as `Y1`/`A2`. Never-married share was 68-75% by age 45.
+4. **Widow remarriage and marriage age:** unchanged findings from decisions 068-070 — genuine
+   partner scarcity, not a hazard-magnitude issue.
+5. **"Leaving home" and the population count, explicitly checked (task's own question):** NOT
+   removed. A Y3 "leaver" keeps `deathYear === undefined` and is still counted by every population
+   snapshot; they are simply excluded from the marriage/fertility pools (`aliveNonMoved`) until they
+   return. At window end, 13.6% of the living population were such un-returned leavers before the
+   fix below (item 3).
+
+**Fix 1 — generalize "return home" to the whole village (commit `e118131`).** Named the
+protagonist-only inline `0.08`/`3` as `RETURN_HOME_PROBABILITY`/`RETURN_HOME_MIN_AWAY_YEARS`
+(`params/demography.ts`, provenance recorded), unchanged in value, and moved "return" candidate
+generation into `gatherCandidatesForYear`'s general biology loop (removing the now-redundant
+protagonist-only push). Measured impact alone: 0 -> 187 of 325 leavers returned (60-seed run),
+away-share of the living population 13.6% -> 1.8%. Never-married share barely moved (68-75% ->
+70-75%) — this diagnostic disproves the initial hypothesis that emigration was the DOMINANT
+never-married driver; it is real and worth fixing on its own historical-accuracy grounds (genuine
+emigration, per the task's own framing, "should" have some return traffic), but partner scarcity
+remains the larger driver. One curated test reseeded (`lifestate-widowed-check` ->
+`lifestate-widowed-check-2`, RNG branch shift, found via `scripts/find-seeds.ts`).
+
+**Fix 2 — raise marital fertility, lower Y3 (commit `7101acb`).** Raised `FERTILITY_HAZARD_BANDS`
+(0.28/0.35/0.28/0.18/0.1 -> 0.5/0.6/0.5/0.4/0.25) and lowered `Y3_PEAK_HAZARD`/`Y3_OFF_PEAK_HAZARD`
+(0.12/0.04 -> 0.05/0.02; provenance already flagged these as unsourced, confidence low). **A real
+architectural ceiling was found and measured while tuning**: `hazards.ts#effectiveSelectionHazard`
+clamps the scaled selection weight at 1 (`min(1, rawHazard / outcomeProbability)`), so once a
+band's raw hazard exceeds roughly the rule adapter's own "try" answer (~0.4), MORE raw hazard buys
+nothing further — pushing the bands to 0.7-0.85 (an intermediate step) moved the observed <30 ASMFR
+by well under a percentage point. The shipped values sit near that ceiling rather than past it.
+Widened `simulate.test.ts`'s onset+8 marriage-chain bound to onset+9 (women's gap measured 8.15,
+n=39, meanAge=26.28, meanOnset=18.13 — consistent with decision 069's own finding that MORE
+concurrent marriageable people in the local pool raises contention, here via fewer people leaving
+rather than more immigrants) and two `hazards.test.ts` assertions moved to an unsaturated test age
+(42, not 25) since exercising the now-deliberately-saturated <30 band was testing the SAME clamp
+this fix relies on, not a regression. No other reseeds.
+
+**Fix 3 — GOAL B, the gentry marriage band.** Added `firstMarriageAgeWomenGentry` (14-18) and
+`firstMarriageAgeMenGentry` (20-24) to `CALIBRATION_TARGETS`, cited to `docs/research.md` line 340
+(Hollingsworth's 14th-century interpolation: women ~17, men ~22 — the SAME window this engine
+models, more directly applicable than the table's 16th-century endpoint) and the Follett narrative
+reference (Tilly's arranged marriage at 14, engram #6321/#6149) for the women's low end.
+`MARRIAGE_FLOORS.gentry`'s women's floor (minEligible 14, onset 16) was already well-positioned;
+men's `onset` moved 20 -> 22 to center on the research.md anchor (the task's own "early-to-mid
+20s" framing for noble men marrying later than their brides). Added both as explicit `--assert`
+checks. Measured (60 seeds): F 23.28 (target 14-18, FAIL), M 27.48 (target 20-24, FAIL) — the same
+"onset + structural partner scarcity" gap every other class shows (gentry is deliberately "one
+household per village" in worldgen, decision 049); per decision 068's own finding, lowering onset
+further would widen, not close, this gap, so it was not chased further.
+
+**Fix 4 — `infantMortality`'s degenerate point band.** Widened `targets.ts#CALIBRATION_TARGETS.
+infantMortality` from a point band (min=max=30, structurally unhittable by any stochastic run, per
+decisions 069/070's own repeated finding) to a real range (25-35), same central estimate (research
+#6144's own "~30%"). Measured (60 seeds): 31.84% — **PASS**, first time this band has ever passed.
+
+**Population trajectory (25 seeds, 1327/1347/1350/1361, matching decision 070's own methodology):**
+
+| Year | Before (decision 070) | After (this slice) |
+|---|---|---|
+| 1327 | 75.0 | 79.1 |
+| 1347 | 45.2 (-40.0%) | 50.3 (-36.4%) |
+| 1350 | 23.6 (-47.8%) | 27.6 (-45.2%) |
+| 1361 | 15.5 (-34.3%, still falling) | 19.7 (-28.4%, still falling) |
+
+Real, measured, consistent-direction improvement on every leg — pre-plague decline is shallower,
+the plague shock is essentially unchanged (it was already close to target and untouched by this
+slice), and the post-plague decline is shallower too. Still FAILS the pre-plague and recovery
+`--assert` bands (see below); the plague-shock band now PASSES. The residual gap traces to the
+marriage rate itself (68-75% never married), a partner-scarcity issue in `simulate.ts`'s own
+`eligible()` search — the SAME structural gap decisions 068/069/070 each independently found and
+each explicitly left out of scope; this slice's own fertility/mortality-focused fixes cannot close
+it without a partner-matching redesign, which is a substantially larger, separate change.
+
+**Final calibration state (60 seeds, `--stats 60 --assert`, period 1327-1427):**
+
+| Band | Before this slice | After | Target | Status |
+|---|---|---|---|---|
+| firstMarriageAgeWomen | 24.28 | 24.14 | 18-22 | FAIL |
+| firstMarriageAgeMen | 26.98 | 27.52 | 21-25 | FAIL |
+| firstMarriageAgeWomenGentry | (new) | 23.28 | 14-18 | FAIL (new band) |
+| firstMarriageAgeMenGentry | (new) | 27.48 | 20-24 | FAIL (new band) |
+| widowRemarriagePreBlackDeath | 35.09% | 38.55% | 60-66% | FAIL |
+| widowRemarriagePostBlackDeath | 24.03% | 29.10% | 23-29% | FAIL (was PASS; marginal, +0.10 over) |
+| lifeExpectancyAtBirth | 21.17 | 19.13 | 22-35 | FAIL (worse — more early deaths from higher birth volume) |
+| infantMortality | 30.91% | 31.84% | 25-35% (was 30-30) | **PASS** (first time ever) |
+| under15DeathShare | 22.49% | 24.92% | 20-30% | PASS |
+| literacyOverall | 6.77% | 7.11% | 4-6% | FAIL |
+| populationPrePlagueChangePercent | (new) | -36.80% | -10 to 10 | FAIL (new band) |
+| populationPlagueShockPercent | (new) | -43.69% | -50 to -40 | **PASS** (new band) |
+| populationRecoveryChangePercent | (new) | -27.90% | -10 to 60 | FAIL (new band) |
+| hazardFallbacks | 0 | 0 | 0 | PASS |
+
+`lifeExpectancyAtBirth`'s small further undershoot and `widowRemarriagePostBlackDeath`'s marginal
+new miss are both honest, expected side effects of this slice's own fertility increase (more
+births -> more early deaths pull the cohort average down; more marriages overall shifts the
+pre/post-1349 widow-remarriage mix slightly) — reported rather than chased, consistent with
+decision 069's own precedent for exactly this kind of side effect.
+
+**Marriage-age distribution (60 seeds, mean by sex then class/sex):** F mean=24.14 (n=432), M
+mean=27.52 (n=382). By class/sex: villein f 23.5 (n unlisted)/m 27.2; cottar f 25.4/m 26.2; gentry
+f 23.3/m 27.5; merchant f 24.7/m 28.2; freeholder f 26.1/m 29.6; artisan f 23.7/m 28.7. (Medians not
+separately reported by `check-demographics.ts`; the underlying right-skew this slice's own
+diagnostic evidence — a long partner-scarcity tail — is unchanged from decision 070's own finding.)
+
+**Grounding:** `sdd/engine-life-course/state` (engram, this slice's resume point); decision 070 (the
+population-trajectory open item this slice addresses); PR8 diagnosis (engram #6311) and decision
+068 (the four-cause breakdown this slice quantifies with real numbers for the first time);
+`sdd/engine-life-course/research-follett-marriage-ages` (engram #6321) and `docs/research.md` line
+340 (the gentry marriage-age citations).
+
+**Verified:** `pnpm test` (491 passing, up from decision 070's 481 baseline plus this slice's own 10
+new tests: 7 in `population-stats.test.ts`, 3 in `simulate.test.ts`'s general-village "return home"
+describe block), `pnpm exec tsc --noEmit` clean, `pnpm lint` clean,
+`pnpm exec tsx scripts/check-demographics.ts --stats 60 --assert` still exits non-zero (10 of 14
+bands fail, as tabulated above) — an honest, partially-improved assertion state, not a silently
+hidden regression.
+
+**Open items for the orchestrator/user:** (1) the population-trajectory pre-plague/recovery bands
+still fail — closing them fully needs a partner-matching (`simulate.ts#eligible`) redesign, out of
+this slice's scope, same as decisions 068/069/070 each independently found; (2) the gentry marriage
+bands (new this slice) fail for the same structural reason; (3) `widowRemarriagePostBlackDeath`'s
+marginal new miss (29.10% vs. a 29% ceiling) and `lifeExpectancyAtBirth`'s further undershoot are
+both small, honest side effects of the fertility increase, not chased further; (4) `literacyOverall`
+and `firstMarriageAgeWomen`/`Men` (the general, non-gentry bands) remain open from prior slices,
+unaffected by this one.
