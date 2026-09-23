@@ -177,6 +177,14 @@ describe("PR7: clampJevSelection (the clamp applied to a whole person-year batch
     expect(result.selection.y1!).toBeGreaterThan(0);
   });
 
+  it("a situation Jev's judgment omits falls back to the hazard baseline, not the clamp floor", () => {
+    const situations = { y1: y1Situation("y1") };
+    const response = { y1: { encourage: 0.5, decline: 0.3, wait: 0.2 } };
+    const prior = computeHazardPrior(situations, response);
+    const result = clampJevSelection(situations, { nothing: 1 }, response);
+    expect(result.selection.y1!).toBeCloseTo(prior.selection.y1!, 10);
+  });
+
   it("reports hazard-lookup fallbacks from the underlying prior computation", () => {
     const situations = { y1: y1Situation("y1", { age: 30, sex: "f", socialClass: "not-a-real-class" }) };
     const response = { y1: { encourage: 0.5, decline: 0.3, wait: 0.2 } };

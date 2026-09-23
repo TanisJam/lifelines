@@ -379,7 +379,9 @@ export function clampJevSelection(
   const normalizedJudged = normalizeDistribution(judgedSelection as Record<string, number>);
   const clampedRaw: Record<string, number> = {};
   for (const [id, baseline] of Object.entries(prior.selection)) {
-    clampedRaw[id] = clampJudgedSelection(normalizedJudged[id] ?? 0, baseline);
+    // No judgment for this situation means no evidence to move it: the hazard baseline governs,
+    // rather than an implicit zero that the clamp would floor to baseline * K_MIN.
+    clampedRaw[id] = clampJudgedSelection(normalizedJudged[id] ?? baseline, baseline);
   }
   const { selection: scaled, residual } = resolveCompetingRisks(clampedRaw);
   const selection: Record<string, number> = { ...scaled };
