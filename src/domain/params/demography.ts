@@ -161,8 +161,19 @@ export const MORTALITY_BY_AGE_BAND: readonly { readonly maxAge: number; readonly
  * candidates after a long wait" mechanism was tried and reverted (destabilized an unrelated
  * protagonist-storyline regression test — see apply-progress) — this blanket rate is the safer,
  * smaller change, landed with the tradeoff reported rather than hidden.
+ *
+ * REVERTED to 0.05 by the PR9 demography follow-up (decision 070), after `DEFAULT_FOUNDER_COUNT`
+ * was enlarged to give the village a real local marriage market AND the immigration population cap
+ * (`IMMIGRATION_POPULATION_CAP_RATIO`, below) was fixed so immigration can actually fire again at the
+ * new size. Re-measured at the new default (`founderCount: 62`, 60-seed `--stats`, cap fix applied
+ * both times): 0.10 vs 0.05 made no meaningful difference to firstMarriageAge (F 24.28 both; M 27.31
+ * vs 26.98 -- 0.05 slightly BETTER, opposite of the original finding) or literacy (6.70% vs 6.77%);
+ * widow remarriage post-1349 was marginally higher at 0.10 (25.20% vs 24.03%, both inside the 23-29%
+ * band either way). With a real village-scale marriage market now doing the heavy lifting, the extra
+ * immigrants from 0.10 cost more simulated population (and so more decideYear situations) for no
+ * measurable calibration benefit — reverted to the pre-PR9 0.05.
  */
-export const IMMIGRATION_ANNUAL_PROBABILITY = 0.1;
+export const IMMIGRATION_ANNUAL_PROBABILITY = 0.05;
 
 /**
  * PR9 demography follow-up (village-size enlargement, decision 069/070): `simulate.ts`'s immigration

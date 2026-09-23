@@ -948,6 +948,18 @@ describe("PR6 corrective task 4: mean first-marriage age stays within onset + 5 
       // concurrent marriageable people appears to raise per-year contention, not just supply) — the
       // gap did not narrow, so +8 stays. Reporting the measured gap here rather than loosening it
       // further, per this slice's own instruction.
+      //
+      // PR9 demography follow-up (decision 070): tried restoring onset+5 again after enlarging
+      // DEFAULT_FOUNDER_COUNT (a real village-scale marriage market) and scaling the immigration
+      // population cap (see IMMIGRATION_POPULATION_CAP_RATIO) — still could NOT restore it, though the
+      // gap narrowed substantially. Measured (this test's own 15 seeds): women's gap is now 6.32
+      // (n=25, meanAge=24.40, meanOnset=18.08) — closer to +5 than PR9's 7.41, but still over it.
+      // Men's gap is 3.70 (n=20, meanAge=25.80, meanOnset=22.10) — comfortably under +5 alone, same
+      // as before. This test's own founderCount (30) is independent of the production
+      // DEFAULT_FOUNDER_COUNT default and was left unchanged (a standard fast test-village size used
+      // throughout this file); women's remaining gap is consistent with the gentry/clergy-adjacent
+      // partner-scarcity tail this test's own comment above already excludes for those two classes,
+      // just less severe for the other six. Bound stays at +8.
       expect(meanAge).toBeLessThanOrEqual(meanOnset + 8);
     }
   }, 40000); // PR9: raising IMMIGRATION_ANNUAL_PROBABILITY grows the simulated population faster,
