@@ -5,7 +5,7 @@ import { indexEventsById, walkCauses } from "./causality";
 import { forkWorld } from "./fork";
 import { createMind } from "./mind";
 import { activeRomancePair } from "./events";
-import { MARRIAGE_FLOORS } from "./params/demography";
+import { IMMIGRATION_ANNUAL_PROBABILITY, MARRIAGE_FLOORS } from "./params/demography";
 import { canMarry, drainSimulation, eligibleForAnotherChild, gatherCandidatesForYear, resolveCourtshipOnDeath, simulate, SimulationAbortedError, simulateYears, townEventMortalityMultiplier, type YearTick } from "./simulate";
 import type { Event, Override, Person, SocialClass } from "./types";
 import { generateWorld } from "./worldgen";
@@ -676,7 +676,11 @@ describe("decision 054: widowhood and remarriage", () => {
   it("an artisan's widow keeps the trade: her job and class match her late husband's when she had none of her own", async () => {
     // Reseeded by PR6 (decision 065): "widow-trade-39" no longer widows an artisan spouse under the
     // new absolute hazards — see the remarriage test above for the same root cause.
-    const { config, people } = generateWorld({ seed: "artisan-widow-trade-3", startYear: 1498, endYear: 1558, founderCount: 30 });
+    // Reseeded again by PR9 (decision 069, engram #6142/#6311): "artisan-widow-trade-3" no longer
+    // produces a kept-trade widowing once IMMIGRATION_ANNUAL_PROBABILITY raised 0.05 -> 0.10 (more
+    // immigrants shift this seed's population/candidate composition). Found via
+    // scripts/find-seeds.ts#findSeed with a custom "has a keptTrade widowed event" predicate.
+    const { config, people } = generateWorld({ seed: "artisan-widow-trade-13", startYear: 1498, endYear: 1558, founderCount: 30 });
     const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 
     const keptTrade = report.result.events.find((e) => e.kind === "widowed" && e.payload.keptTrade === true);
@@ -931,7 +935,9 @@ describe("PR6 corrective task 4: mean first-marriage age stays within onset + 5 
       // count, both outside PR8's declared `params/demography.ts` + `check-demographics.ts` boundary.
       expect(meanAge).toBeLessThanOrEqual(meanOnset + 8);
     }
-  }, 20000);
+  }, 40000); // PR9: raising IMMIGRATION_ANNUAL_PROBABILITY grows the simulated population faster,
+  // which was already right at this test's old 20s budget pre-PR9 (measured 19.4s unmodified) --
+  // doubled rather than tuned finely, since the test's own logic is unchanged.
 });
 
 describe("PR6 corrective: the dead-suitor lockout (engram #6280)", () => {
@@ -1027,6 +1033,21 @@ describe("causality", () => {
     expect(node!.causes.length).toBeGreaterThan(0);
     for (const cause of node!.causes) {
       expect(eventsById.has(cause.event.id)).toBe(true);
+    }
+  });
+});
+
+describe("PR9: immigration rate is a named, documented tunable (partner-scarcity fix, engram #6142/#6311)", () => {
+  it("the immigration decision's own probability matches IMMIGRATION_ANNUAL_PROBABILITY, not a hardcoded literal", async () => {
+    const { config, people } = generateWorld({ seed: "immigration-rate-check", startYear: 1327, endYear: 1330, founderCount: 10 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+
+    const immigrationDecisions = report.result.decisions.filter((d) => d.kind === "immigration");
+    // RECORD_THRESHOLD (0.05) <= IMMIGRATION_ANNUAL_PROBABILITY, so every year's roll is recorded,
+    // whichever way it goes -- no need to get lucky on "arrive" actually happening.
+    expect(immigrationDecisions.length).toBeGreaterThan(0);
+    for (const decision of immigrationDecisions) {
+      expect(decision.final.arrive).toBeCloseTo(IMMIGRATION_ANNUAL_PROBABILITY, 6);
     }
   });
 });

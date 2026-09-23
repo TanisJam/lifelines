@@ -9,6 +9,7 @@ import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createM
 import type { Locale } from "./locale";
 import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
+import { IMMIGRATION_ANNUAL_PROBABILITY } from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import {
   BLACK_DEATH_YEARS,
@@ -2171,7 +2172,10 @@ export async function* simulateYears(
           commitId(people, events, descriptor.personId, minted, pushed);
         }
       } else {
-        const p = 0.05;
+        // PR9 (partner-scarcity fix, engram #6142/#6311): named/documented in params/demography.ts
+        // -- was a hardcoded, undocumented `0.05` literal. See that constant's own doc comment for
+        // the measured before/after and the tradeoff this raise carries.
+        const p = IMMIGRATION_ANNUAL_PROBABILITY;
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, config.town.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "arrive") {

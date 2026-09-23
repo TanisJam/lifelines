@@ -125,4 +125,9 @@ export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
     range: "Fixed peak-window bound; young-adulthood mobility, not sourced to a specific age-30 cutoff.",
     confidence: "low",
   },
+  IMMIGRATION_ANNUAL_PROBABILITY: {
+    source: "PR9 (this slice, engram #6142/#6311): promoted from an undocumented hardcoded `0.05` in simulate.ts. General medieval-mobility literature (already cited for Y3's own mobility factors, research #6144 M-S5/M-S6) documents inter-manor migration as a normal feature of the period; no sourced annual arrival RATE was located for a village this size.",
+    range: "Raised 0.05 -> 0.10; measured to help widow remarriage (post-1349 band now passes) but worsen first-marriage age for the born-in-sim cohort — a real, reported tradeoff, not fully closed. See apply-progress for the measured before/after and the reverted targeted-mechanism attempt.",
+    confidence: "low",
+  },
 } as const;

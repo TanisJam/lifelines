@@ -111,3 +111,24 @@ export const OTHER_KIND_BASE_HAZARD = 0.08;
 
 /** Hazard lookup miss fallback (design decision 15): never throws, degrades to this constant. */
 export const FALLBACK_HAZARD = 0.02;
+
+/**
+ * PR9 (partner-scarcity fix, engram #6142/#6311): the annual chance a new immigrant arrives in the
+ * village (`simulate.ts`'s "immigration" biology candidate, gated to `livingIds.length < 38`) —
+ * previously a hardcoded, undocumented `const p = 0.05` inline in `simulate.ts`. This IS the
+ * engine's own "marriage market beyond the village" mechanism (`spawnImmigrant` creates an
+ * unmarried adult who joins the general village pool, eligible for the same Y1 search as anyone
+ * else) — raised here rather than inventing a second, parallel mechanism.
+ *
+ * Measured (30-seed `--stats` runs, same seeds, this constant alone varied): at the old 0.05, widow
+ * remarriage was 24.5%/18.5% (pre/post-1349) against a 60-66%/23-29% target. At 0.10, post-1349
+ * remarriage reaches 26.0% (inside its band); pre-1349 improves to 28.8% but stays below target.
+ * This has a real, reproducible COST: first-marriage age for the born-in-sim cohort got WORSE, not
+ * better (25.5/25.3 -> 27.4/28.3 years, F/M, moving further from the 18-22/21-25 target) — more
+ * concurrent marriageable people in the same local search pool appears to increase per-year
+ * contention, not just supply. A more surgical "only spawn a migrant for someone with zero local
+ * candidates after a long wait" mechanism was tried and reverted (destabilized an unrelated
+ * protagonist-storyline regression test — see apply-progress) — this blanket rate is the safer,
+ * smaller change, landed with the tradeoff reported rather than hidden.
+ */
+export const IMMIGRATION_ANNUAL_PROBABILITY = 0.1;
