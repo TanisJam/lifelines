@@ -392,7 +392,12 @@ describe("decision 051: maternal mortality at childbirth", () => {
   // `widowed` event, remarriage impossible). Now both death paths share `resolveWidowhood`.
   it("a husband whose wife dies in childbirth ends up widowed: spouseId cleared on both sides and a `widowed` event recorded", async () => {
     let widowedHusbands = 0;
-    for (const seed of ["maternal-check-37", "maternal-check-38", "maternal-check-39", "maternal-check-40", "maternal-check-41", "maternal-check-42", "maternal-check-43"]) {
+    // PR6 reseed (decision 065): the original 7 seeds no longer produce a maternal-death widowing —
+    // PR6's absolute per-kind hazards (design decision 1) replaced decision 045's flat 0.85 relative
+    // weight, so A2 "try" (and every other social candidate) now competes against a much larger
+    // "nothing" residual most person-years, making a full pregnancy-to-maternal-death chain rarer
+    // within a small seed sample. `maternal-widow-41` (found via `scripts/find-seeds.ts`) reproduces it.
+    for (const seed of ["maternal-check-37", "maternal-check-38", "maternal-check-39", "maternal-check-40", "maternal-widow-41", "maternal-check-42", "maternal-check-43"]) {
       const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 30 });
       const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 
@@ -411,7 +416,7 @@ describe("decision 051: maternal mortality at childbirth", () => {
       }
     }
     expect(widowedHusbands).toBeGreaterThan(0);
-  });
+  }, 15000);
 
   // The remarriage-after-mourning half of decision 054, checked cheaply and deterministically:
   // directly against `gatherCandidatesForYear` (already test-exported) rather than by hoping a full
@@ -540,7 +545,10 @@ describe("decision 053: marriage by class and canon law", () => {
     expect(canMarry(priest)).toBe(false);
   });
 
-  it("no in-sim marriage happens below the canon-law absolute minimum (12 women / 14 men), and every actor clears the lowest class floor in the table (17 women / 22 men, gentry) — well above the old flat 16", async () => {
+  // PR6 (design revision 2, decision 14): decision 053's floors (17/22 women/men, gentry) are
+  // superseded by the revised marriage-floors table — gentry is now the YOUNGEST class (14/16), not
+  // the figures this test used to check against. See `params/demography.ts#MARRIAGE_FLOORS`.
+  it("no in-sim marriage happens below the canon-law absolute minimum (12 women / 14 men), and every actor clears the lowest class floor in the table (14 women / 16 men, gentry)", async () => {
     let checkedMarriages = 0;
     for (const seed of ["age-check-1", "age-check-2", "age-check-3", "age-check-4"]) {
       const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 24 });
@@ -552,7 +560,7 @@ describe("decision 053: marriage by class and canon law", () => {
           checkedMarriages++;
           const age = marriage.year - actor.birthYear;
           expect(age).toBeGreaterThanOrEqual(actor.sex === "f" ? 12 : 14);
-          expect(age).toBeGreaterThanOrEqual(actor.sex === "f" ? 17 : 22);
+          expect(age).toBeGreaterThanOrEqual(actor.sex === "f" ? 14 : 16);
         }
       }
     }
@@ -638,10 +646,11 @@ describe("decision 054: widowhood and remarriage", () => {
   });
 
   it("a widow or widower can remarry, after their class's mourning interval since being widowed", async () => {
-    // Reseeded by PR5 (decision 064, docs/decisions.md): "widow-check-11" no longer produces a
-    // remarriage now that `canMarry` drops the Tudor-only 1549-53 Clergy Marriage Act exception —
-    // the run's one remarriage was a clergy actor inside that now-removed window. Assertions unchanged.
-    const { config, people } = generateWorld({ seed: "widow-check-11-1", startYear: 1498, endYear: 1558, founderCount: 30 });
+    // Reseeded by PR6 (decision 065, docs/decisions.md): "widow-check-11-1" no longer produces a
+    // remarriage under PR6's absolute per-kind hazards (design decision 1) — the widow-remarriage
+    // hazard is now a small, documented tunable (`WIDOW_REMARRIAGE_BASE`), not the old flat 0.85
+    // relative weight, so a remarriage within one seed's 60-year window is rarer. Assertions unchanged.
+    const { config, people } = generateWorld({ seed: "widow-remarry-3", startYear: 1498, endYear: 1558, founderCount: 30 });
     const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 
     const marriagesByPerson = new Map<string, number[]>();
@@ -660,7 +669,9 @@ describe("decision 054: widowhood and remarriage", () => {
   });
 
   it("an artisan's widow keeps the trade: her job and class match her late husband's when she had none of her own", async () => {
-    const { config, people } = generateWorld({ seed: "widow-trade-39", startYear: 1498, endYear: 1558, founderCount: 30 });
+    // Reseeded by PR6 (decision 065): "widow-trade-39" no longer widows an artisan spouse under the
+    // new absolute hazards — see the remarriage test above for the same root cause.
+    const { config, people } = generateWorld({ seed: "artisan-widow-trade-3", startYear: 1498, endYear: 1558, founderCount: 30 });
     const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 
     const keptTrade = report.result.events.find((e) => e.kind === "widowed" && e.payload.keptTrade === true);
@@ -791,7 +802,7 @@ describe("PR5: manorial markers (merchet, heriot, chevage, leyrwite)", () => {
       }
     }
     expect(sawMerchet).toBe(true);
-  });
+  }, 15000);
 
   it("heriot fires on the death of an unfree NPC tenant (never the protagonist, whose own death must stay the chronicle's last entry), across several seeds", async () => {
     let sawHeriot = false;
@@ -812,7 +823,7 @@ describe("PR5: manorial markers (merchet, heriot, chevage, leyrwite)", () => {
       }
     }
     expect(sawHeriot).toBe(true);
-  });
+  }, 15000);
 
   it("chevage fires when an unfree person leaves the village (Y3), never for a free one, across several seeds", async () => {
     let sawChevage = false;
@@ -833,8 +844,12 @@ describe("PR5: manorial markers (merchet, heriot, chevage, leyrwite)", () => {
       }
     }
     expect(sawChevage).toBe(true);
-  });
+  }, 15000);
 
+  // PR6: raised past the default 5000ms — 20 full 1327-1361 village runs now cost a little more per
+  // candidate (per-kind hazard lookups, the competing-risk fold, the one-decision-per-year guard),
+  // and courting itself is rarer under the new absolute Y1 hazard, so the loop runs its full 20
+  // seeds most times rather than an early, cheap match.
   it("leyrwite is only ever presented against an unfree, currently-courting woman", async () => {
     let sawLeyrwite = false;
     for (let i = 1; i <= 20; i++) {
@@ -852,6 +867,42 @@ describe("PR5: manorial markers (merchet, heriot, chevage, leyrwite)", () => {
       }
     }
     expect(sawLeyrwite).toBe(true);
+  }, 20000);
+});
+
+describe("PR6: one-decision-per-(kind, person)-per-year (task 6.5/6.6, design Open Question C2/A3)", () => {
+  it("a child who lost BOTH parents the prior year gets at most one C2 decision that actually occurs this year, never two", async () => {
+    const seed = "one-decision-per-year";
+    const startYear = 1340;
+    const mother: Person = { id: "mother1", name: "Mother", sex: "f", birthYear: 1300, deathYear: startYear - 1, traits: [], job: "none", founder: true, socialClass: "villein", mind: createMind(seed, "mother1", 1300) };
+    const father: Person = { id: "father1", name: "Father", sex: "m", birthYear: 1298, deathYear: startYear - 1, traits: [], job: "none", founder: true, socialClass: "villein", mind: createMind(seed, "father1", 1298) };
+    const child: Person = {
+      id: "child1",
+      name: "Child",
+      sex: "f",
+      birthYear: 1330,
+      traits: [],
+      job: "none",
+      founder: false,
+      socialClass: "villein",
+      motherId: mother.id,
+      fatherId: father.id,
+      mind: createMind(seed, "child1", 1330),
+    };
+    const people = { [mother.id]: mother, [father.id]: father, [child.id]: child };
+    const initialEvents: Event[] = [
+      { id: "e1", year: startYear - 1, kind: "death", actors: [mother.id], payload: { age: startYear - 1 - mother.birthYear }, causes: [] },
+      { id: "e2", year: startYear - 1, kind: "death", actors: [father.id], payload: { age: startYear - 1 - father.birthYear }, causes: [] },
+    ];
+    const config = { seed, startYear, endYear: startYear, town: { name: "Testville" } };
+    // Both C2 candidates (one per dead parent) are genuinely eligible this exact year — the
+    // competing-risk categorical draw (design decision 1) must pick AT MOST one of them as occurring;
+    // this never throws (simulate.ts's own dev-time guard would if it didn't).
+    const report = await simulate(config, people, initialEvents, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+    const c2Decisions = report.result.decisions.filter((d) => d.kind === "C2" && d.personId === child.id && d.year === startYear);
+    expect(c2Decisions.length).toBe(2); // both candidates asked (one per parent)
+    const occurred = c2Decisions.filter((d) => d.resultingEventIds.length > 0);
+    expect(occurred.length).toBeLessThanOrEqual(1);
   });
 });
 

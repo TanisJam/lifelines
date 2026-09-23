@@ -3,7 +3,7 @@ import { mapWithConcurrency } from "./concurrency";
 import { candidateMatchesSubject, decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
-import { advanceSlot, applyLifeTransition, EMPTY_SLOTS, ensureLifeState } from "./life-state";
+import { advanceSlot, applyLifeTransition, EMPTY_SLOTS, ensureLifeState, markMarriageable } from "./life-state";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
@@ -19,6 +19,7 @@ import {
   secondPestilenceMortalityForYear,
 } from "./period/events";
 import { isLeyrwiteEligible, isUnfree, manorialFinePayload, shouldPresentLeyrwite } from "./period/markers";
+import { minEligibleAge } from "./hazards";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
@@ -92,6 +93,14 @@ export interface SimulateReport {
   readonly snapshots: ReadonlyMap<number, YearSnapshot>;
   readonly wallTimeMs: number;
   readonly decisionCalls: number;
+  /**
+   * Engine life course PR6 (design decision 15): cumulative hazard-table lookup misses this run,
+   * keyed `${kind}:${socialClass}` — sourced from the `DecisionMaker`'s own `getStats().
+   * hazardFallbacks` (see `rule-decision-maker.ts`). Empty for an adapter that doesn't track it
+   * (`JevDecisionMaker` before PR7, or a minimal test double). A calibration seed should show none —
+   * see task 8.3's zero-fallback assertion.
+   */
+  readonly hazardFallbacks: Readonly<Record<string, number>>;
 }
 
 /** Incremental-simulation capability: one `simulateYears()` yield — the year just finished, and its full snapshot (people/events/decisions up to and including that year). */
@@ -225,50 +234,13 @@ export function canMarry(person: Person): boolean {
 }
 
 /**
- * Decision 053: canon law's absolute floor (research.md, Family §rules 1 — girls from 12, boys
- * from 14, distinguishing betrothal from consummated marriage). A hard lower bound under EVERY
- * class's own eligibility age below, in force throughout the Catholic window 1498-1558.
- */
-const CANON_MINIMUM_MARRIAGE_AGE: Readonly<Record<Sex, number>> = { f: 12, m: 14 };
-
-/**
- * Decision 053: the age from which marriage becomes eligible, by class and sex — anchored to
- * research.md's "Marriage rules for simulation use" synthesis table. These are the table's own
- * BEST-ESTIMATE, explicitly-tunable class figures, not settled historical constants (no
- * age-at-first-marriage series specific to most of these classes was located for exactly
- * 1498-1558): `cottar` (was `labourer`) anchors on the table's "landless labourers" row (older than
- * tenant peasants — later/less-reliable economic independence), `villein`/`freeholder` (was
- * `husbandman`/`yeoman`) on its "customary tenant peasants" row (~24 women / ~26 men, the
- * best-sourced commoner figures), `artisan` on its own row (mastership-gated marriage), `merchant`
- * similarly with a wider male-female gap (the Florentine pattern), `gentry` markedly younger
- * (interpolated from Hollingsworth's long-run ducal trend). `clergy` never actually reaches this
- * check in practice — `canMarry` above excludes them outside 1549-53 — but carries a value anyway so
- * this stays a total function over `SocialClass`. Renamed 1:1 by decision 063; superseded entirely
- * by PR6's per-class marriage-floor table (design revision 2, decision 14).
- */
-const MIN_MARRIAGE_AGE: Readonly<Record<SocialClass, Readonly<Record<Sex, number>>>> = {
-  cottar: { f: 25, m: 28 },
-  villein: { f: 24, m: 26 },
-  freeholder: { f: 24, m: 26 },
-  artisan: { f: 22, m: 25 },
-  merchant: { f: 20, m: 27 },
-  clergy: { f: 24, m: 26 },
-  gentry: { f: 17, m: 22 },
-};
-
-/**
- * The earliest age `person` is eligible to marry this year, by their class and sex — never below
- * the canon-law absolute minimum. Defensive `?? FALLBACK_CLASS` (decision 063 follow-up, CRITICAL
- * fix): `MIN_MARRIAGE_AGE[socialClass]` should never actually miss (`SimulationResult`/`YearSnapshot`
- * are read through `period/classes.ts`'s remap functions before reaching here) but that remap lives
- * across a `decompressJson<T>`-cast boundary TypeScript can't verify at runtime — a lookup miss
- * degrades to `FALLBACK_CLASS` instead of throwing, matching the design's "hazard lookup never
- * throws" principle.
+ * The earliest age `person` is eligible to marry this year, by their class and sex — superseded from
+ * decision 053's own `MIN_MARRIAGE_AGE` table by PR6's `hazards.ts#minEligibleAge` (design revision
+ * 2, decision 14's revised marriage floors, sourced from `params/demography.ts#MARRIAGE_FLOORS`),
+ * which never throws (design decision 15's lookup-miss chain) and never dips below canon law.
  */
 function minMarriageAge(person: Person): number {
-  const socialClass = person.socialClass ?? "cottar";
-  const ages = MIN_MARRIAGE_AGE[socialClass] ?? MIN_MARRIAGE_AGE[FALLBACK_CLASS];
-  return Math.max(ages[person.sex], CANON_MINIMUM_MARRIAGE_AGE[person.sex]);
+  return minEligibleAge(person.socialClass ?? FALLBACK_CLASS, person.sex);
 }
 
 /**
@@ -731,6 +703,12 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // same-class-first across the three age windows, only falling back to any class if nobody
     // eligible shares this person's own class at any age gap.
     if (age >= minMarriageAge(person) && age <= 65 && !person.spouseId && activeRomancePair(events, person.id) === undefined && canMarry(person) && mourningOver(person, events, year)) {
+      // PR6 (design's Y1 hazard ramp, D_k(t) = 1 + rho*min(t,8)): stamp the time-in-state clock the
+      // FIRST year this person is observed marriageable and single, regardless of whether a partner
+      // is found this year — a no-op once already set (see `life-state.ts#markMarriageable`).
+      person.lifeState = markMarriageable(ensureLifeState(person, events), year);
+      const yearsMarriageable = year - (person.lifeState.marriageableSince ?? year);
+      const isWidowed = ensureLifeState(person, events).marital.status === "widowed";
       const eligible = (maxAgeGap: number, sameClassOnly: boolean) =>
         aliveNonMoved.find(
           (candidate) =>
@@ -750,7 +728,14 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
       if (partner) {
         claimedPartners.add(partner.id);
         claimedPartners.add(person.id);
-        candidates.push({ decisionId: `Y1:${pairKey(person.id, partner.id)}:${year}`, kind: "Y1", personId: person.id, partnerId: partner.id, options: ["encourage", "decline", "wait"] });
+        candidates.push({
+          decisionId: `Y1:${pairKey(person.id, partner.id)}:${year}`,
+          kind: "Y1",
+          personId: person.id,
+          partnerId: partner.id,
+          options: ["encourage", "decline", "wait"],
+          extra: { yearsMarriageable, isWidowed },
+        });
       }
     }
 
@@ -758,7 +743,14 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
     // Guards the partner is still alive (round 5 fix, decision 022): `activeRomancePair`
     // only reads the event log, so with no guard here a partner who died after the
     // romance began would keep being offered as a living proposal target.
-    const romancePartnerId = activeRomancePair(events, person.id);
+    // PR6 fix: `!person.spouseId` closes a pre-existing gap — `activeRomancePair` returns the most
+    // recent UNRESOLVED romance for a specific pair, so a person who courted two people (the
+    // multi-suitor property Y1's independent per-person batches allow — see the "encourage"/"end-it"
+    // cases below) but only ever married ONE of them still has a stale, never-formally-ended romance
+    // with the other. Without this guard, A1 kept offering a "proposal" for that stale pair to an
+    // already-married person indefinitely — invisible before this PR (its outcome never touched
+    // `lifeState`), now surfaced as an illegal `married -> single` transition when it resolved "end-it".
+    const romancePartnerId = !person.spouseId ? activeRomancePair(events, person.id) : undefined;
     if (romancePartnerId && person.id < romancePartnerId && people[romancePartnerId] && isAlive(people[romancePartnerId]!, year)) {
       const romanceEvent = eventsFor(events, person.id)
         .filter((e) => e.kind === "romance" && e.actors.includes(romancePartnerId))
@@ -1073,6 +1065,9 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
         canMarry(protagonist) &&
         mourningOver(protagonist, events, year)
       ) {
+        protagonist.lifeState = markMarriageable(ensureLifeState(protagonist, events), year);
+        const yearsMarriageable = year - (protagonist.lifeState.marriageableSince ?? year);
+        const isWidowed = ensureLifeState(protagonist, events).marital.status === "widowed";
         const suitor = awayCast.find(
           (c) =>
             c.sex !== protagonist.sex &&
@@ -1083,9 +1078,19 @@ function gatherCandidatesForYear(year: number, people: Readonly<Record<string, P
             canMarry(c) &&
             mourningOver(c, events, year),
         );
-        if (suitor) candidates.push({ decisionId: `Y1:${pairKey(protagonist.id, suitor.id)}:${year}`, kind: "Y1", personId: protagonist.id, partnerId: suitor.id, options: ["encourage", "decline", "wait"] });
+        if (suitor) {
+          candidates.push({
+            decisionId: `Y1:${pairKey(protagonist.id, suitor.id)}:${year}`,
+            kind: "Y1",
+            personId: protagonist.id,
+            partnerId: suitor.id,
+            options: ["encourage", "decline", "wait"],
+            extra: { yearsMarriageable, isWidowed },
+          });
+        }
       }
-      const awayRomancePartnerId = activeRomancePair(events, protagonist.id);
+      // PR6 fix: same `!protagonist.spouseId` guard as the home A1 block above.
+      const awayRomancePartnerId = !protagonist.spouseId ? activeRomancePair(events, protagonist.id) : undefined;
       if (awayRomancePartnerId && people[awayRomancePartnerId] && isAlive(people[awayRomancePartnerId]!, year)) {
         const romanceEvent = eventsFor(events, protagonist.id)
           .filter((e) => e.kind === "romance" && e.actors.includes(awayRomancePartnerId))
@@ -2161,11 +2166,12 @@ export async function* simulateYears(
     // PR5's leyrwite presentment (design's markers table): a keyed side draw, evaluated once per
     // calendar year for every living, unfree, currently-courting woman — OUTSIDE the categorical
     // event-pick below, on its own dedicated key, so it never perturbs any other person-year draw.
-    // `activeRomancePair` (the same event-log signal Y1 eligibility already reads) stands in for
-    // the design's "marital.status=courting" tie — the engine has no pre-marital-pregnancy model.
+    // PR6: now reads `lifeState.marital.status === "courting"` directly (design's own literal
+    // wording), since PR6 wires the Y1 "encourage" outcome into that transition — PR5 fell back to
+    // `activeRomancePair` because PR3 never fired it (see the Y1 case's own comment above).
     for (const person of Object.values(people)) {
       if (person.deathYear !== undefined || person.away || hasMovedAway(events, person.id)) continue;
-      const isCourting = activeRomancePair(events, person.id) !== undefined;
+      const isCourting = ensureLifeState(person, events).marital.status === "courting";
       if (!isLeyrwiteEligible(person, isCourting)) continue;
       if (shouldPresentLeyrwite(seed, person.id, year)) {
         pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("leyrwite", person.id), []);
@@ -2179,7 +2185,14 @@ export async function* simulateYears(
     // "dividing their inheritance" the same year they died — see the `life-chronicle.test.ts`
     // "death is always the LAST entry" contract this broke). A decision about someone who is no
     // longer alive by the time it would be applied is dropped here rather than asked at all.
-    socialCandidates = socialCandidates.filter((c) => people[c.personId]?.deathYear === undefined && (!c.partnerId || people[c.partnerId]?.deathYear === undefined));
+    // PR6 fix: `deathYear === year` (not merely "any deathYear set") — a partner who died in an
+    // EARLIER year is exactly C2's own premise ("fires the year after a parent's death"); the old
+    // unconditional check silently dropped every C2 candidate ever built, since by the time C2 fires
+    // its dead parent's `deathYear` is always already set from a prior year. Caught by task 6.5's own
+    // one-decision-per-(kind,person)-per-year test, which needs C2 to actually reach resolution.
+    socialCandidates = socialCandidates.filter(
+      (c) => people[c.personId]?.deathYear !== year && (!c.partnerId || people[c.partnerId]?.deathYear !== year),
+    );
 
     // --- Social decisions: batch per person-year, then apply -----------------------------------
     // Round 11 (decision 044): one Jev request per person per year, not one per candidate. Every
@@ -2324,6 +2337,14 @@ export async function* simulateYears(
       return resolveSocialDecision(q, options.decisionMaker, options.engineSource);
     });
 
+    // PR6 (design Open Questions, task 6.5/6.6): "(kind, subject) uniqueness per year must be
+    // asserted" — the competing-risk categorical draw picks at most ONE situation id per person-year
+    // to occur, but a person can face the SAME kind twice under two different partners this year
+    // (e.g. C2 for both a mother and a father who died the same prior year). This guards that at
+    // most one of them ever actually OCCURS — a violation is a programming error in the selection
+    // pipeline, never a data-quality issue, so it throws rather than degrading silently.
+    const occurredKindPerPerson = new Set<string>();
+
     for (let i = 0; i < socialCandidates.length; i++) {
       const descriptor = socialCandidates[i]!;
       const forced = forcedFlags[i];
@@ -2371,6 +2392,14 @@ export async function* simulateYears(
       const wentThroughSelection = batchable && !forced && !fallbackFlags[i];
       const occurs = !!forced || !wentThroughSelection || occurrenceProbability !== undefined;
 
+      if (occurs) {
+        const occurrenceKey = `${descriptor.kind}:${descriptor.personId}`;
+        if (occurredKindPerPerson.has(occurrenceKey)) {
+          throw new Error(`PR6 invariant violated: (${descriptor.kind}, ${descriptor.personId}) occurred more than once in year ${year}.`);
+        }
+        occurredKindPerPerson.add(occurrenceKey);
+      }
+
       const options: DecisionOption[] = descriptor.options.map((id) => ({ id, label: optionLabel(descriptor.kind, id, person.name, partner?.name, descriptor.opportunityJob, person.sex) }));
       const resultingEventIds: string[] = [];
       const causes: string[] = [];
@@ -2389,6 +2418,12 @@ export async function* simulateYears(
             for (const c of [causeA, causeB]) if (c) causes.push(c.id);
             const event = pushEvent(events, year, "romance", [person.id, partner!.id], {}, causes);
             resultingEventIds.push(event.id);
+            // PR6 (reconciling PR5's deviation note): "courting" is now actually wired into lifeState
+            // at the point courtship begins — PR3 never fired this transition, so PR5's leyrwite
+            // eligibility fell back to `activeRomancePair` instead (see the leyrwite call site below,
+            // now updated to read `lifeState.marital.status` directly).
+            person.lifeState = applyLifeTransition(ensureLifeState(person, events), { axis: "marital", to: "courting", partnerId: partner!.id }, year);
+            partner!.lifeState = applyLifeTransition(ensureLifeState(partner!, events), { axis: "marital", to: "courting", partnerId: person.id }, year);
             pushThought(person.mind, "hope", `courting ${partner!.name}`, 55, 4, year, "lovePropensity", partner!.id);
             pushThought(partner!.mind, "hope", `courting ${person.name}`, 55, 4, year, "lovePropensity", person.id);
             addMemory(seed, person.id, year, person.mind, `began courting ${partner!.name} in ${year}`, "hope", partner!.id);
@@ -2442,6 +2477,17 @@ export async function* simulateYears(
           } else if (chosen === "end-it") {
             const event = pushEvent(events, year, "breakup", [person.id, partner!.id], {}, causes);
             resultingEventIds.push(event.id);
+            // PR6: a breakup returns each side to what they were before THIS courtship — a widow(er)
+            // re-entering the Y1 pool (design's "separate base" hazard) whose new courtship fails is
+            // still a widow(er), not newly "single" (a survivor who never remarries should keep
+            // reading "widowed", per the life-state invariant); anyone who was never widowed goes back
+            // to plain "single". Also closes the `courting -> courting` self-loop gap: without this,
+            // a later, DIFFERENT courtship's "courting" transition would illegally fire from an
+            // already-"courting" state.
+            for (const side of [person, partner!]) {
+              const backTo = events.some((e) => e.kind === "widowed" && e.actors[0] === side.id) ? "widowed" : "single";
+              side.lifeState = applyLifeTransition(ensureLifeState(side, events), { axis: "marital", to: backTo }, year);
+            }
             for (const [self, other] of [[person, partner!] as const, [partner!, person] as const]) {
               pushThought(self.mind, "grief", `the courtship with ${other.name} ending`, 60, 5, year, "lovePropensity", other.id);
               addMemory(seed, self.id, year, self.mind, `the courtship with ${other.name} ended in ${year}`, "grief", other.id);
@@ -3042,6 +3088,7 @@ export async function* simulateYears(
     snapshots,
     wallTimeMs: Date.now() - started,
     decisionCalls,
+    hazardFallbacks: options.decisionMaker.getStats?.().hazardFallbacks ?? {},
   };
 }
 

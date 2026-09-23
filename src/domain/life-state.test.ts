@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMind } from "./mind";
 import type { Event, Person } from "./types";
-import { EMPTY_SITUATIONS, EMPTY_SLOTS, advanceSlot, applyLifeTransition, deriveLifeState, ensureLifeState, residenceView, slotKey, type LifeState } from "./life-state";
+import { EMPTY_SITUATIONS, EMPTY_SLOTS, advanceSlot, applyLifeTransition, deriveLifeState, ensureLifeState, markMarriageable, residenceView, slotKey, type LifeState } from "./life-state";
 
 function makePerson(id: string, overrides: Partial<Person> = {}): Person {
   const birthYear = overrides.birthYear ?? 1330;
@@ -97,9 +97,9 @@ describe("applyLifeTransition", () => {
     expect(next.vocation).toEqual({ status: "working", since: 1360, masterId: undefined });
   });
 
-  it("throws on an illegal marital transition (single -> widowed)", () => {
-    const state = baseLifeState(1330);
-    expect(() => applyLifeTransition(state, { axis: "marital", to: "widowed" }, 1345)).toThrow();
+  it("throws on an illegal marital transition (widowed -> single, skipping back to 'never married')", () => {
+    const state: LifeState = { ...baseLifeState(1330), marital: { status: "widowed", since: 1340 } };
+    expect(() => applyLifeTransition(state, { axis: "marital", to: "single" }, 1345)).toThrow();
   });
 
   it("throws on an illegal residence transition (home -> home)", () => {
@@ -187,6 +187,29 @@ describe("ensureLifeState", () => {
     const person = makePerson("p001", { birthYear: 1330, spouseId: "p002" });
     const ensured = ensureLifeState(person, []);
     expect(ensured.marital.status).toBe("married");
+  });
+});
+
+describe("PR6: courting -> courting is a legal self-loop", () => {
+  it("re-firing the courting transition updates since/partnerId instead of throwing", () => {
+    const state: LifeState = { ...baseLifeState(1330), marital: { status: "courting", since: 1345, partnerId: "p2" } };
+    const next = applyLifeTransition(state, { axis: "marital", to: "courting", partnerId: "p3" }, 1346);
+    expect(next.marital).toEqual({ status: "courting", since: 1346, partnerId: "p3" });
+  });
+});
+
+describe("PR6: markMarriageable (task 6.2 support — Y1's time-in-state clock)", () => {
+  it("stamps marriageableSince on the first call", () => {
+    const state = baseLifeState(1330);
+    const stamped = markMarriageable(state, 1345);
+    expect(stamped.marriageableSince).toBe(1345);
+  });
+
+  it("is idempotent — a later call never overwrites an already-stamped year", () => {
+    const state = markMarriageable(baseLifeState(1330), 1345);
+    const stampedAgain = markMarriageable(state, 1350);
+    expect(stampedAgain.marriageableSince).toBe(1345);
+    expect(stampedAgain).toBe(state); // no-op: same reference, no reallocation
   });
 });
 

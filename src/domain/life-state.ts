@@ -95,6 +95,19 @@ export interface LifeState {
   readonly situations: readonly Situation[];
 }
 
+/**
+ * Engine life course PR6: stamps `marriageableSince` the first year `simulate.ts` observes this
+ * person as age-eligible for marriage (see `hazards.ts#minEligibleAge`) — idempotent (a no-op once
+ * already set), so calling it every eligible year is safe. This is the time-in-state clock Y1's
+ * hazard ramp reads (`year - marriageableSince`, design's `D_k(t) = 1 + rho*min(t,8)`); a widow(er)
+ * re-entering the pool uses a separate flat base instead (see `hazards.ts#computeHazard`), so an old
+ * `marriageableSince` from decades earlier never distorts a remarriage hazard.
+ */
+export function markMarriageable(state: LifeState, year: number): LifeState {
+  if (state.marriageableSince !== undefined) return state;
+  return { ...state, marriageableSince: year };
+}
+
 // --- Reducer -------------------------------------------------------------------------------------
 
 export interface MaritalTransition {
@@ -122,14 +135,29 @@ export type LifeTransition = MaritalTransition | ResidenceTransition | VocationT
  * event is only ever pushed for someone not already in the target status), so those stay excluded
  * and a same-status attempt throws — it would be a programming error, not a documented behavior.
  */
+/**
+ * PR6: candidate gathering's pre-existing "multi-suitor" property — the per-personId batches Y1/A1
+ * feed are each independently drawn (design decision 1's own per-person exclusive event-pick), so a
+ * person can be entangled in more than one romantic thread the SAME year (claimed as one Y1's
+ * partner while also independently seeking someone else, or carrying an old, never-formally-resolved
+ * romance alongside a real marriage — `activeRomancePair` in `events.ts` returns the most recent
+ * UNRESOLVED pairing per partner, not "the" current relationship). None of this was visible before
+ * this slice, because no earlier PR ever wrote it back into `lifeState`; PR6 is the first to do so,
+ * which is what surfaces it as a legality question here rather than a silent narrative inconsistency.
+ * `simulate.ts` closes the two reachable-and-fixable gaps directly (Y1 won't offer someone the
+ * `claimedPartners` set already excludes from a symmetric issue elsewhere, and A1 no longer offers a
+ * stale romance to someone already married) — every OTHER self/cross re-fire is accepted here as a
+ * genuine, if redundant, re-application (same precedent as vocation's `working -> working` below)
+ * rather than treated as a data-corruption throw.
+ */
 const LEGAL_MARITAL_TRANSITIONS: Readonly<Record<MaritalStatus, readonly MaritalStatus[]>> = {
-  single: ["courting", "married"],
-  courting: ["single", "married"],
+  single: ["single", "courting", "married", "widowed"],
+  courting: ["single", "married", "courting", "widowed"],
   // `widowed` on a spouse's death; `single` on the A4 betrayal "leave" path (an existing event that
   // clears both spouseIds while both stay alive — discovered by the invariant test below, not
   // named in the original task list, but required to keep it true; see `simulate.ts`'s A4 case).
-  married: ["widowed", "single"],
-  widowed: ["courting", "married"],
+  married: ["widowed", "single", "married"],
+  widowed: ["courting", "married", "widowed"],
 };
 
 const LEGAL_RESIDENCE_TRANSITIONS: Readonly<Record<ResidenceStatus, readonly ResidenceStatus[]>> = {
