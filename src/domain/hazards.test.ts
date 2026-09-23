@@ -87,6 +87,33 @@ describe("PR6: hazard shape (task 6.1)", () => {
   });
 });
 
+describe("PR8 fix: A2 joins OUTCOME_SCALED_KINDS (engram #6284/#6280, the fertility collapse)", () => {
+  function a2Situation(id: string, self: Record<string, JsonValue> = { age: 25, sex: "f", socialClass: "villein" }): PersonYearSituation {
+    return {
+      kind: "A2",
+      question: { id, kind: "A2", personId: "p1", year: 1340, state: { self, situation: { existingChildren: 0, fertileYearsLeft: 20 } }, options: ["try", "wait", "refuse"] },
+    };
+  }
+
+  it("scales A2's raw fertility hazard by the try-outcome probability, the same as Y1/A1", () => {
+    const situations = { a2: a2Situation("a2") };
+    const response = { a2: { try: 0.4, wait: 0.4, refuse: 0.2 } };
+    const rawHazard = computeHazard({ kind: "A2", age: 25, sex: "f", socialClass: "villein", year: 1340 }).value;
+    const prior = computeHazardPrior(situations, response);
+    expect(prior.selection.a2!).toBeCloseTo(effectiveSelectionHazard(rawHazard, 0.4), 10);
+  });
+
+  it("the compound (selection wins x try chosen) probability recovers the raw fertility hazard on average", () => {
+    const tryProb = 0.4;
+    const situations = { a2: a2Situation("a2") };
+    const response = { a2: { try: tryProb, wait: 0.4, refuse: 0.2 } };
+    const rawHazard = computeHazard({ kind: "A2", age: 25, sex: "f", socialClass: "villein", year: 1340 }).value;
+    const prior = computeHazardPrior(situations, response);
+    const compound = prior.selection.a2! * tryProb;
+    expect(compound).toBeCloseTo(rawHazard, 10);
+  });
+});
+
 describe("PR6: hazard lookup miss chain (task 6.7)", () => {
   const table = { villein: { f: 0.3, m: 0.25 } } as Record<string, Record<string, number> | undefined>;
 

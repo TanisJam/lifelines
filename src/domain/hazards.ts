@@ -300,8 +300,18 @@ export function buildHazardContext(situation: PersonYearSituation): HazardContex
  * (selection-wins x this-option-chosen) probability matches the design's own single stated per-year
  * rate — a THIRD two-stage kind should extend this map, per the PR6-corrective precedent, not invent a
  * new pattern.
+ *
+ * PR8 fix (engram #6284/#6280, the fertility collapse): `A2` (have a child, "try" vs "wait"/"refuse")
+ * is exactly that third two-stage kind — its `wait`/`refuse` options are "nothing happened" outcomes,
+ * the same shape as Y1's "decline"/"wait" and A1's "delay"/"end-it". It was never added when PR6
+ * corrective fixed the marriage chain, so `FERTILITY_HAZARD_BANDS`' own annual hazard was silently
+ * compounded by `ruleDistribution`'s `~35-40%` "try" answer on top of it — measured (engram #6284):
+ * A2 won its person-year draw 21.1% of offered years (matching its raw hazard band), but only 34.6% of
+ * those wins actually chose "try", so the effective birth-attempt rate was ~7.3%/eligible-year against
+ * the ~25-35% the hazard curve intends. Adding `A2` here lets `effectiveSelectionHazard` cancel that
+ * exact discount, the same way it already does for Y1/A1.
  */
-export const OUTCOME_SCALED_KINDS: Readonly<Record<string, string>> = { Y1: "encourage", A1: "propose" };
+export const OUTCOME_SCALED_KINDS: Readonly<Record<string, string>> = { Y1: "encourage", A1: "propose", A2: "try" };
 
 export interface HazardPriorResult extends CompetingRiskResolution {
   /** Cumulative hazard-table lookup misses this call surfaced, keyed `${kind}:${socialClass}` (design decision 15). */
