@@ -1271,4 +1271,15 @@ describe("PR11 STEP 1: marriage-funnel diagnostic instrumentation (debug-gated, 
     expect(collector.noPartnerReasons.unclassified).toBe(0);
     expect(collector.matchesBySameClassTier + collector.matchesByCrossClassTier).toBe(collector.partnerFoundPersonYears);
   });
+
+  it("PR12 STEP 1: y1LosesTo tallies exactly what won the person-year's draw whenever a Y1 candidate lost it", async () => {
+    const { config, people } = generateWorld({ seed: "funnel-counts", startYear: 1327, endYear: 1360, founderCount: 30 });
+    const collector = createMarriageFunnelCollector();
+    await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", marriageFunnelDebug: collector });
+
+    const y1Losses = collector.partnerFoundPersonYears - collector.y1WonDraw;
+    const tallySum = Object.values(collector.y1LosesTo).reduce((a, b) => a + b, 0);
+    expect(tallySum).toBe(y1Losses);
+    expect(Object.keys(collector.y1LosesTo).length).toBeGreaterThan(0);
+  });
 });

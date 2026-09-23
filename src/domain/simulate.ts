@@ -148,6 +148,14 @@ export interface MarriageFunnelCollector {
   matchesBySameClassTier: number;
   /** Of `partnerFoundPersonYears`, how many matched only after falling back to any class (tiers 4-6). */
   matchesByCrossClassTier: number;
+  /**
+   * PR12 STEP 1 diagnostic: of `partnerFoundPersonYears` minus `y1WonDraw` (a Y1 candidate was
+   * offered but did NOT win that person-year's competing-risk draw), what actually won instead —
+   * keyed by the other situation's `kind` (e.g. "A2", "Y3"), `"nothing"` (the residual — no
+   * situation occurred at all this person-year), or `"everyday"` (a D1 daily-life vignette won).
+   * Always sums to exactly `partnerFoundPersonYears - y1WonDraw`.
+   */
+  readonly y1LosesTo: Record<string, number>;
 }
 
 export function createMarriageFunnelCollector(): MarriageFunnelCollector {
@@ -174,6 +182,7 @@ export function createMarriageFunnelCollector(): MarriageFunnelCollector {
     },
     matchesBySameClassTier: 0,
     matchesByCrossClassTier: 0,
+    y1LosesTo: {},
   };
 }
 
@@ -2466,6 +2475,20 @@ export async function* simulateYears(
     // unconditional check silently dropped every C2 candidate ever built, since by the time C2 fires
     // its dead parent's `deathYear` is always already set from a prior year. Caught by task 6.5's own
     // one-decision-per-(kind,person)-per-year test, which needs C2 to actually reach resolution.
+    if (marriageFunnelDebug !== undefined) {
+      // PR12 (STEP 1 diagnostic): a Y1 candidate offered earlier this year (before biology ran) can
+      // be dropped right here when the seeker or the partner died this same year — it never reaches
+      // `situationIds`/the "event-pick" sample below, so it's neither a win nor an observable loss to
+      // another kind. Tallied explicitly so `y1LosesTo`'s sum still equals
+      // `partnerFoundPersonYears - y1WonDraw` exactly, instead of silently under-counting.
+      for (const c of socialCandidates) {
+        if (c.kind !== "Y1") continue;
+        const person = people[c.personId];
+        if (!person || !inMarriageFunnelCohort(person, config.startYear)) continue;
+        const dropped = people[c.personId]?.deathYear === year || (c.partnerId !== undefined && people[c.partnerId]?.deathYear === year);
+        if (dropped) marriageFunnelDebug.y1LosesTo["died-same-year"] = (marriageFunnelDebug.y1LosesTo["died-same-year"] ?? 0) + 1;
+      }
+    }
     socialCandidates = socialCandidates.filter(
       (c) => people[c.personId]?.deathYear !== year && (!c.partnerId || people[c.partnerId]?.deathYear !== year),
     );
@@ -2563,6 +2586,20 @@ export async function* simulateYears(
             everydayShareByPerson.set(personId, normalizedSelection.everyday!);
           } else if (sample.chosen !== "nothing") {
             selectedId = sample.chosen;
+          }
+
+          // PR12 (STEP 1 diagnostic, `sdd/engine-life-course/state`): of a person-year that offered a
+          // Y1 candidate but did NOT let it win this exact `"event-pick"` draw, tally what won
+          // instead — the other kind's name, `"nothing"` (the residual), or `"everyday"` (a D1
+          // vignette). This is the SAME draw `y1WonDraw` already counts a win from (below, at the Y1
+          // occurrence site) — reusing `sample.chosen` here rather than re-deriving it keeps both
+          // counters reading the identical, single Gumbel-max sample for this person-year.
+          if (marriageFunnelDebug !== undefined) {
+            const y1Id = situationIds.find((id) => situations[id]!.kind === "Y1");
+            if (y1Id !== undefined && inMarriageFunnelCohort(people[personId]!, config.startYear) && sample.chosen !== y1Id) {
+              const winnerKind = sample.chosen === "nothing" || sample.chosen === "everyday" ? sample.chosen : situations[sample.chosen]!.kind;
+              marriageFunnelDebug.y1LosesTo[winnerKind] = (marriageFunnelDebug.y1LosesTo[winnerKind] ?? 0) + 1;
+            }
           }
         }
 
