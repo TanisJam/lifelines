@@ -1221,7 +1221,10 @@ prompt as an anchor.
   (scaling Y1/A1 against the SAME judge's own outcome-roll answer, so the clamp target itself doesn't
   recompound decision 066's marriage chain for whichever adapter is being clamped), clamps each
   situation independently, then re-normalizes through the existing `resolveCompetingRisks` for a
-  fresh, valid distribution. Also new: `describeHazardBand` (rare/uncommon/common, thresholds
+  fresh, valid distribution. A situation Jev's judgment omits falls back to its hazard baseline
+  (`t=1`), not an implicit zero that the clamp would floor to `baseline * K_MIN` — no judgment is no
+  evidence to move the historical rate (post-review fix, flagged independently by the RDD reliability
+  lens and the fresh-context validator). Also new: `describeHazardBand` (rare/uncommon/common, thresholds
   0.05/0.2) and `describeTimeInState` (recent/established/long-standing, thresholds 1/4 years) — the
   qualitative labels design decision 3 requires in place of raw numbers.
 - **`src/adapters/decision/rule-decision-maker.ts`** (refactor, no behavior change — verified by its
