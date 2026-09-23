@@ -58,6 +58,7 @@ The design decisions behind Lifelines. Each entry records what we chose, why, an
 | 053 | [Marriage by class and canon law](#053--marriage-by-class-and-canon-law) | Implemented (batch C of 4) |
 | 054 | [Widowhood and remarriage (bug fix)](#054--widowhood-and-remarriage-bug-fix) | Implemented (batch C of 4) |
 | 058 | [Scheduled period events (England)](#058--scheduled-period-events-england) | Implemented (batch C of 4) |
+| 065 | [Absolute per-kind hazards and the competing-risk draw (engine-life-course, PR6)](#065--absolute-per-kind-hazards-and-the-competing-risk-draw-engine-life-course-pr6) | Implemented |
 
 ---
 
@@ -959,3 +960,125 @@ manorial-marker wiring, famine/murrain backstory, and en/es copy parity.
   explicitly asked for copy inside `narrate.ts`'s existing en/es maps instead, which is where PR4's
   own `CLASS_LABEL_EN/ES` was already left waiting for a call site; this keeps narration copy in one
   place rather than splitting it across two modules.
+
+## 065 — Absolute per-kind hazards and the competing-risk draw (engine-life-course, PR6)
+
+- **Decision:** decision 045's flat relative selection weight (`ruleSelectionWeight`: 0.3 for `D1`,
+  0.85 for everything else, plus a fixed `NOTHING_WEIGHT=0.7`) is replaced by ABSOLUTE per-kind
+  annual hazards (`src/domain/hazards.ts`, `src/domain/params/{demography,provenance,targets}.ts`).
+  `RuleDecisionMaker.decideYear` reports these hazards UNCHANGED (design decision 4, "t=1" — no
+  clamp; that is PR7's Jev-adapter job). `hazards.ts#resolveCompetingRisks` folds every candidate's
+  hazard into one person-year categorical distribution — `P(k) = h'_k`, residual `1 - sum(h'_k)`
+  going to `"nothing"` (NPC) or `"everyday"` (protagonist), proportionally rescaled so the sum never
+  exceeds 1 (design decision 1). `simulate.ts`'s existing `event-pick` Gumbel-max sample is
+  unchanged: because the new `selection` already sums to exactly 1, the downstream
+  `normalizeDistribution` call becomes a no-op, so the hazards are used as literal probabilities.
+- **Explicit hazard shapes** (design revision 2's "Hazard shapes" table): `Y1` (marriage/courtship
+  offer) — a logistic ramp centered on `onset[class][sex]`, times `D(t) = 1 + rho*min(t,8)` where
+  `t = years marriageable and single` (a NEW `LifeState.marriageableSince` clock, stamped once per
+  person by `life-state.ts#markMarriageable` — see below); a widow(er) re-entering the pool uses a
+  SEPARATE flat base (`WIDOW_REMARRIAGE_BASE`) times a provisional post-1349 factor toward the
+  research target (63%→26%), never the ramp. `A1` (propose) — a Weibull hazard rate in
+  `courtshipYears` (k≈1.5, increasing). `A2` (have a child) — age-banded. `Y3` (leave/stay) — peaks
+  16-30, lower for the unfree, and further restricted from 1351 by the Statute of Labourers' mobility
+  factor (`Y3_STATUTE_MOBILITY_FACTOR`) — the exact item PR5 deferred to this slice. `AP1`/`A3`/`C3`
+  are flat one-shots (0.95), matching their existing exact-age eligibility gates. Every OTHER social
+  kind (Y4, A6, A8, A11, C1, C2, C4, Y2, Y5, A4, A7, A9, A10, O1, O2, O3, O4, PIL1) — not named in the
+  design's own hazard-shapes table — falls through to a documented placeholder constant
+  (`OTHER_KIND_BASE_HAZARD = 0.08`), so every candidate still participates in the SAME absolute
+  competing-risk budget; see `params/provenance.ts` for the scoping rationale.
+- **Marriage floors superseded** (design revision 2, decision 14): decision 053's `MIN_MARRIAGE_AGE`
+  table (1498-1558 figures — a cottar woman could never marry before 25, making an 18-22 women's mean
+  impossible) is replaced by `params/demography.ts#MARRIAGE_FLOORS`: gentry is now the YOUNGEST class
+  (14/16 women/men), cottar the oldest among commoners (16/18), matching the confirmed marriage band.
+  `hazards.ts#lookupHazard` implements the documented miss chain (exact cell → the `villein` `"*"`
+  row → `FALLBACK_HAZARD=0.02`), never throws, and reports every fallback via
+  `DecisionMakerStats.hazardFallbacks` → `SimulateReport.hazardFallbacks` (design decision 15).
+- **`single→courting→married` is now actually wired into `lifeState`**: PR3 never fired the
+  `"courting"` transition (only marriage/moves/widowhood/the A4 betrayal-leave path — see decision
+  064's own deviation note), so PR5's leyrwite eligibility fell back to `activeRomancePair`. PR6 wires
+  it at Y1's "encourage" outcome, and `period/markers.ts`'s leyrwite call site now reads
+  `lifeState.marital.status === "courting"` directly, matching the design's own literal wording.
+- **Real pre-existing bugs surfaced (not introduced) by writing lifeState back for the first time**:
+  writing to `lifeState.marital` on courtship/breakup is the first code in this codebase to actually
+  READ that axis back for a legality check (`applyLifeTransition`'s throw-on-illegal-transition),
+  which surfaced three genuine, pre-existing gaps in candidate gathering that were previously
+  invisible (their outcomes never touched `lifeState`, so a redundant/conflicting resolution was just
+  silent narrative noise, not a crash):
+  1. **A1 offered a stale, never-resolved romance to an already-married person** — `activeRomancePair`
+     returns the most recent UNRESOLVED romance for a SPECIFIC pair; someone who courted two people
+     but only married one still carries a permanently-unresolved romance with the other, and A1 never
+     gated on `!person.spouseId` the way Y1 already does. Fixed in both the home and away A1 blocks.
+  2. **The candidate-gathering "someone biology just killed this year" filter excluded EVERY C2
+     candidate ever** — its check was "any `deathYear` set" rather than "`deathYear === year`", so a
+     parent who died in ANY prior year (C2's own entire premise: "fires the year after a parent's
+     death") made the filter drop the candidate before it could ever be asked. Caught directly by
+     task 6.5's own one-decision-per-(kind,person)-per-year test, which needs C2 to actually reach
+     resolution to prove the invariant meaningfully. Fixed to check `deathYear === year`.
+  3. **The marital-transition reducer needed several new self/cross re-fires accepted as legal**
+     (`courting -> courting`, `single -> single`, `married -> married`, `widowed -> widowed`,
+     `single -> widowed`, `courting -> widowed`) — candidate gathering's per-personId independent
+     batches (design decision 1's own architecture: each person's event-selection is its own
+     exclusive draw) can legitimately entangle one person in more than one romantic thread the same
+     year (claimed as one Y1's partner while independently seeking someone else). Rather than a full
+     redesign of candidate uniqueness (well outside this slice's scope), these re-fires are accepted
+     as redundant-but-legitimate re-applications — the exact same precedent already established for
+     vocation's `working -> working`. `widowed -> single` remains illegal (skipping back to "never
+     married" is never sensible) and is the reducer's own regression test.
+- **One-decision-per-(kind,person)-per-year assertion** (design Open Question, task 6.5/6.6): a
+  dev-time guard in `simulate.ts` throws if two candidates sharing `(kind, personId)` BOTH resolve as
+  "occurring" in the same year — a genuine programming-error signal, since the exclusive per-person
+  event-pick should make this structurally impossible. Proven directly by a hand-built fixture (a
+  child losing both parents the prior year, producing two `C2` candidates — the design's own named
+  example) rather than hoping a real seed produces the exact collision.
+
+**Reseeding** (decision 053/061/064 precedent, via `scripts/find-seeds.ts`): five curated tests
+needed a new seed or a raised timeout — all trace to the SAME root cause, PR6's absolute hazards
+replacing decision 045's flat 0.85 relative weight, which makes every social candidate (marriage,
+pregnancy, remarriage, courtship) compete against a much larger "nothing" residual most person-years:
+- `simulate.test.ts`'s maternal-death-widowhood test: one of 7 seeds (`maternal-check-41`) replaced
+  by `maternal-widow-41` (predicate: a maternal death that widows a living husband).
+- `simulate.test.ts`'s "a widow or widower can remarry" test: `widow-check-11-1` → `widow-remarry-3`
+  (predicate: at least one actor with >=2 marriages, checked against the EXACT same
+  `simulate(config, people, [], ...)` harness the test itself uses — `scripts/find-seeds.ts`'s own
+  `findSeed` passes `generateWorld`'s real `events`, which does not reproduce for a test that
+  discards them; a seed search must match the harness it reseeds).
+- `simulate.test.ts`'s artisan-widow-keeps-trade test: `widow-trade-39` → `artisan-widow-trade-3`.
+- `simulate.test.ts`'s decision-053 canon-law/floor test: not reseeded — its own hardcoded assertion
+  (17/22 women/men, gentry) was decision 053's OLD figure; updated to 14/16, the new gentry floor.
+- Four multi-seed loop tests (merchet/heriot/chevage/leyrwite, 15-20 seeds each) crossed the default
+  5000ms test timeout under the added per-candidate hazard computation and the new uniqueness guard;
+  raised to 15000-20000ms rather than trimmed seed counts, so their existing statistical coverage is
+  unchanged.
+
+**Grounding:** `sdd/engine-life-course/spec` (event-hazards capability, all four requirements);
+`sdd/engine-life-course/design` revision 2 ("Hazard shapes", "Hazard lookup miss", "Marriage floors"
+tables, architecture decisions #1, #4, #14, #15); `sdd/engine-life-course/research` #6144 (M-S1/M-S2,
+the confirmed marriage band, widow-remarriage target).
+
+**Verified:** `pnpm test` (415 passing, up from 391 pre-batch — 24 new tests, 0 regressions),
+`pnpm exec tsc --noEmit`, `pnpm lint` clean. New tests: `src/domain/hazards.test.ts` (14 cases: hazard
+shape/ramp/cap, widowed-vs-single base, Weibull courtship increase, Y3 unfree/Statute factors,
+one-shot flatness, fertility bands, lookup-miss chain, competing-risk rescale/residual/determinism),
+`src/adapters/decision/rule-decision-maker.test.ts` (6 cases: hazard-driven selection, competing-risk
+sum-to-1, rescale-to-0.05-residual, protagonist "everyday" residual, determinism, fallback reporting),
+`src/domain/life-state.test.ts` (+4: `markMarriageable` stamp/idempotence, the `courting -> widowed`
+self/cross legality), plus a new PR6 describe block in `simulate.test.ts` for the
+one-decision-per-year invariant.
+
+**Deviations / open issues for later PRs in this change:**
+- **`OTHER_KIND_BASE_HAZARD` is a flat placeholder for 16 social kinds** the design's own hazard-
+  shapes table doesn't name a formula for — a genuine per-kind age-window curve for each is
+  undocumented scope; deferred, documented in `params/provenance.ts`.
+- **Widow-remarriage's exact annual curve is provisional** — `WIDOW_REMARRIAGE_POST_BLACK_DEATH_
+  FACTOR` targets the RIGHT ratio (63%→26%, research #6144 M-S2) but the precise annual hazard that
+  converges to that cumulative figure over a lifetime is PR8 calibration work (task 8.2).
+- **Marriage ages are far from the 18-22/21-25 target as shipped** — an informal 40-seed check over
+  the real 1327-1361 window (not `check-demographics.ts`, which still defaults to the Tudor
+  1498-1598 window) measured mean first-marriage ages around 42-44 for both sexes. This is expected:
+  PR6 intentionally ships the mechanism, not the calibration (task 8.2 tunes `onset`/`minEligible`/
+  `rho` against `check-demographics --stats --assert`); the short 34-year in-sim window itself may
+  also need a distinct calibration approach from the Tudor 60-100-year figures the actuarial table
+  was tuned against. See the apply-progress artifact for the full measured numbers.
+- **`check-demographics.ts` was not extended in this PR** (that's task 8.5/8.6) — it still measures
+  against `startYear:1498` for `--stats`, not the product's actual 1327-1361 window.
