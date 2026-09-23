@@ -641,6 +641,54 @@ describe("decision 053: marriage by class and canon law", () => {
   });
 });
 
+describe("PR11 STEP 2 fix (a): eligible() draws among every tied candidate instead of always the same lowest-id match", () => {
+  function mkPerson(overrides: Partial<Person> & Pick<Person, "id" | "sex">): Person {
+    const birthYear = overrides.birthYear ?? 1500;
+    return {
+      name: overrides.id,
+      birthYear,
+      traits: [],
+      job: "none",
+      founder: false,
+      socialClass: "villein",
+      mind: createMind("sticky-match-seed", overrides.id, birthYear),
+      ...overrides,
+    };
+  }
+
+  it("varies the offered Y1 partner across years when several equally-eligible candidates exist (PR11 funnel diagnostic: previously always the same lowest-id match, 48% of consecutive Y1 offers repeated the exact same partner, n=5554 across 25 seeds)", () => {
+    const seed = "sticky-match-check";
+    const startYear = 1530;
+    const person = mkPerson({ id: "z_seeker", sex: "f", socialClass: "villein", birthYear: 1500 }); // age 30 at startYear
+    // Ids chosen so plain `.find()` over `aliveNonMoved`'s id-sorted order would ALWAYS return
+    // "a_first", every single year, regardless of how many other equally-good candidates exist.
+    const a = mkPerson({ id: "a_first", sex: "m", socialClass: "villein", birthYear: 1500 });
+    const b = mkPerson({ id: "b_second", sex: "m", socialClass: "villein", birthYear: 1500 });
+    const c = mkPerson({ id: "c_third", sex: "m", socialClass: "villein", birthYear: 1500 });
+    const people = { person, a, b, c };
+
+    const offeredPartners = new Set<string>();
+    for (let year = startYear; year < startYear + 12; year++) {
+      const candidates = gatherCandidatesForYear(year, people, [], seed, undefined);
+      const y1 = candidates.find((cand) => cand.kind === "Y1" && cand.personId === person.id);
+      if (y1?.partnerId) offeredPartners.add(y1.partnerId);
+    }
+    expect(offeredPartners.size).toBeGreaterThan(1);
+  });
+
+  it("still prefers a same-class partner over an equally age-appropriate cross-class one when only one same-class candidate exists (status endogamy stays intact)", () => {
+    const seed = "endogamy-still-intact";
+    const year = 1530;
+    const person = mkPerson({ id: "z_person", sex: "f", socialClass: "villein", birthYear: 1500 });
+    const sameClass = mkPerson({ id: "y_same", sex: "m", socialClass: "villein", birthYear: 1502 });
+    const crossClass = mkPerson({ id: "a_cross", sex: "m", socialClass: "merchant", birthYear: 1501 });
+    const people = { person, sameClass, crossClass };
+    const candidates = gatherCandidatesForYear(year, people, [], seed, undefined);
+    const y1 = candidates.find((c) => c.kind === "Y1" && c.personId === person.id);
+    expect(y1?.partnerId).toBe(sameClass.id);
+  });
+});
+
 describe("decision 054: widowhood and remarriage", () => {
   it("a spouse's death clears spouseId on both sides and records a causally-linked widowed event — the exact bug decision 054 fixes, checked across every widowed event in several full-length village runs", async () => {
     let widowedEventsChecked = 0;
@@ -989,6 +1037,22 @@ describe("PR6 corrective task 4: mean first-marriage age stays within onset + 5 
       // pool raises per-year contention rather than just supply — the same mechanism, now via a
       // different lever (fewer people leaving, not more immigrants). A small margin, not chased
       // further, per this slice's own instruction to report rather than hide a measured gap.
+      //
+      // PR11 (STEP 2 fix (a), decision 072): tried restoring +5 again after fixing `eligible()`'s
+      // sticky same-first-candidate matching (a seeded weighted draw over the whole tied pool,
+      // instead of `aliveNonMoved.find(...)`'s fixed id-sorted first match) — still FAILS at +5
+      // (measured: women's gap 7.32, meanAge=25.46 vs meanOnset=18.14 with n=37, well over 5). Left
+      // at +9 (both sexes measured comfortably within it: women 7.32, men 5.35, n=31). The STEP 1
+      // funnel diagnostic (`sdd/engine-life-course/state`) explains why fixing WHICH partner is
+      // offered doesn't close this gap: the dominant remaining leaks are (1) a Y1 candidate winning
+      // its own person-year's competing-risk draw only 38% of the time it's offered at all (a
+      // by-design consequence of many competing situations sharing one person-year "slot", not a
+      // broken mechanism — `hazards.test.ts`'s own `expectedMarriageChain` regression guard still
+      // passes unchanged), and (2) genuine partner-SCARCITY at the very first step (candidate-level
+      // tally: "already married" and "not marriageable age" account for ~72% of every failed match
+      // attempt) — the SAME structural, population-composition conclusion decisions 068/069/070/071
+      // each independently reached, now confirmed with harder per-candidate evidence rather than
+      // inferred from aggregate rates alone.
       expect(meanAge).toBeLessThanOrEqual(meanOnset + 9);
     }
   }, 40000); // PR9: raising IMMIGRATION_ANNUAL_PROBABILITY grows the simulated population faster,

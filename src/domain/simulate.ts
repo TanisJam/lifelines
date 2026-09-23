@@ -239,6 +239,34 @@ function classifyNoPartnerReasons(
   }
 }
 
+/**
+ * PR11 (STEP 2 fix (a), decision 072): picks ONE candidate from `pool` — a seeded, deterministic,
+ * weighted draw (keyed exactly like every other per-person-year decision in this file: `seed` +
+ * `personId` + `year` + a distinguishing key, so re-deriving it always agrees with the real run,
+ * same guarantee `keyedRng` gives everywhere else). Replaces the old `aliveNonMoved.find(...)`,
+ * which deterministically returned the SAME first-id-sorted candidate every single year regardless
+ * of whether that pairing ever led anywhere — see `gatherCandidatesForYear`'s own Y1 block for the
+ * measured diagnosis this fixes.
+ *
+ * Weighted by age proximity (`1 / (1 + ageGap)`, never zero) so a closer-in-age candidate is more
+ * likely to be picked, without ever fully excluding a wider-gap one within the tier's own already-
+ * enforced `maxAgeGap` — the tier structure itself (age-window, then same-class-vs-any-class) still
+ * does the hard filtering; this only decides WHICH of a tied pool wins for one particular year.
+ */
+function pickWeightedPartner(pool: readonly Person[], age: number, year: number, seed: string, personId: string, tierKey: string): Person | undefined {
+  if (pool.length === 0) return undefined;
+  if (pool.length === 1) return pool[0];
+  const weights = pool.map((candidate) => 1 / (1 + Math.abs(ageInYear(candidate.birthYear, year) - age)));
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  const draw = keyedRng(seed, personId, year, tierKey)() * total;
+  let acc = 0;
+  for (let i = 0; i < pool.length; i++) {
+    acc += weights[i]!;
+    if (draw < acc) return pool[i];
+  }
+  return pool[pool.length - 1]; // floating-point fallback: the draw should always land before this
+}
+
 /** Round 9: a decision call budget for a single life (see docs/decisions.md 037). Once the running total of REAL DecisionMaker calls for this run reaches this, any further social decision NOT about the protagonist is resolved with the deterministic rule heuristic instead of calling `decisionMaker` — the protagonist's own decisions (and decisions about them) are never throttled. */
 export const LIFE_DECISION_BUDGET = 2000;
 
@@ -919,8 +947,19 @@ function gatherCandidatesForYear(
       person.lifeState = markMarriageable(ensureLifeState(person, events), year);
       const yearsMarriageable = year - (person.lifeState.marriageableSince ?? year);
       const isWidowed = ensureLifeState(person, events).marital.status === "widowed";
-      const eligible = (maxAgeGap: number, sameClassOnly: boolean) =>
-        aliveNonMoved.find(
+      // PR11 (STEP 2 fix (a), `sdd/engine-life-course/state`, decision 072): each tier's CANDIDATE
+      // POOL (every candidate meeting that tier's predicates), not a single `.find()` match — a
+      // fixed `.find()` over `aliveNonMoved`'s id-sorted order deterministically returned the exact
+      // SAME first-sorted candidate every year regardless of outcome, which the STEP 1 funnel
+      // diagnostic confirmed directly: 48% of a person's consecutive Y1 offers repeated the exact
+      // same partner (n=5,554 year-over-year transitions, 25 seeds), mean 23.3 Y1 attempts per
+      // person against only 8.1 DISTINCT partners ever offered, some people offered 5+ Y1s ALL to
+      // the same partner (max observed streak: 13 consecutive years). `eligiblePool` keeps every
+      // predicate byte-for-byte identical to the old `eligible()` (including the tier order and the
+      // same-class-first soft preference) — only WHICH single candidate is picked from a tied pool
+      // changes, via `pickWeightedPartner` below.
+      const eligiblePool = (maxAgeGap: number, sameClassOnly: boolean) =>
+        aliveNonMoved.filter(
           (candidate) =>
             candidate.id !== person.id &&
             candidate.sex !== person.sex &&
@@ -934,14 +973,13 @@ function gatherCandidatesForYear(
             Math.abs(ageInYear(candidate.birthYear, year) - age) <= maxAgeGap &&
             (!sameClassOnly || (candidate.socialClass ?? "cottar") === (person.socialClass ?? "cottar")),
         );
-      const partner = eligible(10, true) ?? eligible(20, true) ?? eligible(40, true) ?? eligible(10, false) ?? eligible(20, false) ?? eligible(40, false);
+      const pickTier = (maxAgeGap: number, sameClassOnly: boolean) =>
+        pickWeightedPartner(eligiblePool(maxAgeGap, sameClassOnly), age, year, seed, person.id, `y1-partner-${maxAgeGap}-${sameClassOnly}`);
+      const partner = pickTier(10, true) ?? pickTier(20, true) ?? pickTier(40, true) ?? pickTier(10, false) ?? pickTier(20, false) ?? pickTier(40, false);
       if (funnelInCohort) {
         if (partner) {
           marriageFunnelDebug!.collector.partnerFoundPersonYears++;
-          // Redundant re-derivation, gated behind the same debug flag as everything else here (see
-          // this block's own opening comment) — `eligible()` is pure, so calling it again to learn
-          // WHICH tier matched costs nothing except when this collector is actually attached.
-          const foundSameClass = eligible(10, true) !== undefined || eligible(20, true) !== undefined || eligible(40, true) !== undefined;
+          const foundSameClass = eligiblePool(10, true).length > 0 || eligiblePool(20, true).length > 0 || eligiblePool(40, true).length > 0;
           if (foundSameClass) marriageFunnelDebug!.collector.matchesBySameClassTier++;
           else marriageFunnelDebug!.collector.matchesByCrossClassTier++;
         } else {
