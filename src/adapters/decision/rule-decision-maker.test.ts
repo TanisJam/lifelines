@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionQuestion, PersonYearBatch } from "@/domain/decisions";
+import { computeHazard, effectiveSelectionHazard } from "@/domain/hazards";
 import { RuleDecisionMaker } from "./rule-decision-maker";
 
 function question(kind: DecisionQuestion["kind"], overrides: Partial<DecisionQuestion["state"]> = {}): DecisionQuestion {
@@ -17,15 +18,45 @@ function batch(situations: PersonYearBatch["situations"], isProtagonist = false)
   return { personId: "p1", year: 1330, self: {}, situations, isProtagonist };
 }
 
+describe("PR6 corrective: the marriage chain (engram #6280) — Y1/A1 selection is scaled by the outcome probability", () => {
+  it("Y1's selection weight is scaled up so selection x P(encourage) recovers the raw hazard", async () => {
+    const maker = new RuleDecisionMaker();
+    const y1 = question("Y1"); // age 20, villein woman — a real, computable raw hazard and P(encourage)
+    const result = await maker.decideYear(batch({ y1: { kind: "Y1", question: y1 } }));
+    const pEncourage = result.response.y1!.encourage!;
+    const rawHazard = computeHazard({ kind: "Y1", age: 20, sex: "f", socialClass: "villein", year: 1330 }).value;
+    expect(result.selection.y1!).toBeCloseTo(effectiveSelectionHazard(rawHazard, pEncourage), 10);
+    // Recovering the compound: selection x P(encourage) reconstructs the raw hazard (not the far
+    // smaller compound the pre-corrective code produced by leaving `selection` at the raw hazard).
+    expect(result.selection.y1! * pEncourage).toBeCloseTo(rawHazard, 10);
+  });
+
+  it("A1's selection weight is scaled up so selection x P(propose) recovers the raw hazard", async () => {
+    const maker = new RuleDecisionMaker();
+    // courtshipYears=1 (not higher): PR6 corrective's lowered COURTSHIP_WEIBULL_LAMBDA makes A1's raw
+    // hazard rise fast enough that a longer courtship, alone in the batch, would already hit
+    // `resolveCompetingRisks`' own >0.95 rescale — a SEPARATE, correctly-tested mechanism (task 6.3)
+    // this assertion isn't about; courtshipYears=1 keeps this test isolated to the scaling itself.
+    const a1 = question("A1", { situation: { code: "A1", courtshipYears: 1 } });
+    const result = await maker.decideYear(batch({ a1: { kind: "A1", question: a1 } }));
+    const pPropose = result.response.a1!.propose!;
+    const rawHazard = computeHazard({ kind: "A1", age: 20, sex: "f", socialClass: "villein", year: 1330, courtshipYears: 1 }).value;
+    expect(result.selection.a1!).toBeCloseTo(effectiveSelectionHazard(rawHazard, pPropose), 10);
+    expect(result.selection.a1! * pPropose).toBeCloseTo(rawHazard, 10);
+  });
+});
+
 describe("PR6: RuleDecisionMaker.decideYear returns absolute hazards as selection (design decision 4, task 6.9)", () => {
   it("a hazard-bearing kind's selection value comes from hazards.ts, not a flat relative weight", async () => {
     const maker = new RuleDecisionMaker();
     const y1 = question("Y1");
     const result = await maker.decideYear(batch({ y1: { kind: "Y1", question: y1 } }));
-    // Newly-eligible villein woman at age 20 (onset 18): logistic ramp near full, base 0.30, D(0)=1 —
-    // well under the old flat 0.85, proving this ISN'T the pre-PR6 relative weight anymore.
+    // PR6 corrective (engram #6280): Y1's raw hazard is scaled up by `effectiveSelectionHazard` to
+    // compensate for the separate "encourage" outcome roll (see the "marriage chain" describe block
+    // above) — so the value here is neither the raw hazard NOR the pre-PR6 flat 0.85 relative weight,
+    // but it must still be a REAL, finite probability (never negative, capped at 1 by construction).
     expect(result.selection.y1).toBeGreaterThan(0);
-    expect(result.selection.y1).toBeLessThan(0.5);
+    expect(result.selection.y1).toBeLessThanOrEqual(1);
   });
 
   it("selection sums to 1 including the 'nothing' residual for a non-protagonist batch (task 6.3 competing risk)", async () => {

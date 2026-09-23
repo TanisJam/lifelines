@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { FALLBACK_HAZARD } from "./params/demography";
-import { computeHazard, lookupHazard, resolveCompetingRisks } from "./hazards";
+import { FALLBACK_HAZARD, MARRIAGE_FLOORS } from "./params/demography";
+import { computeHazard, effectiveSelectionHazard, expectedMarriageChain, lookupHazard, OUTCOME_PROBABILITY_FLOOR, resolveCompetingRisks } from "./hazards";
+import type { SocialClass, Sex } from "./types";
+
+describe("PR6 corrective: effectiveSelectionHazard (engram #6280, the marriage chain)", () => {
+  it("scales a raw hazard up so the compound (selection x outcome) chain matches the raw hazard on average", () => {
+    // A raw hazard of 0.30, gated behind a separate 0.4-probability outcome roll (Y1's "encourage"),
+    // needs an effective selection weight of 0.75 so 0.75 * 0.4 = 0.30 on average.
+    expect(effectiveSelectionHazard(0.3, 0.4)).toBeCloseTo(0.75, 10);
+  });
+
+  it("floors the outcome probability so a very low-facet person doesn't blow the hazard up unboundedly", () => {
+    const withFloor = effectiveSelectionHazard(0.03, 0.02);
+    expect(withFloor).toBeCloseTo(0.03 / OUTCOME_PROBABILITY_FLOOR, 10);
+  });
+
+  it("never exceeds 1, even when the raw hazard is already large relative to the outcome probability", () => {
+    expect(effectiveSelectionHazard(0.9, 0.3)).toBe(1);
+  });
+});
 
 describe("PR6: hazard shape (task 6.1)", () => {
   it("a longer time-marriageable-and-single person has a higher Y1 hazard than a newly eligible one, same age/sex/class", () => {
@@ -76,6 +94,27 @@ describe("PR6: hazard lookup miss chain (task 6.7)", () => {
     expect(result.value).toBe(FALLBACK_HAZARD);
     expect(result.fallbackKey).toBe("Y1:gentry");
   });
+});
+
+describe("PR6 corrective task 4: the analytic marriage-chain expectation stays within onset + 5 years", () => {
+  // A loose sanity band, not fine calibration (PR8's job) — deterministic and instant (no simulation
+  // RNG), so it can never be flaky or slow. Guards specifically against the "chain multiplication"
+  // regression this corrective fixes (engram #6280): before the fix, this same analytic chain
+  // (computed with the OLD lambda=3, no effectiveSelectionHazard scaling) would have landed far
+  // outside this band for every class.
+  const classes: readonly SocialClass[] = ["gentry", "merchant", "artisan", "freeholder", "villein", "cottar"];
+  const sexes: readonly Sex[] = ["f", "m"];
+
+  for (const socialClass of classes) {
+    for (const sex of sexes) {
+      it(`${socialClass}/${sex}: expected first-marriage age is within onset + 5 years`, () => {
+        const onset = MARRIAGE_FLOORS[socialClass][sex].onset;
+        const { expectedMarriageAge } = expectedMarriageChain(socialClass, sex);
+        expect(expectedMarriageAge).toBeLessThanOrEqual(onset + 5);
+        expect(expectedMarriageAge).toBeGreaterThan(onset); // sanity: never before onset itself
+      });
+    }
+  }
 });
 
 describe("PR6: competing-risk resolution (task 6.3)", () => {

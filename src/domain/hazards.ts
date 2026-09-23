@@ -165,6 +165,70 @@ export function computeHazard(ctx: HazardContext): HazardResult {
   }
 }
 
+/**
+ * PR6 corrective (validator finding, engram #6280 "the marriage chain"): the design's own hazard
+ * shapes describe the FULL yearly probability that a marriage-track event happens — but this engine
+ * asks a SEPARATE outcome question once a candidate wins the competing-risk draw (Y1's own
+ * `ruleDistribution` branch judges "encourage" vs "decline"/"wait"; A1 judges "propose" vs
+ * "delay"/"end-it"), which silently compounds two independent probabilities into a far smaller one
+ * (measured: Y1 winning ~26.5% x P(encourage)~0.4, THEN A1 winning x P(propose)~0.45 — four
+ * multiplied terms where the design intends roughly one effective per-year rate). Dividing the raw
+ * hazard by the outcome probability (floored so a low-facet person's rare "encourage"/"propose"
+ * doesn't blow the scaled hazard up unboundedly, capped at 1 so a single candidate's own marginal
+ * probability never exceeds certainty) keeps the compound chain's AVERAGE matching the design's own
+ * stated per-year rate, while still letting the adapter genuinely judge the outcome — the port
+ * contract ("adapter judges, engine samples") is unchanged; this only corrects the UNITS of what one
+ * "hazard" means once a second, independent judgment gates its effect.
+ */
+export const OUTCOME_PROBABILITY_FLOOR = 0.15;
+
+export function effectiveSelectionHazard(rawHazard: number, outcomeProbability: number, floor: number = OUTCOME_PROBABILITY_FLOOR): number {
+  return Math.min(1, rawHazard / Math.max(outcomeProbability, floor));
+}
+
+export interface MarriageChainExpectation {
+  readonly expectedCourtshipStartAge: number;
+  readonly expectedCourtshipYears: number;
+  readonly expectedMarriageAge: number;
+}
+
+/**
+ * PR6 corrective (engram #6280, task 4's calibration sanity check): an ANALYTIC (no RNG, no
+ * simulation), instant estimate of the expected age courtship begins and the expected total years to
+ * first marriage. Uses each year's RAW hazard (`computeHazard`) as "probability of progressing this
+ * year" — which is exactly right by construction: `effectiveSelectionHazard` scales the SELECTION
+ * weight so that (selection wins) x (outcome is positive) recovers the raw hazard, so the design's
+ * own single stated per-year rate IS the effective yearly progress probability, once the outcome-roll
+ * discount is corrected for. Deliberately ignores breakups/restarts and competing non-marriage
+ * candidates (an optimistic lower bound on real simulated marriage age, not a replacement for one) —
+ * useful as a fast, deterministic regression guard against the exact "chain multiplication" bug this
+ * corrective fixes, and as a calibration aid for PR8.
+ */
+export function expectedMarriageChain(socialClass: SocialClass, sex: Sex, maxYears = 60): MarriageChainExpectation {
+  const minEligible = minEligibleAge(socialClass, sex);
+
+  let survivalSingle = 1;
+  let expectedYearsToCourtship = 0;
+  for (let t = 0; t < maxYears; t++) {
+    const h = computeHazard({ kind: "Y1", age: minEligible + t, sex, socialClass, year: 1340, yearsMarriageable: t }).value;
+    expectedYearsToCourtship += survivalSingle * h * t;
+    survivalSingle *= 1 - h;
+  }
+  expectedYearsToCourtship += survivalSingle * maxYears; // censor remaining mass conservatively
+
+  let survivalCourting = 1;
+  let expectedCourtshipYears = 0;
+  for (let s = 1; s <= maxYears; s++) {
+    const h = computeHazard({ kind: "A1", age: 0, sex, socialClass, year: 1340, courtshipYears: s }).value;
+    expectedCourtshipYears += survivalCourting * h * s;
+    survivalCourting *= 1 - h;
+  }
+  expectedCourtshipYears += survivalCourting * maxYears;
+
+  const expectedCourtshipStartAge = minEligible + expectedYearsToCourtship;
+  return { expectedCourtshipStartAge, expectedCourtshipYears, expectedMarriageAge: expectedCourtshipStartAge + expectedCourtshipYears };
+}
+
 export interface CompetingRiskResolution {
   /** Every input id's rescaled absolute probability — sums with `residual` to exactly 1. */
   readonly selection: Readonly<Record<string, number>>;

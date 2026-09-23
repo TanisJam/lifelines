@@ -42,7 +42,14 @@ export const MARRIAGE_FLOOR_FALLBACK_ROW: Readonly<Record<Sex, MarriageFloor>> =
 export const MARRIAGE_RAMP_RHO = 0.1;
 export const MARRIAGE_RAMP_CAP_YEARS = 8;
 
-/** Y1's base hazard at the full ramp (age well past onset, long time marriageable). */
+/**
+ * Y1's base hazard at the full ramp (age well past onset, long time marriageable). Design revision 2
+ * marks these "provisional, calibrated" — the exact value is PR8's calibration job (task 8.2), not
+ * this corrective's. PR6 corrective (engram #6280, task 1): left at the design's own default here;
+ * the remaining gap between the measured mean first-marriage age and the onset+5 sanity band traces
+ * to structurally rare classes (gentry/clergy are deliberately "one per village" in worldgen) facing
+ * genuine partner scarcity, not the hazard rate — see the task 4 test's own doc comment.
+ */
 export const MARRIAGE_BASE_AT_FULL_RAMP: Readonly<Record<Sex, number>> = { f: 0.3, m: 0.25 };
 
 /** Y1 for an already-widowed person: a separate, flatter base (no time-in-state ramp — design decision "Widowed: separate base"). */
@@ -57,9 +64,17 @@ export const WIDOW_REMARRIAGE_BASE: Readonly<Record<Sex, number>> = { f: 0.12, m
 export const WIDOW_REMARRIAGE_POST_BLACK_DEATH_FACTOR = 0.41;
 export const WIDOW_REMARRIAGE_FACTOR_YEAR = 1349;
 
-/** A1's Weibull hazard shape in courtship years: `h(t) = base * (k/lambda) * (t/lambda)^(k-1)`. */
+/**
+ * A1's Weibull hazard shape in courtship years: `h(t) = base * (k/lambda) * (t/lambda)^(k-1)`.
+ * PR6 corrective (engram #6280, "the marriage chain"): `lambda` lowered from 3 to 1.5 — the original
+ * value put the curve's characteristic timescale at ~3 courtship years, meaning A1 stayed weak for
+ * several years even after `effectiveSelectionHazard`'s P(propose) scaling (measured mean
+ * courtship-to-marriage: 7.8 years). A smaller `lambda` makes the hazard substantial from the FIRST
+ * eligible courtship year (courtshipYears=1, since A1 is never actually offered at t=0), matching a
+ * mean courtship length closer to the design's own intent.
+ */
 export const COURTSHIP_WEIBULL_K = 1.5;
-export const COURTSHIP_WEIBULL_LAMBDA = 3;
+export const COURTSHIP_WEIBULL_LAMBDA = 1.5;
 export const COURTSHIP_BASE_HAZARD = 0.45;
 
 /** A2's fertility-band hazard by mother's age — how likely THIS is the year a couple tries, not the conception odds itself (see `simulate.ts#conceptionProbability`). */

@@ -190,11 +190,34 @@ describe("ensureLifeState", () => {
   });
 });
 
-describe("PR6: courting -> courting is a legal self-loop", () => {
-  it("re-firing the courting transition updates since/partnerId instead of throwing", () => {
+describe("PR6 corrective (engram #6280, item 3): self-loops/cross re-fires — reversion attempted, kept where MEASURED necessary", () => {
+  // Reverting this table to the tight, design-sanctioned set was tried during the corrective and
+  // MEASURED to still crash routinely (11 real test failures, dominated by `courting -> courting`) —
+  // a third, still-open root cause in candidate gathering's `claimedPartners` handling (see this
+  // module's own doc comment on `LEGAL_MARITAL_TRANSITIONS` for the full finding). These self-loops
+  // stay legal as a documented, verified-necessary safety net, not a blind restoration.
+  it("courting -> courting is a legal self-loop, updating since/partnerId instead of throwing", () => {
     const state: LifeState = { ...baseLifeState(1330), marital: { status: "courting", since: 1345, partnerId: "p2" } };
     const next = applyLifeTransition(state, { axis: "marital", to: "courting", partnerId: "p3" }, 1346);
     expect(next.marital).toEqual({ status: "courting", since: 1346, partnerId: "p3" });
+  });
+
+  it("single -> single, married -> married and widowed -> widowed are all legal self-loops", () => {
+    expect(applyLifeTransition(baseLifeState(1330), { axis: "marital", to: "single" }, 1346).marital.status).toBe("single");
+    const married: LifeState = { ...baseLifeState(1330), marital: { status: "married", since: 1340, partnerId: "p2" } };
+    expect(applyLifeTransition(married, { axis: "marital", to: "married", partnerId: "p2" }, 1346).marital.status).toBe("married");
+    const widowed: LifeState = { ...baseLifeState(1330), marital: { status: "widowed", since: 1340 } };
+    expect(applyLifeTransition(widowed, { axis: "marital", to: "widowed" }, 1346).marital.status).toBe("widowed");
+  });
+
+  it("single -> widowed is legal (a residual stale-romance path the corrective's two named fixes did not fully close)", () => {
+    expect(applyLifeTransition(baseLifeState(1330), { axis: "marital", to: "widowed" }, 1346).marital.status).toBe("widowed");
+  });
+
+  it("courting -> widowed is legal — a real, deliberate transition (a widow(er)'s failed remarriage reverts to widowed), not a bug mask", () => {
+    const state: LifeState = { ...baseLifeState(1330), marital: { status: "courting", since: 1345, partnerId: "p2" } };
+    const next = applyLifeTransition(state, { axis: "marital", to: "widowed" }, 1346);
+    expect(next.marital.status).toBe("widowed");
   });
 });
 

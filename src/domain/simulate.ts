@@ -299,6 +299,34 @@ function resolveWidowhood(
 }
 
 /**
+ * PR6 corrective (validator finding, engram #6280 "the dead-suitor lockout"): `activeRomancePair`
+ * (events.ts) only treats a romance as resolved once a `breakup` or `marriage` event exists for that
+ * exact pair — a partner's DEATH never resolved it, so the survivor stayed permanently barred from
+ * Y1 (`!person.spouseId && activeRomancePair(...) === undefined`) and from A1 (which needs a living
+ * partner). Measured: 26 of 53 romances ended this way, 18 of 91 unmarried adults locked out ~12.9
+ * years on average. Called for EVERY death (general biology and decision 051's maternal-death path
+ * both), regardless of the deceased's own marital status — a still-unresolved romance can persist
+ * even for someone who separately married someone else (the pre-existing multi-suitor property; see
+ * decision 065's "Real pre-existing bugs" note), so this always attempts to close it. No-ops when
+ * the deceased had no unresolved romance, or its partner is dead or already resolved otherwise.
+ */
+function resolveCourtshipOnDeath(events: Event[], people: Record<string, Person>, deceased: Person, year: number, deathEventId: string): readonly string[] {
+  const partnerId = activeRomancePair(events, deceased.id);
+  if (!partnerId) return [];
+  const partner = people[partnerId];
+  if (!partner || partner.deathYear !== undefined) return [];
+  const partnerState = ensureLifeState(partner, events);
+  // Only reset the marital AXIS if this romance was actually the survivor's current relationship
+  // (`"courting"`) — a stale, never-resolved thread from years ago shouldn't overwrite a partner who
+  // has since gone on to marry someone else; the `breakup` event alone is enough to unblock them.
+  if (partnerState.marital.status === "courting") {
+    partner.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "single" }, year);
+  }
+  const breakupEvent = pushEvent(events, year, "breakup", [deceased.id, partnerId], { causeOfDeath: true }, [deathEventId]);
+  return [breakupEvent.id];
+}
+
+/**
  * Decision 055: birth spacing. A married woman isn't eligible for another A2 "try" this soon after
  * her last birth — ~2 years generally (Davenport 2019's 30-33 month intervals round down slightly
  * for the engine's whole-year granularity, and this is meant as a floor under the probabilistic
@@ -2063,6 +2091,9 @@ export async function* simulateYears(
           // by the shared `resolveWidowhood` helper (fixed after review, R3-001) so this general
           // death path and decision 051's maternal-death path below can never disagree.
           resultingEventIds.push(...resolveWidowhood(seed, events, people, person, socialClass, year, deathEvent.id));
+          // PR6 corrective: close any unresolved romance the deceased leaves behind (the
+          // dead-suitor lockout fix — see `resolveCourtshipOnDeath`'s own doc comment).
+          resultingEventIds.push(...resolveCourtshipOnDeath(events, people, person, year, deathEvent.id));
           // PR5's heriot marker (design's markers table: "villein/cottar tenant death") — the
           // deceased's best beast, owed to the lord, on the death of an unfree tenant. Excluded for
           // the protagonist specifically: their own death is a pre-existing, load-bearing contract
@@ -2563,6 +2594,7 @@ export async function* simulateYears(
                 // biology death path uses below, so a husband whose wife dies in childbirth is
                 // widowed exactly like anyone else.
                 resultingEventIds.push(...resolveWidowhood(seed, events, people, person, person.socialClass ?? "cottar", year, deathEvent.id));
+                resultingEventIds.push(...resolveCourtshipOnDeath(events, people, person, year, deathEvent.id));
               }
             } else {
               pushThought(person.mind, "longing", "hoping for a child, still", 15, 1, year);
@@ -3245,4 +3277,4 @@ function spawnChild(seed: string, year: number, mother: Person, father: Person, 
   return { id: childId, name, sex, birthYear: year, traits, job: "none", motherId: mother.id, fatherId: father.id, founder: false, mind, socialClass, literate };
 }
 
-export { dreamGoalSatisfiedBy, eligibleForAnotherChild, feudPairHistory, gatherCandidatesForYear, townEventMortalityMultiplier };
+export { dreamGoalSatisfiedBy, eligibleForAnotherChild, feudPairHistory, gatherCandidatesForYear, resolveCourtshipOnDeath, townEventMortalityMultiplier };

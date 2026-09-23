@@ -1,5 +1,5 @@
 import type { DecisionMaker, DecisionMakerStats, DecisionQuestion, Distribution, PersonYearBatch, PersonYearResult, PersonYearSituation } from "@/domain/decisions";
-import { computeHazard, type HazardContext, resolveCompetingRisks } from "@/domain/hazards";
+import { computeHazard, effectiveSelectionHazard, type HazardContext, resolveCompetingRisks } from "@/domain/hazards";
 import { FALLBACK_CLASS } from "@/domain/period/classes";
 import { normalizeDistribution } from "@/domain/rng";
 import { ruleDistribution } from "@/domain/rule-heuristics";
@@ -35,6 +35,16 @@ function buildHazardContext(situation: PersonYearSituation): HazardContext {
     courtshipYears: numberField(situationState, "courtshipYears"),
   };
 }
+
+/**
+ * PR6 corrective (engram #6280, "the marriage chain"): the two-stage marriage-track kinds — `Y1`
+ * (courtship offer, "encourage") and `A1` (proposal, "propose") — each gate their hazard's effect
+ * behind a SECOND, independent outcome roll (`ruleDistribution`'s own branch for that kind). Naming
+ * the "positive" option here lets `decideYear` scale the raw hazard by `hazards.ts#
+ * effectiveSelectionHazard` so the COMPOUND (selection-wins x this-option-chosen) probability matches
+ * the design's own single stated per-year rate, without touching any other kind's semantics.
+ */
+const OUTCOME_SCALED_KINDS: Readonly<Record<string, string>> = { Y1: "encourage", A1: "propose" };
 
 /**
  * Deterministic heuristic weights. No network calls, no randomness of its
@@ -79,7 +89,9 @@ export class RuleDecisionMaker implements DecisionMaker {
       }
       const hazard = computeHazard(buildHazardContext(situation));
       if (hazard.fallbackKey) this.hazardFallbacks[hazard.fallbackKey] = (this.hazardFallbacks[hazard.fallbackKey] ?? 0) + 1;
-      rawHazards[id] = hazard.value;
+      const outcomeOption = OUTCOME_SCALED_KINDS[situation.kind];
+      const outcomeProbability = outcomeOption ? response[id]![outcomeOption] : undefined;
+      rawHazards[id] = outcomeProbability !== undefined ? effectiveSelectionHazard(hazard.value, outcomeProbability) : hazard.value;
     }
     const { selection: scaledHazards, residual } = resolveCompetingRisks(rawHazards);
     const selection: Record<string, number> = { ...scaledHazards };

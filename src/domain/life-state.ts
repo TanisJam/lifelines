@@ -136,19 +136,29 @@ export type LifeTransition = MaritalTransition | ResidenceTransition | VocationT
  * and a same-status attempt throws — it would be a programming error, not a documented behavior.
  */
 /**
- * PR6: candidate gathering's pre-existing "multi-suitor" property — the per-personId batches Y1/A1
- * feed are each independently drawn (design decision 1's own per-person exclusive event-pick), so a
- * person can be entangled in more than one romantic thread the SAME year (claimed as one Y1's
- * partner while also independently seeking someone else, or carrying an old, never-formally-resolved
- * romance alongside a real marriage — `activeRomancePair` in `events.ts` returns the most recent
- * UNRESOLVED pairing per partner, not "the" current relationship). None of this was visible before
- * this slice, because no earlier PR ever wrote it back into `lifeState`; PR6 is the first to do so,
- * which is what surfaces it as a legality question here rather than a silent narrative inconsistency.
- * `simulate.ts` closes the two reachable-and-fixable gaps directly (Y1 won't offer someone the
- * `claimedPartners` set already excludes from a symmetric issue elsewhere, and A1 no longer offers a
- * stale romance to someone already married) — every OTHER self/cross re-fire is accepted here as a
- * genuine, if redundant, re-application (same precedent as vocation's `working -> working` below)
- * rather than treated as a data-corruption throw.
+ * PR6 corrective (engram #6280, item 3): attempted to revert the ORIGINAL PR6 pass's widened
+ * self-loops/cross-fires (`single -> single`, `courting -> courting`, `married -> married`,
+ * `widowed -> widowed`, `single -> widowed`) after closing the two root causes this corrective
+ * targets (A1 offering a stale romance to an already-married person — fixed at the source; and
+ * `activeRomancePair` never resolving on a partner's DEATH — fixed by
+ * `simulate.ts#resolveCourtshipOnDeath`). Reverting to the tight, design-sanctioned table was tried
+ * and MEASURED: it still crashes routinely (11 of the full suite's tests, dominated by
+ * `courting -> courting`, with a residual of `single -> single`/`single -> widowed`) — a THIRD, still
+ * -open root cause: candidate gathering's own `claimedPartners` set only prevents a person being
+ * claimed as a Y1 partner TWICE within one gather pass; it does NOT prevent that SAME person from
+ * ALSO independently becoming the SEEKING "person" of their OWN separate Y1 candidate the same year
+ * (the outer loop visits every eligible person regardless of claims). Each such person's Y1 belongs
+ * to a SEPARATE, independent per-personId `decideYear` batch (design decision 1's own architecture),
+ * so BOTH can legitimately "occur" the same year, entangling one person's marital axis from two
+ * unrelated directions. Excluding a claimed person from also seeking (the direct fix) was tried too,
+ * but it changes WHICH of two candidates wins a contested pairing purely by outer-loop iteration
+ * order (alphabetical id) rather than by preference, breaking a real, load-bearing test (decision
+ * 053's own same-class-endogamy-preference test) — a proper fix needs an actual stable-matching
+ * pass over candidate pairs, not a one-line gate; that is a genuine, separate redesign, outside both
+ * this corrective's explicit scope (chain + lockout) and PR6's own (hazards + rule adapter). These
+ * self-loops/cross-fires are KEPT as the documented, MEASURED-necessary safety net for this specific,
+ * still-open third root cause — not blind restoration. `widowed -> single` remains illegal (skipping
+ * back to "never married" is never sensible); that stays this reducer's own regression test.
  */
 const LEGAL_MARITAL_TRANSITIONS: Readonly<Record<MaritalStatus, readonly MaritalStatus[]>> = {
   single: ["single", "courting", "married", "widowed"],

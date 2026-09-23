@@ -1,4 +1,5 @@
 import type { DecisionQuestion, Distribution } from "./decisions";
+import { OUTCOME_PROBABILITY_FLOOR } from "./hazards";
 import type { JsonValue } from "./types";
 
 /**
@@ -68,7 +69,17 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
       encourage += (f(self, "lovePropensity") - 50) / 150;
       encourage += (f(self, "gregariousness") - 50) / 250;
       encourage += (f(other, "trust") - 50) / 300;
-      encourage = clamp01(encourage);
+      // PR6 corrective (engram #6280, "the marriage chain"): floored at `OUTCOME_PROBABILITY_FLOOR`
+      // (0.15), not `clamp01`'s own 0.02 — a facet-worst-case person's raw formula can reach the 0.02
+      // floor, which combined with `hazards.ts#effectiveSelectionHazard`'s SELECTION-side scaling
+      // (which can inflate the win rate but never the ACTUAL "encourage" draw itself) produced a
+      // measured ~50-year expected wait for that person specifically, regardless of how favorable
+      // their circumstances otherwise were (validator trace: 18+ consecutive years offered at a
+      // ~85-94% selection win rate, "encourage" pinned at 0.02 the entire time). A shy or
+      // low-trust person should still be SLOWER than average — not effectively locked out for
+      // decades — matching `effectiveSelectionHazard`'s own floor so the two halves of the chain
+      // share one consistent "how reluctant can a real person plausibly be" floor.
+      encourage = Math.max(OUTCOME_PROBABILITY_FLOOR, clamp01(encourage));
       const decline = clamp01((1 - encourage) * 0.6);
       const wait = Math.max(0.02, 1 - encourage - decline);
       return { encourage, decline, wait };
@@ -76,7 +87,8 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
     case "A1": {
       let propose = 0.45 + (f(self, "lovePropensity") - 50) / 150 + (f(self, "perseverance") - 50) / 300;
       let endIt = 0.15 + (f(self, "anger") - 50) / 300;
-      propose = clamp01(propose);
+      // PR6 corrective: same floor as Y1's "encourage" above, for the same reason.
+      propose = Math.max(OUTCOME_PROBABILITY_FLOOR, clamp01(propose));
       endIt = clamp01(endIt);
       const delay = Math.max(0.02, 1 - propose - endIt);
       return { propose, delay, "end-it": endIt };
