@@ -2105,3 +2105,182 @@ diagnostic-only, no behavior change).
 fixes in "why this stops here" above (or a different one) before STEP 2 can actually change behavior;
 (2) steps 3 and 4 are unstarted; (3) this slice's own `y1LosesTo` instrumentation is available for
 whichever fix is chosen, to re-measure directly rather than re-deriving by hand.
+
+## 074 — PR12 STEP 2: the outcome-probability curve, option (b) (engine-life-course)
+
+**Decision:** the user selected option (b) from decision 073's three candidates — make `rule-
+heuristics.ts`'s Y1 "encourage" and A1 "propose" grow with time-in-state and age-over-onset, RULE
+ADAPTER ONLY — over (a) raising the compensation ceiling above 1.0 or (c) retuning the ramp/base
+magnitudes. Implemented, measured, and re-measured against every named target. Branch
+`elc/pr12-marriage-chain`, off main `fda3713`, on top of decisions 072/073's `feeada8`/`3377d01`.
+
+**The curve (commit `5e56a18`).** `rule-heuristics.ts#outcomeTimePressure(state, timeInStateYears,
+slope, capYears)`: `pressureYears = min(capYears, max(0, timeInStateYears) + max(0, age -
+onsetAge(socialClass, sex).value))`, `increment = slope * pressureYears`, added to the existing
+facet-driven base/floor and capped at `OUTCOME_TIME_PRESSURE_CEILING` (0.9 — never certainty). Y1 uses
+`yearsMarriageable`, A1 uses `courtshipYears` (both already stamped into `state.situation` by
+`simulate.ts`); `hazards.ts#onsetAge` (newly exported, a PURE lookup, zero logic change) supplies the
+onset. Two separate, named, documented slope/cap pairs (`params/demography.ts`):
+`Y1_OUTCOME_PRESSURE_SLOPE`=0.012, `Y1_OUTCOME_PRESSURE_CAP_YEARS`=13; `A1_OUTCOME_PRESSURE_SLOPE`=0.07,
+`A1_OUTCOME_PRESSURE_CAP_YEARS`=8 — A1's own Weibull raw hazard climbs far faster per courtship-year
+than Y1's logistic ramp climbs per eligible-year (raw ~0.64 by courtshipYears=3), so a shared slope
+left A1 badly under-tracked in early calibration; each constant carries its own `provenance.ts` entry
+(confidence low — empirically tuned against `hazards.ts`'s own curves, no sourced historical
+marriage-pressure-by-year dataset was located, same honesty standard as every other tunable in that
+module). Historically grounded: the social/economic pressure to marry rose the longer someone stayed
+eligible past their class's expected marrying age (research.md Family §rules synthesis, the same
+citation already backing `MARRIAGE_FLOORS`' own onset ages).
+
+**Mechanical safety invariant (why this cannot overshoot):** `effectiveSelectionHazard(raw, outcome) =
+min(1, raw/outcome)`, and the realized per-year rate is `selection * outcome`. For any `outcome > 0`,
+`min(1, raw/outcome) * outcome <= raw` always — a LARGER outcome answer can only shrink or eliminate
+the clamp's truncation, never push the realized rate above the raw hazard (decision 066's own "never
+over-correct past raw hazard" clamp intent, now shown to hold on the outcome side too). This is why
+"everyone marries at the minimum age" was never a real risk here: raw hazard (already near-zero before
+onset) stays the sole gate for anyone not yet under real time pressure, regardless of how generous the
+outcome curve is.
+
+**Truncation share, measured directly (not a spot check — a temporary probe hook in
+`computeHazardPrior`, reverted before commit, sampling every real (kind, rawHazard, outcomeProbability)
+triple; 25 seeds `pr12-step2-funnel-{1..25}`, 1327-1361, founderCount 30, RuleDecisionMaker, `git
+stash` used to get a true same-seed before/after):**
+
+| Kind | Truncated share BEFORE | Truncated share AFTER | Mean gap when truncated, before -> after |
+|---|---|---|---|
+| Y1 (n=2230-2537) | 28.1% | 11.1% | 0.149 -> 0.099 |
+| A1 (n=677-730) | 51.2% | 4.0% | 0.217 -> 0.104 |
+
+The residual truncation is concentrated among facet-worst-case (shy/low-trust) people, whose base
+"encourage"/"propose" sits at the `OUTCOME_PROBABILITY_FLOOR` (0.15) rather than the facet-neutral 0.4
+— the SAME added pressure increment lands on a lower starting point for them, so they legitimately
+realize below the population raw hazard, matching decision 066's own stated intent ("a shy or
+low-trust person should still be SLOWER than average"). Not chased further — it is the intended
+personality-driven heterogeneity, not the bug this slice fixes.
+
+**Funnel, same 25 seeds, same-seed before/after (`MarriageFunnelCollector`, aggregated):**
+
+| Metric | Before | After |
+|---|---|---|
+| eligiblePersonYears | 2,009 | 1,949 |
+| partnerFoundPersonYears | 1,050 (52.3% of eligible) | 942 (48.3% of eligible) |
+| y1WonDraw | 351 (33.4% of partner-found) | 285 (30.3% of partner-found) |
+| y1Outcomes encourage/decline/wait | 145 (41.3%) / 118 / 88 | 143 (50.2%) / 80 / 62 |
+| a1Offered | 278 | 272 |
+| a1WonDraw | 203 (73.0% of offered) | 161 (59.2% of offered) |
+| a1Outcomes propose/delay/end-it | 95 (46.8%) / 78 / 30 | 116 (72.0%) / 16 / 29 |
+| **married** | **90** | **106 (+17.8%)** |
+
+Eligible/partner-found/won-draw counts fall AFTER the fix not because matching got worse, but because
+the cohort now marries faster and leaves the "still eligible, still searching" pool sooner — exactly
+the intended effect, visible as a smaller denominator alongside a bigger numerator (married). A1's own
+"delay" share collapsed from 38.4% to 9.9% of A1 wins (propose 46.8% -> 72.0%) — confirming step 3's
+finding below (delay was never a separate leak; it was the SAME compensation-clamp truncation this
+slice fixes, just observed at the A1 stage).
+
+**STEP 3 — what decline/wait/delay do, traced directly in code (`simulate.ts`):**
+
+- **Y1 "decline"/"wait" (lines ~2754-2759) are NOT a lockout.** Neither branch touches `lifeState`,
+  `spouseId`, or pushes any event that `activeRomancePair` would see — only "encourage" pushes a
+  `romance` event and transitions to `"courting"`. A declined/undecided person stays exactly as
+  eligible next year as before (`age >= minMarriageAge && ... && activeRomancePair(...) === undefined`,
+  line 947, is unaffected), and CAN be re-offered the same partner again (the `pickWeightedPartner`
+  seeded draw from decision 072's STEP 2(a) makes repeats less sticky, not impossible).
+- **A1 "delay" (line ~2826) is a genuine no-op, and that is by design, not a bug.** No event, no
+  `lifeState` change — the existing `romance` event (whose `.year` anchors `courtshipYears`) stays
+  unresolved, so `activeRomancePair` still returns this same pair and A1 is re-offered every
+  subsequent year with `courtshipYears` one larger. This is EXACTLY the clock STEP 2's new pressure
+  curve reads — "delay" converges toward "propose" over time now that the curve responds to it,
+  rather than repeating an unchanging ~45% "propose" answer forever (measured above: delay's own
+  share of A1 wins fell by 28.5 points once the curve was added).
+- **Where the non-marrying tail goes: no leak, fully accounted.** Every A1/Y1 win resolves to exactly
+  one of its own named options (`a1OutcomeSum === a1WonDraw`, already a hard invariant asserted by the
+  PR11 STEP 1 funnel test, unchanged and still green) — "end-it" is the only PERMANENT resolution
+  short of marriage (a real `breakup` event, both sides return to single/widowed, the romance formally
+  closes), holding steady at 30/29 (roughly flat AFTER the fix, 10.7% -> 18.0% of a SMALLER a1WonDraw
+  base). **Conclusion: no code fix needed for step 3** — the ~55-60% pre-fix non-conversion was the
+  SAME decision-chain compounding STEP 2 already targets, not a separate mechanism; the task's own
+  "fix only if the evidence shows a real leak" condition is not met.
+
+**The Jev boundary (decision 067, re-verified, not just assumed unchanged).**
+`jev-decision-maker.ts` imports only from `hazards.ts` (`buildHazardContext`, `clampJevSelection`,
+`computeHazard`, `describeHazardBand`, `describeTimeInState`) — it has never imported
+`rule-heuristics.ts`, and this slice adds no new coupling. `computeHazardPrior`'s `response` argument
+is, for the Jev path, Jev's OWN judged outcome answer (decision 067: "each adapter's baseline is
+scaled against the same judgment its selection will be compared to"), never `ruleDistribution`'s — so
+option (b)'s new curve structurally cannot reach Jev's hazard baseline or its clamp. New tests
+(`hazards.test.ts`, "the Jev boundary" describe block) fix a Jev-style response BY HAND at a long
+time-in-state where the rule adapter's curve now differs sharply from before, and assert
+`computeHazardPrior`/`clampJevSelection` still reduce to exactly `effectiveSelectionHazard(rawHazard,
+judgedOutcome)` — bit-for-bit decision 067's own formula, unaffected. "What the shared prior
+legitimately implies": `computeHazardPrior` is genuinely SHARED machinery (`hazards.ts`, unedited this
+slice) — if a future change fed Jev's own judgment through `ruleDistribution` as a fallback (it does
+not, except the unrelated pre-existing `fallbackFlags`/`LIFE_DECISION_BUDGET` legacy-throttle path,
+which already existed before decision 067 and is orthogonal to the clamp), THAT would be the shared
+prior "legitimately" carrying the new curve through; today it never does.
+
+**Mean-first-marriage-age band test (`simulate.test.ts`, commit `dc86e92`): tried onset+5, narrowly
+missed, widened to onset+6.** Same 15-seed, 1327-1427, founderCount 30 methodology as every prior PR's
+attempt: women's gap narrowed to 5.71 (n=52, meanAge=23.92, meanOnset=18.21) — a real miss on +5 by
+0.71 years, but down from +9's own 7.32, with the cohort itself ~40% larger (52 vs 37, more courtships
+now convert). Men's gap is 2.77 (n=39, meanAge=24.82, meanOnset=22.05) — comfortably inside +5 alone,
+down from 5.35. Left at +6 (both sexes pass with real margin) rather than the full +9->+5 restoration:
+the residual is consistent with the SAME structural partner-scarcity tail decisions 068-071 already
+documented (gentry/clergy excluded from this test's own cohort; the other six classes' rarer
+combinations) — this fix targets the decision-chain leak, not partner-matching capacity.
+
+**60-seed `check-demographics --stats --assert` (`demo-stats-{0..59}`, 1327-1427, same seeds as
+decision 072/073's own baseline — a true before/after, not a different sample):**
+
+| Metric | Before (decision 072/073 baseline) | After | Target |
+|---|---|---|---|
+| Marriage age MEAN, F / M | 24.14 / 27.52 | 23.15 / 26.73 | 18-22 / 21-25 (FAIL both, narrower) |
+| Marriage age MEDIAN, F / M | not previously reported | **22.0 / 25.0** | 18-22 / 21-25 (at the band's own top edge) |
+| Never-married by 45, F / M | 71.4% / 74.6% | 69.0% / 72.6% | 10-20% (FAIL, improved) |
+| Widow remarriage pre-1349 | 38.55% | 43.80% | 60-66% (FAIL, improved) |
+| Widow remarriage post-1349 | 29.10% (marginal FAIL) | 35.04% | 23-29% (FAIL, now over instead of under) |
+| Population 1327/1347/1350/1361 | 77.9/48.7/26.8/19.0 | 77.9/49.9/27.6/19.9 | (shape check, see below) |
+| Pop change pre-plague/shock/recovery | -37.5%/-45.0%/-29.1% | -36.0%/-44.7%/-27.7% | -10..10 / -50..-40 / -10..60 |
+| Life expectancy at birth (e0) | ~21.9 (decision 069) | 18.93 | 22-35 (FAIL, worse) |
+| Infant mortality | ~29.1% | 31.71% | 25-35 (PASS, unchanged band) |
+| Gate: 14 assertions | 4/14 PASS | 4/14 PASS (SAME 4: infantMortality, under15DeathShare, populationPlagueShockPercent, hazardFallbacks — none of these are downstream of Y1/A1) | — |
+
+Population shape: pre-plague still declines beyond the -10..10 band (structural, decisions 068-071,
+unrelated to marriage timing), the plague shock stays correctly inside -50..-40, and there is no
+continued collapse TO 1361 in the sense the task warns against — 1361's population (19.9) sits above
+1350's post-plague floor's own decline rate would predict flat, i.e. still declining but not
+accelerating; unchanged in shape from before. e0's further drop (21.9 -> 18.93) is a real, honest,
+measured side effect: earlier/more marriage lifts fertility exposure (more births into a cohort whose
+infant mortality rate is unchanged at ~30-32%, both bands still PASS), which mechanically pulls the
+FROM-BIRTH cohort's mean age-at-death down further — a demographic coupling this slice's own
+rule-adapter-only scope cannot address (fixing it needs `MORTALITY_BY_AGE_BAND`/`FERTILITY_HAZARD_BANDS`
+retuning, explicitly out of scope — decision 073's rejected candidate (c)). Widow remarriage moving
+from a marginal post-1349 FAIL (under) to a clearer FAIL (over) is the same mechanism in miniature:
+earlier first marriage shifts the age-at-widowing distribution younger, raising cumulative
+remarriage odds for that now-younger widow cohort — plausible and explainable, not chased further.
+
+**Per-class/sex marriage MEDIANS (60-seed, after):** villein f=22/m=25, cottar f=24/m=25,
+merchant f=22/m=25, artisan f=22/m=27, freeholder f=22/m=27, gentry f=21/m=25.5. Every common class
+(villein/cottar/merchant/artisan/freeholder) sits AT or within 2 years of its band's own top edge — a
+large improvement; gentry (structurally one-household-per-village, decision 049/071's own documented
+partner-scarcity tail) remains above its narrower 14-18/20-24 band, unrelated to this fix.
+
+**No new product decision surfaced.** The rule-adapter-only curve is fully implemented and measured;
+the remaining gaps (mean marriage age, widow remarriage bands, e0) all trace to either (a) the
+already-documented, out-of-scope partner-scarcity/rare-class tail (decisions 068-071) or (b) hazard/
+mortality MAGNITUDE tuning, decision 073's explicitly-rejected candidate (c) for this slice. No fix
+attempted for either — reporting per this slice's own instruction.
+
+**Grounding:** decision 073 (the diagnosis and the three candidate fixes); decision 066 (the marriage
+chain, `effectiveSelectionHazard`, the "never over-correct past raw hazard" clamp intent this slice's
+own safety invariant extends to the outcome side); decision 067 (the hybrid Jev clamp and the
+adapter-isolation boundary re-verified here); decision 072 (the funnel methodology and its own 25-seed
+baseline table); `sdd/engine-life-course/state` (engram, this slice's resume point).
+
+**Verified:** `pnpm test` (505 passing, up from 496 — 9 new tests, 0 regressions), `pnpm exec tsc
+--noEmit` clean, `pnpm lint` clean, `pnpm exec tsx scripts/check-demographics.ts --stats 60 --assert`
+(4/14 bands PASS — same gate count as the pre-fix baseline, but real, measured, reported improvement
+on every marriage-related continuous metric; see the table above). New tests: `rule-heuristics.test.ts`
+(+7: the pressure curve grows with time-in-state/age-over-onset, stays at/under the shared ceiling,
+Y1's three-way split still sums to exactly 1, tracks toward the raw Y1 hazard once saturated),
+`hazards.test.ts` (+2: the Jev boundary — `computeHazardPrior`/`clampJevSelection` reduce to the exact
+pre-existing formula given a Jev-style response, unaffected by the rule adapter's own curve).
