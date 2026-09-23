@@ -141,7 +141,10 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
       // `params/demography.ts`'s doc comment).
       const courtshipYears = numberField(record(question.state, "situation"), "courtshipYears");
       propose = Math.min(OUTCOME_TIME_PRESSURE_CEILING, propose + outcomeTimePressure(question.state, courtshipYears, A1_OUTCOME_PRESSURE_SLOPE, A1_OUTCOME_PRESSURE_CAP_YEARS));
-      endIt = clamp01(endIt);
+      // The added "propose" mass comes out of end-it before delay's 0.02 floor, so the three options
+      // still sum to 1 and "propose" keeps its intended value instead of being diluted by a later
+      // normalization (PR12 review R3-a1-distribution-sum).
+      endIt = Math.min(clamp01(endIt), Math.max(0, 1 - propose - 0.02));
       const delay = Math.max(0.02, 1 - propose - endIt);
       return { propose, delay, "end-it": endIt };
     }

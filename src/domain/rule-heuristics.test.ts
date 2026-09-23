@@ -93,6 +93,12 @@ describe("PR12 STEP 2 (decision 073/074, option (b)): Y1/A1 outcome probability 
     expect(later).toBeLessThanOrEqual(OUTCOME_TIME_PRESSURE_CEILING);
   });
 
+  it("A1's distribution still sums to 1 at maximum time pressure, so 'propose' keeps its intended value", () => {
+    const { propose, delay, "end-it": endIt } = ruleDistribution(questionWithTime("A1", 40, "villein", "f", { courtshipYears: 20 }));
+    expect(propose + delay + endIt).toBeCloseTo(1, 10);
+    expect(propose).toBeCloseTo(OUTCOME_TIME_PRESSURE_CEILING, 10);
+  });
+
   it("years already past the class/sex onset age also add pressure, even at yearsMarriageable=0 (a late-starting eligibility)", () => {
     const atOnset = ruleDistribution(questionWithTime("Y1", 18, "villein", "f", { yearsMarriageable: 0 })).encourage;
     const pastOnset = ruleDistribution(questionWithTime("Y1", 25, "villein", "f", { yearsMarriageable: 0 })).encourage;

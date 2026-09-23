@@ -2284,3 +2284,22 @@ on every marriage-related continuous metric; see the table above). New tests: `r
 Y1's three-way split still sums to exactly 1, tracks toward the raw Y1 hazard once saturated),
 `hazards.test.ts` (+2: the Jev boundary — `computeHazardPrior`/`clampJevSelection` reduce to the exact
 pre-existing formula given a Jev-style response, unaffected by the rule adapter's own curve).
+
+### 074 addendum — the never-married metric, and A1's distribution sum (post-review)
+
+- **The never-married share was measured wrong.** `check-demographics.ts` put every in-sim-born
+  person who was followed for 45 years into the cohort, including the ones who died as infants or
+  children. A dead child counted as "never married", which gave F 69.6% / M 71.6%. The historical
+  share of people never married by 45 is measured among survivors. `population-stats.ts#inNeverMarriedCohort` now requires survival
+  to the cohort age as well. Re-measured (60 seeds): **F 4.6% / M 7.2%**. PR11's and PR12's premise of "~70% never marry"
+  was an artifact of this metric. Their fixes (the sticky first candidate and the clamp truncation) were
+  still real defects, but marriage formation was never the dominant cause of the population decline.
+  The review flagged this as a redefinition (R3-never-married-redefinition). That is intended.
+- **A1's outcome distribution summed to more than 1 under high time pressure** (R3-a1-distribution-sum):
+  propose 0.9 + end-it ~0.15 + delay 0.02 = 1.07. The adapter's normalization then pulled "propose" below its intended
+  value. Now end-it is capped at `1 - propose - 0.02`, and the three options sum to 1. At population
+  level nothing moved beyond noise (60 seeds: mean F 23.2→23.0, M 26.7→26.9; medians F 22 / M 25). The
+  curated `simulate.test.ts` band moved from `+6` to `+6.5`, because its 15 seeds moved women's gap from 5.71 to 6.02.
+- **What actually remains** (it is not marriage): e0 is ~19 (band 22–35), and pre-plague population
+  change is −36% even with near-universal marriage. Both point to marital fertility, where A2's "try" has the same
+  `effectiveSelectionHazard` truncation that 073 fixed for Y1/A1, and to child/adult mortality.
