@@ -88,7 +88,15 @@ export interface GenerateWorldOptions {
 // for the window"). 1498-1558 is 60 years, at the low end of the 60-80 spec range.
 const DEFAULT_START_YEAR = 1498;
 const DEFAULT_END_YEAR = 1558;
-const DEFAULT_FOUNDER_COUNT = 18; // adult founders; +children brings the initial population to ~20-24
+// PR9 demography follow-up (decision 070): raised from 18 (~20-24 initial population) to 62
+// (~80 initial population). A real 14th-century English village had ~150-400 people; 18 founders
+// gave too small a marriage market (57% of widows never got a local candidate — decision 069) and
+// made 1-2 structural gentry households 20-35% of the population (literacy overshoot). Measured
+// (10-seed cost sweep, 1327-1361): founderCount 46 (~58 pop, ~556ms/seed, ~907 decideYear calls),
+// 62 (~81 pop, ~757ms/seed, ~1279 calls), 77 (~98 pop, ~914ms/seed, ~1485 calls). 62 chosen: its
+// calibration bands (marriage age, literacy) were as good as or better than 77's at meaningfully
+// lower cost, and clearly better than 46's on literacy (8.2% -> 6.8%, vs. the same 4-6% target).
+const DEFAULT_FOUNDER_COUNT = 62;
 
 /** Plausible early Tudor English village names — invented but period-flavored, not fantasy-style. */
 const TOWN_NAME_ADJECTIVES = ["Ashby", "Thornbury", "Coldharbour", "Wickham", "Langley", "Middleton", "Stoke Parva", "Netherfield"] as const;

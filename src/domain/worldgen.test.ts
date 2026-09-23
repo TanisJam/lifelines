@@ -126,6 +126,30 @@ describe("decision 063 (was decision 057): literacy at worldgen, period rates + 
   });
 });
 
+describe("PR9 demography follow-up: default village size (decision 070)", () => {
+  it("the default founder count produces an initial village of roughly 60-100 people, not the old ~20-24", () => {
+    for (const seed of SEEDS) {
+      const { people } = generateWorld({ seed });
+      const total = Object.keys(people).length;
+      expect(total).toBeGreaterThanOrEqual(55);
+      expect(total).toBeLessThanOrEqual(105);
+    }
+  });
+
+  it("gentry stays 1-2 households at the new default size, and a smaller fraction of founders than at the old default", () => {
+    for (const seed of SEEDS) {
+      const { people } = generateWorld({ seed });
+      const founders = Object.values(people).filter((p) => p.founder);
+      const gentryFounders = founders.filter((p) => p.socialClass === "gentry");
+      expect(gentryFounders.length).toBeGreaterThanOrEqual(1);
+      expect(gentryFounders.length).toBeLessThanOrEqual(4);
+      // At the old founderCount=18 default this ratio could reach ~0.29 (2 of ~7 couples' worth of
+      // adults); the larger default's own couple count dilutes it well below that.
+      expect(gentryFounders.length / founders.length).toBeLessThan(0.15);
+    }
+  });
+});
+
 describe("PR5: Great Famine and cattle murrain backstory (worldgen)", () => {
   it("every founder adult carries a survived-the-famine period-marker, dated to 1315, since all adult founders are born well before 1310", () => {
     const { people, events } = generateWorld({ seed: "famine-marker-check", startYear: 1327, founderCount: 24 });
