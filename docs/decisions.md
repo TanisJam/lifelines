@@ -1980,3 +1980,128 @@ independently be under-calibrated for the pre-1349 target specifically, but deci
 attribute widows' gap to availability, not magnitude — raising it without widow-specific funnel
 evidence would be an unsupported guess, flagged instead of guessed; (4) literacy, life expectancy and
 the general (non-gentry) marriage-age bands remain open from prior slices, unaffected by this one.
+
+## 073 — PR12 STEP 1: Y1 loses to the residual, not to crowding; the compensation clamp genuinely truncates (engine-life-course, investigation only, no behavior change)
+
+**Decision:** The orchestrator's diagnosis directly contradicted decision 072's own "partner scarcity"
+headline using decision 072's own funnel numbers: a partner is found 70.2% of the time, yet only 38.1%
+of those offers win the person-year's own competing-risk draw, and even a winning Y1 only "encourages"
+30.6% of the time — the decision CHAIN, not raw partner supply, is where most of the ~5%-per-year
+effective marriage hazard (vs. a 15-25% research target) is actually lost. This slice investigates
+step 1 (what does Y1 lose to?) and starts step 2 (the decision 066 compensation), with hard,
+per-instance evidence, and stops at a product-decision fork rather than guessing a fix. Branch
+`elc/pr12-marriage-chain`, off main `fda3713`.
+
+**STEP 1 — instrumentation (commit `feeada8`).** Extended `MarriageFunnelCollector` with a new
+`y1LosesTo: Record<string, number>` field: for every Y1-offered cohort person-year that did NOT win
+its `"event-pick"` Gumbel-max draw, tallies what won instead — another kind's name, `"nothing"` (the
+competing-risk residual), `"everyday"` (a D1 vignette), or `"died-same-year"` (a real edge case found
+while building the invariant test: a Y1 candidate gathered before biology runs can be dropped later the
+SAME year, at the `socialCandidates` post-biology filter, when the seeker or partner dies — it never
+reaches the batch/sample step, so it's neither a win nor an observable loss to another kind unless
+tallied explicitly). RED->GREEN test (`simulate.test.ts`): `sum(y1LosesTo) === partnerFoundPersonYears
+- y1WonDraw`, exactly, every run. Zero behavioral effect (same `marriageFunnelDebug`-gated pattern as
+decision 072's own collector — proven by the pre-existing determinism test, unchanged). `pnpm test`
+496/496 (up from 495), `tsc`/`lint` clean, `check-demographics --stats 60 --assert` unchanged (4/14
+bands, identical figures to decision 072's own STEP 2 row) — confirms this commit is diagnostic-only.
+
+**Funnel result (25 seeds, 1327-1361, same cohort/methodology as decision 072):**
+
+| What wins instead of Y1 | Count | % of Y1's losses |
+|---|---|---|
+| `nothing` (the residual — no situation occurs this person-year at all) | 1,119 | 68.1% |
+| `died-same-year` (seeker or partner died before the draw resolved) | 196 | 11.9% |
+| `A3` (opportunity/seize-pass-ignore) | 142 | 8.6% |
+| `Y3` (leave-home/mobility) | 76 | 4.6% |
+| `Y4` (grudge confront/forgive/nurse) | 50 | 3.0% |
+| `A8` | 30 | 1.8% |
+| `A5` | 15 | 0.9% |
+| `A6` | 14 | 0.9% |
+| `C2` | 1 | 0.1% |
+
+**Finding 1 (decisive, rules out "crowding"):** other decision KINDS account for only ~20% of Y1's
+losses combined — nothing close to dominant. The task's own hypothesis ("if competing kinds crowd out
+courtship, consider a separate risk channel") is NOT supported by the data: courtship is almost never
+outcompeted by another person-year event. **68% of the time Y1 loses, it loses to nobody** — the
+residual share of `resolveCompetingRisks`' categorical draw simply wins, meaning Y1's OWN compensated
+selection weight was the dominant but still-insufficient share of that year's distribution. This
+redirects the investigation from "add a separate courtship risk channel" (unsupported) to "why is Y1's
+own compensated selection weight so often small" (STEP 2, below) — exactly the compensation mechanism
+decision 066 introduced and this task's own step 2 flagged.
+
+**STEP 2 — the compensation, verified against real per-instance data (not yet fixed).** A temporary,
+uncommitted debug probe inside `computeHazardPrior` (reverted before this commit, not part of the
+diff) sampled real `(rawHazard, outcomeProbability, compensated)` triples from a live run. Two
+DISTINCT, both-real causes were found, in roughly this proportion (a 40-sample spot check; not a full
+census):
+
+1. **Genuinely low raw hazard, working as designed (~70% of samples).** `yearsMarriageable` (the
+   ramp's time-in-state input) is stamped from `life-state.ts#ensureLifeState`'s `marriageableSince`
+   — the first year `simulate.ts` observes the person as Y1-eligible, i.e. `minEligibleAge` (villein
+   f=15), which is BELOW `onset` (villein f=18) for every class. `logisticRamp`'s own shape (0.5 at
+   `onset`, near 0 well before it) means a 15-18-year-old villein woman who is technically eligible but
+   well before her class's onset genuinely has a low hazard (observed raw as low as 0.004-0.097 in the
+   sample) — `resolveCompetingRisks` correctly gives most of that year's mass to `nothing`. This is the
+   hazard curve behaving exactly as `hazards.ts`'s own design comment describes, not a bug.
+2. **Real clamp truncation, confirmed (~30% of samples).** Once `age` clears `onset` by about 2 years,
+   `rawHazard` (up to `MARRIAGE_BASE_AT_FULL_RAMP` x full ramp x full time-in-state multiplier = 0.54
+   for villein women) routinely EXCEEDS a typical `outcomeProbability` ("encourage", ~0.15-0.4 per
+   `rule-heuristics.ts`'s formula) — `effectiveSelectionHazard`'s `Math.min(1, raw/outcome)` clamps to
+   1.0, and `selection x outcome` collapses to `min(raw, outcome)` — i.e. an established, long-eligible
+   person's REALIZED per-year "courtship actually starts" probability is capped at their own
+   `outcomeProbability` (typically 0.15-0.4) for the REST of their marriageable life, regardless of how
+   much higher the design's own ramp curve intends it to climb (up to 0.54). Sample values observed:
+   `raw=0.540 outcome=0.150 -> compensated=1.000` (realized 0.15, not 0.54); `raw=0.450 outcome=0.188 ->
+   compensated=1.000` (realized 0.188, not 0.45) — matching the orchestrator's own hypothesis exactly.
+
+**Also confirmed: `rule-heuristics.ts`'s Y1/A1 outcome split has NO age or time-in-state term at all**
+(`ruleDistribution`'s `"Y1"`/`"A1"` cases — base 0.4/0.45 plus small, static facet adjustments, floored
+at `OUTCOME_PROBABILITY_FLOOR`=0.15). A person offered Y1 for the first time and a person offered it
+for the twelfth consecutive year get the IDENTICAL "encourage" distribution (modulo their own fixed
+facets) — nothing rewards persistence or penalizes repeated decline. Decision 072's measured population
+mean encourage (30.6%) is BELOW the facet-neutral baseline (40%), consistent with real per-person facet
+variance plus the floor, not a separate bug — but it is the SAME number that caps the clamped
+majority's realized hazard in finding 2 above.
+
+**Why this stops here, not with a fix:** closing this gap has at least three structurally different,
+mutually exclusive candidate fixes, each with real tradeoffs this slice has no evidence to arbitrate
+between: (a) raise `OUTCOME_SCALED_KINDS`' compensation ceiling above 1.0 (lets a high-raw-hazard,
+low-outcome person's selection weight exceed their own outcome probability, at the cost of changing
+what "the clamp never over-corrects past raw hazard" — decision 066's own stated purpose for the clamp
+— means); (b) make `ruleDistribution`'s Y1/A1 "encourage"/"propose" grow with time-in-state/courtship
+duration (rewards persistence, directly targets finding 2, but changes the personality-driven outcome
+model decision 066 built and is exactly the kind of per-adapter judgment call the hybrid design (067)
+reserves for Jev in the live path — the rules adapter would need its own, new, explicit design); (c)
+retune `MARRIAGE_BASE_AT_FULL_RAMP`/the ramp shape downward so raw hazard rarely exceeds a typical
+outcome probability at all (shrinks the clamp's bite, but also shrinks the intended peak hazard the
+research target (15-25%) asks for, and this task's own step-2 instruction warns against retuning
+magnitudes without direct evidence they're the lever). None of these is obviously "what the data
+shows" the way decision 072's own sticky-match fix was — each is a real design choice about what
+"decision chain" means once a hazard exceeds a personality-driven outcome probability. Per this task's
+own instruction ("if a fix needs a product choice, stop and report it"), this slice stops here.
+
+**Not yet investigated this slice:** step 3 (what "decline"/"wait" do long-term, whether "wait" ever
+converts, the ~60% non-conversion after A1 wins), and step 4 (the named `simulate.ts:976-988` /
+`check-demographics.ts:117-126` line ranges named in the task — both inspected directly; neither
+contains an unresolved advisory at HEAD `fda3713`: `simulate.ts:976-988` is the already-fixed (decision
+072 STEP 2) `pickWeightedPartner` tier-fallback chain, and `check-demographics.ts:117-126` is the
+already-fixed (decision 072 STEP 0) `immigrantArrivalYears` immortal-time guard — no RDD review artifact
+naming either range was found in `docs/decisions.md` or engram; if the orchestrator has a different,
+still-open finding at those coordinates, it should be re-supplied with its own evidence).
+
+**Grounding:** `sdd/engine-life-course/apply-progress` (engram, this slice's resume point); decision 066
+(the marriage chain, `effectiveSelectionHazard`, the `OUTCOME_PROBABILITY_FLOOR` floor, and the clamp's
+own stated "never over-correct past raw hazard" purpose); decision 067 (the hybrid Jev clamp — this
+slice's finding 2 is about the RULES adapter's own unclamped-by-Jev compensation, which decision 067
+explicitly leaves as `t=1`, no separate clamp, so this is not a decision 067 regression); decision 072
+(the funnel this slice extends, and the STEP 0/STEP 2 fixes step 4 re-confirmed as already-closed).
+
+**Verified:** `pnpm test` (496 passing, up from 495 — 1 new test, 0 regressions), `pnpm exec tsc
+--noEmit` clean, `pnpm lint` clean, `pnpm exec tsx scripts/check-demographics.ts --stats 60 --assert`
+unchanged from decision 072 (4/14 bands pass, identical figures — confirms this commit is
+diagnostic-only, no behavior change).
+
+**Open items for the orchestrator/user:** (1) a product decision is needed among the three candidate
+fixes in "why this stops here" above (or a different one) before STEP 2 can actually change behavior;
+(2) steps 3 and 4 are unstarted; (3) this slice's own `y1LosesTo` instrumentation is available for
+whichever fix is chosen, to re-measure directly rather than re-deriving by hand.
