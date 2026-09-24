@@ -184,7 +184,9 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
       // (already stamped by simulate.ts's A2 candidate `extra`). Capped at the shared
       // OUTCOME_TIME_PRESSURE_CEILING like Y1/A1's own curves.
       const fertileYearsLeft = numberField(record(question.state, "situation"), "fertileYearsLeft", A2_FERTILE_WINDOW_SPAN);
-      tryFor = Math.min(OUTCOME_TIME_PRESSURE_CEILING, tryFor + fertilityWindowPressure(fertileYearsLeft, A2_OUTCOME_PRESSURE_SLOPE, A2_OUTCOME_PRESSURE_CAP_YEARS));
+      // The ceiling bounds only the ADDED pressure: a facet base already above it keeps its own value
+      // (PR13 review R3-a2-ceiling-lowers-base).
+      tryFor = Math.max(tryFor, Math.min(OUTCOME_TIME_PRESSURE_CEILING, tryFor + fertilityWindowPressure(fertileYearsLeft, A2_OUTCOME_PRESSURE_SLOPE, A2_OUTCOME_PRESSURE_CAP_YEARS)));
       const refuse = clamp01((1 - tryFor) * 0.3);
       const wait = Math.max(0.02, 1 - tryFor - refuse);
       return { try: tryFor, wait, refuse };

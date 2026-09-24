@@ -134,6 +134,18 @@ describe("PR13 STEP 1 (decision 075): A2 'try' grows with closing-fertile-window
     expect(ruleDistribution(q).try).toBeLessThanOrEqual(OUTCOME_TIME_PRESSURE_CEILING);
   });
 
+  it("the pressure ceiling never lowers a person's own facet base below what it was without pressure", () => {
+    const familyMinded: DecisionQuestion = {
+      id: "A2:p1#1.1",
+      kind: "A2",
+      personId: "p1",
+      year: 1330,
+      state: { self: { mind: { facets: { lovePropensity: 100 }, values: { family: 100 } } }, situation: { fertileYearsLeft: 29 } },
+      options: ["try", "wait", "refuse"],
+    };
+    expect(ruleDistribution(familyMinded).try).toBeGreaterThan(OUTCOME_TIME_PRESSURE_CEILING);
+  });
+
   it("try/wait/refuse still sum to exactly 1 once time pressure is applied", () => {
     const q = questionWithTime("A2", 40, "villein", "f", { fertileYearsLeft: 5 });
     const { try: tryFor, wait, refuse } = ruleDistribution(q);
