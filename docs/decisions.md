@@ -2501,3 +2501,167 @@ compounding side effect of both PR12's and this slice's own fertility-timing cha
 chased, same as decision 074's own precedent for this exact metric; (4) `firstMarriageAgeMenGentry`
 newly reads 27.34 (band 20-24, further from target than decision 074's 27.48 — noise-level, same
 structural one-household-per-village gentry scarcity decisions 049/071/074 already documented).
+
+## 076 — PR14: the ASMFR/CEB contradiction, its root cause, and the conception-probability raise (engine-life-course)
+
+**Decision:** The orchestrator flagged an internal contradiction in PR13's own numbers: ASMFR (~0.22
+at <30/30-34, ~0.16 at 35-39) integrates to ~3.5-4 children per completed marriage over a ~27-year
+fertile span, but the measured figure was only 0.91. Resolve it with evidence (hand-traced concrete
+women) before any tuning, per the task's own instruction. Branch `elc/pr14-fertility-consistency`, off
+main `be7ec3b`.
+
+**STEP 1 — root cause, hand-traced (commit `dd7f948`).** Wrote a scratch hand-trace script (6 seeds,
+`demo-stats-0..5`) printing every in-sim-born wife's full marriage/birth history who survives to 45.
+Confirmed BOTH candidate causes the task named:
+
+- **Remarriage double-counting.** `check-demographics.ts`'s `completedMarriageChildCounts` loop ran
+  over every MARRIAGE EVENT, not every WIFE. `inNeverMarriedCohort(wife, ...)` only checks the wife's
+  own survival to 45 — not which marriage — so a remarried wife (very common: the Black Death widows
+  many mid-window, pre-1349 remarriage measured 43.6%) was pushed into the sample once PER MARRIAGE,
+  her true lifetime children split into deflated per-husband `childCount`s (filtered by
+  `c.fatherId === husband.id`). Concrete example (seed `demo-stats-0`, wife `p038`): 2 marriages
+  (1339, widowed 1348; 1360, remarried), 1 child total lifetime (`child-p038-1365`, born in the second
+  marriage) — the old code pushed samples `[0, 1]` (mean 0.5) instead of `[1]`.
+- **Late-marriage inclusion.** A marriage starting AT OR AFTER age 45 was still counted as "completed"
+  (the wife trivially "survives to 45" if she's already past it), despite zero possible fertile
+  exposure. Concrete example (seed `demo-stats-1`, wife `p014`): her only marriage was in 1364 at age
+  46 — 0 married-years inside the fertile window, 0 children, a guaranteed-zero sample with nothing to
+  do with marital fertility.
+
+ASMFR itself (`maritalFertilityByAgeBand`) was confirmed CORRECT: it accumulates births keyed only by
+wife id (not husband), with each marriage's own `[start, end)` window already excluding widowhood gaps
+correctly — the hand-traced per-wife exposure/birth counts matched the script's own age-banded
+accumulation exactly.
+
+**Fix:** added `population-stats.ts#completedMarriageWives(marriages, wivesById, endYear, cohortAge)`
+— dedupes by wife (her chronologically-earliest marriage decides both cohort membership via
+`inNeverMarriedCohort` and a new age-at-marriage-under-`cohortAge` guard), returning one wife id per
+qualifying cohort member. `check-demographics.ts` now sums each returned wife's TOTAL children (any
+father, any marriage) exactly once. TDD: RED confirmed (5 new tests failed — module didn't export the
+function), then GREEN. This also incidentally addresses the PR13-review advisory that this wiring was
+untested (`check-demographics.ts:374`): the real logic now lives in a tested pure function; the
+remaining glue in the script matches the same (untested, dev-tool-only) convention as every other
+accumulator loop there.
+
+**Measured (60 seeds, git-stash A/B, STEP 1 only):**
+
+| Metric | Before | After |
+|---|---|---|
+| Children ever born per completed marriage | 0.97 (n=1472 marriage-instance samples) | 1.94 (n=773 per-wife samples) |
+| ASMFR <20/<30/<35/<40/40+ | unchanged | unchanged (6.8/21.2/21.5/15.7/6.4%) |
+
+Exactly ~2x, confirming the double-counting hypothesis quantitatively. The contradiction is resolved:
+ASMFR was already correct; CEB was undercounting via two compounding bugs. The residual gap (1.94 vs.
+the ~6-7 anchor) is now a REAL fertility question, not a metric artifact — back-of-envelope, the
+measured ASMFR bands integrated over REALISTIC exposure (mean first-marriage age 23.4, minus
+widowhood/remarriage gaps, minus marriages truncated by early spousal death given e0~19) land close to
+1.94, not the naive continuous-27-year assumption behind the original "~3.5-4" contradiction estimate.
+
+**STEP 2 — the next binding constraint: conception probability, not the A2 hazard bands (commit
+`21a7a91`).** Re-measured after STEP 1: ASMFR/CEB were still materially below the research anchors
+(~35-45% ASMFR at 20-34, ~6-7 CEB). Checked the task's named candidates in order:
+
+- **`FERTILITY_HAZARD_BANDS` (A2's raw "is this the year we try" hazard):** decision 071 already found
+  and measured that `effectiveSelectionHazard`'s `min(1, rawHazard/tryFor)` clamp makes this table
+  largely INERT once a band's raw hazard exceeds the rule adapter's own "try" answer — pushing bands
+  from ~0.45-0.55 to ~0.7-0.85 moved <30 ASMFR "well under a percentage point." Re-confirmed this
+  STILL holds after PR13's A2 pressure fix and near-universal marriage (both raise "try" answers and
+  married-woman-year exposure, which could plausibly have changed the clamp's bite): a fresh 20-seed
+  A/B pushing every band 30-60% higher (0.5/0.6/0.5/0.4/0.25 -> 0.8/0.9/0.8/0.65/0.4) moved observed
+  <30 ASMFR from 26.7% to 27.6% — under a percentage point, same order of magnitude as decision 071's
+  own finding. Left UNCHANGED (documented in the constant's own doc comment).
+- **`conceptionProbability` (P(conception | a real "try")):** its own doc comment already said this
+  table, plus the birth-spacing floor (2yr general / 1yr gentry), was SHAPED to reproduce Davenport
+  (2019)'s own measured inter-birth interval (30-33 months ordinary, 24.6 elite) — the SAME citation
+  `eligibleForAnotherChild` already uses — but never verified against it. Measured: the old values
+  (0.65/0.45/0.25) implied an average realized inter-birth interval of ~4.7 years (from ASMFR <30's
+  ~21.2%, treating it as ~1/interval), far longer than the 30-33-month design target, unlike
+  `FERTILITY_HAZARD_BANDS` this is NOT subject to the selection clamp or competing-risk dilution — it's
+  a final, isolated multiplicative gate applied only once "try" has already won the person-year and the
+  outcome draw. Raised toward that design intent: 0.65/0.45/0.25 -> 0.85/0.65/0.4. Moved out of an
+  inline literal in `simulate.ts` into `params/demography.ts#CONCEPTION_PROBABILITY_BANDS` (exported
+  `conceptionProbability`) with a `provenance.ts` entry (also fixed a stale cross-reference there that
+  wrongly attributed this curve to `actuarial.ts` instead of `simulate.ts`). TDD: RED confirmed (stashed
+  the implementation, 2 of 3 new tests failed), then GREEN.
+
+**Measured (60 seeds, STEP 1+2 vs. STEP 1 only):**
+
+| Metric | STEP 1 only | STEP 1+2 | Target |
+|---|---|---|---|
+| ASMFR <20 | 6.8% | 12.1% | — |
+| ASMFR <30 | 21.2% | 26.1% | 35-45% |
+| ASMFR <35 | 21.5% | 27.1% | 35-45% (20-34 band) |
+| ASMFR <40 | 15.7% | 20.3% | — |
+| ASMFR 40+ | 6.4% | 9.5% | — |
+| Children ever born per completed marriage | 1.94 (n=773) | 2.63 (n=870) | ~6-7 |
+| Pre-plague CBR | 23.9‰ | 29.6‰ | ~35-45‰ |
+| e0 | 18.9 | 17.9 | 22-35 (expected side effect: more successful births into an unchanged child-mortality table — same mechanism decisions 074/075 already documented) |
+| Population 1327/1347/1350/1361 | 78.5/55.4/31.4/24.4 | 79.1/60.8/34.8/28.5 | pre-plague ±10%, plague −40 to −50%, no continued collapse |
+| Pre-plague population change | -29.5% | -23.2% | -10 to 10% |
+| Plague shock | -43.4% | -42.8% | -50 to -40% (PASS) |
+
+A real, meaningful improvement (ASMFR +23-30% relative, CEB +36% relative, pre-plague CBR +24%
+relative, population 1361 the highest yet measured at that checkpoint), but still short of the
+research anchors. **Reported, not chased further**, per the task's own instruction: `FERTILITY_HAZARD_
+BANDS` is freshly re-confirmed inert; `conceptionProbability` is now raised close to what's
+demographically plausible for a general (non-elite) population (0.85 at peak fertility is already near
+the top of natural-fertility literature ranges); the residual gap is plausibly explained by realistic
+marriage-duration loss (mean first-marriage age 23.2, `e0`~18 meaning many marriages are truncated by
+early spousal death before completing a full fertile span) rather than an obvious further parameter
+bug — genuinely closing it would need either further mortality-band work (already flagged out of scope
+by decision 075) or a deeper look at competing-risk dilution's exact magnitude (Y3 and the ~16
+`OTHER_KIND_BASE_HAZARD` kinds), both judged beyond this slice's safe, evidence-based scope.
+
+**STEP 3 — small advisories (commit `ab171c3`).**
+
+- `rule-heuristics.ts`'s A2 "try/wait/refuse" summed to 1.006-1.02 (not exactly 1) when a facet base
+  already exceeded `OUTCOME_TIME_PRESSURE_CEILING`, because `refuse`'s own `clamp01` floor (0.02) and
+  `wait`'s own `Math.max(0.02, ...)` floor could both fire simultaneously. Fixed with the same guard
+  A1's own "end-it" already uses (PR12 review R3-a1-distribution-sum): cap `refuse` so the remainder
+  always leaves `wait` at least its own floor. TDD: RED confirmed (a new test at the exact facet
+  values that reproduce a 0.98 base measured a 1.02 sum), then GREEN.
+- `actuarial.test.ts`'s stale "measured ~21-22%" comment on the age 5-14 mortality band corrected to
+  decision 075's own actual 60-seed figure (24.4%).
+- `check-demographics.ts:374`'s "untested wiring" advisory: addressed as a side effect of STEP 1's own
+  fix (see above) — the real logic is now a tested pure function.
+
+**Marriage metrics, checked for regression (they did not regress):** never-married by 45 F=3.5%/
+M=6.2% (well under the 20% ceiling; the small change from decision 075's F=5.2%/M=10.5% traces to more
+in-sim births reaching the cohort, the same STEP 1/2 side effect documented above, not a marriage-
+formation regression). Marriage-age medians held exactly at F=22.0/M=25.0. `widowRemarriagePostBlackDeath`
+drifted further (39.05% at decision 075's baseline -> 42.76% here), continuing the same compounding
+side effect decisions 074/075 already documented for this exact metric (earlier/more complete fertile
+exposure shifts the age-at-widowing distribution) — reported, not chased, outside this slice's own
+named scope.
+
+**No product decision surfaced this slice needing the orchestrator's input** — every fix was
+evidence-driven within its own named scope. The residual ASMFR/CEB gap (STEP 2) and the ongoing
+`widowRemarriagePostBlackDeath` drift are the open items, both already the kind of honestly-reported
+residual gap decisions 069/071/074/075 established as this project's convention.
+
+**Grounding:** decision 075 (the metric audit this slice extends — same "measure before tuning"
+discipline, and the direct source of the CEB cohort filter this slice found double-counted); decision
+071 (the `FERTILITY_HAZARD_BANDS` clamp-inertness finding this slice re-confirmed); decision 074's own
+addendum (predicted A2's own truncation, the STEP 1 precedent this slice's `completedMarriageWives`
+extends to a second metric bug); `docs/research.md` lines 110-111 (Davenport 2019, the birth-interval
+citation both `eligibleForAnotherChild` and this slice's `CONCEPTION_PROBABILITY_BANDS` are shaped
+against); `sdd/engine-life-course/apply-progress` (engram, this slice's resume point).
+
+**Verified:** `pnpm test` (528 passing, up from 524 at main — 9 new tests, 0 regressions); `pnpm exec
+tsc --noEmit` clean; `pnpm lint` clean; `pnpm exec tsx scripts/check-demographics.ts --stats 60 --assert`
+exits non-zero (4 of 14 bands pass — `infantMortality`, `under15DeathShare`, `populationPlagueShockPercent`,
+`hazardFallbacks` — the SAME 4 as decision 075's own baseline; no gate newly regressed, none newly
+passed, every continuous fertility/population metric this slice targeted moved in the right direction,
+same honest-red-gate convention decision 071/075 established). No curated test seed needed reseeding
+(all 528 tests passed unchanged through every step).
+
+**Open items for the orchestrator/user:** (1) ASMFR (~26-27% at 20-34) and children-per-completed-
+marriage (2.63) remain below their ~35-45%/~6-7 historical anchors even after STEP 2's fix —
+`FERTILITY_HAZARD_BANDS` is freshly re-confirmed inert (competing-risk dilution against Y3/the ~16
+`OTHER_KIND_BASE_HAZARD` kinds is the likely remaining structural cause, not yet quantified precisely);
+(2) e0 continued its expected small decline (18.9 -> 17.9) as a side effect of more successful births
+landing in an unchanged child-mortality table — the same tradeoff decisions 074/075 already flagged as
+out of this slice's safe scope; (3) `widowRemarriagePostBlackDeath` continues drifting further from its
+band (29.10% decision 074 -> 39.05% decision 075 -> 42.76% here) as a compounding side effect of every
+fertility/marriage-timing fix in this lineage — reported each time, never chased, same precedent
+decision 074 established for this exact metric.
