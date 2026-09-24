@@ -28,8 +28,8 @@ describe("deathProbabilityAtAge", () => {
   // children die before 15" citation (UNVERIFIED, but the only sourced anchor for that cumulative
   // figure) and contributing directly to e0's shortfall (target 22-35, measured ~18-19). Lowered to
   // 0.02, chosen so the age 2-7 conditional death share (under15DeathShare) stays inside its own
-  // 20-30% band with real margin (measured ~21-22%, not chased to the floor) while meaningfully
-  // raising survival to 15.
+  // 20-30% band with real margin (measured 24.4% at 60 seeds per decision 075's own STEP 3 table,
+  // not chased to the floor) while meaningfully raising survival to 15.
   it("the age 5-14 band is lowered from decision 050's Tudor figure, PR13 STEP 2 (decision 075)", () => {
     expect(deathProbabilityAtAge(5)).toBe(0.02);
     expect(deathProbabilityAtAge(14)).toBe(0.02);

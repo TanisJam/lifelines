@@ -187,7 +187,11 @@ export function ruleDistribution(question: DecisionQuestion): Distribution {
       // The ceiling bounds only the ADDED pressure: a facet base already above it keeps its own value
       // (PR13 review R3-a2-ceiling-lowers-base).
       tryFor = Math.max(tryFor, Math.min(OUTCOME_TIME_PRESSURE_CEILING, tryFor + fertilityWindowPressure(fertileYearsLeft, A2_OUTCOME_PRESSURE_SLOPE, A2_OUTCOME_PRESSURE_CAP_YEARS)));
-      const refuse = clamp01((1 - tryFor) * 0.3);
+      // PR14 STEP 3 (decision 076, PR13 review advisory): same guard as A1's own "end-it" (PR12
+      // review R3-a1-distribution-sum) — `refuse` is capped so the remainder always leaves "wait" at
+      // least its own 0.02 floor, so `wait`'s `Math.max` never fires and the three always sum to
+      // exactly 1, even when `tryFor`'s facet base alone already exceeds the ceiling.
+      const refuse = Math.min(clamp01((1 - tryFor) * 0.3), Math.max(0, 1 - tryFor - 0.02));
       const wait = Math.max(0.02, 1 - tryFor - refuse);
       return { try: tryFor, wait, refuse };
     }

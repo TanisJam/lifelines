@@ -164,4 +164,26 @@ describe("PR13 STEP 1 (decision 075): A2 'try' grows with closing-fertile-window
     const q = questionWithTime("A2", 30, "villein", "f", {});
     expect(ruleDistribution(q).try).toBeCloseTo(0.4, 5);
   });
+
+  // PR14 STEP 3 (decision 076, PR13 review advisory): when a facet base already exceeds
+  // OUTCOME_TIME_PRESSURE_CEILING, "try" keeps its own value (Math.max) instead of being lowered —
+  // but "refuse"/"wait" were still computed off `1 - tryFor` WITHOUT accounting for the fact that
+  // `tryFor` itself can already leave less than "wait"'s own 0.02 floor: refuse=clamp01((1-0.98)*0.3)
+  // =0.006, wait=max(0.02, 1-0.98-0.006)=0.02 (the floor fires), so the three summed to 1.006, not 1
+  // — the same class of bug A1's own "end-it" floor already guards against (PR12 review
+  // R3-a1-distribution-sum).
+  it("try/wait/refuse sum to exactly 1 even when the facet base alone already exceeds the ceiling", () => {
+    const q: DecisionQuestion = {
+      id: "A2:p1#1.1",
+      kind: "A2",
+      personId: "p1",
+      year: 1330,
+      // family=87, lovePropensity=50 (neutral) => tryFor base = 0.4 + 87/150 + 0/200 = 0.98 exactly.
+      state: { self: { mind: { facets: { lovePropensity: 50 }, values: { family: 87 } } }, situation: { fertileYearsLeft: 29 } },
+      options: ["try", "wait", "refuse"],
+    };
+    const { try: tryFor, wait, refuse } = ruleDistribution(q);
+    expect(tryFor).toBeCloseTo(0.98, 10);
+    expect(tryFor + wait + refuse).toBeCloseTo(1, 10);
+  });
 });
