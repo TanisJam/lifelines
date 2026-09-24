@@ -20,6 +20,11 @@ export interface ParamProvenance {
  * class/sex, not by source.
  */
 export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
+  ARRANGED_GENTRY_MATCH_PROBABILITY: {
+    source: "Decision 083 (Follett-plausible, invented): no sourced annual hazard for an arranged gentry match; research.md only sources the age (~14, Tilly's arranged marriage).",
+    range: "0.4 a year for an unmarried gentry daughter of 14+ with no unrelated gentry match at home. Measured (60 seeds): gentry women's first-marriage age 16.7 (band 14-18).",
+    confidence: "low",
+  },
   MARRIAGE_FLOORS: {
     source: "Design revision 2, decision 14 (supersedes decision 053's 1498-1558 floors); research.md Family §rules synthesis for direction only. Gentry row: PR10 (GOAL B, decision 071) -- docs/research.md line 340 (Hollingsworth 14th c. interpolation: women ~17, men ~22) and the Follett narrative reference (Tilly m. 14, engram #6321/#6149). Decision 080: two further small onset nudges (common-class women 18/19 -> 17.5/18.5; gentry men 22 -> 20), invented/Follett-plausible, closing two of the three SMALL remaining decision-079 marriage-age misses (firstMarriageAgeWomen 23.02 vs 18-23; firstMarriageAgeMenGentry 26.41 vs 20-26) without repeating decision 068's REVERTED ~2-year, all-classes onset cut (which widened, not closed, the age-onset gap for the partner-scarcity-bound classes) -- this decision's own gentry-men change is the same 2-year magnitude, but on a SINGLE row that draws from a large cross-class pool rather than every class/sex row moved together, and it measurably worked (26.41 -> 24.78).",
     range: "Women 18-23 mean, men 21-27 mean, merchant men 23-30 (Follett-plausible targets, decision 078). Gentry: women 14-18, men 20-26 (params/targets.ts's own per-class bands); men's onset moved 20 -> 22 by PR10 to center on the research.md anchor, then back to 20 by decision 080 (measured stepwise: 22 -> 21 moved 26.41 -> 26.18, still FAIL; 21 -> 20 moved it to 24.78, PASS). Common-class women's onset moved 18/19 (cottar) -> 17.5/18.5 by decision 080 (23.02 -> 22.69, PASS). Gentry WOMEN's row is unchanged -- still-open structural gap, see decision 080.",

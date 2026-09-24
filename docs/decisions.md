@@ -3049,3 +3049,41 @@ The arranged gentry marriage work that was started alongside this is parked on
 `wip/gentry-arranged-match`: it brings gentry women to 18.4 (band 14–18) but the incoming suitors
 multiply the gentry class, so literacy rises to 12.9% (band 5–10) and adult gentry lose about 9 years
 of life against cottars.
+
+## 083 — Gentry daughters get arranged marriages, and marry out of the village
+
+Gentry women married at ~21.5 against the Follett-plausible band 14–18 (decision 078, Tilly married
+at 14). The cause was supply, not a hazard: gentry is one household per village (decision 049), so
+almost every gentry man a daughter could meet is her brother or cousin (`isRelatedForMarriage`), and
+68% of gentry daughters never married at all.
+
+**Mechanism.** Each year an unmarried gentry daughter of 14 or more, with no unrelated eligible gentry
+man at home, has a 0.4 chance (`ARRANGED_GENTRY_MATCH_PROBABILITY`, invented) of an arranged match
+with a gentry suitor from a neighbouring manor. It is code-rolled like immigration, never a
+DecisionMaker question, because the family decides it for her, and it goes straight to marriage with
+no courtship.
+
+**She marries out.** A first version brought the suitor into the village. That founded a new gentry
+household with every match and multiplied the class: literacy rose to 12.9% (band 5–10) and adult
+gentry died younger than adult cottars (56.6 vs 57.3, against 65.1 vs 55.5 before). Now a villager's
+daughter moves to her husband's manor (a `move` event, `away: true`) and the suitor stays an
+off-screen `away` NPC, so the village gains no gentry household. Only the protagonist stays home,
+with her suitor moving in, so the match never writes her out of her own story. This narrowly
+supersedes decision 049's "no gentry arrivals" for that one case.
+
+Two bugs fixed on the way: the eligibility loop crashed on worlds whose map keys differ from person
+ids, and suitor ids were `gentry-suitor-<year>`, so two matches in one year would have overwritten a
+person (now `gentry-suitor-<brideId>-<year>`). Villagers who have already moved away are excluded;
+before that fix a daughter who had left for the city could be matched again (`away -> away` crash).
+
+A daughter who marries out also drops out of the social candidates gathered for her earlier that
+year, exactly like a same-year death (otherwise a Y3 "leave" could move her away a second time); the
+marriage-funnel diagnostic tallies those as `left-village-same-year`.
+
+The changed trajectories also exposed a branch decision 047 missed: a protagonist's A8 "push harder"
+whose roll fails produced no event, so the D1 backstop fired in a year a real situation was selected.
+It now records a `reflection` ("kept-chasing-a-dream"), like every other protagonist no-op.
+
+**Measured** (60 seeds): gentry women 16.7 (band 14–18), literacy 8.0%. **All 15 calibration
+assertions pass**, a first for the Follett targets. Adult age at death, 5 seeds, 1498–1558: gentry
+and clergy 63.8, cottars 57.3.

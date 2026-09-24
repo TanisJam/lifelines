@@ -169,6 +169,23 @@ export const A1_OUTCOME_PRESSURE_SLOPE = 0.07;
 export const A1_OUTCOME_PRESSURE_CAP_YEARS = 8;
 
 /**
+ * Decision 083: the yearly chance an unmarried gentry daughter (past `MARRIAGE_FLOORS.gentry.f`'s
+ * `minEligible`, 14, with no eligible gentry son anywhere in her own village) is arranged a marriage
+ * to a gentry suitor from a neighbouring manor (`simulate.ts#spawnGentrySuitor`); she moves to his
+ * manor unless she is the protagonist, whose suitor comes to the village instead —
+ * Follett-plausible (decision 083), invented: no sourced ANNUAL hazard exists for this (research.md
+ * only sources the age itself, ~14, via Tilly's own arranged marriage). Bypasses the ordinary Y1/A1
+ * courtship-hazard ramp entirely (an arranged match is a family/political decision made FOR her, not
+ * a suitor's courtship she lives through) — the ordinary ramp cannot reach the 14-18 target band on
+ * its own even with unlimited partner supply, since its typical time-to-marriage (~4-6 years past
+ * onset, matching every other class's own measured gap over its own onset) would still land in the
+ * low-to-mid 20s from a 16-year onset. Sized so most eligible daughters resolve within a year or two
+ * of turning 14 (mean of a geometric wait at this rate: `(1-p)/p` extra years) — see decision 083 for
+ * the measured before/after `firstMarriageAgeWomenGentry`.
+ */
+export const ARRANGED_GENTRY_MATCH_PROBABILITY = 0.4;
+
+/**
  * PR13 STEP 1 (decision 075): A2's "try" has the SAME `effectiveSelectionHazard` truncation decision
  * 073/074 diagnosed and fixed for Y1/A1 — `FERTILITY_HAZARD_BANDS`' raw hazard (0.5/0.6/0.5/0.4/0.25
  * by age band) routinely exceeds `rule-heuristics.ts`'s static ~0.4-0.5 "try" answer, with NO

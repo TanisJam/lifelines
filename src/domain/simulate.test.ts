@@ -874,8 +874,10 @@ describe("decision 054: widowhood and remarriage", () => {
     // produces a kept-trade widowing once mortality dropped and immigration/fertility rose (same
     // "candidate composition shifted" reason as every prior reseed of this exact test). Found the
     // same way: `findSeed("artisan-widow-trade-dec079", ..., {startYear:1498, endYear:1558,
-    // founderCount:30})`, first of 100 attempts.
-    const { config, people } = generateWorld({ seed: "artisan-widow-trade-dec079-4", startYear: 1498, endYear: 1558, founderCount: 30 });
+    // founderCount:30})`, first of 100 attempts. Reseeded again by decision 083 (arranged gentry
+    // matches shift the village's marriages): `findSeed("artisan-widow-trade-dec083", ...)`, same
+    // options, first attempt.
+    const { config, people } = generateWorld({ seed: "artisan-widow-trade-dec083-1", startYear: 1498, endYear: 1558, founderCount: 30 });
     const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 
     const keptTrade = report.result.events.find((e) => e.kind === "widowed" && e.payload.keptTrade === true);
@@ -1658,4 +1660,59 @@ describe("decision 084: Jev decides only for the protagonist's story circle", ()
     expect(main.personIds.size).toBeGreaterThan(0);
     expect(background.personIds.size).toBe(0);
   });
+});
+
+describe("decision 083: arranged gentry marriages", () => {
+  async function arrangedMarriages(seed: string, makeProtagonistGentry: boolean) {
+    const world = generateWorld({ seed, startYear: 1327, endYear: 1361, ...(makeProtagonistGentry ? { protagonist: { name: "Tilly", sex: "f" as const } } : {}) });
+    if (makeProtagonistGentry) world.people.protagonist!.socialClass = "gentry";
+    const report = await simulate(world.config, world.people, world.events, {
+      decisionMaker: new RuleDecisionMaker(),
+      engineSource: "rules",
+      ...(makeProtagonistGentry ? { protagonistId: "protagonist" } : {}),
+    });
+    const marriages = report.result.events.filter((e) => e.kind === "marriage" && e.payload.arranged === true);
+    return { report, marriages };
+  }
+
+  it("a villager's daughter marries out: her suitor stays off-screen, she moves to his manor, and has no children in the village", async () => {
+    let checked = 0;
+    for (let i = 1; i <= 6 && checked === 0; i++) {
+      const { report, marriages } = await arrangedMarriages(`gentry-out-${i}`, false);
+      for (const marriage of marriages) {
+        const [brideId, suitorId] = marriage.actors as [string, string];
+        const move = report.result.events.find((e) => e.kind === "move" && e.actors[0] === brideId && e.year === marriage.year);
+        expect(move?.payload.away).toBe(true);
+        expect(report.result.people[suitorId]!.away).toBe(true);
+        const laterChildren = Object.values(report.result.people).filter((p) => p.motherId === brideId && p.birthYear > marriage.year && !p.away);
+        expect(laterChildren).toEqual([]);
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  }, 60000);
+
+  it("never arranges a match for a daughter who has already left the village", () => {
+    const year = 1345;
+    const daughter: Person = { id: "gentry-daughter", name: "Tilly Grey", sex: "f", birthYear: 1328, traits: [], job: "none", founder: false, socialClass: "gentry", mind: createMind("left-home", "gentry-daughter", 1328, []) };
+    const leftHome: Event = { id: "move-1", year: 1343, kind: "move", actors: [daughter.id], payload: { away: true, destination: "Shiring" }, causes: [] } as Event;
+    const atHome = gatherCandidatesForYear(year, { [daughter.id]: daughter }, [], "left-home", undefined);
+    const afterLeaving = gatherCandidatesForYear(year, { [daughter.id]: daughter }, [leftHome], "left-home", undefined);
+    expect(atHome.some((c) => c.kind === "arranged-match")).toBe(true);
+    expect(afterLeaving.some((c) => c.kind === "arranged-match")).toBe(false);
+  });
+
+  it("a gentry protagonist stays home: her arranged suitor comes to the village instead", async () => {
+    let checked = 0;
+    for (let i = 1; i <= 8 && checked === 0; i++) {
+      const { report, marriages } = await arrangedMarriages(`gentry-home-${i}`, true);
+      const hers = marriages.find((e) => e.actors[0] === "protagonist");
+      if (!hers) continue;
+      const suitorId = hers.actors[1]!;
+      expect(report.result.people[suitorId]!.away).toBeFalsy();
+      expect(report.result.events.some((e) => e.kind === "move" && e.actors[0] === "protagonist" && e.year === hers.year)).toBe(false);
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
+  }, 60000);
 });

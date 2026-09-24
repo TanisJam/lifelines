@@ -9,8 +9,6 @@ Open items and product calls, newest first. Move an item to `decisions.md` once 
 
 ## To review
 
-- [ ] **One Follett-plausible marriage-age target still fails (decision 080).** Gentry women marry at 21.46–21.55 (band 14–18) — a genuine structural gap: gentry is "one household per village" in worldgen (decisions 068–071's own repeated finding), so the sample is a handful of daughters across the whole run, dominated by individual life-course timing, not a hazard-curve parameter. A clean fix needs more gentry supply (gentry-class immigrants, or a cross-manor gentry match); `spawnImmigrant` deliberately never produces gentry today (decision 049), and changing that is a real design-invariant change, not a small nudge. The other two marriage-age misses (women overall, gentry men) and both population-trajectory targets now pass as of decision 080.
-
 
 - [ ] **A Jev life still waits one round trip per simulated year (decision 084).** At the afternoon's 1–2.9 s latency a 60-year life takes up to ~3 min. If that becomes too slow, let Jev decide only the circle's major decisions and leave everyday vignettes to rules, so quiet years skip Jev.
 
