@@ -127,3 +127,80 @@ describe("buildGhostAnnotations", () => {
     expect(ghosts["entry-1"]).toBeUndefined();
   });
 });
+
+describe("buildGhostAnnotations (decision 082: nearest-year matching, not exact causal-position ordinal)", () => {
+  const option = (id: string) => ({ id, label: id });
+
+  it("finds a ghost when the shifted event moves by 1 year", () => {
+    const baseDecisions = [{ id: "Y1:protagonist:1345", year: 1345, kind: "Y1", personId: "protagonist", chosen: "decline", options: [option("encourage"), option("decline")] }];
+    const newDecisions = [{ id: "Y1:protagonist#1.1", year: 1346, kind: "Y1", personId: "protagonist", chosen: "encourage", options: [option("encourage"), option("decline")] }];
+    const newEntries = [{ id: "entry-1", turn: { decisionId: "Y1:protagonist#1.1", chosen: { optionId: "encourage" } } }];
+
+    const ghosts = buildGhostAnnotations(baseDecisions, newDecisions, newEntries);
+    expect(ghosts["entry-1"]).toMatch(/decline/i);
+  });
+
+  it("finds a ghost when the shifted event moves by 3 years", () => {
+    const baseDecisions = [{ id: "Y1:protagonist:1345", year: 1345, kind: "Y1", personId: "protagonist", chosen: "decline", options: [option("encourage"), option("decline")] }];
+    const newDecisions = [{ id: "Y1:protagonist#1.1", year: 1348, kind: "Y1", personId: "protagonist", chosen: "encourage", options: [option("encourage"), option("decline")] }];
+    const newEntries = [{ id: "entry-1", turn: { decisionId: "Y1:protagonist#1.1", chosen: { optionId: "encourage" } } }];
+
+    const ghosts = buildGhostAnnotations(baseDecisions, newDecisions, newEntries);
+    expect(ghosts["entry-1"]).toMatch(/decline/i);
+  });
+
+  it("stays empty for an event that genuinely has no counterpart (a new occurrence, not a shifted one)", () => {
+    // Base never had a second Y1 for this person at all — the new one is a genuinely new occurrence
+    // the fork introduced, not the base's own occurrence moved in time. Must never invent a ghost
+    // by pairing it with an unrelated event just because it shares a kind and a person.
+    const baseDecisions = [{ id: "Y1:protagonist:1345", year: 1345, kind: "Y1", personId: "protagonist", chosen: "decline", options: [option("encourage"), option("decline")] }];
+    const newDecisions = [
+      { id: "Y1:protagonist#1.1", year: 1345, kind: "Y1", personId: "protagonist", chosen: "decline", options: [option("encourage"), option("decline")] }, // unchanged, claims the only base decision
+      { id: "Y1:protagonist#2.1", year: 1346, kind: "Y1", personId: "protagonist", chosen: "encourage", options: [option("encourage"), option("decline")] }, // genuinely new, no base counterpart
+    ];
+    const newEntries = [
+      { id: "entry-1", turn: { decisionId: "Y1:protagonist#1.1", chosen: { optionId: "decline" } } },
+      { id: "entry-2", turn: { decisionId: "Y1:protagonist#2.1", chosen: { optionId: "encourage" } } },
+    ];
+
+    const ghosts = buildGhostAnnotations(baseDecisions, newDecisions, newEntries);
+    expect(ghosts["entry-1"]).toBeUndefined(); // unchanged — correctly no ghost
+    expect(ghosts["entry-2"]).toBeUndefined(); // no plausible counterpart — must stay empty, never fabricated
+  });
+
+  it("survives an inserted occurrence that shifts every later ordinal out of alignment (exact causal-position matching produces BOTH a spurious ghost on the new occurrence AND a missed one on the real, shifted continuation here)", () => {
+    const baseDecisions = [
+      { id: "illness:protagonist:1332", year: 1332, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] },
+      { id: "illness:protagonist:1340", year: 1340, kind: "illness", personId: "protagonist", chosen: "illness", options: [option("illness"), option("healthy")] },
+    ];
+    // New branch: occurrence #1 is unchanged (1332). A genuinely NEW occurrence (#2, no base
+    // counterpart at all) is inserted at 1335. Occurrence #3 (1341) is the base's own #2 (1340),
+    // shifted by a year, with a real divergence (healthy instead of illness) — but by ordinal COUNT
+    // it's now #3, not #2, because of the inserted occurrence ahead of it.
+    const newDecisions = [
+      { id: "illness:protagonist#1.1", year: 1332, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] },
+      { id: "illness:protagonist#2.1", year: 1335, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] },
+      { id: "illness:protagonist#3.1", year: 1341, kind: "illness", personId: "protagonist", chosen: "healthy", options: [option("illness"), option("healthy")] },
+    ];
+    const newEntries = [
+      { id: "entry-1332", turn: { decisionId: "illness:protagonist#1.1", chosen: { optionId: "healthy" } } },
+      { id: "entry-1335", turn: { decisionId: "illness:protagonist#2.1", chosen: { optionId: "healthy" } } },
+      { id: "entry-1341", turn: { decisionId: "illness:protagonist#3.1", chosen: { optionId: "healthy" } } },
+    ];
+
+    const ghosts = buildGhostAnnotations(baseDecisions, newDecisions, newEntries);
+    expect(ghosts["entry-1332"]).toBeUndefined(); // unchanged
+    expect(ghosts["entry-1335"]).toBeUndefined(); // genuinely new occurrence — no counterpart, must never be fabricated
+    expect(ghosts["entry-1341"]).toMatch(/illness/i); // the real, shifted continuation — correctly found and annotated
+  });
+
+  it("groups by partner too, so two different relationships of the same kind never pair with each other", () => {
+    const baseDecisions = [{ id: "Y5:protagonist:friend-a:1345", year: 1345, kind: "Y5", personId: "protagonist", partnerId: "friend-a", chosen: "keep-distance", options: [option("open-up"), option("keep-distance")] }];
+    // Same kind, same person, DIFFERENT partner, close in year — must not be treated as a shifted copy.
+    const newDecisions = [{ id: "Y5:protagonist#1.1", year: 1345, kind: "Y5", personId: "protagonist", partnerId: "friend-b", chosen: "open-up", options: [option("open-up"), option("keep-distance")] }];
+    const newEntries = [{ id: "entry-1", turn: { decisionId: "Y5:protagonist#1.1", chosen: { optionId: "open-up" } } }];
+
+    const ghosts = buildGhostAnnotations(baseDecisions, newDecisions, newEntries);
+    expect(ghosts["entry-1"]).toBeUndefined();
+  });
+});

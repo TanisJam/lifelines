@@ -3028,3 +3028,24 @@ previous one. That was 1–2.9 s per trivial request that afternoon (0.35–0.86
 60-year life takes about 30 s to 3 min depending on Jev's latency. The user accepted up to 3 minutes
 if the stream shows what happens year by year, so the loading screen now keeps a running feed of
 every streamed entry, newest first, instead of only the last tick's titles.
+
+## 082 — Ghost annotations match by nearest year within the same relationship
+
+The backlog said rewrite ghost annotations ("In the original life, …") came back empty when the
+butterfly effect shifted a later event. `buildGhostAnnotations` paired decisions by causal position,
+the Nth occurrence of a kind for a person. When a fork adds or removes one occurrence of that kind,
+every later ordinal shifts, so a real counterpart is missed or paired with the wrong decision.
+
+Now each new decision is paired with a base-branch decision of the same kind, person and partner
+within ±5 years (`GHOST_MATCH_WINDOW_YEARS`), assigned one-to-one by ascending year gap. A decision
+with nothing inside the window gets no annotation, so a ghost never points at an unrelated event.
+
+Measured with `scripts/ghost-match-rate.ts` (rules engine, 25 seeds, forks at the protagonist's real
+turns; the same 52 genuine divergences with a counterpart in both runs): **4 empty (7.7%) before, 1
+empty (1.9%) after.** An earlier estimate of 14% came from a run that also carried an unrelated
+simulation change.
+
+The arranged gentry marriage work that was started alongside this is parked on
+`wip/gentry-arranged-match`: it brings gentry women to 18.4 (band 14–18) but the incoming suitors
+multiply the gentry class, so literacy rises to 12.9% (band 5–10) and adult gentry lose about 9 years
+of life against cottars.
