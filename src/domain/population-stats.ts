@@ -138,3 +138,32 @@ export function neverMarriedSharePercent(cohort: readonly MarriageEligibility[])
   const neverMarried = cohort.filter((c) => !c.everMarried).length;
   return (100 * neverMarried) / cohort.length;
 }
+
+/**
+ * Life expectancy at birth from a cohort observed from birth until `endYear`, corrected for right
+ * censoring (a product-limit survival table by single year of age). The mean age at death of the
+ * people who already died is biased low whenever the window ends while part of the cohort is still
+ * alive — the longest lives are the ones not yet observed. Here someone still alive at `endYear` counts
+ * as at risk for every age they were observed at. Age at death is `deathYear - birthYear`, so with no
+ * censoring this equals the plain mean age at death. `NaN` for an empty cohort.
+ */
+export function lifeExpectancyFromExposure(cohort: readonly { readonly birthYear: number; readonly deathYear?: number }[], endYear: number): number {
+  if (cohort.length === 0) return NaN;
+  let survival = 1;
+  let e0 = 0;
+  for (let age = 0; survival > 0; age++) {
+    let atRisk = 0;
+    let deaths = 0;
+    for (const person of cohort) {
+      const ageAtDeath = person.deathYear !== undefined ? person.deathYear - person.birthYear : undefined;
+      const observedAtAge = person.birthYear + age <= endYear;
+      if (!observedAtAge || (ageAtDeath !== undefined && ageAtDeath < age)) continue;
+      atRisk++;
+      if (ageAtDeath === age) deaths++;
+    }
+    if (atRisk === 0) break;
+    survival *= 1 - deaths / atRisk;
+    e0 += survival;
+  }
+  return e0;
+}

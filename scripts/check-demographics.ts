@@ -36,7 +36,7 @@ import { hasMovedAway } from "../src/domain/events";
 import { FERTILITY_HAZARD_BANDS, MORTALITY_BY_AGE_BAND } from "../src/domain/params/demography";
 import { CALIBRATION_TARGETS } from "../src/domain/params/targets";
 import { BLACK_DEATH_YEARS, SECOND_PESTILENCE_YEARS } from "../src/domain/period/events";
-import { completedMarriageWives, inNeverMarriedCohort, meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand, type AgeBand, type AgeBandObservation, type AgeBandRate } from "../src/domain/population-stats";
+import { completedMarriageWives, inNeverMarriedCohort, lifeExpectancyFromExposure, meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand, type AgeBand, type AgeBandObservation, type AgeBandRate } from "../src/domain/population-stats";
 import { simulate } from "../src/domain/simulate";
 import type { Event, Person, SocialClass } from "../src/domain/types";
 import { generateWorld } from "../src/domain/worldgen";
@@ -448,7 +448,9 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
 
   const avg = (samples: readonly number[]) => mean(samples);
   const imrPer1000 = observedBirths > 0 ? (1000 * infantDeaths) / observedBirths : NaN;
-  const e0 = avg(ageAtDeathFromBirth);
+  // Censoring-corrected (decision 077): the mean age at death of those who already died is biased low
+  // while part of the from-birth cohort is still alive at window end.
+  const e0 = lifeExpectancyFromExposure(motherIdCohort, window.endYear);
   const e0AllDeaths = avg(ageAtDeathAll);
   const under15Pct = under15.resolved > 0 ? (100 * under15.deaths) / under15.resolved : NaN;
   const under7AdditionalDeathPct = under7Additional.resolved > 0 ? (100 * under7Additional.deaths) / under7Additional.resolved : NaN;
@@ -512,7 +514,7 @@ function printStats(result: StatsResult, set: CalibrationSet): void {
   console.log(`\nStats across ${result.seedCount} seeds, ${result.window.startYear}-${result.window.endYear} village runs (--set ${set}):`);
   console.log(`  Births with >=1yr follow-up: ${result.observedBirths}. Infant deaths (age<=1): ${result.infantDeaths}.`);
   console.log(`  Infant mortality: ${result.imrPer1000.toFixed(1)} per 1,000 births.`);
-  console.log(`  Life expectancy at birth (from-birth cohort, ${result.e0Samples} observed deaths): ${result.e0.toFixed(1)} years.`);
+  console.log(`  Life expectancy at birth (from-birth cohort, censoring-corrected; ${result.e0Samples} observed deaths): ${result.e0.toFixed(1)} years.`);
   console.log(`  Share dying before age 15 (of resolved outcomes): ${result.under15Pct.toFixed(1)}%.`);
   console.log(`  Additional share dying by age 7, of those surviving infancy: ${result.under7AdditionalDeathPct.toFixed(1)}%.`);
   console.log(`  (Context only — population-wide avg age at death incl. adult founders): ${result.e0AllDeaths.toFixed(1)} years.`);

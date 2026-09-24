@@ -2665,3 +2665,15 @@ out of this slice's safe scope; (3) `widowRemarriagePostBlackDeath` continues dr
 band (29.10% decision 074 -> 39.05% decision 075 -> 42.76% here) as a compounding side effect of every
 fertility/marriage-timing fix in this lineage — reported each time, never chased, same precedent
 decision 074 established for this exact metric.
+
+## 077 — e0 corrected for right-censoring (engine-life-course, PR15)
+
+`check-demographics.ts` computed e0 as the mean age at death of the from-birth cohort's members
+who had already died. That is biased low whenever the window ends while part of the cohort is still
+alive, because the longest lives are exactly the ones not yet observed. It also explains why e0 kept
+*falling* as fertility rose in PR13/PR14: more late births meant more young deaths in the sample, even
+though age-specific mortality did not change. `population-stats.ts#lifeExpectancyFromExposure` now
+computes it with a product-limit survival table by single year of age, where people still alive count
+as at risk while observed. With no censoring, it equals the plain mean age at death (unit-tested).
+Re-measured (60 seeds): e0 is **20.9** (it was reported as 17.9), against the band 22–35. That is still a FAIL, but by 1.1 years, not 4.
+The old figure is still printed as context ("population-wide avg age at death"). No model change.

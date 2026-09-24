@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { completedMarriageWives, inNeverMarriedCohort, meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand } from "./population-stats";
+import { completedMarriageWives, inNeverMarriedCohort, lifeExpectancyFromExposure, meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand } from "./population-stats";
 
 describe("rateByAgeBand", () => {
   const bands = [
@@ -133,5 +133,23 @@ describe("completedMarriageWives", () => {
     const wives = new Map([wife("w5", 1320, 1400)]);
     const marriages = [{ wifeId: "ghost", marriageYear: 1340 }];
     expect(completedMarriageWives(marriages, wives, 1427, 45)).toEqual([]);
+  });
+});
+
+describe("lifeExpectancyFromExposure", () => {
+  it("equals the mean age at death when nobody is right-censored", () => {
+    const cohort = [{ birthYear: 1330, deathYear: 1340 }, { birthYear: 1331, deathYear: 1341 }];
+    expect(lifeExpectancyFromExposure(cohort, 1427)).toBeCloseTo(10, 10);
+  });
+
+  it("does not let people still alive at window end drag e0 down — they count as survivors while observed", () => {
+    // Naive mean age at death of the dead is (50 + 1) / 2 = 25.5; the child born two years before the
+    // window ends is alive and still at risk, so survival past age 1 is 2/3, not 1/2.
+    const cohort = [{ birthYear: 1330, deathYear: 1380 }, { birthYear: 1330, deathYear: 1331 }, { birthYear: 1425 }];
+    expect(lifeExpectancyFromExposure(cohort, 1427)).toBeCloseTo(1 + 49 * (2 / 3), 10);
+  });
+
+  it("returns NaN for an empty cohort", () => {
+    expect(lifeExpectancyFromExposure([], 1427)).toBeNaN();
   });
 });
