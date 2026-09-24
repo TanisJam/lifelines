@@ -22,7 +22,7 @@ export interface ParamProvenance {
 export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
   MARRIAGE_FLOORS: {
     source: "Design revision 2, decision 14 (supersedes decision 053's 1498-1558 floors); research.md Family §rules synthesis for direction only. Gentry row: PR10 (GOAL B, decision 071) -- docs/research.md line 340 (Hollingsworth 14th c. interpolation: women ~17, men ~22) and the Follett narrative reference (Tilly m. 14, engram #6321/#6149).",
-    range: "Women 18-22 mean, men 21-25 mean, per the confirmed marriage band (research-request rev 8). Gentry: women 14-18, men 20-24 (params/targets.ts's own per-class bands); men's onset moved 20 -> 22 by PR10 to center on the research.md anchor.",
+    range: "Women 18-23 mean, men 21-27 mean, merchant men 23-30 (Follett-plausible targets, decision 078). Gentry: women 14-18, men 20-26 (params/targets.ts's own per-class bands); men's onset moved 20 -> 22 by PR10 to center on the research.md anchor.",
     confidence: "low",
   },
   CANON_MINIMUM_MARRIAGE_AGE: {

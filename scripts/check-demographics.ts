@@ -566,7 +566,7 @@ function runAssertions(result: StatsResult): boolean {
   const checks: AssertionCheck[] = [
     { label: "firstMarriageAgeWomen", value: result.marriageAgeBySex.f, ...CALIBRATION_TARGETS.firstMarriageAgeWomen! },
     { label: "firstMarriageAgeMen", value: result.marriageAgeBySex.m, ...CALIBRATION_TARGETS.firstMarriageAgeMen! },
-    { label: "firstMarriageAgeMen (merchant men, explicit upper-bound check)", value: result.merchantMenMarriageAge, min: 0, max: CALIBRATION_TARGETS.firstMarriageAgeMen!.max },
+    { label: "firstMarriageAgeMenMerchant", value: result.merchantMenMarriageAge, ...CALIBRATION_TARGETS.firstMarriageAgeMenMerchant! },
     { label: "firstMarriageAgeWomenGentry", value: result.gentryWomenMarriageAge, ...CALIBRATION_TARGETS.firstMarriageAgeWomenGentry! },
     { label: "firstMarriageAgeMenGentry", value: result.gentryMenMarriageAge, ...CALIBRATION_TARGETS.firstMarriageAgeMenGentry! },
     { label: "widowRemarriagePreBlackDeath", value: result.widowRemarriagePre1349Pct, ...CALIBRATION_TARGETS.widowRemarriagePreBlackDeath! },

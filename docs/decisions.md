@@ -2677,3 +2677,35 @@ computes it with a product-limit survival table by single year of age, where peo
 as at risk while observed. With no censoring, it equals the plain mean age at death (unit-tested).
 Re-measured (60 seeds): e0 is **20.9** (it was reported as 17.9), against the band 22–35. That is still a FAIL, but by 1.1 years, not 4.
 The old figure is still printed as context ("population-wide avg age at death"). No model change.
+
+## 078 — Calibration targets become Follett-plausible, not historically exact
+
+The user's product call (2026-09-24): Lifelines is not a strictly historical simulation. It should
+read like Ken Follett's Kingsbridge novels, with their characters, drama, plot and novelistic events.
+*World Without End* covers exactly the 1327–1361 default window. Where no source gives a figure,
+plausible invented numbers are allowed.
+
+`params/targets.ts` now marks each such band `Follett-plausible (decision 078) … Invented.` so it is
+never mistaken for a sourced figure. Bands whose history already serves the drama keep their sources
+(infant mortality, deaths by age 7, the plague shock, which was only widened to 35–55%).
+
+| Target | Before | Now | Narrative reason |
+|---|---|---|---|
+| First marriage, women | 18–22 | 18–23 | Young marriages keep courtship and family pressure on the page |
+| First marriage, men | 21–25 | 21–27 | Men marry once they hold land or a trade |
+| First marriage, merchant men | ≤25 (men's max) | 23–30 (own band) | Merchants marry after building a business |
+| First marriage, gentry men | 20–24 | 20–26 | Knights marry once they win land or favour |
+| Widow remarriage, pre-plague | 60–66% (Razi) | 40–65% | Remarriage stays a plot engine |
+| Widow remarriage, post-plague | 23–29% (Razi) | 35–60% | The plague frees land and partners |
+| e0 | 22–35 | 18–32 | Child death is part of the drama |
+| Literacy | 4–6% | 5–10% | Clergy, nuns and merchants read more than a real village did |
+| Population 1327→1347 | −10 to +10% | −5 to +20% | Kingsbridge grows before the plague |
+| Population 1347→1350 | −50 to −40% | −55 to −35% | The plague is the catastrophe |
+| Population 1350→1361 | −10 to +60% | 0 to +60% | The survivors visibly rebuild |
+
+The gentry women's band (14–18, Tilly m. 14) is unchanged.
+
+Re-measured (60 seeds, no model change): 10 of 15 pass. Five real engine gaps remain: women marry at
+23.2 (band 18–23), gentry women at 21.8 (14–18), gentry men at 26.5 (20–26); the town shrinks 23%
+before the plague (−5 to +20) and keeps shrinking 18% after it (0 to +60).
+
