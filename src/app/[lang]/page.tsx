@@ -49,7 +49,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [protagonistName, setProtagonistName] = useState<string | null>(null);
   const [year, setYear] = useState<number | null>(null);
-  const [recentTitles, setRecentTitles] = useState<string[]>([]);
+  // Decision 084: a life with Jev takes minutes, so the loading screen keeps every streamed entry as a
+  // running feed (newest first) instead of only the last tick's titles.
+  const [feed, setFeed] = useState<{ id: string; year: number; title: string }[]>([]);
   const [done, setDone] = useState<{ name: string; birthYear: number; deathYear: number } | null>(null);
   const [hasLives, setHasLives] = useState(false);
   const turnstileSiteKey = useTurnstileSiteKey();
@@ -68,7 +70,7 @@ export default function HomePage() {
     }
     setError(null);
     setStage("creating");
-    setRecentTitles([]);
+    setFeed([]);
     setDone(null);
     setYear(null);
     setProtagonistName(null);
@@ -82,7 +84,13 @@ export default function HomePage() {
           setYear(event.protagonist.birthYear);
         } else if (event.type === "tick") {
           setYear(event.year);
-          if (event.entries.length > 0) setRecentTitles(event.entries.slice(-3).map((e) => e.title));
+          if (event.entries.length > 0) {
+            const incoming = event.entries.map((e) => ({ id: e.id, year: e.year, title: e.title }));
+            setFeed((previous) => {
+              const seen = new Set(previous.map((e) => e.id));
+              return [...incoming.filter((e) => !seen.has(e.id)).reverse(), ...previous];
+            });
+          }
         } else if (event.type === "done") {
           landedLifeId = event.chronicle.lifeId;
           landedBranchId = event.chronicle.branchId;
@@ -120,13 +128,14 @@ export default function HomePage() {
                 {year}
               </p>
             )}
-            <div className="h-20 space-y-1">
-              {recentTitles.map((t, i) => (
-                <p key={i} className="text-muted-foreground">
-                  {t}
-                </p>
+            <ol className="max-h-72 w-full max-w-md space-y-1 overflow-y-auto text-left" aria-live="polite">
+              {feed.map((entry, i) => (
+                <li key={entry.id} className={i === 0 ? "text-foreground" : "text-muted-foreground"}>
+                  <span className="mr-2 font-label text-xs tabular-nums text-brass">{entry.year}</span>
+                  {entry.title}
+                </li>
               ))}
-            </div>
+            </ol>
           </>
         )}
         {error && <p className="text-center text-sm text-crimson">{error}</p>}
