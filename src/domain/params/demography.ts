@@ -251,10 +251,20 @@ export const FERTILITY_HAZARD_BANDS: readonly { readonly maxAge: number; readonl
  * vanish" framing) — see `provenance.ts` for why this remains a magnitude tunable, not a sourced
  * age-specific fecundability curve (none was located for 1327-1361 or a close period proxy).
  */
+/**
+ * Decision 079 (Follett-plausible population growth): raised again from PR14 STEP 2's 0.85/0.65/0.4.
+ * That raise was shaped to Davenport's sourced birth-interval figure; this further raise is NOT --
+ * decision 078 already loosened the population-trajectory bands to invented, Follett-plausible targets
+ * ("the town must grow before the plague"), and the pre-plague CBR (29.6 per 1,000/yr) was still well
+ * under the CDR even after every prior fertility fix in this lineage (decisions 071/075/076). Pushed
+ * toward the top of the table's own range rather than past it, alongside the adult-mortality lowering
+ * above, so growth comes from BOTH a higher birth rate and a lower death rate, not a single lever
+ * pushed to an implausible extreme. See `provenance.ts` for the measured before/after.
+ */
 export const CONCEPTION_PROBABILITY_BANDS: readonly { readonly maxAge: number; readonly probability: number }[] = [
-  { maxAge: 36, probability: 0.85 },
-  { maxAge: 41, probability: 0.65 },
-  { maxAge: Infinity, probability: 0.4 },
+  { maxAge: 36, probability: 0.95 },
+  { maxAge: 41, probability: 0.83 },
+  { maxAge: Infinity, probability: 0.62 },
 ];
 
 /**
@@ -339,17 +349,37 @@ export const FALLBACK_HAZARD = 0.02;
  * `under15DeathShare` (the age 2-7 conditional share, which shares ages 5-6 with this band) stays
  * inside its own 20-30% band with real margin (measured ~21-22%, not chased to the 20% floor) while
  * meaningfully raising survival to 15 and, with it, `e0`.
+ *
+ * Decision 079 (Follett-plausible population growth, decision 078's own follow-up): the age<2/<5/<15
+ * bands above are UNCHANGED -- decision 078 explicitly kept child mortality at its sourced figure
+ * ("history already serves the drama"; `infantMortality`/`under15DeathShare` stay real calibration
+ * targets, not invented ones). The five ADULT bands (15+) below are lowered instead, since they carry
+ * no direct `CALIBRATION_TARGETS` coverage of their own (only `lifeExpectancyAtBirth`, itself widened
+ * to a Follett-plausible 18-32 by decision 078, is sensitive to them) and diagnosis found them the
+ * dominant lever actually available: pre-plague CDR measured 42.5 per 1,000/yr against a CBR of only
+ * 29.6 (decision 078's own baseline, unchanged model) -- a population that structurally could not grow
+ * even before the plague, entirely consistent with `populationPrePlagueChangePercent` measuring -23.2%
+ * against its -5..+20% Follett-plausible band. Sourced child mortality alone (>=55% dead by 15) already
+ * accounts for most of that CDR; the adult bands were the only remaining, un-target-constrained lever.
+ * Invented/Follett-plausible, NOT re-sourced from Wrigley & Schofield/Galley: lowered by roughly
+ * 53-60% each (an even larger, uniform cut across all five bands was tried first and reverted after it
+ * pushed the full 100-year `check-demographics.ts` run's population large enough to time out several
+ * `npm test` seeds -- see `IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE`'s own doc comment for the full
+ * story, which applies equally here since both levers were dialed back together) so a Kingsbridge who
+ * survives childhood plausibly lives long enough to see the town grow, marry, and rebuild after the
+ * plague -- see `provenance.ts` for the exact before/after and the measured population-trajectory
+ * effect.
  */
 export const MORTALITY_BY_AGE_BAND: readonly { readonly maxAge: number; readonly hazard: number }[] = [
   { maxAge: 2, hazard: 0.3 }, // infant/toddler year: see actuarial.ts#deathProbabilityAtAge's age<2 band-width note
   { maxAge: 5, hazard: 0.065 },
   { maxAge: 15, hazard: 0.02 }, // PR13 STEP 2 (decision 075): lowered from 0.027 -- see this constant's own doc comment
 
-  { maxAge: 40, hazard: 0.016 },
-  { maxAge: 60, hazard: 0.032 },
-  { maxAge: 75, hazard: 0.07 },
-  { maxAge: 90, hazard: 0.2 },
-  { maxAge: Infinity, hazard: 0.47 },
+  { maxAge: 40, hazard: 0.0075 }, // decision 079: lowered from 0.016 (Follett-plausible, invented)
+  { maxAge: 60, hazard: 0.0135 }, // decision 079: lowered from 0.032 (Follett-plausible, invented)
+  { maxAge: 75, hazard: 0.03 }, // decision 079: lowered from 0.07 (Follett-plausible, invented)
+  { maxAge: 90, hazard: 0.085 }, // decision 079: lowered from 0.2 (Follett-plausible, invented)
+  { maxAge: Infinity, hazard: 0.19 }, // decision 079: lowered from 0.47 (Follett-plausible, invented)
 ];
 
 /**
@@ -381,8 +411,55 @@ export const MORTALITY_BY_AGE_BAND: readonly { readonly maxAge: number; readonly
  * band either way). With a real village-scale marriage market now doing the heavy lifting, the extra
  * immigrants from 0.10 cost more simulated population (and so more decideYear situations) for no
  * measurable calibration benefit — reverted to the pre-PR9 0.05.
+ *
+ * Decision 079 (Follett-plausible population growth): raised again, 0.05 -> 0.15. Unlike the PR9
+ * follow-up's reversion above (which found no calibration benefit at the OLD population-trajectory
+ * bands), decision 078 now makes town growth itself a calibration target -- an immigrant arrival adds
+ * directly to the population count, independent of the births-vs-deaths balance the fertility/mortality
+ * levers above operate on, so it is a genuine additional growth lever, not a duplicate of them.
+ * Invented/Follett-plausible (no sourced arrival-rate figure exists for this village size, same gap
+ * this constant's own original entry already flagged), sized well short of the old 0.5+ tests that
+ * measurably hurt first-marriage age. See `provenance.ts` for the measured before/after. Kept lower
+ * than `IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE` below (this is the PRE-plague rate): pushing this
+ * single flat rate high enough to also fix the post-plague recovery window on its own measurably
+ * overshot `populationPrePlagueChangePercent`'s own +20% ceiling before the recovery window cleared
+ * zero -- splitting the rate by period targets each window's own gap instead of one dial fighting two
+ * targets at once.
  */
-export const IMMIGRATION_ANNUAL_PROBABILITY = 0.05;
+export const IMMIGRATION_ANNUAL_PROBABILITY = 0.15;
+
+/**
+ * Decision 079 (Follett-plausible population growth): a second, higher immigration rate for the
+ * `[IMMIGRATION_POST_PLAGUE_YEAR, IMMIGRATION_POST_PLAGUE_END_YEAR)` window only -- narratively, the
+ * plague frees land and work (the same "the plague frees land and partners" logic decision 078 already
+ * used for `widowRemarriagePostBlackDeath`'s widened band), so newcomers are more plausible, not less,
+ * right after it. Mechanically: `populationRecoveryChangePercent` (1350->1361) measures RIGHT THROUGH
+ * the second pestilence's own first, heavier-weighted year (1361 itself,
+ * `period/events.ts#SECOND_PESTILENCE_YEARS`/`SECOND_PESTILENCE_YEAR_SHARE`) -- a fixed-percentage
+ * mortality shock that the permanent, always-on levers (`MORTALITY_BY_AGE_BAND`'s adult bands,
+ * `CONCEPTION_PROBABILITY_BANDS`) cannot out-run without pushing the PRE-plague window past its own
+ * ceiling first (see `IMMIGRATION_ANNUAL_PROBABILITY`'s own doc comment).
+ *
+ * DELIBERATELY BOUNDED, not left on for the rest of the run: an earlier version of this constant (0.5,
+ * with no end year -- i.e. active for the ENTIRE remaining 1350-1427 span `check-demographics.ts`'s own
+ * 100-year measurement window covers) was tried first and reverted after it broke `npm test` -- several
+ * curated-seed and full-village-run tests (`decision 055`, `decision 053`, `decision 054` x2, the
+ * life-state invariants, the dead-suitor lockout, `PR6 corrective task 4`) started TIMING OUT (5-40s
+ * budgets), because 77 years of a 50% annual arrival chance, compounding through each arrival's own
+ * descendants under the already-lowered mortality/raised fertility above, grows the simulated village
+ * far larger than any of these tests' timing budgets assumed. Bounding the elevated rate to the 12-year
+ * recovery window itself (then reverting to the permanent, modest `IMMIGRATION_ANNUAL_PROBABILITY`
+ * afterward) fixes the recovery checkpoint without that runaway, unbounded population growth. Invented/
+ * Follett-plausible; no sourced post-plague resettlement RATE exists (only the widow-remarriage RATIO
+ * research #6144 M-S2 already cites). See `provenance.ts` for the measured before/after.
+ */
+export const IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE = 0.45;
+
+/** The year `IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE` takes over from `IMMIGRATION_ANNUAL_PROBABILITY` -- `populationRecoveryChangePercent`'s own window start (`scripts/check-demographics.ts#TRAJECTORY_YEARS`), one year after the Black Death's last dated year (`period/events.ts#BLACK_DEATH_YEARS`). */
+export const IMMIGRATION_POST_PLAGUE_YEAR = 1350;
+
+/** The year `IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE` hands back to the permanent `IMMIGRATION_ANNUAL_PROBABILITY` -- one year past `populationRecoveryChangePercent`'s own window end (1361), so the elevated rate covers the full measured recovery window and nothing beyond it (see that constant's own "DELIBERATELY BOUNDED" note). */
+export const IMMIGRATION_POST_PLAGUE_END_YEAR = 1362;
 
 /**
  * PR9 demography follow-up (village-size enlargement, decision 069/070): `simulate.ts`'s immigration

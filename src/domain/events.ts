@@ -51,6 +51,38 @@ export function activeRomancePair(events: readonly Event[], personId: string): s
   return undefined;
 }
 
+/**
+ * Decision 079: EVERY currently-active (unresolved) romance partner for `personId`, not just the
+ * single most-recent one `activeRomancePair` above returns. A person can have simultaneous,
+ * same-year romances with more than one partner (the "pre-existing multi-suitor property"
+ * `simulate.ts#resolveCourtshipOnDeath`'s own doc comment already named) -- `activeRomancePair`
+ * intentionally returns only one (its callers, e.g. Y1's own eligibility check, only need to know
+ * "is this person entangled at all"), but a caller that needs to CLOSE every open thread (death
+ * resolution) needs the full set, or every suitor but the first-found stays permanently locked out.
+ * For each distinct partner, only their LATEST romance year is checked for resolution — matching
+ * `activeRomancePair`'s own per-partner logic, generalized across partners instead of stopping at
+ * the first one found.
+ */
+export function activeRomancePairs(events: readonly Event[], personId: string): string[] {
+  const romances = events.filter((e) => e.kind === "romance" && e.actors.includes(personId));
+  const latestYearByPartner = new Map<string, number>();
+  for (const romance of romances) {
+    const other = romance.actors.find((a) => a !== personId);
+    if (!other) continue;
+    const existing = latestYearByPartner.get(other);
+    if (existing === undefined || romance.year > existing) latestYearByPartner.set(other, romance.year);
+  }
+  const active: string[] = [];
+  for (const [other, romanceYear] of latestYearByPartner) {
+    const key = pairKey(personId, other);
+    const resolved = events.some(
+      (e) => (e.kind === "breakup" || e.kind === "marriage") && e.year >= romanceYear && pairKey(e.actors[0] ?? "", e.actors[1] ?? "") === key,
+    );
+    if (!resolved) active.push(other);
+  }
+  return active;
+}
+
 /** Most recent breakup for this person with no romance since, within `withinYears` of `year`. */
 export function recentUnresolvedBreakup(events: readonly Event[], personId: string, year: number, withinYears: number): Event | undefined {
   const breakups = events

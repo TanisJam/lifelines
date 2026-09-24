@@ -9,7 +9,7 @@ Open items and product calls, newest first. Move an item to `decisions.md` once 
 
 ## To review
 
-- [ ] **Five Follett-plausible targets still fail (decision 078).** Women marry at 23.2 (band 18–23), gentry women at 21.8 (14–18), gentry men at 26.5 (20–26). The town shrinks 23% before the plague (band −5 to +20) and 18% after it (0 to +60). Fertility is the likely shared root of both population gaps: children ever born per completed marriage is 2.63.
+- [ ] **Three Follett-plausible marriage-age targets still fail (decision 079).** Women marry at 23.02, just 0.02 over the 18–23 band. Gentry women marry at 21.55 (band 14–18) — a genuine structural gap (gentry is "one household per village" in worldgen, decisions 068–071's own repeated finding), not a rate this slice's levers touch. Gentry men marry at 26.41, just 0.41 over the 20–26 band. The population targets (pre-plague growth, post-plague recovery) both pass as of decision 079.
 
 - [ ] **Rewrite ghost annotations come back empty.** The "In the original life, …" matching is too narrow when the butterfly effect shifts later events by a year or more (decision 039).
 - [ ] **SSE ticks replay the finished life** grouped by year, instead of narrating the simulation as it runs (decision 036).

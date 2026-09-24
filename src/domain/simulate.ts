@@ -2,14 +2,23 @@ import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge, isAdult, is
 import { mapWithConcurrency } from "./concurrency";
 import { candidateMatchesSubject, decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
-import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
+import { activeFeudPair, activeRomancePair, activeRomancePairs, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
 import { advanceSlot, applyLifeTransition, EMPTY_SLOTS, ensureLifeState, markMarriageable } from "./life-state";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
 import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
-import { CONCEPTION_PROBABILITY_BANDS, IMMIGRATION_ANNUAL_PROBABILITY, IMMIGRATION_POPULATION_CAP_RATIO, RETURN_HOME_MIN_AWAY_YEARS, RETURN_HOME_PROBABILITY } from "./params/demography";
+import {
+  CONCEPTION_PROBABILITY_BANDS,
+  IMMIGRATION_ANNUAL_PROBABILITY,
+  IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE,
+  IMMIGRATION_POPULATION_CAP_RATIO,
+  IMMIGRATION_POST_PLAGUE_END_YEAR,
+  IMMIGRATION_POST_PLAGUE_YEAR,
+  RETURN_HOME_MIN_AWAY_YEARS,
+  RETURN_HOME_PROBABILITY,
+} from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import {
   BLACK_DEATH_YEARS,
@@ -500,21 +509,32 @@ function resolveWidowhood(
  * even for someone who separately married someone else (the pre-existing multi-suitor property; see
  * decision 065's "Real pre-existing bugs" note), so this always attempts to close it. No-ops when
  * the deceased had no unresolved romance, or its partner is dead or already resolved otherwise.
+ *
+ * Decision 079: resolves EVERY simultaneous unresolved romance the deceased had (`activeRomancePairs`),
+ * not just one — found via a real 60-seed run (`lockout-check-12`) where a person had two SAME-YEAR
+ * romances; the original single-partner version (`activeRomancePair`) only ever closed the first one
+ * found, leaving the OTHER suitor permanently locked out — the exact "dead-suitor lockout" bug this
+ * function exists to fix, just for the second (and later) simultaneous suitor instead of the first.
+ * Higher population/marriage activity from decision 079's own population-growth tuning made this
+ * pre-existing multi-suitor gap common enough to trip the curated invariant test below for the first
+ * time (see that test's own doc comment for the exact reproduction).
  */
 function resolveCourtshipOnDeath(events: Event[], people: Record<string, Person>, deceased: Person, year: number, deathEventId: string): readonly string[] {
-  const partnerId = activeRomancePair(events, deceased.id);
-  if (!partnerId) return [];
-  const partner = people[partnerId];
-  if (!partner || partner.deathYear !== undefined) return [];
-  const partnerState = ensureLifeState(partner, events);
-  // Only reset the marital AXIS if this romance was actually the survivor's current relationship
-  // (`"courting"`) — a stale, never-resolved thread from years ago shouldn't overwrite a partner who
-  // has since gone on to marry someone else; the `breakup` event alone is enough to unblock them.
-  if (partnerState.marital.status === "courting") {
-    partner.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "single" }, year);
+  const resultingIds: string[] = [];
+  for (const partnerId of activeRomancePairs(events, deceased.id)) {
+    const partner = people[partnerId];
+    if (!partner || partner.deathYear !== undefined) continue;
+    const partnerState = ensureLifeState(partner, events);
+    // Only reset the marital AXIS if this romance was actually the survivor's current relationship
+    // (`"courting"`) — a stale, never-resolved thread from years ago shouldn't overwrite a partner who
+    // has since gone on to marry someone else; the `breakup` event alone is enough to unblock them.
+    if (partnerState.marital.status === "courting") {
+      partner.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "single" }, year);
+    }
+    const breakupEvent = pushEvent(events, year, "breakup", [deceased.id, partnerId], { causeOfDeath: true }, [deathEventId]);
+    resultingIds.push(breakupEvent.id);
   }
-  const breakupEvent = pushEvent(events, year, "breakup", [deceased.id, partnerId], { causeOfDeath: true }, [deathEventId]);
-  return [breakupEvent.id];
+  return resultingIds;
 }
 
 /**
@@ -1378,8 +1398,14 @@ function gatherCandidatesForYear(
       // A2 Have a child, once married — asked via whichever of the couple is the mother, exactly
       // like the home loop's own "asked via the mother" rule. Round 12 (decision 045): the old
       // `gateDraw` code-side gate is gone — eligible every year the fertility window holds.
+      // Decision 079 fix: only for a spouse who is ACTUALLY part of the away cast (`away === true`),
+      // matching this whole block's own doc comment ("never the home village's own population"). A
+      // spouse married before the protagonist left home stays in `aliveNonMoved` (the general
+      // population loop above already generates her own, legitimate A2 candidate there) — without
+      // this guard, both loops fired for the same (personId, year), tripping `simulateYears`' hard
+      // "no kind twice per person per year" invariant (found via a real curated-seed crash).
       const awaySpouse = protagonist.spouseId ? people[protagonist.spouseId] : undefined;
-      if (awaySpouse && awaySpouse.deathYear === undefined) {
+      if (awaySpouse && awaySpouse.away === true && awaySpouse.deathYear === undefined) {
         const mother = protagonist.sex === "f" ? protagonist : awaySpouse;
         const father = protagonist.sex === "f" ? awaySpouse : protagonist;
         const motherAge = ageInYear(mother.birthYear, year);
@@ -2422,7 +2448,12 @@ export async function* simulateYears(
         // PR9 (partner-scarcity fix, engram #6142/#6311): named/documented in params/demography.ts
         // -- was a hardcoded, undocumented `0.05` literal. See that constant's own doc comment for
         // the measured before/after and the tradeoff this raise carries.
-        const p = IMMIGRATION_ANNUAL_PROBABILITY;
+        // Decision 079 (Follett-plausible population growth): the rate rises for the bounded
+        // [IMMIGRATION_POST_PLAGUE_YEAR, IMMIGRATION_POST_PLAGUE_END_YEAR) recovery window only, then
+        // reverts -- own doc comment on `IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE` has the full
+        // reasoning, including why this is bounded rather than left on for the rest of the run.
+        const isPostPlagueWindow = year >= IMMIGRATION_POST_PLAGUE_YEAR && year < IMMIGRATION_POST_PLAGUE_END_YEAR;
+        const p = isPostPlagueWindow ? IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE : IMMIGRATION_ANNUAL_PROBABILITY;
         record = resolveBiologyDecision(descriptor, year, p, seed, forced, config.town.name, config.town.name, minted);
         const resultingEventIds: string[] = [];
         if (record.chosen === "arrive") {

@@ -4,8 +4,8 @@ import { classMortalityMultiplier } from "./actuarial";
 import { indexEventsById, walkCauses } from "./causality";
 import { forkWorld } from "./fork";
 import { createMind } from "./mind";
-import { activeRomancePair } from "./events";
-import { IMMIGRATION_ANNUAL_PROBABILITY, MARRIAGE_FLOORS } from "./params/demography";
+import { activeRomancePair, activeRomancePairs } from "./events";
+import { IMMIGRATION_ANNUAL_PROBABILITY, IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE, MARRIAGE_FLOORS } from "./params/demography";
 import {
   canMarry,
   conceptionProbability,
@@ -333,7 +333,7 @@ describe("decision 050: recalibrated mortality and class multiplier", () => {
     expect(wellOffAges.length).toBeGreaterThan(0);
     const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
     expect(avg(cottarAges)).toBeLessThan(avg(wellOffAges));
-  });
+  }, 30000); // decision 079: lowered mortality bands mean longer-lived villages/more simulated years per seed -- see IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE's own doc comment for the full performance story.
 });
 
 describe("PR5: Black Death and second pestilence (dated shocks, 1327-1361 window)", () => {
@@ -423,6 +423,19 @@ describe("decision 051: maternal mortality at childbirth", () => {
     // with `maternal-widow3-2` (found via `findSeed("maternal-widow3", ..., {startYear:1498,
     // endYear:1558, founderCount:30})`, first of 80 attempts to satisfy "widowed husband and mother
     // both stay unmarried through window end").
+    // Decision 079: population-growth tuning (much lower mortality, higher fertility/immigration)
+    // made remarriage-within-the-window common enough that reseeding around it, this test's own
+    // repeated fix every prior slice, stopped scaling -- MULTIPLE seeds in this exact list
+    // (`maternal-check-37`, `maternal-check-42`) now independently produce a maternal widowing where
+    // the husband goes on to remarry someone else before window end, each one able to break the
+    // "stays unmarried forever" assertion on its own regardless of which seed is picked for the
+    // designated maternal-widow case. Relaxed the survivor-side assertion to the SAME, already more
+    // robust pattern the sibling "decision 054: widowhood and remarriage" test below already uses
+    // (`not.toBe(deceasedId)`, not `toBeUndefined()`): a later, legitimate remarriage was always fine
+    // per decision 054 itself (only a stray pointer AT THE DECEASED is the real bug); this test's own
+    // stricter check was incidental, not the invariant it exists to guard. The deceased mother's OWN
+    // `spouseId` (cleared unconditionally by `resolveWidowhood`, never reassigned after death) still
+    // gets the strict check.
     for (const seed of ["maternal-check-37", "maternal-check-38", "maternal-check-39", "maternal-check-40", "maternal-widow3-2", "maternal-check-42", "maternal-check-43"]) {
       const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 30 });
       const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
@@ -437,7 +450,9 @@ describe("decision 051: maternal mortality at childbirth", () => {
         widowedHusbands++;
         const husbandId = widowedEvent.actors[0]!;
         expect(widowedEvent.causes).toContain(death.id);
-        expect(report.result.people[husbandId]!.spouseId).toBeUndefined();
+        // May end up undefined (never remarried) or point at a DIFFERENT, later spouse (remarried),
+        // but never the deceased mother herself — the exact bug decision 054 fixes.
+        expect(report.result.people[husbandId]!.spouseId).not.toBe(motherId);
         expect(report.result.people[motherId]!.spouseId).toBeUndefined();
       }
     }
@@ -526,7 +541,7 @@ describe("decision 055: birth spacing", () => {
     // Proves the reset branch actually FIRED somewhere across these runs — before the R3-002 fix,
     // `< 1` was unreachable in practice, so this count would always have been 0.
     expect(infantDeathResetPairs).toBeGreaterThan(0);
-  });
+  }, 20000); // decision 079: see the class-multiplier test's own timeout-bump comment above.
 
   it("eligibleForAnotherChild resets the spacing floor when the last child died at its very first death-evaluation (age 1), but not when it died later", () => {
     const mother: Person = {
@@ -568,20 +583,22 @@ describe("decision 055: birth spacing", () => {
 // PR14 STEP 2 (decision 076): conceptionProbability moved from an inline literal to
 // params/demography.ts#CONCEPTION_PROBABILITY_BANDS and raised (0.65/0.45/0.25 -> 0.85/0.65/0.4) — see
 // that constant's own doc comment for the Davenport-interval evidence behind the raise.
-describe("conceptionProbability (PR14 STEP 2, decision 076)", () => {
+// Decision 079 (Follett-plausible population growth) raised these bands again, past PR14 STEP 2's
+// Davenport-shaped 0.85/0.65/0.4 -- see CONCEPTION_PROBABILITY_BANDS's own doc comment for why.
+describe("conceptionProbability (decision 079, Follett-plausible population growth)", () => {
   it("uses the raised under-36 band", () => {
-    expect(conceptionProbability(20)).toBeCloseTo(0.85, 10);
-    expect(conceptionProbability(35)).toBeCloseTo(0.85, 10);
+    expect(conceptionProbability(20)).toBeCloseTo(0.95, 10);
+    expect(conceptionProbability(35)).toBeCloseTo(0.95, 10);
   });
 
   it("uses the raised 36-40 band", () => {
-    expect(conceptionProbability(36)).toBeCloseTo(0.65, 10);
-    expect(conceptionProbability(40)).toBeCloseTo(0.65, 10);
+    expect(conceptionProbability(36)).toBeCloseTo(0.83, 10);
+    expect(conceptionProbability(40)).toBeCloseTo(0.83, 10);
   });
 
   it("uses the raised 41+ band", () => {
-    expect(conceptionProbability(41)).toBeCloseTo(0.4, 10);
-    expect(conceptionProbability(44)).toBeCloseTo(0.4, 10);
+    expect(conceptionProbability(41)).toBeCloseTo(0.62, 10);
+    expect(conceptionProbability(44)).toBeCloseTo(0.62, 10);
   });
 });
 
@@ -611,7 +628,7 @@ describe("decision 053: marriage by class and canon law", () => {
       }
     }
     expect(checkedMarriages).toBeGreaterThan(0);
-  });
+  }, 20000); // decision 079: see the class-multiplier test's own timeout-bump comment above.
 
   function mkPerson(overrides: Partial<Person> & Pick<Person, "id" | "sex">): Person {
     const birthYear = overrides.birthYear ?? 1500;
@@ -737,7 +754,7 @@ describe("decision 054: widowhood and remarriage", () => {
       }
     }
     expect(widowedEventsChecked).toBeGreaterThan(0);
-  });
+  }, 20000); // decision 079: see the class-multiplier test's own timeout-bump comment above.
 
   it("a widow or widower can remarry, after their class's mourning interval since being widowed", async () => {
     // Reseeded by PR6 (decision 065, docs/decisions.md): "widow-check-11-1" no longer produces a
@@ -774,7 +791,12 @@ describe("decision 054: widowhood and remarriage", () => {
     // founder count instead of the old fixed 38 (this test's own founderCount:30 now gets a ~63
     // cap, not 38 -- more immigration opportunity shifts this seed's candidate composition again).
     // Found the same way, via scripts/find-seeds.ts#findSeed.
-    const { config, people } = generateWorld({ seed: "artisan-widow-trade-6", startYear: 1498, endYear: 1558, founderCount: 30 });
+    // Reseeded again by decision 079 (population-growth tuning): "artisan-widow-trade-6" no longer
+    // produces a kept-trade widowing once mortality dropped and immigration/fertility rose (same
+    // "candidate composition shifted" reason as every prior reseed of this exact test). Found the
+    // same way: `findSeed("artisan-widow-trade-dec079", ..., {startYear:1498, endYear:1558,
+    // founderCount:30})`, first of 100 attempts.
+    const { config, people } = generateWorld({ seed: "artisan-widow-trade-dec079-4", startYear: 1498, endYear: 1558, founderCount: 30 });
     const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
 
     const keptTrade = report.result.events.find((e) => e.kind === "widowed" && e.payload.keptTrade === true);
@@ -900,6 +922,22 @@ describe("PR5: manorial markers (merchet, heriot, chevage, leyrwite)", () => {
         for (const spouseId of marriage.actors) {
           const spouse = report.result.people[spouseId]!;
           const merchet = report.result.events.find((e) => e.kind === "manorial-fine" && e.payload.fine === "merchet" && e.actors[0] === spouseId && e.year === marriage.year);
+          // Decision 079: `spouse.socialClass` is read at SIMULATION END, but merchet is decided at
+          // MARRIAGE TIME (`simulate.ts`'s A1 case reads the live `socialClass` the instant the
+          // marriage happens) — normally the same value, but decision 054's "widow keeps the trade"
+          // can reclassify a survivor to "artisan" (never unfree) after a LATER widowhood. With
+          // decision 079's much higher remarriage/longevity rates, a spouse can legitimately marry
+          // once as villein/cottar (correctly paying merchet then), get widowed by a later artisan
+          // spouse, and end the run as "artisan" — an apparent, but not real, "merchet for a free
+          // spouse" mismatch. Skip the classification check for any marriage that happened BEFORE a
+          // later keptTrade reclassification; the merchet event itself is still checked when present.
+          const laterClassChange = report.result.events.some(
+            (e) => e.kind === "widowed" && e.payload.keptTrade === true && e.actors[0] === spouseId && e.year > marriage.year,
+          );
+          if (laterClassChange) {
+            if (merchet) expect(merchet.payload).toEqual({ fine: "merchet", payerId: spouseId, payee: "lord" });
+            continue;
+          }
           const isUnfreeSpouse = spouse.socialClass === "villein" || spouse.socialClass === "cottar";
           if (isUnfreeSpouse) {
             sawMerchet = sawMerchet || merchet !== undefined;
@@ -1105,9 +1143,11 @@ describe("PR6 corrective task 4: mean first-marriage age stays within onset + 5 
       // `check-demographics --assert` bands are the real calibration gate, not this small sample.
       expect(meanAge).toBeLessThanOrEqual(meanOnset + 6.5);
     }
-  }, 40000); // PR9: raising IMMIGRATION_ANNUAL_PROBABILITY grows the simulated population faster,
+  }, 100000); // PR9: raising IMMIGRATION_ANNUAL_PROBABILITY grows the simulated population faster,
   // which was already right at this test's old 20s budget pre-PR9 (measured 19.4s unmodified) --
-  // doubled rather than tuned finely, since the test's own logic is unchanged.
+  // doubled rather than tuned finely, since the test's own logic is unchanged. Decision 079: raised
+  // again, 40000 -> 100000 (measured 55.4s with the lowered mortality bands/raised fertility/immigration
+  // -- see IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE's own doc comment for the full performance story).
 });
 
 describe("PR6 corrective: the dead-suitor lockout (engram #6280)", () => {
@@ -1132,6 +1172,39 @@ describe("PR6 corrective: the dead-suitor lockout (engram #6280)", () => {
     expect(resultingIds.length).toBe(1);
     expect(activeRomancePair(events, alice.id)).toBeUndefined(); // no longer locked out
     expect(alice.lifeState!.marital.status).toBe("single");
+  });
+
+  // Decision 079 (found while investigating a 60-seed `check-demographics` regression -- see this
+  // file's own comment on decision 079's demography tuning above): `activeRomancePair` (events.ts)
+  // only returns ONE partner even when a person has multiple simultaneous unresolved romances (the
+  // "pre-existing multi-suitor property" `resolveCourtshipOnDeath`'s own doc comment already named),
+  // so the original single-partner fix left every OTHER simultaneous suitor still locked out when the
+  // shared partner died. Reproduced by a real 60-seed run's `lockout-check-12` seed (person p018 had
+  // simultaneous, same-year romances with both p006 and p007; dying only freed p006, leaving p007
+  // stuck forever). RED confirmed before this fix: `resolveCourtshipOnDeath` returned only 1 resulting
+  // event id and left `bob2` locked out.
+  it("resolveCourtshipOnDeath closes EVERY simultaneous unresolved romance, not just one", () => {
+    const alice = courtingPerson("alice", "f", 1310);
+    const bob1 = courtingPerson("bob1", "m", 1308);
+    const bob2 = courtingPerson("bob2", "m", 1309);
+    const people = { [alice.id]: alice, [bob1.id]: bob1, [bob2.id]: bob2 };
+    // Both bob1 and bob2 started courting alice the same year -- the exact simultaneous-romance shape
+    // that produced the real stuck seed.
+    const events: Event[] = [
+      { id: "romance1", year: 1340, kind: "romance", actors: [bob1.id, alice.id], payload: {}, causes: [] },
+      { id: "romance2", year: 1340, kind: "romance", actors: [alice.id, bob2.id], payload: {}, causes: [] },
+    ];
+    const deathEvent: Event = { id: "death1", year: 1345, kind: "death", actors: [alice.id], payload: { age: 35 }, causes: [] };
+    events.push(deathEvent);
+    alice.deathYear = 1345;
+
+    expect(activeRomancePairs(events, alice.id).sort()).toEqual([bob1.id, bob2.id]);
+
+    const resultingIds = resolveCourtshipOnDeath(events, people, alice, 1345, deathEvent.id);
+
+    expect(resultingIds.length).toBe(2);
+    expect(activeRomancePair(events, bob1.id)).toBeUndefined();
+    expect(activeRomancePair(events, bob2.id)).toBeUndefined();
   });
 
   it("a live full simulation never leaves an adult permanently locked out by a dead suitor", async () => {
@@ -1219,6 +1292,27 @@ describe("PR9: immigration rate is a named, documented tunable (partner-scarcity
     for (const decision of immigrationDecisions) {
       expect(decision.final.arrive).toBeCloseTo(IMMIGRATION_ANNUAL_PROBABILITY, 6);
     }
+  });
+});
+
+describe("Decision 079: immigration rises after the Black Death (Follett-plausible resettlement)", () => {
+  it("uses IMMIGRATION_ANNUAL_PROBABILITY before 1350 and IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE from 1350 onward", async () => {
+    const { config, people } = generateWorld({ seed: "immigration-post-plague-check", startYear: 1347, endYear: 1352, founderCount: 10 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+
+    const immigrationDecisions = report.result.decisions.filter((d) => d.kind === "immigration");
+    expect(immigrationDecisions.length).toBeGreaterThan(0);
+    const prePlague = immigrationDecisions.filter((d) => d.year < 1350);
+    const postPlague = immigrationDecisions.filter((d) => d.year >= 1350);
+    expect(prePlague.length).toBeGreaterThan(0);
+    expect(postPlague.length).toBeGreaterThan(0);
+    for (const decision of prePlague) {
+      expect(decision.final.arrive).toBeCloseTo(IMMIGRATION_ANNUAL_PROBABILITY, 6);
+    }
+    for (const decision of postPlague) {
+      expect(decision.final.arrive).toBeCloseTo(IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE, 6);
+    }
+    expect(IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE).toBeGreaterThan(IMMIGRATION_ANNUAL_PROBABILITY);
   });
 });
 
@@ -1331,5 +1425,53 @@ describe("PR11 STEP 1: marriage-funnel diagnostic instrumentation (debug-gated, 
     const tallySum = Object.values(collector.y1LosesTo).reduce((a, b) => a + b, 0);
     expect(tallySum).toBe(y1Losses);
     expect(Object.keys(collector.y1LosesTo).length).toBeGreaterThan(0);
+  });
+});
+
+describe("decision 079: protagonist-away A2 duplicate (PR6 invariant crash found via a curated seed)", () => {
+  // Found by a real 60-seed-shaped run ("proto-stop", protagonist.test.ts) crashing with "PR6
+  // invariant violated: (A2, p007) occurred more than once in year 1539" -- a pre-existing bug,
+  // newly exposed by decision 079's population-growth tuning shifting this curated seed's RNG timing
+  // enough to actually hit it (higher marriage/fertility rates make "protagonist marries a home
+  // villager, then later leaves home" reachable more often). Root cause: the away-catalog's own A2
+  // block (`simulate.ts`'s away-cast section) generates a fertility candidate for
+  // `people[protagonist.spouseId]` unconditionally, without checking that spouse is actually part of
+  // the away cast (`awaySpouse.away === true`) -- its own doc comment says "never the home village's
+  // own population", but the code never enforced that for a spouse the protagonist married BEFORE
+  // leaving home. A spouse who stayed home is still in `aliveNonMoved` (the general population loop),
+  // which independently generates its own, legitimate A2 candidate for her -- producing two A2
+  // candidates for the exact same (personId, year), which trips the hard invariant in
+  // `simulateYears` (no decision kind may occur more than once per person per year).
+  it("does not generate a duplicate A2 candidate for a spouse who stayed home while the protagonist is away", () => {
+    const protagonist: Person = {
+      id: "protagonist",
+      name: "Protagonist",
+      sex: "m",
+      birthYear: 1500,
+      traits: [],
+      job: "none",
+      founder: false,
+      socialClass: "villein",
+      spouseId: "wife1",
+      mind: createMind("seed", "protagonist", 1500),
+    };
+    const wife: Person = {
+      id: "wife1",
+      name: "Wife",
+      sex: "f",
+      birthYear: 1502,
+      traits: [],
+      job: "none",
+      founder: false,
+      socialClass: "villein",
+      spouseId: "protagonist",
+      mind: createMind("seed", "wife1", 1502),
+    };
+    const people = { [protagonist.id]: protagonist, [wife.id]: wife };
+    const moveEvent: Event = { id: "ev-move", year: 1525, kind: "move", actors: [protagonist.id], payload: { away: true }, causes: [] };
+
+    const candidates = gatherCandidatesForYear(1530, people, [moveEvent], "seed", protagonist.id);
+    const a2ForWife = candidates.filter((c) => c.kind === "A2" && c.personId === wife.id);
+    expect(a2ForWife.length).toBe(1);
   });
 });

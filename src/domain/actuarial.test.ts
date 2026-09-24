@@ -35,17 +35,20 @@ describe("deathProbabilityAtAge", () => {
     expect(deathProbabilityAtAge(14)).toBe(0.02);
   });
 
-  it("the adult and elderly bands are unchanged from decision 050's Tudor figures", () => {
-    expect(deathProbabilityAtAge(15)).toBe(0.016);
-    expect(deathProbabilityAtAge(39)).toBe(0.016);
-    expect(deathProbabilityAtAge(40)).toBe(0.032);
-    expect(deathProbabilityAtAge(59)).toBe(0.032);
-    expect(deathProbabilityAtAge(60)).toBe(0.07);
-    expect(deathProbabilityAtAge(74)).toBe(0.07);
-    expect(deathProbabilityAtAge(75)).toBe(0.2);
-    expect(deathProbabilityAtAge(89)).toBe(0.2);
-    expect(deathProbabilityAtAge(90)).toBe(0.47);
-    expect(deathProbabilityAtAge(120)).toBe(0.47);
+  // Decision 079 (Follett-plausible population growth): the adult/elderly bands (15+) are no longer
+  // decision 050's unchanged Tudor figures -- they were lowered to close the population-trajectory gap
+  // (see MORTALITY_BY_AGE_BAND's own doc comment). This test now pins the decision 079 values instead.
+  it("the adult and elderly bands are lowered from decision 050's Tudor figures (decision 079)", () => {
+    expect(deathProbabilityAtAge(15)).toBe(0.0075);
+    expect(deathProbabilityAtAge(39)).toBe(0.0075);
+    expect(deathProbabilityAtAge(40)).toBe(0.0135);
+    expect(deathProbabilityAtAge(59)).toBe(0.0135);
+    expect(deathProbabilityAtAge(60)).toBe(0.03);
+    expect(deathProbabilityAtAge(74)).toBe(0.03);
+    expect(deathProbabilityAtAge(75)).toBe(0.085);
+    expect(deathProbabilityAtAge(89)).toBe(0.085);
+    expect(deathProbabilityAtAge(90)).toBe(0.19);
+    expect(deathProbabilityAtAge(120)).toBe(0.19);
   });
 
   it("reads from the shared, named MORTALITY_BY_AGE_BAND table, not an inline literal", () => {
