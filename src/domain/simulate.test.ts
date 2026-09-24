@@ -8,6 +8,7 @@ import { activeRomancePair } from "./events";
 import { IMMIGRATION_ANNUAL_PROBABILITY, MARRIAGE_FLOORS } from "./params/demography";
 import {
   canMarry,
+  conceptionProbability,
   createMarriageFunnelCollector,
   drainSimulation,
   eligibleForAnotherChild,
@@ -561,6 +562,26 @@ describe("decision 055: birth spacing", () => {
     const stillAlive: Person = { ...infantDiedAtFirstEvaluation, deathYear: undefined };
     const peopleStillAlive = { [mother.id]: mother, [stillAlive.id]: stillAlive };
     expect(eligibleForAnotherChild(mother, peopleStillAlive, 1501)).toBe(false);
+  });
+});
+
+// PR14 STEP 2 (decision 076): conceptionProbability moved from an inline literal to
+// params/demography.ts#CONCEPTION_PROBABILITY_BANDS and raised (0.65/0.45/0.25 -> 0.85/0.65/0.4) — see
+// that constant's own doc comment for the Davenport-interval evidence behind the raise.
+describe("conceptionProbability (PR14 STEP 2, decision 076)", () => {
+  it("uses the raised under-36 band", () => {
+    expect(conceptionProbability(20)).toBeCloseTo(0.85, 10);
+    expect(conceptionProbability(35)).toBeCloseTo(0.85, 10);
+  });
+
+  it("uses the raised 36-40 band", () => {
+    expect(conceptionProbability(36)).toBeCloseTo(0.65, 10);
+    expect(conceptionProbability(40)).toBeCloseTo(0.65, 10);
+  });
+
+  it("uses the raised 41+ band", () => {
+    expect(conceptionProbability(41)).toBeCloseTo(0.4, 10);
+    expect(conceptionProbability(44)).toBeCloseTo(0.4, 10);
   });
 });
 

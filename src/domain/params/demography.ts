@@ -206,10 +206,20 @@ export const A2_OUTCOME_PRESSURE_CAP_YEARS = 20;
  * this table with no accompanying funnel evidence that it's the bottleneck would risk destabilizing
  * curated test seeds for a component that isn't the actual constraint. The residual gap to the
  * research targets is NOT closable by this table alone; it traces mostly to the marriage rate itself
- * (68-72% of the cohort never married in the same diagnostic run) -- genuine partner scarcity in
- * `simulate.ts`'s own `eligible()` search, already flagged out of scope by three prior PRs (decisions
- * 068/069/070) and the direct target of PR11's own STEP 1/2 -- see decision 071 for the full
- * accounting and decision 072 for PR11's own funnel diagnosis.
+ * (68-72% of the cohort never married in the same diagnostic run -- decision 074's own addendum later
+ * found this specific figure was a metric bug, not a real defect: the real share is 4.6-7.2%, see
+ * that decision) -- genuine partner scarcity in `simulate.ts`'s own `eligible()` search, already
+ * flagged out of scope by three prior PRs (decisions 068/069/070) and the direct target of PR11's own
+ * STEP 1/2 -- see decision 071 for the full accounting and decision 072 for PR11's own funnel
+ * diagnosis.
+ *
+ * PR14 STEP 2 (decision 076): re-confirmed this clamp-inertness finding still holds after PR13's A2
+ * pressure fix and near-universal marriage (both of which raise "try" answers and married-woman-year
+ * exposure) -- a 20-seed A/B pushing every band ~30-60% higher (0.5/0.6/0.5/0.4/0.25 ->
+ * 0.8/0.9/0.8/0.65/0.4) moved observed <30 ASMFR from 26.7% to 27.6%, well under a percentage point,
+ * same order of magnitude as decision 071's own finding. Left UNCHANGED again; STEP 2's actual fix
+ * targeted `CONCEPTION_PROBABILITY_BANDS` below instead, the one lever in this chain the
+ * `effectiveSelectionHazard` clamp does not touch.
  */
 export const FERTILITY_HAZARD_BANDS: readonly { readonly maxAge: number; readonly hazard: number }[] = [
   { maxAge: 20, hazard: 0.5 },
@@ -217,6 +227,34 @@ export const FERTILITY_HAZARD_BANDS: readonly { readonly maxAge: number; readonl
   { maxAge: 35, hazard: 0.5 },
   { maxAge: 40, hazard: 0.4 },
   { maxAge: Infinity, hazard: 0.25 },
+];
+
+/**
+ * P(conception | a real "try" this year) by mother's age — `simulate.ts#conceptionProbability`'s own
+ * table, distinct from `FERTILITY_HAZARD_BANDS` above (that's "is this the year we try"; this is "does
+ * trying work"). Named/moved here from an inline literal (PR14 STEP 2, decision 076) so it carries the
+ * same documented-tunable discipline as every other rate in this file (`provenance.ts`).
+ *
+ * Design intent (the ORIGINAL doc comment this replaces): this table plus the birth-spacing floor
+ * (`eligibleForAnotherChild`, ~2 years general / ~1 year gentry) is meant to jointly reproduce
+ * Davenport (2019)'s own measured inter-birth interval — 30-33 months ordinary, 24.6 months elite —
+ * "not read off a primary source" for the probability itself, but SHAPED to land near that interval.
+ *
+ * PR14 STEP 2: measured directly that the OLD values (0.65/0.45/0.25) did not hit that design intent.
+ * With the 2-year general floor already consuming most of a 30-33-month interval, the residual
+ * probabilistic wait needs to be short — a high per-eligible-year conception odds, not a coin flip.
+ * 60-seed `check-demographics.ts` measured an effective average inter-birth interval far longer than
+ * Davenport's target (ASMFR implies ~4.7 years at the old values, most of it beyond the 2-year floor)
+ * even after PR14 STEP 1's metric fix and PR13's A2 pressure fix — both of which touch WHETHER a
+ * couple tries, not whether trying succeeds. Raised each band, still short of unity (a real chance of
+ * further delay always remains, matching Davenport's own "the interval shortens... but doesn't
+ * vanish" framing) — see `provenance.ts` for why this remains a magnitude tunable, not a sourced
+ * age-specific fecundability curve (none was located for 1327-1361 or a close period proxy).
+ */
+export const CONCEPTION_PROBABILITY_BANDS: readonly { readonly maxAge: number; readonly probability: number }[] = [
+  { maxAge: 36, probability: 0.85 },
+  { maxAge: 41, probability: 0.65 },
+  { maxAge: Infinity, probability: 0.4 },
 ];
 
 /**

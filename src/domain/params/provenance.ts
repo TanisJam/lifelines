@@ -57,7 +57,12 @@ export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
   },
   FERTILITY_HAZARD_BANDS: {
     source: "Design revision 2 hazard-shapes table ('fertility bands by age'); raised by PR10 (decision 071) toward research #6144's own ~35-45‰ pre-plague CBR / ~6-7 births-per-completed-marriage targets, after measuring the REALIZED rate at only ~30-45% of the table's own prior values (see the constant's own doc comment for the full diagnosis).",
-    range: "Provisional age bands; distinct from `actuarial.ts#conceptionProbability`'s own age curve. Raised 0.28/0.35/0.28/0.18/0.1 -> 0.5/0.6/0.5/0.4/0.25, empirically, alongside the Y3 reduction below -- a real ceiling was found near this level (see the constant's own doc comment); the residual gap traces to the marriage rate, not this table.",
+    range: "Provisional age bands; distinct from `CONCEPTION_PROBABILITY_BANDS` below (`simulate.ts#conceptionProbability`'s own age curve, corrected here from an earlier `actuarial.ts` misattribution). Raised 0.28/0.35/0.28/0.18/0.1 -> 0.5/0.6/0.5/0.4/0.25, empirically, alongside the Y3 reduction below -- decision 071 measured this table's own ceiling (`effectiveSelectionHazard`'s clamp) and found further raises here largely inert; PR14 STEP 2 targeted `CONCEPTION_PROBABILITY_BANDS` instead, a lever the clamp does not touch.",
+    confidence: "low",
+  },
+  CONCEPTION_PROBABILITY_BANDS: {
+    source: "Davenport, R.J. (2019) birth-interval figures (docs/research.md lines 110-111: 30-33 months ordinary, 24.6 months elite) via `eligibleForAnotherChild`'s own citation -- the interval this table plus the birth-spacing floor are jointly shaped to reproduce, not a directly sourced per-year fecundability curve (none located for 1327-1361 or a close period proxy).",
+    range: "Raised 0.65/0.45/0.25 -> 0.85/0.65/0.4 by PR14 STEP 2 (decision 076) after measuring the old values implied an average inter-birth interval (~4.7 years) far longer than Davenport's own 30-33-month target, even after PR13/PR14's own fixes to WHETHER a couple tries (the fertility-window pressure term, the completed-marriage metric) -- this table governs whether trying succeeds, a lever `effectiveSelectionHazard`'s clamp does not truncate (see FERTILITY_HAZARD_BANDS's own entry).",
     confidence: "low",
   },
   Y3_UNFREE_MOBILITY_FACTOR: {

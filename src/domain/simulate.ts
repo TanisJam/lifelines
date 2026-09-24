@@ -9,7 +9,7 @@ import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createM
 import type { Locale } from "./locale";
 import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
-import { IMMIGRATION_ANNUAL_PROBABILITY, IMMIGRATION_POPULATION_CAP_RATIO, RETURN_HOME_MIN_AWAY_YEARS, RETURN_HOME_PROBABILITY } from "./params/demography";
+import { CONCEPTION_PROBABILITY_BANDS, IMMIGRATION_ANNUAL_PROBABILITY, IMMIGRATION_POPULATION_CAP_RATIO, RETURN_HOME_MIN_AWAY_YEARS, RETURN_HOME_PROBABILITY } from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import {
   BLACK_DEATH_YEARS,
@@ -542,17 +542,14 @@ function eligibleForAnotherChild(mother: Person, people: Readonly<Record<string,
 }
 
 /**
- * Decision 055: conception probability given a real "try" this year — replaces the old 100%.
- * ~60-70% for a fertile woman under 35, declining toward the top of the fertile window, per the
- * brief's target range; the exact age-banded curve is a DESIGN DEFAULT, not a sourced age-specific
- * fecundity table (none was found in research.md for 1498-1558) — it's shaped to make the
- * 30-33-month Davenport interval (spacing floor above + sub-100% "try" success) land near a
- * plausible completed-family size, not read off a primary source.
+ * Decision 055 / PR14 STEP 2 (decision 076): conception probability given a real "try" this year —
+ * replaces the old 100%. Looks up `params/demography.ts#CONCEPTION_PROBABILITY_BANDS` — see that
+ * constant's own doc comment (and `provenance.ts`) for the Davenport-interval rationale and the
+ * measured evidence behind PR14's raise.
  */
-function conceptionProbability(age: number): number {
-  if (age <= 35) return 0.65;
-  if (age <= 40) return 0.45;
-  return 0.25;
+export function conceptionProbability(age: number): number {
+  const band = CONCEPTION_PROBABILITY_BANDS.find((b) => age < b.maxAge) ?? CONCEPTION_PROBABILITY_BANDS[CONCEPTION_PROBABILITY_BANDS.length - 1]!;
+  return band.probability;
 }
 
 /** The eldest LIVING son sharing this person's father (decision 056's holding-inheritance rule) — true only for `person` itself. */
