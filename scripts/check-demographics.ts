@@ -36,7 +36,7 @@ import { hasMovedAway } from "../src/domain/events";
 import { FERTILITY_HAZARD_BANDS, MORTALITY_BY_AGE_BAND } from "../src/domain/params/demography";
 import { CALIBRATION_TARGETS } from "../src/domain/params/targets";
 import { BLACK_DEATH_YEARS, SECOND_PESTILENCE_YEARS } from "../src/domain/period/events";
-import { inNeverMarriedCohort, meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand, type AgeBand, type AgeBandObservation, type AgeBandRate } from "../src/domain/population-stats";
+import { completedMarriageWives, inNeverMarriedCohort, meanChildrenPerMarriage, neverMarriedSharePercent, rateByAgeBand, type AgeBand, type AgeBandObservation, type AgeBandRate } from "../src/domain/population-stats";
 import { simulate } from "../src/domain/simulate";
 import type { Event, Person, SocialClass } from "../src/domain/types";
 import { generateWorld } from "../src/domain/worldgen";
@@ -354,6 +354,8 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
       birthYearsByMother.set(motherId, set);
     }
     const fertilityObservations: AgeBandObservation[] = [];
+    const wivesById = new Map<string, { id: string; birthYear: number; deathYear?: number }>();
+    const marriageRecords: { wifeId: string; marriageYear: number }[] = [];
     for (const marriage of marriageEventsSorted) {
       const [aId, bId] = marriage.actors;
       const a = aId ? finalPeople[aId] : undefined;
@@ -363,18 +365,8 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
       const husband = a.sex === "m" ? a : b.sex === "m" ? b : undefined;
       if (!wife || !husband) continue;
 
-      // PR13 STEP 0 (decision 075, metric audit): the historical "~6-7 children ever born per
-      // completed marriage" anchor is specifically for a woman who married and SURVIVED to the end
-      // of her fertile window (45) — a marriage cut short by early death (plague, maternal
-      // mortality) never "completed" in that sense, and counting it deflates the figure below what
-      // it's meant to compare against. The PREVIOUS version of this cohort filter counted EITHER
-      // outcome (wife died at any age, OR reached 45) as "completed", which is the mismatch this
-      // fix corrects — reusing `inNeverMarriedCohort`'s own survival-to-cohort-age semantics (same
-      // predicate the never-married share already uses, see that function's own doc comment).
-      if (inNeverMarriedCohort(wife, endYear, FEMALE_FERTILE_WINDOW_END_AGE)) {
-        const childCount = Object.values(finalPeople).filter((c) => c.motherId === wife.id && c.fatherId === husband.id).length;
-        completedMarriageChildCounts.push(childCount);
-      }
+      wivesById.set(wife.id, { id: wife.id, birthYear: wife.birthYear, deathYear: wife.deathYear });
+      marriageRecords.push({ wifeId: wife.id, marriageYear: marriage.year });
 
       const start = Math.max(marriage.year, window.startYear);
       const end = Math.min(wife.deathYear ?? window.endYear, husband.deathYear ?? window.endYear, window.endYear);
@@ -386,6 +378,22 @@ async function runStats(seedCount: number, set: CalibrationSet): Promise<StatsRe
       }
     }
     mergeAgeBandRates(maritalFertilityAccumulated, rateByAgeBand(fertilityObservations, FERTILITY_AGE_BANDS));
+
+    // PR14 STEP 1 (decision 076): the historical "~6-7 children ever born per completed marriage"
+    // anchor is a PER-WIFE lifetime total for a woman who married and SURVIVED to the end of her
+    // fertile window (45) — not a per-MARRIAGE sample. The previous version of this loop pushed a
+    // sample for every marriage event that (by itself) passed `inNeverMarriedCohort`, which only
+    // checks the wife's own survival, not which marriage: a remarried wife who survives to 45 (the
+    // Black Death widows many mid-window) was counted once per marriage, her true lifetime children
+    // split into deflated per-husband samples, and a marriage starting at/after 45 was counted
+    // despite zero possible fertile exposure. `completedMarriageWives` selects one wife id per
+    // qualifying cohort member; her TOTAL children (any father, any marriage) is summed here exactly
+    // once. See `population-stats.ts#completedMarriageWives`'s own doc comment for the full
+    // before/after evidence.
+    for (const wifeId of completedMarriageWives(marriageRecords, wivesById, endYear, FEMALE_FERTILE_WINDOW_END_AGE)) {
+      const childCount = Object.values(finalPeople).filter((c) => c.motherId === wifeId).length;
+      completedMarriageChildCounts.push(childCount);
+    }
 
     // --- PR10: adult mortality by age band, vs actuarial.ts's own table -----------------------------
     // PR11 (STEP 0 fix, RDD advisory carried over from PR10): this loop walked from
