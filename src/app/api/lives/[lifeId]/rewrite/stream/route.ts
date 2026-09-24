@@ -9,7 +9,7 @@ import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
 import { buildLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
 import { getLife, getLifeBranch, newLifeBranchId, registerLifeBranch } from "@/server/life-store";
-import { sseResponse } from "@/server/sse";
+import { sseResponse, yieldToEventLoop } from "@/server/sse";
 
 export const runtime = "nodejs";
 
@@ -121,6 +121,8 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
             locale,
           );
           if (entries.length > 0) send("tick", { type: "tick", year: tick.year, entries });
+          // Decision 081: flush this year's frame (and let a disconnect register) before simulating the next.
+          await yieldToEventLoop();
         },
         signal,
       );

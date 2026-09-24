@@ -52,3 +52,14 @@ export function sseResponse(handler: (send: (event: string, data: unknown) => vo
     },
   });
 }
+
+/**
+ * Decision 081: resolves after one real event-loop turn (`setImmediate`), not a microtask. A
+ * CPU-bound handler whose awaits never reach real I/O (the rules engine, or Jev answering from its
+ * cache) only ever yields microtasks, so Node never gets to write the enqueued frames to the socket
+ * or to notice a disconnect until the whole run ends, and every tick arrives in one burst. Await
+ * this after each streamed frame that should reach the client right away.
+ */
+export function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}

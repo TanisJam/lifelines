@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sseResponse } from "./sse";
+import { sseResponse, yieldToEventLoop } from "./sse";
 
 async function readAllFrames(res: Response): Promise<string> {
   const reader = res.body!.getReader();
@@ -44,5 +44,27 @@ describe("sseResponse", () => {
 
     expect(observedSignal?.aborted).toBe(true);
     expect(sawAbortBeforeHandlerReturned).toBe(true);
+  });
+});
+
+describe("yieldToEventLoop", () => {
+  it("lets pending macrotasks (socket writes, disconnect handling) run before it resolves", async () => {
+    let ran = false;
+    setImmediate(() => {
+      ran = true;
+    });
+    await yieldToEventLoop();
+    expect(ran).toBe(true);
+  });
+
+  it("is a real event-loop turn, which a resolved-promise await is not", async () => {
+    let ran = false;
+    setImmediate(() => {
+      ran = true;
+    });
+    await Promise.resolve();
+    expect(ran).toBe(false);
+    await yieldToEventLoop();
+    expect(ran).toBe(true);
   });
 });

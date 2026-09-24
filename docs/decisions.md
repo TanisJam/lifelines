@@ -2968,3 +2968,32 @@ gap decisions 068-071 already found and this decision's own item 4 confirms agai
 new tests: the away-A2 positive-path test, the immigration post-plague-end-year test, and four
 `fertilityDampingFactor` unit tests); `npx tsx scripts/check-demographics.ts --stats 60 --assert` 14 of
 15 pass (up from 12).
+
+## 081 — SSE ticks reach the client as each year completes
+
+The backlog said "SSE ticks replay the finished life grouped by year" (it cited decision 036; the
+replay design was decision 039). Decision 062 already made both routes (`POST /api/lives/stream`,
+`POST /api/lives/:lifeId/rewrite/stream`) drain `simulateYears` and `send("tick", …)` once per year, so
+the code *looked* incremental. It was not on the wire.
+
+**Root cause: event-loop starvation.** With the rules engine (or Jev answering from its cache), every
+`await` in the drain loop is a microtask, never real I/O. Node only writes enqueued stream chunks to the
+socket, and only notices a client disconnect, on a later event-loop turn. So the whole run computed
+before a single byte left the process. Measured with `next start`, `DECISION_ENGINE=rules`, seed
+`sse-probe-2` (85 frames): **before**, 7.8 s of silence, then `start`, all 83 ticks and `done` inside
+0.1 ms. A first check with seed `warm-b` misread this: its frames were also one burst, just after
+1.09 s instead of 7.8 s.
+
+**Fix.** `src/server/sse.ts#yieldToEventLoop` resolves after one `setImmediate` turn. Both routes await
+it after each tick frame. **After**, same seed: `start` at 0.09 s, ticks spread from 0.09 s to 4.6 s,
+`done` at 8.0 s (the gap is the authoritative chronicle built after the last year). It adds one event-loop
+turn per simulated year and no Jev calls. `sse.test.ts` tests that it yields a real macrotask, which a
+resolved-promise await does not.
+
+**Disconnect semantics (stated here; the mechanism is decision 062's).** `drainSimulation` checks the
+`AbortSignal` between years and throws `SimulationAbortedError`. Both routes catch it and return before
+`registerLife`/`registerLifeBranch`. A mid-run disconnect discards the whole run: no partial life or
+branch is stored, and the client starts again. The yield also lets the disconnect register mid-run
+instead of only at the end.
+
+The SSE contract is unchanged (`start`, `tick {type, year, entries}`, `done`, `error`, `divergence`).
