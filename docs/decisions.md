@@ -2813,3 +2813,158 @@ rate this slice's levers touch) — reported, not chased, same precedent.
 **Verified:** `npm run typecheck` clean; `npm run lint` clean; `npm test` 534 passing (0 regressions,
 2 new tests: `activeRomancePairs`'/`resolveCourtshipOnDeath`'s multi-suitor fix, the protagonist-away A2
 duplicate fix); `npx tsx scripts/check-demographics.ts --stats 60 --assert` 12 of 15 pass (up from 10).
+
+## 080 — Regression coverage, merchet class-at-marriage, a carrying-capacity feedback, and two marriage-age closes
+
+Four backlog items from a review of decision 079, taken together: missing regression tests, the
+merchet-class-at-simulation-end approximation, the missing population ceiling, and the three
+remaining Follett-plausible marriage-age misses.
+
+### 1. Missing regression tests
+
+**1a — the away-A2 fix's positive path.** Decision 079's `awaySpouse.away === true` guard
+(`simulate.ts`, the away-catalog A2 block) only had a regression test for the NEGATIVE path (a spouse
+who stayed home does not get a duplicate A2 candidate). Added
+`"still generates an A2 candidate for a spouse who IS in the away cast"` (`simulate.test.ts`, same
+`describe` block as the existing negative test, same fixture shape with `away: true` added to the
+wife) — proves a regression that flipped the guard's sense would be caught, not just a regression that
+removed it.
+
+**1b — the bounded post-plague immigration window's END.** The existing test
+(`"uses IMMIGRATION_ANNUAL_PROBABILITY before 1350 and IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE from
+1350 onward"`) only proved the window's START switches the elevated rate on; nothing proved
+`IMMIGRATION_POST_PLAGUE_END_YEAR` (1362) ever hands it back — the other half of that constant's own
+"DELIBERATELY BOUNDED, not left on for the rest of the run" doc comment, and exactly the mechanism
+behind decision 079's own reverted-and-refixed runaway-growth incident. Added
+`"reverts back to IMMIGRATION_ANNUAL_PROBABILITY at and after IMMIGRATION_POST_PLAGUE_END_YEAR"`,
+spanning a 1359-1365 window that straddles the boundary year itself (1362), asserting the reverted rate
+at/after it and the elevated rate strictly before it.
+
+### 2. Merchet class recorded at marriage time
+
+**Root cause.** Decision 079's merchet test read `spouse.socialClass` at SIMULATION END, but the
+merchet decision itself (`simulate.ts`'s A1 "propose" case) is made at MARRIAGE TIME — normally the
+same value, but decision 054's "widow keeps the trade" can reclassify a surviving spouse to `"artisan"`
+(never unfree) after a LATER widowhood, producing an apparent-but-not-real "merchet for a free spouse"
+mismatch. Decision 079 worked around this by skipping the classification check for any marriage
+followed by a later `keptTrade` reclassification, rather than fixing the underlying read.
+
+**Fix.** The marriage event itself now records each spouse's social class AT MARRIAGE TIME, in a new
+`classesAtMarriage: Record<string, SocialClass>` payload field (`simulate.ts`'s A1 "propose" case,
+keyed by each spouse's id) — the ground truth for the merchet decision, independent of anything either
+spouse's `socialClass` does afterwards. `simulate.test.ts`'s merchet test (`"merchet fires for an
+unfree spouse's marriage..."`) now reads `marriage.payload.classesAtMarriage` instead of
+`report.result.people[spouseId].socialClass`, restoring the full per-marriage classification check for
+every marriage, including the ones before a later widowhood the old test had to skip.
+
+### 3. A population ceiling (carrying-capacity feedback)
+
+**Root cause.** `IMMIGRATION_POPULATION_CAP_RATIO` only ever stops NEW immigrants once the village
+passes ~2.11x its founder headcount — it does nothing about births, which had no population-density
+feedback at all (`conceptionProbability` is a pure function of the mother's age). With decision 079's
+much lower adult mortality and higher conception odds, a long run where births keep outrunning deaths
+compounds without bound, growing the simulated population — and so `decideYear`'s own per-year
+candidate volume — indefinitely; this is exactly why decision 079 had to raise four test timeouts to
+20-30s instead of fixing the underlying growth.
+
+**Fix.** A new `fertilityDampingFactor(people)` (`simulate.ts`, exported for testing) multiplies
+directly into the A2 "try" conceive roll, not into A2's eligibility — a couple can still be asked and
+still try; only the odds of success shrink. Below `VILLAGE_CARRYING_CAPACITY_RATIO` (3x the village's
+own founder headcount — set above the immigration cap's own 2.11x, so immigration is already
+throttling growth before this engages at all), the factor is exactly 1 (no behavior change). Past it,
+it tapers hyperbolically toward `FERTILITY_DAMPING_FLOOR` (0.2, never a hard 0 — a fully sterile village
+with no matching mechanism that ever shrinks it back down would be a one-way trap, not a ceiling) as
+`capacity / livingCount`. Both constants are Follett-plausible/invented (`provenance.ts`): no sourced
+manorial carrying-capacity figure exists for a village this size; they are sized only to bound run time
+and stop unbounded compounding.
+
+For the default 60-seed calibration runs (founderCount ~62-80, living population staying under ~2x
+founders throughout the 1327-1427 window per decision 079's own trajectory numbers), the population
+never approaches this capacity, so the fix has **zero effect on any calibration assertion** — confirmed
+by measurement (identical figures before and after, see the combined table below).
+
+**Test maintenance.** Four unit tests added for `fertilityDampingFactor` itself (1 at/under capacity,
+dampens past it and more as it grows further past it, never below the floor, excludes the dead/away
+from the living count). The four decision-079 timeout bumps this fix was meant to let come back down
+were re-measured with the fix in place and lowered as far as a ~2x margin allows:
+
+| Test | Decision 079 budget | Measured (post-fix) | New budget |
+|---|---|---|---|
+| `decision 050`: class multiplier moves mortality | 30000ms | 7.0s | 15000ms |
+| `decision 055`: birth spacing | 20000ms | 4.2s | 10000ms |
+| `decision 053`: marriage floors | 20000ms | 4.1s | 10000ms |
+| `decision 054`: widowhood spouseId | 20000ms | 4.3s | 10000ms |
+
+(The fifth, larger timeout bump from decision 079 — `100000ms`, tagged "PR9" not "decision 079" — was
+not in scope for this item; it also dropped, from a previously-measured 55.4s to 44.7s post-fix, but
+was left untouched since nothing asked for it and 44.7s still needs real margin.)
+
+### 4. Marriage ages
+
+Three Follett-plausible marriage-age bands still failed as of decision 079: `firstMarriageAgeWomen`
+(23.02 vs 18-23, a 0.02-year miss), `firstMarriageAgeMenGentry` (26.41 vs 20-26, a 0.41-year miss), and
+`firstMarriageAgeWomenGentry` (21.55 vs 14-18, a 3.55-year miss already flagged as a genuine structural
+gap by decisions 068-071).
+
+**Common-class women (`MARRIAGE_FLOORS`'s `onset`, merchant/artisan/freeholder/villein/clergy 18 ->
+17.5, cottar 19 -> 18.5).** Decision 068 already tried lowering onset — by ~2 years, across EVERY
+class/sex row at once — and reverted it: the age-onset gap WIDENED instead of closing, because a change
+that large shifts the whole local marriage market's composition for partner-scarcity-bound classes.
+This is a different case: a single sex row, one order of magnitude smaller, for classes that are NOT
+the "one household per village" scarcity case (five to six common classes' worth of population, real
+local supply on both sides). Measured (60 seeds): 23.02 -> 22.69 — **PASS**.
+
+**Gentry men (`onset` 22 -> 20, i.e. back to its pre-PR10 value).** Gentry men are the scarce class's
+own sex, but — unlike gentry women — they draw from a same-class-first-then-any-class fallback pool
+(`simulate.ts`'s `eligiblePool`/`pickTier`) into a LARGE common-class bride pool, not a mutually scarce
+one; decision 071's own onset-cut experiment (decision 068) never isolated this asymmetry, since it
+moved every row at once. Tried in two measured steps: -1 year (21) moved the mean 26.41 -> 26.18
+(still FAIL, a genuine but insufficient ~0.23-year response per year of onset, nowhere near decision
+068's backfire); a further -1 year (20) moved it to 24.78 — **PASS**, with real margin. Common men's
+own onset (unchanged) still passes comfortably (25.94, band 21-27), confirming no cross-sex regression
+from widening the gentry-men bride pool's local competition.
+
+A test in `rule-heuristics.test.ts` hardcoded age 18 as "at onset" for a villein woman — now reads
+`MARRIAGE_FLOORS.villein.f.onset` (17.5) dynamically instead, both where it asserted an exact
+"no pressure yet" value and where it labeled a comparison point "at onset".
+
+**Gentry women — not attempted.** `firstMarriageAgeWomenGentry`'s `onset` (16) was already positioned
+at the research anchor by decision 071 and left unchanged since; the miss is population-EXISTENCE
+scarcity, not a hazard-curve parameter — a single gentry household (decisions 049/068-071's own
+repeated "one household per village" finding) typically produces only a handful of daughters across an
+entire simulated run, so the measured mean is dominated by a few individuals' own life-course timing,
+not something any `onset` value can move. Confirmed unaffected by either gentry-men trial (21.53-21.55
+regardless). A clean fix needs more gentry SUPPLY — gentry-class immigrants, or a cross-manor gentry
+match — not a smaller onset. `spawnImmigrant` deliberately never produces gentry (decision 049: gentry
+is a structural, one-per-village, worldgen-only role) and changing that touches a decision-049 design
+invariant well beyond a small nudge, with the same real regression risk decisions 069-071 each
+independently found for large marriage-market levers — left open, reported rather than forced, same
+precedent as decision 079's own two near-misses and decision 071's own gentry finding.
+
+### Combined measured result (60 seeds, `--stats 60 --assert`, decision 079 baseline / after this decision)
+
+| Assertion | Decision 079 | Decision 080 | Band |
+|---|---|---|---|
+| firstMarriageAgeWomen | 23.02 FAIL | **22.69 PASS** | 18-23 |
+| firstMarriageAgeMen | 26.24 PASS | 25.94 PASS | 21-27 |
+| firstMarriageAgeMenMerchant | 27.08 PASS | 27.30 PASS | 23-30 |
+| firstMarriageAgeWomenGentry | 21.55 FAIL | 21.46 FAIL | 14-18 |
+| firstMarriageAgeMenGentry | 26.41 FAIL | **24.78 PASS** | 20-26 |
+| widowRemarriagePreBlackDeath | 50.51 PASS | 50.03 PASS | 40-65 |
+| widowRemarriagePostBlackDeath | 49.46 PASS | 49.88 PASS | 35-60 |
+| lifeExpectancyAtBirth | 25.84 PASS | 25.82 PASS | 18-32 |
+| infantMortality | 31.52 PASS | 31.51 PASS | 25-35 |
+| under15DeathShare | 25.52 PASS | 25.53 PASS | 20-30 |
+| literacyOverall | 6.68 PASS | 6.87 PASS | 5-10 |
+| populationPrePlagueChangePercent | 5.73 PASS | 6.41 PASS | -5-20 |
+| populationPlagueShockPercent | -39.88 PASS | -40.00 PASS | -55--35 |
+| populationRecoveryChangePercent | 3.28 PASS | 3.66 PASS | 0-60 |
+| hazardFallbacks | 0 PASS | 0 PASS | 0 |
+
+**14 of 15 pass (up from 12 of 15).** Only `firstMarriageAgeWomenGentry` remains — the same structural
+gap decisions 068-071 already found and this decision's own item 4 confirms again, not chased further.
+
+**Verified:** `npm run typecheck` clean; `npm run lint` clean; `npm test` 540 passing (0 regressions, 6
+new tests: the away-A2 positive-path test, the immigration post-plague-end-year test, and four
+`fertilityDampingFactor` unit tests); `npx tsx scripts/check-demographics.ts --stats 60 --assert` 14 of
+15 pass (up from 12).

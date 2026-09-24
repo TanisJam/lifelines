@@ -5,13 +5,20 @@ import { indexEventsById, walkCauses } from "./causality";
 import { forkWorld } from "./fork";
 import { createMind } from "./mind";
 import { activeRomancePair, activeRomancePairs } from "./events";
-import { IMMIGRATION_ANNUAL_PROBABILITY, IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE, MARRIAGE_FLOORS } from "./params/demography";
+import {
+  IMMIGRATION_ANNUAL_PROBABILITY,
+  IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE,
+  IMMIGRATION_POST_PLAGUE_END_YEAR,
+  IMMIGRATION_POST_PLAGUE_YEAR,
+  MARRIAGE_FLOORS,
+} from "./params/demography";
 import {
   canMarry,
   conceptionProbability,
   createMarriageFunnelCollector,
   drainSimulation,
   eligibleForAnotherChild,
+  fertilityDampingFactor,
   gatherCandidatesForYear,
   resolveCourtshipOnDeath,
   simulate,
@@ -333,7 +340,7 @@ describe("decision 050: recalibrated mortality and class multiplier", () => {
     expect(wellOffAges.length).toBeGreaterThan(0);
     const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
     expect(avg(cottarAges)).toBeLessThan(avg(wellOffAges));
-  }, 30000); // decision 079: lowered mortality bands mean longer-lived villages/more simulated years per seed -- see IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE's own doc comment for the full performance story.
+  }, 15000); // decision 080: the carrying-capacity feedback (fertilityDampingFactor) bounds population growth, bringing this back down from decision 079's 30000ms -- measured 7.0s post-fix, ~2x margin kept for slower machines.
 });
 
 describe("PR5: Black Death and second pestilence (dated shocks, 1327-1361 window)", () => {
@@ -541,7 +548,7 @@ describe("decision 055: birth spacing", () => {
     // Proves the reset branch actually FIRED somewhere across these runs — before the R3-002 fix,
     // `< 1` was unreachable in practice, so this count would always have been 0.
     expect(infantDeathResetPairs).toBeGreaterThan(0);
-  }, 20000); // decision 079: see the class-multiplier test's own timeout-bump comment above.
+  }, 10000); // decision 080: brought back down from decision 079's 20000ms now that fertilityDampingFactor bounds population growth -- measured 4.2s post-fix.
 
   it("eligibleForAnotherChild resets the spacing floor when the last child died at its very first death-evaluation (age 1), but not when it died later", () => {
     const mother: Person = {
@@ -602,6 +609,77 @@ describe("conceptionProbability (decision 079, Follett-plausible population grow
   });
 });
 
+// Decision 080: the carrying-capacity feedback closing the population-ceiling backlog item.
+// `IMMIGRATION_POPULATION_CAP_RATIO` (params/demography.ts) only ever stopped NEW immigrants once the
+// village passed ~2.11x its founder headcount; births had no matching feedback at all, so sustained
+// births-over-deaths could compound without bound. `fertilityDampingFactor` closes that gap by
+// tapering the A2 "try" conception odds (not eligibility) once the village outgrows
+// `VILLAGE_CARRYING_CAPACITY_RATIO` (3x founders).
+describe("fertilityDampingFactor (decision 080, carrying-capacity feedback)", () => {
+  function mkPerson(overrides: Partial<Person> & Pick<Person, "id">): Person {
+    return {
+      name: overrides.id,
+      sex: "f",
+      birthYear: 1500,
+      traits: [],
+      job: "none",
+      founder: false,
+      mind: createMind("capacity-seed", overrides.id, 1500),
+      ...overrides,
+    };
+  }
+
+  function villageOf(founderCount: number, extraLiving: number): Record<string, Person> {
+    const people: Record<string, Person> = {};
+    for (let i = 0; i < founderCount; i++) {
+      const id = `founder${i}`;
+      people[id] = mkPerson({ id, founder: true });
+    }
+    for (let i = 0; i < extraLiving; i++) {
+      const id = `villager${i}`;
+      people[id] = mkPerson({ id, founder: false });
+    }
+    return people;
+  }
+
+  it("is 1 (no damping) when the living population is at or below capacity", () => {
+    // capacity = 10 founders * 3 = 30; 10 founders + 20 others = 30, exactly at capacity.
+    expect(fertilityDampingFactor(villageOf(10, 20))).toBe(1);
+    // Comfortably under capacity too.
+    expect(fertilityDampingFactor(villageOf(10, 5))).toBe(1);
+  });
+
+  it("dampens below 1 once the living population exceeds capacity, more as it grows further past it", () => {
+    // capacity = 30. 60 living (2x capacity) -> factor = 30/60 = 0.5.
+    const atDouble = fertilityDampingFactor(villageOf(10, 50));
+    expect(atDouble).toBeCloseTo(0.5, 10);
+    // 90 living (3x capacity) -> factor = 30/90 = 0.333..., strictly less than at 2x (monotonic).
+    const atTriple = fertilityDampingFactor(villageOf(10, 80));
+    expect(atTriple).toBeLessThan(atDouble);
+    expect(atTriple).toBeCloseTo(1 / 3, 10);
+  });
+
+  it("never dampens below FERTILITY_DAMPING_FLOOR, however far past capacity the village grows", () => {
+    // capacity = 30; 3000 living is wildly past it -- factor would mathematically be ~0.01 unfloored.
+    expect(fertilityDampingFactor(villageOf(10, 2990))).toBe(0.2);
+  });
+
+  it("excludes the dead and the away cast from the living count", () => {
+    const people = villageOf(10, 20);
+    // At exactly capacity (30 living) per the first test above. Add 10 more who are dead or away --
+    // neither should count toward the living total, so the factor should stay undamped.
+    for (let i = 0; i < 5; i++) {
+      const id = `dead${i}`;
+      people[id] = mkPerson({ id, founder: false, deathYear: 1520 });
+    }
+    for (let i = 0; i < 5; i++) {
+      const id = `away${i}`;
+      people[id] = mkPerson({ id, founder: false, away: true });
+    }
+    expect(fertilityDampingFactor(people)).toBe(1);
+  });
+});
+
 describe("decision 053: marriage by class and canon law", () => {
   it("PR5: canMarry is false for clergy in every year — the Tudor-only 1549-53 Clergy Marriage Act window never applies to the 1327-1361 period", () => {
     const priest = makeClergyPerson();
@@ -628,7 +706,7 @@ describe("decision 053: marriage by class and canon law", () => {
       }
     }
     expect(checkedMarriages).toBeGreaterThan(0);
-  }, 20000); // decision 079: see the class-multiplier test's own timeout-bump comment above.
+  }, 10000); // decision 080: brought back down from decision 079's 20000ms now that fertilityDampingFactor bounds population growth -- measured 4.1s post-fix.
 
   function mkPerson(overrides: Partial<Person> & Pick<Person, "id" | "sex">): Person {
     const birthYear = overrides.birthYear ?? 1500;
@@ -754,7 +832,7 @@ describe("decision 054: widowhood and remarriage", () => {
       }
     }
     expect(widowedEventsChecked).toBeGreaterThan(0);
-  }, 20000); // decision 079: see the class-multiplier test's own timeout-bump comment above.
+  }, 10000); // decision 080: brought back down from decision 079's 20000ms now that fertilityDampingFactor bounds population growth -- measured 4.3s post-fix.
 
   it("a widow or widower can remarry, after their class's mourning interval since being widowed", async () => {
     // Reseeded by PR6 (decision 065, docs/decisions.md): "widow-check-11-1" no longer produces a
@@ -919,26 +997,15 @@ describe("PR5: manorial markers (merchet, heriot, chevage, leyrwite)", () => {
       const { config, people } = generateWorld({ seed, startYear: 1327, endYear: 1361, founderCount: 30 });
       const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
       for (const marriage of report.result.events.filter((e) => e.kind === "marriage")) {
+        // Decision 080: the marriage event itself now records each spouse's social class AT MARRIAGE
+        // TIME (`classesAtMarriage`), so the merchet check no longer has to read `Person.socialClass`
+        // at simulation end (which decision 054's "widow keeps the trade" can reclassify AFTER a later
+        // widowhood, making an apparent — but not real — "merchet for a free spouse" mismatch, decision
+        // 079's own finding). Reading the recorded class restores the full check for every marriage.
+        const classesAtMarriage = marriage.payload.classesAtMarriage as Record<string, string>;
         for (const spouseId of marriage.actors) {
-          const spouse = report.result.people[spouseId]!;
           const merchet = report.result.events.find((e) => e.kind === "manorial-fine" && e.payload.fine === "merchet" && e.actors[0] === spouseId && e.year === marriage.year);
-          // Decision 079: `spouse.socialClass` is read at SIMULATION END, but merchet is decided at
-          // MARRIAGE TIME (`simulate.ts`'s A1 case reads the live `socialClass` the instant the
-          // marriage happens) — normally the same value, but decision 054's "widow keeps the trade"
-          // can reclassify a survivor to "artisan" (never unfree) after a LATER widowhood. With
-          // decision 079's much higher remarriage/longevity rates, a spouse can legitimately marry
-          // once as villein/cottar (correctly paying merchet then), get widowed by a later artisan
-          // spouse, and end the run as "artisan" — an apparent, but not real, "merchet for a free
-          // spouse" mismatch. Skip the classification check for any marriage that happened BEFORE a
-          // later keptTrade reclassification; the merchet event itself is still checked when present.
-          const laterClassChange = report.result.events.some(
-            (e) => e.kind === "widowed" && e.payload.keptTrade === true && e.actors[0] === spouseId && e.year > marriage.year,
-          );
-          if (laterClassChange) {
-            if (merchet) expect(merchet.payload).toEqual({ fine: "merchet", payerId: spouseId, payee: "lord" });
-            continue;
-          }
-          const isUnfreeSpouse = spouse.socialClass === "villein" || spouse.socialClass === "cottar";
+          const isUnfreeSpouse = classesAtMarriage[spouseId] === "villein" || classesAtMarriage[spouseId] === "cottar";
           if (isUnfreeSpouse) {
             sawMerchet = sawMerchet || merchet !== undefined;
             if (merchet) expect(merchet.payload).toEqual({ fine: "merchet", payerId: spouseId, payee: "lord" });
@@ -1314,6 +1381,31 @@ describe("Decision 079: immigration rises after the Black Death (Follett-plausib
     }
     expect(IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE).toBeGreaterThan(IMMIGRATION_ANNUAL_PROBABILITY);
   });
+
+  // Decision 080 (missing regression coverage found reviewing decision 079): the test above only
+  // proves the window's START (1350) switches the rate on. `IMMIGRATION_POST_PLAGUE_END_YEAR` (1362)
+  // is the other half of "DELIBERATELY BOUNDED, not left on for the rest of the run" (that constant's
+  // own doc comment, `params/demography.ts`) -- a regression that dropped the upper bound (or widened
+  // the window) would still pass the start-only test yet reopen the exact runaway-growth/timeout
+  // incident decision 079 already fixed once. Spans the boundary year itself (1362) to prove the
+  // revert is "at or after", not "strictly after".
+  it("reverts back to IMMIGRATION_ANNUAL_PROBABILITY at and after IMMIGRATION_POST_PLAGUE_END_YEAR", async () => {
+    const { config, people } = generateWorld({ seed: "immigration-post-plague-end-check", startYear: 1359, endYear: 1365, founderCount: 10 });
+    const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
+
+    const immigrationDecisions = report.result.decisions.filter((d) => d.kind === "immigration");
+    expect(immigrationDecisions.length).toBeGreaterThan(0);
+    const stillPostPlague = immigrationDecisions.filter((d) => d.year >= IMMIGRATION_POST_PLAGUE_YEAR && d.year < IMMIGRATION_POST_PLAGUE_END_YEAR);
+    const reverted = immigrationDecisions.filter((d) => d.year >= IMMIGRATION_POST_PLAGUE_END_YEAR);
+    expect(stillPostPlague.length).toBeGreaterThan(0);
+    expect(reverted.length).toBeGreaterThan(0);
+    for (const decision of stillPostPlague) {
+      expect(decision.final.arrive).toBeCloseTo(IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE, 6);
+    }
+    for (const decision of reverted) {
+      expect(decision.final.arrive).toBeCloseTo(IMMIGRATION_ANNUAL_PROBABILITY, 6);
+    }
+  });
 });
 
 describe("PR9 demography follow-up: the immigration population cap scales with founder count, not the fixed old-engine 38", () => {
@@ -1465,6 +1557,46 @@ describe("decision 079: protagonist-away A2 duplicate (PR6 invariant crash found
       founder: false,
       socialClass: "villein",
       spouseId: "protagonist",
+      mind: createMind("seed", "wife1", 1502),
+    };
+    const people = { [protagonist.id]: protagonist, [wife.id]: wife };
+    const moveEvent: Event = { id: "ev-move", year: 1525, kind: "move", actors: [protagonist.id], payload: { away: true }, causes: [] };
+
+    const candidates = gatherCandidatesForYear(1530, people, [moveEvent], "seed", protagonist.id);
+    const a2ForWife = candidates.filter((c) => c.kind === "A2" && c.personId === wife.id);
+    expect(a2ForWife.length).toBe(1);
+  });
+
+  // Decision 080 (missing regression coverage found reviewing decision 079): the negative test above
+  // only proves the guard SUPPRESSES a duplicate for a spouse who stayed home. It says nothing about
+  // whether a spouse genuinely met away (`away: true`, matching how `spawnAwayPerson` marks every real
+  // away-cast member) still gets her A2 candidate at all — a regression that inverted the guard (e.g.
+  // `awaySpouse.away !== true`) would pass the test above yet silently break every away-catalog
+  // pregnancy. Same fixture shape as the negative test, `away: true` on the wife the only difference.
+  it("still generates an A2 candidate for a spouse who IS in the away cast", () => {
+    const protagonist: Person = {
+      id: "protagonist",
+      name: "Protagonist",
+      sex: "m",
+      birthYear: 1500,
+      traits: [],
+      job: "none",
+      founder: false,
+      socialClass: "villein",
+      spouseId: "wife1",
+      mind: createMind("seed", "protagonist", 1500),
+    };
+    const wife: Person = {
+      id: "wife1",
+      name: "Wife",
+      sex: "f",
+      birthYear: 1502,
+      traits: [],
+      job: "none",
+      founder: false,
+      socialClass: "villein",
+      spouseId: "protagonist",
+      away: true,
       mind: createMind("seed", "wife1", 1502),
     };
     const people = { [protagonist.id]: protagonist, [wife.id]: wife };

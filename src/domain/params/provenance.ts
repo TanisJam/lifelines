@@ -21,8 +21,18 @@ export interface ParamProvenance {
  */
 export const PARAM_PROVENANCE: Readonly<Record<string, ParamProvenance>> = {
   MARRIAGE_FLOORS: {
-    source: "Design revision 2, decision 14 (supersedes decision 053's 1498-1558 floors); research.md Family §rules synthesis for direction only. Gentry row: PR10 (GOAL B, decision 071) -- docs/research.md line 340 (Hollingsworth 14th c. interpolation: women ~17, men ~22) and the Follett narrative reference (Tilly m. 14, engram #6321/#6149).",
-    range: "Women 18-23 mean, men 21-27 mean, merchant men 23-30 (Follett-plausible targets, decision 078). Gentry: women 14-18, men 20-26 (params/targets.ts's own per-class bands); men's onset moved 20 -> 22 by PR10 to center on the research.md anchor.",
+    source: "Design revision 2, decision 14 (supersedes decision 053's 1498-1558 floors); research.md Family §rules synthesis for direction only. Gentry row: PR10 (GOAL B, decision 071) -- docs/research.md line 340 (Hollingsworth 14th c. interpolation: women ~17, men ~22) and the Follett narrative reference (Tilly m. 14, engram #6321/#6149). Decision 080: two further small onset nudges (common-class women 18/19 -> 17.5/18.5; gentry men 22 -> 20), invented/Follett-plausible, closing two of the three SMALL remaining decision-079 marriage-age misses (firstMarriageAgeWomen 23.02 vs 18-23; firstMarriageAgeMenGentry 26.41 vs 20-26) without repeating decision 068's REVERTED ~2-year, all-classes onset cut (which widened, not closed, the age-onset gap for the partner-scarcity-bound classes) -- this decision's own gentry-men change is the same 2-year magnitude, but on a SINGLE row that draws from a large cross-class pool rather than every class/sex row moved together, and it measurably worked (26.41 -> 24.78).",
+    range: "Women 18-23 mean, men 21-27 mean, merchant men 23-30 (Follett-plausible targets, decision 078). Gentry: women 14-18, men 20-26 (params/targets.ts's own per-class bands); men's onset moved 20 -> 22 by PR10 to center on the research.md anchor, then back to 20 by decision 080 (measured stepwise: 22 -> 21 moved 26.41 -> 26.18, still FAIL; 21 -> 20 moved it to 24.78, PASS). Common-class women's onset moved 18/19 (cottar) -> 17.5/18.5 by decision 080 (23.02 -> 22.69, PASS). Gentry WOMEN's row is unchanged -- still-open structural gap, see decision 080.",
+    confidence: "low",
+  },
+  VILLAGE_CARRYING_CAPACITY_RATIO: {
+    source: "Decision 080: a carrying-capacity feedback for fertility, closing the population-ceiling gap `IMMIGRATION_POPULATION_CAP_RATIO` never covered (that ratio only ever stops NEW immigrants, never dampens births). No sourced manorial land-carrying-capacity figure exists for a 14th-century English village of this size -- Follett-plausible/invented, sized only to bound simulated run time and stop unbounded population compounding.",
+    range: "3x the village's own founder headcount; set above `IMMIGRATION_POPULATION_CAP_RATIO` (2.11x) so immigration is already throttling growth before fertility damping engages at all.",
+    confidence: "low",
+  },
+  FERTILITY_DAMPING_FLOOR: {
+    source: "Decision 080: the floor `simulate.ts#fertilityDampingFactor` never dampens conception odds below, however far past `VILLAGE_CARRYING_CAPACITY_RATIO` the village grows -- a hard 0 floor would make an overcrowded village permanently sterile, with no matching mechanism that ever shrinks it back down. Invented/Follett-plausible, chosen only for a qualitative 'slows to a crawl, never truly stops' shape.",
+    range: "0.2 (20% of the age-banded conception probability), not independently sourced.",
     confidence: "low",
   },
   CANON_MINIMUM_MARRIAGE_AGE: {

@@ -11,6 +11,7 @@ import { determineDeathCause, type MortalityContext } from "./mortality";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import {
   CONCEPTION_PROBABILITY_BANDS,
+  FERTILITY_DAMPING_FLOOR,
   IMMIGRATION_ANNUAL_PROBABILITY,
   IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE,
   IMMIGRATION_POPULATION_CAP_RATIO,
@@ -18,6 +19,7 @@ import {
   IMMIGRATION_POST_PLAGUE_YEAR,
   RETURN_HOME_MIN_AWAY_YEARS,
   RETURN_HOME_PROBABILITY,
+  VILLAGE_CARRYING_CAPACITY_RATIO,
 } from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import {
@@ -570,6 +572,27 @@ function eligibleForAnotherChild(mother: Person, people: Readonly<Record<string,
 export function conceptionProbability(age: number): number {
   const band = CONCEPTION_PROBABILITY_BANDS.find((b) => age < b.maxAge) ?? CONCEPTION_PROBABILITY_BANDS[CONCEPTION_PROBABILITY_BANDS.length - 1]!;
   return band.probability;
+}
+
+/**
+ * Decision 080: a carrying-capacity feedback on conception, closing the population-ceiling gap
+ * `IMMIGRATION_POPULATION_CAP_RATIO` never covered (see `VILLAGE_CARRYING_CAPACITY_RATIO`'s own doc
+ * comment, `params/demography.ts`, for the full root-cause story). Below capacity (the village's own
+ * founder headcount times `VILLAGE_CARRYING_CAPACITY_RATIO`), returns 1 — no change from today's
+ * behavior. Past it, tapers hyperbolically toward `FERTILITY_DAMPING_FLOOR` as `capacity / livingCount`
+ * — smooth (no cliff at the boundary, unlike the immigration candidate's hard cutoff) and monotonic
+ * (more overcrowding always dampens at least as much as less). Multiplies directly into the "try"
+ * conceive roll at the call site below, rather than gating A2's ELIGIBILITY — a couple can still be
+ * asked and still try, exactly as before; only the odds of success shrink, matching how
+ * `conceptionProbability` itself already expresses "probability of success", not "eligible at all".
+ */
+export function fertilityDampingFactor(people: Readonly<Record<string, Person>>): number {
+  const founderCount = Object.values(people).filter((p) => p.founder).length;
+  const capacity = founderCount * VILLAGE_CARRYING_CAPACITY_RATIO;
+  if (capacity <= 0) return 1;
+  const livingCount = Object.values(people).filter((p) => p.deathYear === undefined && !p.away).length;
+  if (livingCount <= capacity) return 1;
+  return Math.max(FERTILITY_DAMPING_FLOOR, capacity / livingCount);
 }
 
 /** The eldest LIVING son sharing this person's father (decision 056's holding-inheritance rule) — true only for `person` itself. */
@@ -2815,7 +2838,17 @@ export async function* simulateYears(
             partner!.spouseId = person.id;
             person.lifeState = applyLifeTransition(personState, { axis: "marital", to: "married", partnerId: partner!.id }, year);
             partner!.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "married", partnerId: person.id }, year);
-            const event = pushEvent(events, year, "marriage", [person.id, partner!.id], {}, causes);
+            // Decision 080: record each spouse's social class AT MARRIAGE TIME on the marriage event
+            // itself. `Person.socialClass` can be reclassified LATER (decision 054's "widow keeps the
+            // trade" turns a surviving spouse "artisan" after a later widowhood), so reading it back
+            // from the final `Person` at simulation end no longer tells you what it was when the
+            // merchet decision below was actually made. `classesAtMarriage` is the ground truth for
+            // that decision, independent of anything that happens to either spouse afterwards.
+            const classesAtMarriage: Record<string, SocialClass> = {
+              [person.id]: person.socialClass ?? FALLBACK_CLASS,
+              [partner!.id]: partner!.socialClass ?? FALLBACK_CLASS,
+            };
+            const event = pushEvent(events, year, "marriage", [person.id, partner!.id], { classesAtMarriage }, causes);
             resultingEventIds.push(event.id);
             for (const [self, other] of [[person, partner!] as const, [partner!, person] as const]) {
               pushThought(self.mind, "joy", `marrying ${other.name}`, 80, 8, year, "lovePropensity", other.id);
@@ -2887,7 +2920,9 @@ export async function* simulateYears(
             // couples actively trying), keyed distinctly from every other A2 draw so it doesn't
             // correlate with the eligibility/spacing checks above or the maternal-death roll below.
             const conceiveDraw = keyedDraw(seed, pairKey(person.id, partner!.id), year, "conceive");
-            if (conceiveDraw < conceptionProbability(ageInYear(person.birthYear, year))) {
+            // Decision 080: `fertilityDampingFactor` is 1 (no change) until the village outgrows its
+            // own carrying capacity; see that function's own doc comment for the full mechanism.
+            if (conceiveDraw < conceptionProbability(ageInYear(person.birthYear, year)) * fertilityDampingFactor(people)) {
               const marriageEvent = events.filter((e) => e.kind === "marriage" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
               if (marriageEvent) causes.push(marriageEvent.id);
               let child = spawnChild(seed, year, person, partner!, people);

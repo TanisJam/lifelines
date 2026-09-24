@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionQuestion } from "./decisions";
 import { computeHazard } from "./hazards";
-import { OUTCOME_TIME_PRESSURE_CEILING } from "./params/demography";
+import { MARRIAGE_FLOORS, OUTCOME_TIME_PRESSURE_CEILING } from "./params/demography";
 import { ruleDistribution } from "./rule-heuristics";
 import type { Sex, SocialClass } from "./types";
 
@@ -65,7 +65,10 @@ describe("PR6 corrective: Y1/A1 outcome floors (engram #6280, the marriage chain
 
 describe("PR12 STEP 2 (decision 073/074, option (b)): Y1/A1 outcome probability grows with time pressure", () => {
   it("a newly-eligible villein woman right at onset, zero time-in-state, gets the facet-neutral base (no pressure yet)", () => {
-    const q = questionWithTime("Y1", 18, "villein", "f", { yearsMarriageable: 0 });
+    // Decision 080: villein/f onset moved 18 -> 17.5 (see MARRIAGE_FLOORS's own doc comment) — read it
+    // dynamically rather than re-hardcoding the age, so this test means "at onset" regardless of the
+    // exact value.
+    const q = questionWithTime("Y1", MARRIAGE_FLOORS.villein.f.onset, "villein", "f", { yearsMarriageable: 0 });
     expect(ruleDistribution(q).encourage).toBeCloseTo(0.4, 5);
   });
 
@@ -100,7 +103,7 @@ describe("PR12 STEP 2 (decision 073/074, option (b)): Y1/A1 outcome probability 
   });
 
   it("years already past the class/sex onset age also add pressure, even at yearsMarriageable=0 (a late-starting eligibility)", () => {
-    const atOnset = ruleDistribution(questionWithTime("Y1", 18, "villein", "f", { yearsMarriageable: 0 })).encourage;
+    const atOnset = ruleDistribution(questionWithTime("Y1", MARRIAGE_FLOORS.villein.f.onset, "villein", "f", { yearsMarriageable: 0 })).encourage;
     const pastOnset = ruleDistribution(questionWithTime("Y1", 25, "villein", "f", { yearsMarriageable: 0 })).encourage;
     expect(pastOnset).toBeGreaterThan(atOnset);
   });

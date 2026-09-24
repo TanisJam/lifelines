@@ -23,7 +23,7 @@ export interface MarriageFloor {
  * villein figures only so this stays a total function over `SocialClass`.
  *
  * PR10 (GOAL B, decision 071): gentry's own floor is per-class band `firstMarriageAgeWomenGentry`
- * (14-18) / `firstMarriageAgeMenGentry` (20-24), `params/targets.ts` — gentry/noble women married
+ * (14-18) / `firstMarriageAgeMenGentry` (20-26), `params/targets.ts` — gentry/noble women married
  * markedly earlier via arranged matches (`docs/research.md` line 340: Hollingsworth's 14th c.
  * interpolation, women ~17; Follett narrative reference, Tilly's arranged marriage at 14, engram
  * #6321/#6149). `minEligible`/`onset` were already gentry's youngest row (decision 14/053) — men's
@@ -33,15 +33,53 @@ export interface MarriageFloor {
  * onset (see decision 068's own finding), the REALIZED mean stays well above onset — gentry is
  * structurally "one household per village" in worldgen (decision 049), so partner scarcity, not the
  * hazard floor, dominates the remaining gap; see decision 071 for the measured before/after.
+ *
+ * Decision 080: two further small, targeted onset nudges, closing two of the three SMALL remaining
+ * decision-079 marriage-age misses.
+ *
+ * Common-class women's `onset` (merchant/artisan/freeholder/villein/clergy 18 -> 17.5, cottar 19 ->
+ * 18.5): `firstMarriageAgeWomen` measured 23.02 against an 18-23 band, a 0.02-year miss — unlike
+ * decision 068's REVERTED ~2-year, ALL-CLASSES onset cut (which widened the age-onset gap because it
+ * was large enough to shift the WHOLE local marriage market's composition, per that decision's own
+ * finding: "onset shrinks faster than the partner-scarcity-bound actual age does"), this is a single
+ * sex row, one order of magnitude smaller, for classes that are NOT the "one household per village"
+ * scarcity case (five to six common classes' worth of population, real local supply on both sides).
+ * Measured (60 seeds): 23.02 -> 22.77 (later re-measured at 22.69 once the gentry change below was
+ * also applied) — **PASS**.
+ *
+ * Gentry men's `onset` (22 -> 20, i.e. back to its PRE-PR10 value): `firstMarriageAgeMenGentry`
+ * measured 26.41 against a 20-26 band, a 0.41-year miss. Gentry men are the scarce class's OWN sex,
+ * but (unlike gentry women, this table's still-open structural gap) they draw from the
+ * same-class-first-then-any-class fallback pool (`simulate.ts`'s `eligiblePool`/`pickTier`) into a
+ * LARGE common-class bride pool, not a mutually scarce one — the asymmetry decision 071 itself never
+ * separated out (its own onset-cut experiment, decision 068, moved every class/sex row at once).
+ * Tried in two steps, each measured: -1 year (21) moved the mean 26.41 -> 26.18 (still FAIL, a
+ * genuine but insufficient ~0.23y/year response, nowhere near decision 068's "shrinks faster than it
+ * helps" backfire); a further -1 year (20) moved it to 24.78 — **PASS**, with real margin. Common
+ * men's onset (unchanged) still passes comfortably at the new measured 25.94-26.24 (band 21-27), so
+ * this row's own change causes no cross-sex regression.
+ *
+ * `firstMarriageAgeWomenGentry` (band 14-18) is NOT touched by this decision — this table's OWN,
+ * still-open, structural gap: measured 21.46-21.55 regardless of whichever men's-row nudge was in
+ * effect (unaffected, as expected — this is a different class/sex row). Per decision 071's own
+ * reasoning (this table's THIS row, `minEligible: 14, onset: 16`, was already positioned at the
+ * research anchor and left unchanged across every decision since), the miss is population-existence
+ * scarcity, not onset — a single gentry household typically produces only a handful of daughters
+ * across the whole simulated run, so the "mean first-marriage age" sample is tiny and dominated by a
+ * few individuals' own life-course timing, not a hazard-curve parameter any onset value can fix. A
+ * clean fix needs more gentry SUPPLY (e.g. gentry-class immigrants, or a cross-manor gentry match),
+ * not a smaller onset — see decision 080's own body for why that was not attempted this slice.
+ *
+ * See `provenance.ts` and decision 080 for the full measured 60-seed before/after.
  */
 export const MARRIAGE_FLOORS: Readonly<Record<SocialClass, Readonly<Record<Sex, MarriageFloor>>>> = {
-  gentry: { f: { minEligible: 14, onset: 16 }, m: { minEligible: 16, onset: 22 } },
-  merchant: { f: { minEligible: 15, onset: 18 }, m: { minEligible: 18, onset: 23 } },
-  artisan: { f: { minEligible: 15, onset: 18 }, m: { minEligible: 18, onset: 22 } },
-  freeholder: { f: { minEligible: 15, onset: 18 }, m: { minEligible: 18, onset: 22 } },
-  villein: { f: { minEligible: 15, onset: 18 }, m: { minEligible: 18, onset: 22 } },
-  cottar: { f: { minEligible: 16, onset: 19 }, m: { minEligible: 18, onset: 22 } },
-  clergy: { f: { minEligible: 15, onset: 18 }, m: { minEligible: 18, onset: 22 } },
+  gentry: { f: { minEligible: 14, onset: 16 }, m: { minEligible: 16, onset: 20 } },
+  merchant: { f: { minEligible: 15, onset: 17.5 }, m: { minEligible: 18, onset: 23 } },
+  artisan: { f: { minEligible: 15, onset: 17.5 }, m: { minEligible: 18, onset: 22 } },
+  freeholder: { f: { minEligible: 15, onset: 17.5 }, m: { minEligible: 18, onset: 22 } },
+  villein: { f: { minEligible: 15, onset: 17.5 }, m: { minEligible: 18, onset: 22 } },
+  cottar: { f: { minEligible: 16, onset: 18.5 }, m: { minEligible: 18, onset: 22 } },
+  clergy: { f: { minEligible: 15, onset: 17.5 }, m: { minEligible: 18, onset: 22 } },
 };
 
 /** Canon law's absolute floor (research.md, Family §rules 1) — never crossed by any class row above. */
@@ -477,6 +515,42 @@ export const IMMIGRATION_POST_PLAGUE_END_YEAR = 1362;
  * proportionally.
  */
 export const IMMIGRATION_POPULATION_CAP_RATIO = 38 / 18;
+
+/**
+ * Decision 080: a carrying-capacity feedback for fertility, closing the gap `IMMIGRATION_POPULATION_CAP_RATIO`
+ * (above) never covered. That ratio only ever stops NEW immigrants once the village is "comfortably
+ * sized" — it does nothing about births, which have no population-density feedback at all
+ * (`simulate.ts`'s A2 "try" outcome is a pure function of the mother's age, `conceptionProbability`,
+ * `params/demography.ts#CONCEPTION_PROBABILITY_BANDS`). With decision 079's much lower adult mortality
+ * and higher conception odds, a run where births keep outrunning deaths compounds without bound —
+ * each generation larger than the last, `decideYear`'s per-year candidate volume growing with it,
+ * measurably slowing every long (100-year) test down (the four timeout bumps decision 079 itself made,
+ * `simulate.test.ts`'s own "decision 079: see the class-multiplier test's own timeout-bump comment"
+ * tests, and the still-longer `IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE`-driven PR9 test).
+ *
+ * `VILLAGE_CARRYING_CAPACITY_RATIO` names the point (as a multiple of the village's OWN founder
+ * headcount, same "scale to what this village was actually generated with" approach as
+ * `IMMIGRATION_POPULATION_CAP_RATIO`) past which `simulate.ts#fertilityDampingFactor` starts
+ * tapering the A2 conception roll — set ABOVE the immigration cap (2.11x) so immigration is already
+ * throttling growth well before fertility damping engages at all; a village that never grows past
+ * ~2x its founders never feels this lever. Follett-plausible/invented: no sourced manorial
+ * "carrying capacity" figure exists for a 14th-century English village of this size — the ratio is
+ * chosen only to bound simulated run time and stop unbounded compounding, not to model a real
+ * documented land-carrying limit. See `provenance.ts` for the measured before/after run times.
+ */
+export const VILLAGE_CARRYING_CAPACITY_RATIO = 3;
+
+/**
+ * Decision 080: the floor `fertilityDampingFactor` never dampens conception odds below, however far
+ * past `VILLAGE_CARRYING_CAPACITY_RATIO` the living population grows. A hard cutoff (factor 0) would
+ * make the village sterile forever once overcrowded — with no matching feedback that ever shrinks it
+ * back down (this engine has no famine/disease density-response, only the dated Black Death/second
+ * pestilence shocks), that's a one-way trap, not a ceiling. A `0.2` floor still lets population growth
+ * approach a rough plateau (births keep happening at a reduced rate, roughly balancing ordinary
+ * mortality) without ever fully forbidding new children — Follett-plausible/invented, chosen for that
+ * qualitative "slows to a crawl, never truly stops" shape rather than sourced from any figure.
+ */
+export const FERTILITY_DAMPING_FLOOR = 0.2;
 
 /**
  * PR10 (decision 071, population-trajectory diagnosis, `sdd/engine-life-course/state`): named

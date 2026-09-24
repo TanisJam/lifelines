@@ -9,10 +9,7 @@ Open items and product calls, newest first. Move an item to `decisions.md` once 
 
 ## To review
 
-- [ ] **Three Follett-plausible marriage-age targets still fail (decision 079).** Women marry at 23.02, just 0.02 over the 18–23 band. Gentry women marry at 21.55 (band 14–18) — a genuine structural gap (gentry is "one household per village" in worldgen, decisions 068–071's own repeated finding), not a rate this slice's levers touch. Gentry men marry at 26.41, just 0.41 over the 20–26 band. The population targets (pre-plague growth, post-plague recovery) both pass as of decision 079.
-
-- [ ] **The engine has no population ceiling.** Sustained births above deaths compound, so long runs slow down fast. Decision 079 bounded its post-plague immigration to 1350–1361 and raised four test timeouts to 20–100 s instead of fixing this. A carrying-capacity feedback would bound run time and let those timeouts come back down.
-- [ ] **The merchet test reads social class at simulation end, not at marriage time.** Decision 079 skips the class check for marriages before a later widowhood, because "widow keeps the trade" can reclassify a spouse afterwards. Recording the class on the marriage event would restore the full check.
+- [ ] **One Follett-plausible marriage-age target still fails (decision 080).** Gentry women marry at 21.46–21.55 (band 14–18) — a genuine structural gap: gentry is "one household per village" in worldgen (decisions 068–071's own repeated finding), so the sample is a handful of daughters across the whole run, dominated by individual life-course timing, not a hazard-curve parameter. A clean fix needs more gentry supply (gentry-class immigrants, or a cross-manor gentry match); `spawnImmigrant` deliberately never produces gentry today (decision 049), and changing that is a real design-invariant change, not a small nudge. The other two marriage-age misses (women overall, gentry men) and both population-trajectory targets now pass as of decision 080.
 
 - [ ] **Rewrite ghost annotations come back empty.** The "In the original life, …" matching is too narrow when the butterfly effect shifts later events by a year or more (decision 039).
 - [ ] **SSE ticks replay the finished life** grouped by year, instead of narrating the simulation as it runs (decision 036).
