@@ -2997,3 +2997,34 @@ branch is stored, and the client starts again. The yield also lets the disconnec
 instead of only at the end.
 
 The SSE contract is unchanged (`start`, `tick {type, year, entries}`, `done`, `error`, `divergence`).
+
+## 084 — Jev decides only for the protagonist's story circle
+
+**Problem.** A life with the Jev engine took 12+ minutes in production. Measured 2026-09-24 (3 real
+years, 83 villagers, instrumented `fetch`): about 63 `decideYear` requests per year, median 3
+questions and ~1,400 input tokens each, ~80k tokens per year. No timeouts or retries. The ceiling is
+Jev's token throughput for this account, which varied between ~6k and ~48k tokens/s through the day
+(the documented limit is 250k). At 64 requests in flight, latency p90 rose to 6–7 s.
+
+**Rejected: packing several villagers into one request** (branch `perf/jev-village-packing`, kept,
+not merged). It cut requests to 3–5 per year but not tokens, since each person still needs their own
+context, and ~40k-token requests often ran past the SDK's 20 s timeout. An A/B also showed packing
+shifts decisions (mean total-variation distance 0.13 vs a 0.021 noise floor), though that A/B had a
+bug in retargeting `self` references and may overstate it. Found on the way: `estimateTokens` (4
+chars/token) undercounts this JSON by ~1.7x (measured ~2.3 chars/token).
+
+**Rejected: a "context diet"** (compact prompts for villagers). About 2x fewer tokens, not enough.
+
+**Decision (the user's).** Only the protagonist's story matters exactly. `story-circle.ts` defines the
+circle: protagonist, spouse, parents, siblings, children, and open romances and feuds. With the Jev
+engine, `simulate.ts` sends circle person-years to Jev and everyone else to
+`SimulateOptions.backgroundDecisionMaker` (a `RuleDecisionMaker`, wired in `decision-engine.ts`).
+Those decisions are recorded with source `"rules"`. The rules engine and the demographic
+calibration are unaffected.
+
+**Measured** (3 real years, seed `circle-a`): ~3,700 input tokens and ~1.7 requests per year, down
+from ~80k and ~60. The floor is now one Jev round trip per year, because each year depends on the
+previous one. That was 1–2.9 s per trivial request that afternoon (0.35–0.86 s that morning), so a
+60-year life takes about 30 s to 3 min depending on Jev's latency. The user accepted up to 3 minutes
+if the stream shows what happens year by year, so the loading screen now keeps a running feed of
+every streamed entry, newest first, instead of only the last tick's titles.

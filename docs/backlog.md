@@ -13,6 +13,8 @@ Open items and product calls, newest first. Move an item to `decisions.md` once 
 
 - [ ] **Rewrite ghost annotations come back empty.** The "In the original life, …" matching is too narrow when the butterfly effect shifts later events by a year or more (decision 039).
 
+- [ ] **A Jev life still waits one round trip per simulated year (decision 084).** At the afternoon's 1–2.9 s latency a 60-year life takes up to ~3 min. If that becomes too slow, let Jev decide only the circle's major decisions and leave everyday vignettes to rules, so quiet years skip Jev.
+
 ## Next session
 
 - [ ] A UI revamp from a strong-inspiration mockup the user will provide. Port its visual values faithfully, and keep the four-phase rewrite moment.

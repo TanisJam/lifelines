@@ -8,6 +8,7 @@ import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
 import { determineDeathCause, type MortalityContext } from "./mortality";
+import { storyCircle } from "./story-circle";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import {
   CONCEPTION_PROBABILITY_BANDS,
@@ -79,6 +80,13 @@ export interface SimulateOptions {
   readonly decisionMaker: DecisionMaker;
   /** Which engine `decisionMaker` is, so `resolveSocialDecision` knows whether to treat its answer as `jevRaw` or a plain `prior`. */
   readonly engineSource: "jev" | "rules";
+  /**
+   * Decision 084: decides every person-year OUTSIDE the protagonist's story circle
+   * (`story-circle.ts`), so only the circle pays for `decisionMaker` (Jev) and a life fits in about a
+   * minute. Its decisions are recorded with source `"rules"`. When absent, or when there is no
+   * protagonist, `decisionMaker` decides for everyone, as before.
+   */
+  readonly backgroundDecisionMaker?: DecisionMaker;
   readonly overrides?: readonly Override[];
   readonly concurrencyLimit?: number;
   /** Round 11 (decision 044): how many people's person-year `decideYear` batches to request in parallel within one simulated year. Default 64. */
@@ -2610,12 +2618,18 @@ export async function* simulateYears(
       decisionCalls += batchesByPerson.size;
 
       const personIds = Array.from(batchesByPerson.keys());
+      // Decision 084: only the protagonist's story circle goes to `decisionMaker`; everyone else goes
+      // to `backgroundDecisionMaker` when one is given. No protagonist means an empty circle.
+      const circle = options.backgroundDecisionMaker ? storyCircle(options.protagonistId, people, events) : new Set<string>();
       await mapWithConcurrency(personIds, yearBatchConcurrency, async (personId) => {
         const situations = batchesByPerson.get(personId)!;
         const situationIds = Object.keys(situations);
         const self: Record<string, JsonValue> = personSummary(people[personId]!, year, people);
         const isProtagonist = personId === options.protagonistId;
-        const result = await options.decisionMaker.decideYear!({ personId, year, self, situations, isProtagonist });
+        const inBackground = circle.size > 0 && !circle.has(personId);
+        const decider = inBackground ? options.backgroundDecisionMaker! : options.decisionMaker;
+        const deciderSource = inBackground ? "rules" : options.engineSource;
+        const result = await decider.decideYear!({ personId, year, self, situations, isProtagonist });
 
         if (result.vignetteSelection && Object.keys(result.vignetteSelection).length > 0) {
           Object.assign(vignetteSelectionRaw, result.vignetteSelection);
@@ -2665,7 +2679,7 @@ export async function* simulateYears(
           const occurrenceProbability = id === selectedId ? normalizedSelection![id] : undefined;
           resultByDecisionId.set(
             id,
-            options.engineSource === "jev" ? { jevRaw, final: jevRaw, source: "jev", occurrenceProbability } : { prior: jevRaw, final: jevRaw, source: "rules", occurrenceProbability },
+            deciderSource === "jev" ? { jevRaw, final: jevRaw, source: "jev", occurrenceProbability } : { prior: jevRaw, final: jevRaw, source: "rules", occurrenceProbability },
           );
         }
       });

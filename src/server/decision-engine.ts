@@ -38,6 +38,20 @@ export function getDecisionMaker(): DecisionMaker {
   return globalWithInstance[globalInstanceKey];
 }
 
+const backgroundInstanceKey = "__lifelinesBackgroundDecisionMaker__";
+const globalWithBackground = globalThis as typeof globalThis & { [backgroundInstanceKey]?: DecisionMaker };
+
+/**
+ * Decision 084: when the main engine is Jev, the villagers outside the protagonist's story circle
+ * are decided by rules (see `SimulateOptions.backgroundDecisionMaker`), so a life fits in about a
+ * minute. Undefined under the rules engine, where everyone already uses rules.
+ */
+export function getBackgroundDecisionMaker(): DecisionMaker | undefined {
+  if (activeEngineName() === "rules") return undefined;
+  globalWithBackground[backgroundInstanceKey] ??= new RuleDecisionMaker();
+  return globalWithBackground[backgroundInstanceKey];
+}
+
 export function activeEngineName(): "jev" | "rules" {
   return getDecisionMaker() instanceof RuleDecisionMaker ? "rules" : "jev";
 }

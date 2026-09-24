@@ -1,4 +1,4 @@
-import { activeEngineName, getDecisionMaker } from "./decision-engine";
+import { activeEngineName, getBackgroundDecisionMaker, getDecisionMaker } from "./decision-engine";
 import { getClientIp } from "./client-ip";
 import { getIpRateLimiter } from "./ip-rate-limit";
 import { verifyTurnstile } from "./turnstile";
@@ -14,6 +14,8 @@ import type { DecisionMaker } from "@/domain/decisions";
 export interface SimulationEngine {
   readonly decisionMaker: DecisionMaker;
   readonly engineSource: "jev" | "rules";
+  /** Decision 084: decides the villagers outside the protagonist's story circle; see `getBackgroundDecisionMaker`. */
+  readonly backgroundDecisionMaker?: DecisionMaker;
 }
 
 export interface SimulationGuardBody {
@@ -50,5 +52,5 @@ export async function guardSimulation(request: Request, body: SimulationGuardBod
     return jsonResponse({ error: "verification_failed" }, 403);
   }
 
-  return { ok: true, engine: { decisionMaker: getDecisionMaker(), engineSource: activeEngineName() } };
+  return { ok: true, engine: { decisionMaker: getDecisionMaker(), engineSource: activeEngineName(), backgroundDecisionMaker: getBackgroundDecisionMaker() } };
 }

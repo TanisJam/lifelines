@@ -27,6 +27,7 @@ import {
   townEventMortalityMultiplier,
   type YearTick,
 } from "./simulate";
+import type { PersonYearBatch } from "./decisions";
 import type { Event, Override, Person, SocialClass } from "./types";
 import { generateWorld } from "./worldgen";
 
@@ -1605,5 +1606,56 @@ describe("decision 079: protagonist-away A2 duplicate (PR6 invariant crash found
     const candidates = gatherCandidatesForYear(1530, people, [moveEvent], "seed", protagonist.id);
     const a2ForWife = candidates.filter((c) => c.kind === "A2" && c.personId === wife.id);
     expect(a2ForWife.length).toBe(1);
+  });
+});
+
+describe("decision 084: Jev decides only for the protagonist's story circle", () => {
+  class RecordingDecisionMaker extends RuleDecisionMaker {
+    readonly personIds = new Set<string>();
+    override async decideYear(batch: PersonYearBatch) {
+      this.personIds.add(batch.personId);
+      return super.decideYear(batch);
+    }
+  }
+
+  it("sends the circle to the main decision maker and everyone else to the background one", async () => {
+    const { config, people, events } = generateWorld({ seed: "story-circle-1", startYear: 1327, endYear: 1331, protagonist: { name: "Agnes", sex: "f" } });
+    const main = new RecordingDecisionMaker();
+    const background = new RecordingDecisionMaker();
+    const report = await simulate(config, people, events, { decisionMaker: main, backgroundDecisionMaker: background, engineSource: "jev", protagonistId: "protagonist" });
+
+    // The protagonist is a newborn here, so the circle deciding is her parents and siblings.
+    const protagonist = report.result.people.protagonist!;
+    const family = new Set(
+      Object.values(report.result.people)
+        .filter((p) => p.id === protagonist.motherId || p.id === protagonist.fatherId || (p.id !== protagonist.id && p.motherId !== undefined && p.motherId === protagonist.motherId))
+        .map((p) => p.id),
+    );
+    expect(main.personIds.size).toBeGreaterThan(0);
+    for (const id of main.personIds) expect(family.has(id) || id === "protagonist").toBe(true);
+    for (const id of family) expect(background.personIds.has(id)).toBe(false);
+    expect(background.personIds.size).toBeGreaterThan(main.personIds.size);
+
+    // Each decision records who really made it.
+    const socialSources = (ids: Set<string>) => new Set(report.result.decisions.filter((d) => ids.has(d.personId) && (d.source === "jev" || d.source === "rules")).map((d) => d.source));
+    // (Some circle candidates are rule-decided by design — the pre-existing `fallbackFlags` path.)
+    expect(socialSources(main.personIds).has("jev")).toBe(true);
+    expect([...socialSources(background.personIds)]).toEqual(["rules"]);
+  });
+
+  it("uses the main decision maker for everyone when no background one is given", async () => {
+    const { config, people, events } = generateWorld({ seed: "story-circle-2", startYear: 1327, endYear: 1330, protagonist: { name: "Agnes", sex: "f" } });
+    const main = new RecordingDecisionMaker();
+    await simulate(config, people, events, { decisionMaker: main, engineSource: "rules", protagonistId: "protagonist" });
+    expect(main.personIds.size).toBeGreaterThan(5);
+  });
+
+  it("uses the main decision maker for everyone when there is no protagonist", async () => {
+    const { config, people, events } = generateWorld({ seed: "story-circle-3", startYear: 1327, endYear: 1330 });
+    const main = new RecordingDecisionMaker();
+    const background = new RecordingDecisionMaker();
+    await simulate(config, people, events, { decisionMaker: main, backgroundDecisionMaker: background, engineSource: "rules" });
+    expect(main.personIds.size).toBeGreaterThan(0);
+    expect(background.personIds.size).toBe(0);
   });
 });

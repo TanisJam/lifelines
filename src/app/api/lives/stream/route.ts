@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
   // costs the caller a rate-limit slot.
   const guard = await guardSimulation(request, body);
   if (guard instanceof Response) return guard;
-  const { decisionMaker, engineSource } = guard.engine;
+  const { decisionMaker, engineSource, backgroundDecisionMaker } = guard.engine;
 
   const seed = body.seed?.trim() || randomSeed();
   const startYear = START_YEAR;
@@ -90,7 +90,7 @@ export async function POST(request: Request): Promise<Response> {
     let report;
     try {
       report = await drainSimulation(
-        simulateYears(config, people, events, { decisionMaker, engineSource, protagonistId: "protagonist" }),
+        simulateYears(config, people, events, { decisionMaker, backgroundDecisionMaker, engineSource, protagonistId: "protagonist" }),
         async (tick) => {
           const entries = await buildProvisionalTickEntries(
             "protagonist",

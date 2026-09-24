@@ -77,7 +77,7 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
   // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work starts.
   const guard = await guardSimulation(request, body);
   if (guard instanceof Response) return guard;
-  const { decisionMaker, engineSource } = guard.engine;
+  const { decisionMaker, engineSource, backgroundDecisionMaker } = guard.engine;
   const newBranchId = newLifeBranchId();
 
   return sseResponse(async (send, signal) => {
@@ -103,6 +103,7 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
       report = await drainSimulation(
         simulateYears(life.config, restoreSnapshot.people, restoreSnapshot.events, {
           decisionMaker,
+          backgroundDecisionMaker,
           engineSource,
           overrides: [override],
           fromYear: forkYear,
