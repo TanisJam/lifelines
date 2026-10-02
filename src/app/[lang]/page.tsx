@@ -1,24 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { LifeSex, LifeStreamEvent } from "@/contracts/life";
+import type { LifeSex } from "@/contracts/life";
+import { SkyView } from "@/components/sky/sky-view";
+import { useLiveLife } from "@/components/sky/use-live-life";
 import { TurnstileWidget } from "@/components/turnstile-widget";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/get-dictionary";
 import { guardErrorMessage } from "@/lib/guard-error";
-import { createLifeStream, getLives } from "@/lib/life-client";
+import { getLives } from "@/lib/life-client";
 import { useTurnstileSiteKey } from "@/lib/turnstile-client";
 
 function randomVillageName(): string {
   const syllables = ["mor", "ash", "vel", "thorn", "wyn", "gale", "bram", "rook", "fen", "lark", "myr", "dusk", "combe", "hollow", "mere"];
   const length = 2 + Math.floor(Math.random() * 2);
   return Array.from({ length }, () => syllables[Math.floor(Math.random() * syllables.length)]).join("");
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 type Stage = "form" | "creating";
@@ -31,9 +29,12 @@ type Stage = "form" | "creating";
  * Decision 059: `lang` (from the `app/[lang]` route param) both picks the UI dictionary and rides
  * along in the create-life request body (`CreateLifeRequest.lang`), so the chronicle this life
  * lands on is narrated in the reader's own locale from the moment it's first written.
+ *
+ * Creating a life hosts the live night sky right here: it grows tick by tick over one engine, and when the
+ * life is saved the address bar moves to the life's own URL with a shallow `history.replaceState` (never
+ * `router.*`), so the page, the sky, its clock and its focus all stay exactly as they are.
  */
 export default function HomePage() {
-  const router = useRouter();
   const { lang } = useParams<{ lang: Locale }>();
   const dict = getDictionary(lang);
   const SEX_OPTIONS: { value: LifeSex | "random"; label: string }[] = [
@@ -47,12 +48,8 @@ export default function HomePage() {
   const [villageName, setVillageName] = useState("");
   const [stage, setStage] = useState<Stage>("form");
   const [error, setError] = useState<string | null>(null);
-  const [protagonistName, setProtagonistName] = useState<string | null>(null);
-  const [year, setYear] = useState<number | null>(null);
-  // Decision 084: a life with Jev takes minutes, so the loading screen keeps every streamed entry as a
-  // running feed (newest first) instead of only the last tick's titles.
-  const [feed, setFeed] = useState<{ id: string; year: number; title: string }[]>([]);
-  const [done, setDone] = useState<{ name: string; birthYear: number; deathYear: number } | null>(null);
+  // Decision 084: a life with Jev takes minutes; the sky shows each year as it is written.
+  const live = useLiveLife();
   const [hasLives, setHasLives] = useState(false);
   const turnstileSiteKey = useTurnstileSiteKey();
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -70,74 +67,23 @@ export default function HomePage() {
     }
     setError(null);
     setStage("creating");
-    setFeed([]);
-    setDone(null);
-    setYear(null);
-    setProtagonistName(null);
 
     try {
-      let landedLifeId = "";
-      let landedBranchId = "";
-      await createLifeStream({ name: name.trim(), sex, villageName: villageName.trim() || undefined, lang, turnstileToken: turnstileToken ?? undefined }, (event: LifeStreamEvent) => {
-        if (event.type === "start") {
-          setProtagonistName(event.protagonist.name);
-          setYear(event.protagonist.birthYear);
-        } else if (event.type === "tick") {
-          setYear(event.year);
-          if (event.entries.length > 0) {
-            const incoming = event.entries.map((e) => ({ id: e.id, year: e.year, title: e.title }));
-            setFeed((previous) => {
-              const seen = new Set(previous.map((e) => e.id));
-              return [...incoming.filter((e) => !seen.has(e.id)).reverse(), ...previous];
-            });
-          }
-        } else if (event.type === "done") {
-          landedLifeId = event.chronicle.lifeId;
-          landedBranchId = event.chronicle.branchId;
-          setDone({ name: event.chronicle.protagonist.name, birthYear: event.chronicle.protagonist.birthYear, deathYear: event.chronicle.protagonist.deathYear });
-        } else if (event.type === "error") {
-          throw new Error(event.message);
-        }
+      await live.start({ name: name.trim(), sex, villageName: villageName.trim() || undefined, lang, turnstileToken: turnstileToken ?? undefined }, (saved) => {
+        window.history.replaceState(null, "", `/${lang}/life/${saved.lifeId}?branch=${saved.branchId}`);
       });
-      if (landedLifeId) {
-        // "On done, show '<Name>, <birth>–<death>' briefly, then transition to the chronicle."
-        await sleep(900);
-        router.push(`/${lang}/life/${landedLifeId}?branch=${landedBranchId}`);
-      }
     } catch (err) {
+      live.reset();
       setError(guardErrorMessage(err, dict, "Something went wrong."));
       setStage("form");
     }
   }
 
   if (stage === "creating") {
+    if (live.chronicle) return <SkyView chronicle={live.chronicle} dict={dict} lang={lang} saved={live.saved} frontier={live.frontier} />;
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col items-center justify-center gap-6 px-4 text-center sm:px-6">
-        {done ? (
-          <>
-            <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">{dict.home.writtenKicker}</p>
-            <h1 className="font-heading text-4xl font-semibold text-foreground sm:text-5xl">
-              {done.name}, {done.birthYear}–{done.deathYear}
-            </h1>
-          </>
-        ) : (
-          <>
-            <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">{dict.home.writingKicker(protagonistName ?? name)}</p>
-            {year !== null && (
-              <p className="font-heading text-5xl font-semibold tabular-nums text-foreground" aria-live="polite">
-                {year}
-              </p>
-            )}
-            <ol className="max-h-72 w-full max-w-md space-y-1 overflow-y-auto text-left" aria-live="polite">
-              {feed.map((entry, i) => (
-                <li key={entry.id} className={i === 0 ? "text-foreground" : "text-muted-foreground"}>
-                  <span className="mr-2 font-label text-xs tabular-nums text-brass">{entry.year}</span>
-                  {entry.title}
-                </li>
-              ))}
-            </ol>
-          </>
-        )}
+        <p className="font-label text-xs uppercase tracking-[0.3em] text-brass">{dict.home.writingKicker(name.trim())}</p>
         {error && <p className="text-center text-sm text-crimson">{error}</p>}
       </div>
     );
