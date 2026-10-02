@@ -6,7 +6,7 @@
  * dictionaries can never drift out of key-parity — a missing Spanish key is a compile error, not a
  * runtime gap. Plain, synchronous objects rather than the official guide's per-locale dynamic
  * `import()` (`node_modules/next/dist/docs/01-app/02-guides/internationalization.md`'s
- * `getDictionary`): several of the pages this feeds (`page.tsx`, `lives/page.tsx`, `chronicle.tsx`,
+ * `getDictionary`): several of the pages this feeds (`page.tsx`, `lives/page.tsx`,
  * `global-header.tsx`) are Client Components (`useState`/`useEffect`), so the guide's
  * server-only-bundle-size rationale doesn't hold here, and at this dictionary's size (roughly 150
  * short strings) the cost of shipping both locales is negligible either way.
@@ -55,7 +55,6 @@ export const en = {
     submit: "Write their life",
     yourLivesLink: "Your lives",
     nameRequiredError: "Name her, or him, first.",
-    writtenKicker: "A life, written",
     writingKicker: (name: string) => `Writing the life of ${name}…`,
   },
   /** Abuse protection (rate limiting, Turnstile) — shared across every form that starts a simulation, via `src/lib/guard-error.ts#guardErrorMessage`. */
@@ -132,25 +131,11 @@ export const en = {
     },
   },
   chronicle: {
-    brand: "Lifelines",
-    historyToggle: "History ▾",
-    newLife: "New life",
-    eyebrow: "A life already lived",
-    living: "living",
-    branchFrom: (year: number) => `Branch from ${year}`,
-    peopleInThisLife: "People in this life",
-    endOfLife: "End of life",
-    afterDeath: (sex: "f" | "m") => `After ${sex === "f" ? "her" : "his"} death`,
-    changeAnEarlierMoment: "Change an earlier moment",
-    beginANewLife: "Begin a new life",
     thisHistory: "This history",
     originalLife: "Original life",
-    footerNote: "Change any turn and everything after it can be rewritten.",
     regenerating: (firstName: string, fromYear: number, nowYear: number) => `Rewriting ${firstName}'s life from ${fromYear}… now at ${nowYear}`,
     changedInYear: (year: number) => `Changed in ${year}`,
-    firstSimulated: "The life that was first simulated.",
     changeWhatHappened: "Change what happened →",
-    follows: (phrase: string, year: number) => `Follows ${phrase} (${year})`,
     rewriteIncomplete: "The rewrite didn't complete.",
     rewriteFailed: "The rewrite failed.",
     branchLoadError: "Couldn't load that branch.",
@@ -168,7 +153,6 @@ export const en = {
       diverges: "◆ history diverges here",
       original: "ORIGINAL",
       new: "NEW",
-      history: "History",
     },
   },
 };
