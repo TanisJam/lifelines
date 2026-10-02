@@ -76,6 +76,29 @@ export interface HelpFavorState extends Omit<FavorState, "schema" | "reducer" | 
 }
 export interface HelpRequestCommand { key: string; year: number; obligation: string }
 export interface HelpResponseCommand { request: string; year: number; noise: number; appraisals: AppraisalInput[] }
+/** Current physics inputs, not a versioned checkpoint or replay authority.
+ * History is already admitted by the caller; no C event/schema version is implied. */
+export interface CurrentHelpView {
+  people: Readonly<Record<string, Person>>;
+  legacyEvents: readonly Event[];
+  grain: Readonly<Record<string, number>>;
+  assistance: Readonly<Record<string, number>>;
+  need: Readonly<Record<string, number>>;
+  obligations: readonly HelpObligation[];
+  ties: readonly DirectedTie[];
+  appraisals: readonly Appraisal[];
+  events: readonly HelpHistoryEntry[];
+}
+export interface HelpHistoryEntry {
+  id: string; kind: string; year: number; position: number; actors: readonly string[];
+  obligation?: string; request?: string;
+}
+export type HelpPhysicalLedger = Pick<HelpFavorState, "assistance" | "need" | "obligations" | "ties" | "appraisals">;
+export interface HelpResponseBatch {
+  id: string; year: number; position: number; actors: string[]; causes: string[];
+  obligation: string; request: string; effects: HelpFavorEffect[];
+}
+
 type AnyFavorState = FavorState | HelpFavorState;
 type AnyFavorEvent = FavorEvent | HelpFavorEvent;
 
@@ -205,7 +228,7 @@ function reduce(state: AnyFavorState, event: AnyFavorEvent): AnyFavorState {
   return next;
 }
 
-function reduceSupplemental(next: AnyFavorState, event: AnyFavorEvent, effect: HelpFavorEffect, index: number): void {
+function reduceSupplemental(next: Pick<FavorState, "ties" | "appraisals">, event: Pick<FavorEvent, "id" | "actors">, effect: HelpFavorEffect, index: number): void {
   record(effect);
   if (effect.kind === "tie") {
     requireFields(effect, ["kind", "origin", "actor", "counterpart", "trust", "resentment"]);
@@ -281,27 +304,44 @@ export function createHelpFavorState(people: Readonly<Record<string, Person>>, l
   return { ...base, schema: HELP_FAVOR_VERSION, reducer: HELP_FAVOR_VERSION, events: [], initialAssistance, initialNeed, assistance: { ...initialAssistance }, need: { ...initialNeed } };
 }
 
-function helpContext(state: HelpFavorState, obligationId: string, year: number): { obligation: HelpObligation; evidence: HelpEvidence } {
+export function currentHelpContext(state: CurrentHelpView, obligationId: string, year: number): { obligation: HelpObligation; evidence: HelpEvidence } {
+  ownData(state, true);
+  for (const value of [state.grain, state.assistance, state.need, state.obligations, state.ties, state.appraisals, state.events]) ownData(value);
   requireId(obligationId);
+  requireInteger(year, Number.MIN_SAFE_INTEGER);
   const obligation = state.obligations.find((entry) => entry.id === obligationId);
   if (!obligation || obligation.status !== "open") throw new Error("Expected existing open debt");
   const grant = state.events.find((entry) => entry.id === obligation.origin);
   if (!grant || grant.kind !== "grain-grant" || grant.year >= year) throw new Error("Help must follow an earlier-year grant");
   const { creditor, debtor } = obligation;
+  for (const actor of [creditor, debtor]) {
+    requireId(actor);
+    const person = Object.hasOwn(state.people, actor) ? state.people[actor] : undefined;
+    if (!person || person.birthYear > year || (person.deathYear !== undefined && person.deathYear <= year)) throw new Error("Unknown or dead actor");
+    const history = state.legacyEvents.filter((entry) => entry.year <= year);
+    if (person.away || ensureLifeState(person, history).residence.status !== "home") throw new Error("Absent actor");
+    if (!Object.hasOwn(state.grain, actor)) throw new Error("Missing explicit allocation");
+  }
   if (!Object.hasOwn(state.assistance, debtor) || !Object.hasOwn(state.need, creditor)) throw new Error("Missing explicit help resources");
   requireInteger(state.assistance[debtor], 1);
   requireInteger(state.need[creditor], 1);
   const mind = state.people[debtor]!.mind;
   const tie = state.ties.find((entry) => entry.actor === debtor && entry.counterpart === creditor);
   const policy = favorPolicy({ openDebt: true, altruism: mind.facets.altruism, anxiety: mind.facets.anxiety, wealthPreference: mind.values.wealth, trust: tie?.trust ?? 0, resentment: tie?.resentment ?? 0 });
-  return { obligation, evidence: { ...policy, feasibility: { assistance: state.assistance[debtor]!, need: state.need[creditor]! } } };
+  return { obligation: structuredClone(obligation), evidence: { ...policy, feasibility: { assistance: state.assistance[debtor]!, need: state.need[creditor]! } } };
 }
 
 /** Canonical tuple excludes prefix position, noise and transport/override identities. */
 function responseKey(request: string, year: number, actors: string[]): string {
   return JSON.stringify(["help-response", actors, year, request, "response"]);
 }
-function responseEffects(state: HelpFavorState, obligation: HelpObligation, id: string, selected: "help" | "refuse"): HelpFavorEffect[] {
+export function canonicalHelpResponseEffects(state: Pick<CurrentHelpView, "ties">, obligation: HelpObligation, id: string, selected: "help" | "refuse"): HelpFavorEffect[] {
+  ownData(state);
+  record(state);
+  requireFields(state, ["ties"]);
+  ownData(obligation);
+  requireId(id);
+  if (selected !== "help" && selected !== "refuse") throw new Error("Unknown help choice");
   const { creditor, debtor } = obligation;
   const effects: HelpFavorEffect[] = [{ kind: "settlement", id: obligation.id, origin: obligation.origin, creditor, debtor, status: selected === "help" ? "fulfilled" : "broken" }];
   if (selected === "help") effects.push({ kind: "assistance", from: debtor, to: creditor, amount: 1 });
@@ -312,8 +352,47 @@ function responseEffects(state: HelpFavorState, obligation: HelpObligation, id: 
   return effects;
 }
 
+/** Stage physical consequences only. The caller owns version/identity, policy
+ * selection, admitted history and log assembly; this is not replay admission. */
+export function applyHelpResponsePhysics(state: CurrentHelpView, batch: HelpResponseBatch, selected: "help" | "refuse"): HelpPhysicalLedger {
+  ownData(batch);
+  record(batch);
+  requireFields(batch, ["id", "year", "position", "actors", "causes", "obligation", "request", "effects"]);
+  requireId(batch.id);
+  requireId(batch.request);
+  requireInteger(batch.position, 0);
+  array(batch.actors);
+  array(batch.causes);
+  array(batch.effects);
+  const { obligation } = currentHelpContext(state, batch.obligation, batch.year);
+  const actors = [obligation.creditor, obligation.debtor];
+  if (encoding(batch.actors) !== encoding(actors)) throw new Error("Help parties mismatch");
+  if (batch.position !== state.events.length || state.events.some((entry) => entry.id === batch.id)) throw new Error("Repeated or unordered commit");
+  const last = state.events.at(-1);
+  if (last && batch.year < last.year) throw new Error("Time reversal");
+  const request = state.events.find((entry) => entry.id === batch.request);
+  if (!request || request.kind !== "help-request" || request.obligation !== obligation.id || request.year > batch.year || request.position >= batch.position || encoding(request.actors) !== encoding(actors)) throw new Error("Invalid request identity/frontier");
+  if (state.events.some((entry) => entry.kind === "help-response" && entry.request === request.id)) throw new Error("Repeated response");
+  if (encoding(batch.causes) !== encoding([obligation.origin, request.id])) throw new Error("Invalid response causes");
+  const expected = canonicalHelpResponseEffects({ ties: state.ties }, obligation, batch.id, selected);
+  if (encoding(batch.effects.slice(0, expected.length)) !== encoding(expected)) throw new Error("Noncanonical response effects");
+  const next: HelpPhysicalLedger = structuredClone({ assistance: state.assistance, need: state.need, obligations: [...state.obligations], ties: [...state.ties], appraisals: [...state.appraisals] });
+  batch.effects.forEach((effect, index) => {
+    if (index < expected.length && effect.kind === "settlement") {
+      next.obligations.find((entry) => entry.id === obligation.id)!.status = effect.status;
+    } else if (index < expected.length && effect.kind === "assistance") {
+      next.assistance[obligation.debtor]!--;
+      next.need[obligation.creditor]!--;
+    } else {
+      if (index >= expected.length && effect.kind !== "appraisal") throw new Error("Only explicit appraisals may follow response effects");
+      reduceSupplemental(next, batch, effect, index);
+    }
+  });
+  return next;
+}
+
 function reduceHelp(state: HelpFavorState, event: HelpFavorEvent): HelpFavorState {
-  const { obligation, evidence } = helpContext(state, event.obligation!, event.year);
+  const { obligation, evidence } = currentHelpContext(state, event.obligation!, event.year);
   const actors = [obligation.creditor, obligation.debtor];
   if (encoding(event.actors) !== encoding(actors)) throw new Error("Help parties mismatch");
   let expected: HelpFavorEffect[] = [];
@@ -330,22 +409,15 @@ function reduceHelp(state: HelpFavorState, event: HelpFavorEvent): HelpFavorStat
     const noise = event.evidence.noise!;
     const selected = selectFavorResponse(evidence.factors, noise);
     Object.assign(evidence, { noise, selected });
-    expected = responseEffects(state, obligation, event.id, selected);
+    expected = canonicalHelpResponseEffects({ ties: state.ties }, obligation, event.id, selected);
     if (encoding(event.effects.slice(0, expected.length)) !== encoding(expected)) throw new Error("Noncanonical response effects");
   } else throw new Error("Unsupported help event");
   if (encoding(event.evidence) !== encoding(evidence)) throw new Error("Stale or forged consumed evidence");
   const next = structuredClone(state);
-  event.effects.forEach((effect, index) => {
-    if (index < expected.length && effect.kind === "settlement") {
-      next.obligations.find((entry) => entry.id === obligation.id)!.status = effect.status;
-    } else if (index < expected.length && effect.kind === "assistance") {
-      next.assistance[obligation.debtor]!--;
-      next.need[obligation.creditor]!--;
-    } else {
-      if (index >= expected.length && effect.kind !== "appraisal") throw new Error("Only explicit appraisals may follow response effects");
-      reduceSupplemental(next, event, effect, index);
-    }
-  });
+  if (event.kind === "help-response") {
+    const { id, year, position, actors, causes, effects } = event;
+    Object.assign(next, applyHelpResponsePhysics(state, { id, year, position, actors, causes, effects, obligation: obligation.id, request: event.request! }, evidence.selected!));
+  }
   next.events.push(structuredClone(event));
   return next;
 }
@@ -358,7 +430,7 @@ export function requestHelp(state: HelpFavorState, command: HelpRequestCommand):
   requireInteger(command.year, Number.MIN_SAFE_INTEGER);
   const validated = validateState(state);
   if (validated.schema !== HELP_FAVOR_VERSION) throw new Error("Expected C state");
-  const { obligation, evidence } = helpContext(validated, command.obligation, command.year);
+  const { obligation, evidence } = currentHelpContext(validated, command.obligation, command.year);
   return reduce(validated, { version: HELP_FAVOR_VERSION, id: identity(command.key, HELP_FAVOR_VERSION), key: command.key, ordinal: 0, kind: "help-request", year: command.year, position: validated.events.length, actors: [obligation.creditor, obligation.debtor], causes: [obligation.origin], obligation: obligation.id, evidence, effects: [] });
 }
 
@@ -373,13 +445,13 @@ export function respondHelp(state: HelpFavorState, command: HelpResponseCommand)
   if (validated.schema !== HELP_FAVOR_VERSION) throw new Error("Expected C state");
   const request = validated.events.find((entry) => entry.id === command.request);
   if (!request || request.kind !== "help-request") throw new Error("Unknown request");
-  const { obligation, evidence } = helpContext(validated, request.obligation!, command.year);
+  const { obligation, evidence } = currentHelpContext(validated, request.obligation!, command.year);
   const selected = selectFavorResponse(evidence.factors, command.noise);
   Object.assign(evidence, { noise: command.noise, selected });
   const actors = [obligation.creditor, obligation.debtor];
   const key = responseKey(request.id, command.year, actors);
   const id = identity(key, HELP_FAVOR_VERSION);
-  const effects = responseEffects(validated, obligation, id, selected);
+  const effects = canonicalHelpResponseEffects({ ties: validated.ties }, obligation, id, selected);
   for (const appraisal of command.appraisals) {
     record(appraisal);
     requireFields(appraisal, ["actor", "interpretation", "intensity"]);
@@ -431,7 +503,7 @@ export function helpOpportunities(input: HelpFavorState, year: number): { state:
     if (state.assistance[debtor] === 0) return { ...candidate, reason: "exhausted-assistance" };
     if (!Object.hasOwn(state.need, creditor)) return { ...candidate, reason: "missing-need" };
     if (state.need[creditor] === 0) return { ...candidate, reason: "no-need" };
-    helpContext(state, id, year);
+    currentHelpContext(state, id, year);
     return { ...candidate, reason: null };
   });
   return { state, candidates };

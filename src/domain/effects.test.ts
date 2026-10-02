@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as physics from "./effects";
 import { createMind } from "./mind";
 import type { Event, Person } from "./types";
 import { applyFavorEvent, createFavorState, grantFavor, replayFavorEvents, createHelpFavorState, grantHelpFavor, requestHelp, respondHelp, applyHelpFavorEvent, replayHelpFavorEvents, helpOpportunities, type FavorCommand, type FavorEvent } from "./effects";
@@ -26,6 +27,156 @@ const responded = (noise = 0.1) => {
   const input = requested();
   return respondHelp(input, { request: input.events[1]!.id, year: 1337, noise, appraisals: [] });
 };
+
+describe("shared help physics (not checkpoint admission)", () => {
+  const batch = (noise = 0.1) => {
+    const event = responded(noise).events.at(-1)!;
+    const { id, year, position, actors, causes, obligation, request, effects } = event;
+    return { id, year, position, actors, causes, obligation: obligation!, request: request!, effects };
+  };
+  const ledger = (value: ReturnType<typeof requested>) => {
+    const { assistance, need, obligations, ties, appraisals } = value;
+    return { assistance, need, obligations, ties, appraisals };
+  };
+  it("preserves the pre-extraction C evidence/resource/tie JSON and ordering", () => {
+    const next = responded();
+    expect(JSON.stringify({ evidence: next.events.at(-1)!.evidence, assistance: next.assistance, need: next.need, ties: next.ties, appraisals: next.appraisals })).toBe('{"evidence":{"factors":{"openDebt":true,"altruism":50,"anxiety":50,"wealthPreference":0,"trust":0,"resentment":0},"options":["help","refuse"],"distribution":[0.6000000000000001,0.3999999999999999],"feasibility":{"assistance":2,"need":2},"noise":0.1,"selected":"help"},"assistance":{"b":1},"need":{"a":1},"ties":[{"actor":"a","counterpart":"b","trust":5,"resentment":0}],"appraisals":[]}');
+  });
+  it.each([0.1, 0.9])("matches C physical consequences without requiring C schema: %s", (noise) => {
+    const input = requested();
+    const view: physics.CurrentHelpView = { people: input.people, legacyEvents: input.legacyEvents, grain: input.grain, assistance: input.assistance, need: input.need, obligations: input.obligations, ties: input.ties, appraisals: input.appraisals, events: input.events };
+    expect(view).not.toHaveProperty("schema");
+    const before = structuredClone(view);
+    const context = physics.currentHelpContext(view, input.obligations[0]!.id, 1337);
+    const selected = noise === 0.1 ? "help" : "refuse";
+    const response = batch(noise);
+    expect(physics.canonicalHelpResponseEffects({ ties: view.ties }, context.obligation, response.id, selected)).toEqual(response.effects);
+    const result = physics.applyHelpResponsePhysics(view, response, selected);
+    expect(result).toEqual(ledger(responded(noise)));
+    expect(view).toEqual(before);
+    expect(result.obligations).not.toBe(view.obligations);
+    expect(result).not.toHaveProperty("people");
+    expect(result).not.toHaveProperty("events");
+  });
+  it.each(["effects", "request", "actors", "year", "causes", "position", "duplicate", "closed", "exhausted", "need", "stale"]) ("rejects invalid current batches atomically: %s", (kind) => {
+    const input = requested();
+    const response = batch();
+    if (kind === "effects") response.effects.push(response.effects[0]!);
+    if (kind === "request") response.request = "unknown";
+    if (kind === "actors") response.actors.reverse();
+    if (kind === "year") response.year = 1336;
+    if (kind === "causes") response.causes.reverse();
+    if (kind === "position") response.position++;
+    if (kind === "duplicate") input.events.push(responded().events.at(-1)!);
+    if (kind === "closed") input.obligations[0]!.status = "fulfilled";
+    if (kind === "exhausted") input.assistance.b = 0;
+    if (kind === "need") delete input.need.a;
+    if (kind === "stale") input.ties.push({ actor: "a", counterpart: "b", trust: 99, resentment: 0 });
+    const before = structuredClone(input);
+    expect(() => physics.applyHelpResponsePhysics(input, response, "help")).toThrow();
+    expect(input).toEqual(before);
+  });
+  it.each(["help", "refuse"] as const)("retains bounded deltas and explicit appraisals: %s", (selected) => {
+    const initial = helpState();
+    const grant = grantHelpFavor(initial, { ...command(), ties: [{ actor: "a", trust: selected === "help" ? 99 : -99, resentment: 99 }] });
+    const input = requestHelp(grant, { key: "request", year: 1337, obligation: grant.obligations[0]!.id });
+    const noise = selected === "help" ? 0.1 : 0.9;
+    const next = respondHelp(input, { request: input.events.at(-1)!.id, year: 1337, noise, appraisals: [{ actor: "b", interpretation: "resentment", intensity: 40 }] });
+    const event = next.events.at(-1)!;
+    const { id, year, position, actors, causes, effects } = event;
+    const response = { id, year, position, actors, causes, effects, obligation: event.obligation!, request: event.request! };
+    const before = structuredClone(input);
+    expect(physics.applyHelpResponsePhysics(input, response, selected)).toEqual(ledger(next));
+    expect(next.ties[0]).toMatchObject({ trust: selected === "help" ? 100 : -100, resentment: selected === "help" ? 99 : 100 });
+    expect(next.appraisals[0]).toMatchObject({ actor: "b", interpretation: "resentment", intensity: 40, origin: id });
+    response.effects.push({ kind: "appraisal", id: `${id}/appraisal/${effects.length}`, origin: "wrong", actor: "b", interpretation: "gratitude", intensity: 40 });
+    expect(() => physics.applyHelpResponsePhysics(input, response, selected)).toThrow();
+    expect(input).toEqual(before);
+  });
+  it("revalidates last effort and need between staged responses", () => {
+    let input = createHelpFavorState(people(), [], { a: 2, b: 0 }, { b: 1 }, { a: 1 });
+    input = grantHelpFavor(input, command("first"));
+    input = grantHelpFavor(input, command("second"));
+    input = requestHelp(input, { key: "first-request", year: 1337, obligation: input.obligations[0]!.id });
+    input = requestHelp(input, { key: "second-request", year: 1337, obligation: input.obligations[1]!.id });
+    const makeBatch = (index: number) => {
+      const obligation = input.obligations[index]!;
+      const id = `physical-${index}`;
+      return { id, year: 1337, position: input.events.length, actors: ["a", "b"], causes: [obligation.origin, input.events[index + 2]!.id], obligation: obligation.id, request: input.events[index + 2]!.id, effects: physics.canonicalHelpResponseEffects({ ties: input.ties }, obligation, id, "help") };
+    };
+    const first = makeBatch(0);
+    const second = makeBatch(1);
+    const changed: physics.CurrentHelpView = { ...input, ...physics.applyHelpResponsePhysics(input, first, "help"), events: [...input.events, { ...first, kind: "help-response" }] };
+    second.position++;
+    expect(changed.assistance.b).toBe(0);
+    expect(changed.need.a).toBe(0);
+    const before = structuredClone(changed);
+    for (const selected of ["help", "refuse"] as const) expect(() => physics.applyHelpResponsePhysics(changed, second, selected)).toThrow();
+    expect(changed).toEqual(before);
+  });
+  it.each(["prototype", "sparse", "undefined", "array-hook", "root-undefined-hook"])("rejects non-data helper inputs without hooks: %s", (kind) => {
+    const input = requested();
+    let calls = 0;
+    const root = { ties: input.ties };
+    if (kind === "prototype") Object.setPrototypeOf(root, { get toJSON() { calls++; return () => ({}); } });
+    if (kind === "sparse") root.ties = new Array(1);
+    if (kind === "undefined") root.ties = [undefined] as never;
+    if (kind === "array-hook") Object.defineProperty(root.ties, "toJSON", { enumerable: true, get: () => { calls++; return () => []; } });
+    if (kind === "root-undefined-hook") Object.assign(root, { toJSON: undefined });
+    expect(() => physics.canonicalHelpResponseEffects(root, input.obligations[0]!, "response", "help")).toThrow();
+    expect(calls).toBe(0);
+  });
+  it.each(["prototype", "sparse", "undefined-hook", "unknown-choice"])("rejects malformed physical batches atomically: %s", (kind) => {
+    const input = requested();
+    const before = structuredClone(input);
+    const response = batch();
+    let calls = 0;
+    if (kind === "prototype") Object.setPrototypeOf(response, { get toJSON() { calls++; return () => ({}); } });
+    if (kind === "sparse") delete response.effects[0];
+    if (kind === "undefined-hook") Object.assign(response, { toJSON: undefined });
+    expect(() => physics.applyHelpResponsePhysics(input, response, kind === "unknown-choice" ? "machine-consent" as never : "help")).toThrow();
+    expect(input).toEqual(before);
+    expect(calls).toBe(0);
+  });
+  it("retains legacy optional absence without returning a live obligation alias", () => {
+    const input = requested();
+    input.people.b!.deathYear = undefined;
+    const before = structuredClone(input);
+    const context = physics.currentHelpContext(input, input.obligations[0]!.id, 1337);
+    context.obligation.status = "broken";
+    expect(input).toEqual(before);
+    expect(() => respondHelp(input, { request: input.events[1]!.id, year: 1337, noise: 0.1, appraisals: [] })).not.toThrow();
+  });
+  it("preserves strict C commands, checkpoints and mixed-log rejection", () => {
+    const input = requested();
+    const authority = { source: "human", choice: "help" };
+    expect(() => respondHelp(input, { request: input.events[1]!.id, year: 1337, noise: 0.9, appraisals: [], authority } as never)).toThrow();
+    expect(() => requestHelp(input, { key: "other", year: 1337, obligation: input.obligations[0]!.id, authority } as never)).toThrow();
+    expect(() => replayHelpFavorEvents({ ...input, authority } as never, [])).toThrow();
+    const event = responded().events.at(-1)!;
+    expect(() => applyHelpFavorEvent(input, { ...event, authority } as never)).toThrow();
+    expect(() => replayHelpFavorEvents(input, [{ ...event, version: "favor-authority-d2a" } as never])).toThrow();
+    expect(() => grantHelpFavor(helpState(), { ...command(), authority } as never)).toThrow();
+    expect(() => createHelpFavorState(input as never, [], { a: 1, b: 0 }, { b: 1 }, { a: 1 })).toThrow();
+  });
+  it("guards the canonical-effects root before reading ties", () => {
+    let calls = 0;
+    const input = requested();
+    const root = Object.defineProperty({}, "ties", { enumerable: true, get: () => { calls++; return input.ties; } });
+    expect(() => physics.canonicalHelpResponseEffects(root as Pick<physics.CurrentHelpView, "ties">, input.obligations[0]!, "response", "help")).toThrow();
+    expect(calls).toBe(0);
+  });
+  it("rejects descriptor hooks before execution", () => {
+    let calls = 0;
+    const response = batch();
+    Object.defineProperty(response.effects[0], "status", { enumerable: true, get: () => { calls++; return "fulfilled"; } });
+    expect(() => physics.applyHelpResponsePhysics(requested(), response, "help")).toThrow();
+    const input = requested();
+    Object.defineProperty(input.assistance, "b", { enumerable: true, get: () => { calls++; return 2; } });
+    expect(() => physics.currentHelpContext(input, input.obligations[0]!.id, 1337)).toThrow();
+    expect(calls).toBe(0);
+  });
+});
 
 describe("C-only opportunity admission", () => {
   it("admits detached state and differentiates too-early, viable, pending and closed debts", () => {

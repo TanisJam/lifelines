@@ -496,6 +496,25 @@ Normalization precedes hashing/admission, so declared absence and supported own 
 This is a narrow versioned wire, not a generic historical codec/migration framework, Proxy sandbox,
 portability/scaling claim, SQLite/storage integration or production canonical-input capture.
 
+### D2a preparation: shared help physics, C admission unchanged
+
+`effects.ts` separates current help physics from C's versioned response admission. This is a
+preparation seam only: **no D authority record, D projection, fork or storage admission exists yet**.
+
+| Helper | Responsibility and boundary |
+|---|---|
+| `CurrentHelpView` / `currentHelpContext` | Borrow the caller's one admitted people registry, current ledgers and admitted structural history, without claiming a C schema/event version. Check open debt, earlier grant, living/present actors, explicit current effort/need, and consumed policy factors. Return detached context; do not decode checkpoints or reconstruct historical people. |
+| `canonicalHelpResponseEffects` | Accept only a guarded `{ ties }` input plus obligation, event identity and help/refuse choice. Produce existing settlement, optional one-unit assistance and bounded creditor-directed trust/resentment deltas. This does not authorize the choice or select policy/noise. |
+| `applyHelpResponsePhysics` | Recheck current feasibility, ordered parties, request/frontier, duplicate response and causes; require the exact canonical physical batch, followed only by valid explicit appraisals. Stage detached ledgers atomically; return no registry or event log. The caller owns admitted history, version/semantic identity, policy authority and log assembly. |
+
+Descriptor-first guards precede helper reads; existing legacy Person optional undefined values
+remain supported at the current-view boundary, while physical batches and tie inputs are strict
+own-data. No automatic appraisal, subjective fear, regenerated capacity or second world is added.
+C constructors/imports still enforce `favor-c1`, exact command/event/checkpoint fields and
+noise-selected consequences; D-shaped authority extensions and mixed versions reject. C2 and D1
+remain unchanged. Tests preserve pre-extraction C evidence/resource/tie JSON and cover help/refusal,
+bounded deltas, explicit appraisals, last-resource revalidation, atomic rejection and zero hooks.
+
 ### A-baseline: reproducible local measurements
 
 **Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,
