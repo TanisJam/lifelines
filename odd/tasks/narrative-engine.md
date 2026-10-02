@@ -1,68 +1,64 @@
 # Narrative engine — ODD tasks
 
-## Contract
-Implement `docs/design/narrative-engine.md`: deterministic model-free reality, persistent causes, opportunity-only director, read-only narrative selection. Hidden activity is selection material, not displayed-card quotas. User authorized stepwise implementation and local commits; no push, PR, merge or deployment.
+## Authority and invariants
+User authorized stepwise implementation and local work-unit commits on `feat/narrative-engine`; no push/PR/merge/deploy. Original main `d5d9ad5`; current boundary `4492d53d7c9417540d39d50ae602cf8db286a115`. Preserve pre-existing `.claude/`. Single writer; independent read-only agents may run concurrently. English artifacts/Spanish conversation. Applicable behavior uses observed RED → GREEN; independent/native review before commit.
 
-Branch `feat/narrative-engine`, original main `d5d9ad5`, current boundary `62e73d803836a552a03eff50d0db2e1beb47ab73`. Preserve pre-existing `.claude/`. One writer, independent readers/verifiers may run concurrently. English artifacts/Spanish conversation. Observed RED → GREEN for applicable deterministic behavior. Detailed evidence is in commits, design and Engram observations6961/6962; this file and full mirror6902 track current work.
+Source contract: `docs/design/narrative-engine.md`; handoff `/home/tanisjam/Downloads/lifelines_narrative_engine_handoff.md`. Deterministic model-free canon, persistent causes, opportunity-only director, read-only selection. Hidden activity is material, not a displayed-card quota. Frozen A-v1 behavior remains unchanged; B/C prototypes are explicit distinct versions. No duplicated people/obligation/tie worlds. Final persisted Person/lifeState is not an as-of projection; use frontier-valid inputs.
 
-## Closed units
+This is the full current task document, mirrored in Engram6902/topic `odd/narrative-engine/tasks`. Detailed closed-unit evidence is retained in commits/design and observations6961–6967, not repeated here. Update document/mirror/UI on transitions. Local delivery remains separately authorized; review does not authorize publishing.
 
-### A — Replay
-- [x] Implement strict versioned replay and independent validation.
+## Closed work units
 
-Design `0acd452626203f596f71817a13980bb541d25032`; A `927c346094091e0b11b2bd3dd2159b70e004b0b2`. Complete initial people/events/effective options/registry order, strict canonical SHA256. No production/kernel/storage/forks or arbitrary historical-override changes. Independent bond-coercion/accessor defects:7RED→44GREEN;44PASS Node24/26,type/lint PASS. Earlier simulator timeout120s then77PASS/136.23s. Native `review-27ef7f8639835ce6` approved/acknowledged. A-v1 tuple/projection/rules remain frozen.
+### A — Deterministic replay
+- [x] Implement standalone strict replay.
+Design `0acd452626203f596f71817a13980bb541d25032`; A `927c346094091e0b11b2bd3dd2159b70e004b0b2`. Complete initial people/events/options/registry order, strict canonical SHA256, independent replay; no production/kernel/storage/forks or arbitrary historical overrides. Independent bond/accessor defects:7RED→44GREEN;44PASS Node24/26/type/lint. Earlier simulator120s timeout then77PASS/136.23s. Native `review-27ef7f8639835ce6` approved/acknowledged.
 
-### A-baseline — Corpus
-- [x] Measure actual paired replay evidence.
+### A-baseline — Actual corpus
+- [x] Measure reproducible paired runs.
+Commit `b68305478e899b64d788dca6f2ae9992b3b7442f`,357+/44-. Stdout-only CLI: RED→5GREEN, combined49PASS Node24/26/type/lint/whitespace. Four seeds/eight worlds+replays match canonical/raw counts;1327–1362/six founders/Alice-f, initial11people. Reached1327/1351/1328/1349, events1/124/4/94; two early deaths/none cap/no hazard fallback. Largest snapshots Node26:5,661,675raw/686,099gzip6/55,182Brotli5; Node24gzip686,079. Incorrect gzip-equality verifier assumption corrected without code change. No general portability/p95/peak heap/scaling claim. Native `review-8465a3307a368533` consumed.
 
-Commit `b68305478e899b64d788dca6f2ae9992b3b7442f`,357+/44-. Stdout-only CLI/tests; RED→5GREEN, combined49 independently PASS Node24/26,type/lint/whitespace. Native `review-8465a3307a368533` approved/acknowledged.
+### B — Atomic grant and obligation
+- [x] Implement conserved grant/effect replay.
+Commit `62e73d803836a552a03eff50d0db2e1beb47ab73`,577+/26-. `favor-b1`, explicit safe-integer grain1 grant/open HELP debt, directed bounded supplemental ties, separate source-linked appraisals; no inferred wealth/gratitude/repayment. Immutable batch/prefix reconstruction/strict causal and own-data admission. Array-hook defect independently reproduced despite92green; correction8RED/44PASS→52GREEN,9regressions. Independent101PASS Node24/26/type/lint/whitespace; zero hooks, B JSON compatibility. Native `review-685fd5bf5a7048de` approved/acknowledged. No legacy schema, authenticated provenance, scaling or Proxy/global-monkeypatch guarantee.
 
-Four seeds1327–1362/six founders/Alice-f, initial population11; eight independent worlds/replays match. Reached1327/1351/1328/1349; generated1/124/4/94events,13/594/37/491decisions,7/212/15/186calls; no fallback. Two early deaths, none cap;1326checkpoint excluded from simulated years. Largest snapshots Node26:5,661,675raw/686,099gzip6/55,182Brotli5; Node24gzip686,079. Canonical/raw counts match these four cases. Incorrect gzip-equality verifier assertion corrected without source changes. No universal portability/p95/peak heap/scaling claim.
+### C1 — Atomic causal response
+- [x] Implement grant → request → response with meaningful debt influence.
+Commit `4492d53d7c9417540d39d50ae602cf8db286a115`,631+/79-. `favor-c1`, no implicit B upgrade. Explicit assistance/need; later request after earlier-year grant, response-current factors recomputed. Help consumes1effort/need and fulfills; feasible refusal breaks without consumption. Ineligibility is not refusal; policy debtor→creditor, bounded actual consequence creditor→debtor (trust±5/refusal resentment+5). No automatic appraisals/typed fear. Calibrated-later probability defaults .10–.90; neutral open-debt salience .60 versus masked .40, wealth preference is mind.values.wealth. Explicit validated uniform noise, semantic identity excludes noise/prefix count.
+Writer28RED/52PASS+missing-policy→97GREEN→118focused; independent178PASS Node24/26/type/lint/whitespace,14adversarial rejects/zero hooks, exact B JSON retained. Parent hashes matched. Native `review-f755280e7732c6e1` medium710/reliability approved+acknowledged; targetae962ef41a9e0236ae6ab5ce88c67148ef71e69ee8dc719856ff72021c6e2af4/revision51bc75414f0f073c2427d3efed5ddf1a3cbaf5b062635b7608b43ef55f50f690 burned. C1 alone does not close C.
 
-### B — Atomic favor
-- [x] Implement and verify standalone conserved grant/effect replay.
+## Active work unit
 
-Commit `62e73d803836a552a03eff50d0db2e1beb47ab73`,577+/26-, six reviewed files. `effects.ts`245/tests233, obligations30/tests13, design+27. Distinct `favor-b1` state/event/reducer; existing Person identity/liveness/location authority, one obligations/ties collection, no legacy schema/axes/kinship changes or obligation mirrors.
+### C2 — Seeded multiple opportunities
+- [ ] Verify/review/commit standalone scheduler; close causal demonstration.
+Mapper `murdn1lt-k-06hp` complete; writer `murdx74s-l-rqk2` returned. Independent `muree7wi-m-y2g6` completed with no material findings. ASSESS unassessable undeclared-untracked scope requires independent verification. Native review/local commit pending; no task closure yet.
 
-Explicit safe-integer nonnegative grain; grant1 opens objective HELP debt, not automatic grain repayment. Directed trust[-100,100]/resentment[0,100], legacy strength/bond unchanged. Source-linked supplied subjective appraisals may disagree, no automatic gratitude or objective-motive inference. Immutable full-batch staging; strict identities/versions/effects/actors/origins, duplicate retries, complete-prefix checkpoint reconstruction, earlier-position/year causes. Reject missing/self/future/cyclic causes; same-year dead/absent actors; legacy fallback uses pure ensureLifeState. No market/currency/UI/typed fear.
+Allowed surfaces: scheduler.ts/test, additive C-only opportunity/admission helper in effects.ts/test, concise design. All domain files under src/domain. Existing C1/B/A command/replay/version behavior, obligations/policy/RNG/production/types/mind/life-state/storage/UI/deps read-only.
 
-Writer43focused/92combinedPASS; independent92PASS Node24/26 but P2 custom-array hooks reproduced (key.toJSON before rejection; empty replay.iterator injected grant). Correction8RED/44PASS→52GREEN,9regressions. Arrays require exact Array.prototype before traversal; primitives validate before identity. Independent `murcgeuy-g-rw5w`:101PASS Node24/26,type/lint/whitespace; original/nested hooks reject with0executions, ordinary arrays/null-prototype records/JSON/empty checkpoints PASS. Prototype-preservation verifier assertion corrected as harness assumption. JSON equality is data equality.
+Contract: versioned envelope has one C world, seed, initial/completed-year frontier, original-prefix index and annual attempt evidence. Quiet years persist frontier; same-year/backwards/behind-event execution rejects. Monotonic gaps explicitly allowed, absent years not simulated. Metadata admission reconstructs initial prefix transiently and reproduces annual evidence/effects; forged metadata/suffix rejects, no authenticated authorship claim.
 
-Parent hashes matched effects `c7c114a045124ba35dca04fbf4914aca1aef64184dd61868762ee81d2ec786c6`, tests `5e3fb6962453ca64b60d3ba52d8610a88f4761ba28b8e7aae2fefc766d66c82f`. Native `review-685fd5bf5a7048de`, medium603diff/reliability approved and acknowledged: burned target779dfd234a045b306df93c99ab4afda76f23f8996b4ce654f4b480ed331e98a5/revision77fdc774f244926ab621995df2d0c51f1107e60148aed370ed358ec0ffd4ab1c. Commit poststatus only `.claude/`.548source/test/design additions exceed advisory280–420 but retain coherent grant/replay behavior. No authenticated provenance/scaling/Proxy/global-monkeypatch guarantees.
+Exactly2slots PER creditor/year, canonical UTF8 creditor/debt ordering with deterministic raw-string fallback for lone-surrogate byte collisions. First currently eligible debt per slot; independent .25 activation, quiet/no-target consumes no draw; inactive records activation only. Immediate C1 request/response with appraisals[], revalidate between slots/creditors; no duplicate settlement, resampling, regeneration or annual-hazard/provider invocation. All viable factors validated before activation, including quiet outcomes. Explicit eligibility reasons; malformed checkpoints/references/resources/factors throw, never catchall skip.
 
-## Current and pending units
+Canonical scheduler/RNG-version/rule/ordered-actors/year/slot/debt/purpose keys; seed+key transported as one canonical variable RNG argument to avoid delimiter ambiguity. No prefix/draw/transport identity in semantic keys. Unrelated-creditor keys/draws/IDs stable; same-creditor competition may change target, log positions may shift. Single state registry, no world mirror.
 
-### C1 — Atomic help response
-- [ ] Implement request/response and obligation-sensitive policy.
+Writer evidence:455+/1- (456changed), five files, stayed within scope. Missing scheduler/API RED1failed/119PASS+suitefailure→153GREEN→161focused. Combined221PASS C2/C1/B/A/RNG Node26.8.1/type/lint/tracked+untracked whitespace. Seeds c2-1/c2-2/c2-11 demonstrate two requests/zero/refusal; tests cover shared last effort/need, pending/dead/away/too-early, JSON restoration/quiet frontier/forged suffix, Unicode order, identity isolation/zero-hook/dependency traps. Historical RED writer evidence only.
 
-In progress; explorer `murcn0qj-h-wnwc` completed mapping, writer `murcxzrf-i-72w7` returned implementation. Independent verifier `murde09e-j-b4pd` running; native review/commit pending. Standalone demonstration before production D/E; C1 alone does not close C. Explicit C factory/state/events/reducer, e.g. `favor-c1`, shared narrow machinery; retain B admission/replay unchanged, reject mixed versions/no silent upgrade. One Person registry/obligations/ties collection. Frontier-valid fixtures: final persisted lifeState is not an as-of projection.
+Hashes: scheduler172be6bc692ee9fbf9ebc5481321ddb9a8331a0cfcf16fc28a1d8be797c838be/teste9ad0e708931ca058ddbcbb11fc49c4c58db1d257f4b6ed16c45f8b9bd6a3b75; effects58e6e477c239e75d72b5597a82764ac5c0fb12337f6839822e28b2def82c5b1e/test04944056fabe3581299903c691975e914380c667e19aeef85b97db29d22efb67; design73fe706f62b9f3b881457be64fa4cd50fc31b4965c3d7b794436c8c739f04143. Independent221PASS on Node26.8.1 (1.15s) and Node24.21.0 (929ms), type/lint/whitespace PASS, source/design hashes unchanged.20adversarial cases rejected (frontier/prefix/noise/outcomes/IDs/records/events/quiet-year repetition/inactive malformed factors/hooks), zero hooks/unexpected admissions; quiet JSON restoration+next year equals uninterrupted execution. Native review/commit pending. Isolation is not production integration or scaling evidence.
 
-Grant1336→request1337+→response, strictly earlier causes/source origins. Help consumes1explicit abstract assistance-capacity unit, not grain repayment; explicit safe-integer current need, no implicit regeneration. Alive/present parties, matching open debt/capacity/need required; ineligibility is not refusal. Objective open→fulfilled/broken; creditor-directed actual bounded trust delta at most±5, refusal resentment at most+5. No automatic gratitude/typed fear. Evidence records ordered options, validated consumed factors/normalized distribution/draw; revalidate response frontier, reject stale evidence. Counterfactual debt masking is pure policy, not forged checkpoint.
+## Pending work units
 
-Calibrated-later engineering default, not historical claim: p(help)=clamp(.10,.90,.40+.20*debt+(altruism−50)/500−(anxiety−50)/1000−wealthPreference/500+trust/1000−resentment/1000), mapped to actual existing fields. Neutral debt salience .60 versus .40, both help/refuse possible. Need/resource semantics explicitly documented. No large annual-rules rewrite.
+### D — Persistence and forks
+- [ ] Persist provenance/event-decision prefixes.
+Depends A/C. Explicit migration/versioning, cold-load equality, stable prefix IDs/inherited overrides, no fabricated canon; storage/suffix gate first.
 
-Writer evidence: scoped568+/41- (609changed), no scheduler/production expansion. RED28failures/52PASS plus missing-policy suite;97initial GREEN→118focused final PASS. Combined178PASS (C/B/A+RNG) Node26.8.1, typecheck PASS after two readonly fixture assignment fixes, exact-six-file ESLint/whitespace PASS. Source hashes effects94c7eaf2e27a52c441a649c4c8a1121a1327178e9c1f9020934023bb40e3421f/tests48aa0a0269f3030360006585da1d3289c443cd42673252f9069217a891920310. Existing wealth preference confirmed mind.values.wealth; policy debtor→creditor, effects creditor→debtor. Explicit-noise selection/response identity excludes noise/prefix length; seeded draws deferred C2. ASSESS unassessable undeclared untracked scope mandates independent verifier; Node24/native review/commit pending. Historical RED is writer evidence, not independent rerun.
-
-Allowed C1 surfaces: effects.ts/test, obligations.ts/test, new favor-policy.ts/test, concise design section; tracker parent-owned. All under src/domain except design. Types/mind/life-state/rng/events/decision-id/simulate/replay/production/UI/storage/deps read-only. RED tests: both outcomes, meaningful debt influence, invalid/dead/away/missing/exhausted/closed atomic rejection, strict imported effects/causes/evidence/duplicates, JSON replay and unchanged prefix/factors after suffix. Focused+C/B/A+RNG tests, Node24/26 independent verification, type/lint/whitespace/native approval before local commit.
-
-### C2 — Multiple opportunities
-- [ ] Schedule bounded annual requests and revalidate conflicts.
-
-Pending C1. New scheduler.ts/test only plus narrowly derived integration surfaces. Up to2opportunities/creditor/year, independent activation .25/slot, quiet outcomes; no production annual hazards/providers called. Canonical tuple rule/ordered-parties/year/slot/purpose keys exclude log position/override transport identity. Stable candidate ordering, post-commit revalidation; no double capacity use/closure. Tests multiple/zero requests, conflicts, repeated seeds/JSON restoration/reversed candidate order, unrelated draws/semantic IDs unchanged (positions may shift). This proves isolation, not production integration. Combined C exceeds advisory400lines: split behavior, never tests/docs or compressed code.
-
-### D — Persistence/forks
-- [ ] Persist provenance and event-decision prefixes.
-Pending A/C; explicit migration/versioning, cold-load equality, stable prefix IDs/inherited overrides, no fabricated canon. Storage/suffix gate first.
-
-### E — Selection/production
+### E — Selection and production
 - [ ] Integrate live/final selection, model-free canon and annual SSE.
-Pending C/D; no hindsight leakage, causal context, canonical model removal including initialization, quiet progress/cancel/completed persistence. Compression/editability/time gate first.
+Depends C/D. No hindsight leakage, causal context, canonical model removal including initialization, quiet progress/cancel/completed persistence; compression/editability/time gate first.
 
-### F — Director/calibration
-- [ ] Add bounded deterministic opportunity weights and measured corpus comparison.
-Pending C/E; clamp/cooldown/no-op, no outcome/eligibility authority/drama quotas. Runtime/storage/consequence/variation budgets first.
+### F — Director and calibration
+- [ ] Add bounded deterministic opportunity weights and measured corpus comparisons.
+Depends C/E. Clamp/cooldown/no-op; no outcome/eligibility authority/drama quotas; runtime/storage/consequence/variation budgets first.
 
-## Checks and delivery boundaries
-Host Node26.8.1/V8 14.6.202.34-node.28; cached read-only/network-free Node24.21.0/V8 13.6.233.17-node.53. Vitest ephemeral token cache needed; host token predated work. ASSESS unassessable untracked scope required independent verifier. Explicit inspect selected four B files, excluding `.claude/`. Known Vite warning; historical RED writer evidence. Full suite/build/browser/corpus CLI not rerun for standalone B; integration/performance pending.
+## Verification and next action
+Host Node26.8.1/V8 14.6.202.34-node.28; cached read-only/network-free Node24.21.0/V8 13.6.233.17-node.53. Vitest ephemeral token cache required; host token predates work. Known Vite warning. Full suite/build/browser/corpus CLI not rerun for standalone C1/C2; integration/performance pending. Prior passive tracker reviews cover no new code. Preserve .claude/ in untracked scope selection/staging. Completion metadata remains uncommitted until next coherent unit.
 
-Passive tracker approvals `review-a5fb3a8372307f2b`, `review-f227fcad2e998866`(c95ace86…), `review-7b2f3b76f21c3455`(d3e7d6…) do not cover new code. Completion metadata uncommitted until next coherent unit. Update file/full Engram mirror6902/topic odd/narrative-engine/tasks/UI on transitions. Local commits authorized; publishing stays human-controlled. Optional LLM prose/resumability later scope.
+Native-review independently verified C2 candidate with explicit scheduler untracked selection, then authorized local commit. Map D only after C2 closure. Optional LLM prose/resumability later scope.

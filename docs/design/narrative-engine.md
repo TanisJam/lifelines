@@ -442,6 +442,29 @@ is not an as-of projection. `ensureLifeState` fallback remains pure. No schedule
 seeded draws, storage, fork/override integration, model calls, UI, authenticated provenance,
 Proxy/global-monkeypatch hardening or general portability/performance claim is introduced.
 
+### Unit C2: standalone annual opportunities, director off
+
+`createFavorScheduler(state, seed, initialPreviousYear)` wraps one admitted C1 checkpoint in
+`favor-scheduler-c2`, with RNG tuple version `keyed-mulberry32-c2`. `runFavorYear(envelope, year)`
+returns a detached annual transaction; `admitFavorScheduler` validates restored JSON before reuse.
+This demonstrates bounded opportunities, not production scheduling or a director implementation.
+
+| Review point | C2 contract |
+|---|---|
+| Frontier | Explicit initial previous-year and completed-year frontiers; initial events cannot exceed the former. Annual years must increase, even when no events commit. Monotonic gaps are allowed, with no inferred activity or attempts for missing years. |
+| Quota and ordering | Exactly two slots per creditor represented in the obligation collection, including creditors whose debts are all closed. UTF-8 bytewise creditor/obligation-ID order; raw string tie-break distinguishes lone-surrogate encoding collisions. Each slot chooses the first currently eligible debt; no target means a quiet record and no draw. |
+| Activation | Independent keyed uniform draw per target/slot, active iff `u < .25`. Inactive records retain activation only and may retry the same debt next slot. Active records immediately commit C1 request and response with supplied appraisals `[]`; both outcomes can occur. No resampling or guaranteed fulfillment. |
+| Revalidation | C-only `helpOpportunities` admits a detached complete checkpoint and preflights all viable candidates' consumed policy factors before activation, including inactive opportunities. Legitimate closed/too-early/pending/dead/absent/missing/exhausted cases have explicit skip reasons; malformed reality, policy or references throw, never become quiet outcomes. Reinspect after every response to prevent double capacity/need consumption. |
+| Identity/evidence | Canonical JSON tuples contain scheduler/RNG versions, rule, ordered parties, year, slot, obligation and purpose. Activation/response streams are distinct. Seed and tuple are encoded together before passing to existing `keyedDraw` with fixed remaining arguments, avoiding variable delimiter ambiguity. Semantic request keys omit seed, draw, prefix position and transport identities; C1 derives response IDs. Record seed, target, skipped reasons, keys/draws, outcome and request/response IDs. |
+| Restoration | Store one current C world, an initial event-prefix index, frontiers and annual evidence. Reconstruct that prefix transiently, reproduce annual records and compare the complete C state/log. Reject inconsistent metadata/evidence or unrecorded suffix events; quiet years live in scheduler metadata, never fabricated C events. Standard-array/plain/null-record descriptor guards precede reads and iteration. |
+
+**Limits:** admission reproduces complete prefixes for small fixtures, not a scaling solution or
+an authenticated provenance mechanism. Rewriting all initial ground truth creates another candidate.
+Adding an unrelated creditor/grant leaves other semantic keys/draws/IDs unchanged; log positions
+may shift, while competing debt for the same creditor can legitimately change its selected target.
+No production simulation, annual hazards/providers, storage, UI, models, regeneration, inferred
+appraisals, macro rules, director weights or A/B/C1 version migration is introduced.
+
 ### A-baseline: reproducible local measurements
 
 **Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,

@@ -103,6 +103,9 @@ function ownData(value: unknown, legacy = false, ancestors = new Set<object>()):
   ancestors.delete(value);
 }
 
+/** Scheduler boundary reuses the same descriptor-first guards, including legacy Person optionals. */
+export function requireFavorData(value: unknown, legacy = false): void { ownData(value, legacy); }
+
 function array(value: unknown): asserts value is unknown[] {
   if (!Array.isArray(value)) throw new Error("Expected array");
 }
@@ -397,6 +400,41 @@ export function replayHelpFavorEvents(initial: HelpFavorState, events: readonly 
   if (state.schema !== HELP_FAVOR_VERSION) throw new Error("Expected C state");
   for (const event of events) state = reduce(state, event);
   return state;
+}
+
+export type HelpSkipReason = "closed" | "grant-not-earlier" | "already-requested" | "unborn" | "dead" | "absent" | "missing-allocation" | "missing-assistance" | "exhausted-assistance" | "missing-need" | "no-need";
+export interface HelpOpportunity { obligation: string; creditor: string; debtor: string; reason: HelpSkipReason | null }
+
+/** C-only preflight: malformed reality throws; legitimate ineligibility is explicit data.
+ * Validate every viable candidate's consumed policy before any scheduler activation draw. */
+export function helpOpportunities(input: HelpFavorState, year: number): { state: HelpFavorState; candidates: HelpOpportunity[] } {
+  requireInteger(year, Number.MIN_SAFE_INTEGER);
+  const state = replayHelpFavorEvents(input, []);
+  const history = state.legacyEvents.filter((entry) => entry.year <= year);
+  const candidates = state.obligations.map((obligation): HelpOpportunity => {
+    const { id, creditor, debtor } = obligation;
+    const candidate = { obligation: id, creditor, debtor };
+    if (obligation.status !== "open") return { ...candidate, reason: "closed" };
+    const grant = state.events.find((entry) => entry.id === obligation.origin);
+    if (!grant || grant.kind !== "grain-grant") throw new Error("Unknown grant reference");
+    if (grant.year >= year) return { ...candidate, reason: "grant-not-earlier" };
+    if (state.events.some((entry) => entry.kind === "help-request" && entry.obligation === id)) return { ...candidate, reason: "already-requested" };
+    for (const actor of [creditor, debtor]) {
+      const person = Object.hasOwn(state.people, actor) ? state.people[actor] : undefined;
+      if (!person) throw new Error("Unknown opportunity actor");
+      if (person.birthYear > year) return { ...candidate, reason: "unborn" };
+      if (person.deathYear !== undefined && person.deathYear <= year) return { ...candidate, reason: "dead" };
+      if (person.away || ensureLifeState(person, history).residence.status !== "home") return { ...candidate, reason: "absent" };
+      if (!Object.hasOwn(state.grain, actor)) return { ...candidate, reason: "missing-allocation" };
+    }
+    if (!Object.hasOwn(state.assistance, debtor)) return { ...candidate, reason: "missing-assistance" };
+    if (state.assistance[debtor] === 0) return { ...candidate, reason: "exhausted-assistance" };
+    if (!Object.hasOwn(state.need, creditor)) return { ...candidate, reason: "missing-need" };
+    if (state.need[creditor] === 0) return { ...candidate, reason: "no-need" };
+    helpContext(state, id, year);
+    return { ...candidate, reason: null };
+  });
+  return { state, candidates };
 }
 
 export function applyFavorEvent(state: FavorState, event: FavorEvent): FavorState {

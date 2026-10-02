@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMind } from "./mind";
 import type { Event, Person } from "./types";
-import { applyFavorEvent, createFavorState, grantFavor, replayFavorEvents, createHelpFavorState, grantHelpFavor, requestHelp, respondHelp, applyHelpFavorEvent, replayHelpFavorEvents, type FavorCommand, type FavorEvent } from "./effects";
+import { applyFavorEvent, createFavorState, grantFavor, replayFavorEvents, createHelpFavorState, grantHelpFavor, requestHelp, respondHelp, applyHelpFavorEvent, replayHelpFavorEvents, helpOpportunities, type FavorCommand, type FavorEvent } from "./effects";
 
 const person = (id: string): Person => ({ id, name: id, sex: "f", birthYear: 1300, traits: [], job: "none", founder: true, mind: createMind("favor", id, 1300) });
 const people = () => ({ a: person("a"), b: person("b"), c: person("c") });
@@ -26,6 +26,35 @@ const responded = (noise = 0.1) => {
   const input = requested();
   return respondHelp(input, { request: input.events[1]!.id, year: 1337, noise, appraisals: [] });
 };
+
+describe("C-only opportunity admission", () => {
+  it("admits detached state and differentiates too-early, viable, pending and closed debts", () => {
+    const grant = grantHelpFavor(helpState(), command());
+    expect(helpOpportunities(grant, 1336).candidates[0]).toMatchObject({ reason: "grant-not-earlier" });
+    const viable = helpOpportunities(grant, 1337);
+    expect(viable.candidates[0]).toMatchObject({ reason: null, creditor: "a", debtor: "b" });
+    expect(viable.state).toEqual(grant);
+    expect(viable.state).not.toBe(grant);
+    expect(helpOpportunities(requested(), 1337).candidates[0]).toMatchObject({ reason: "already-requested" });
+    expect(helpOpportunities(responded(), 1338).candidates[0]).toMatchObject({ reason: "closed" });
+  });
+  it.each(["missing-assistance", "exhausted-assistance", "missing-need", "no-need"])("identifies explicit resource skip %s", (reason) => {
+    const initial = createHelpFavorState(people(), [], { a: 1, b: 0 }, reason === "missing-assistance" ? {} : { b: reason === "exhausted-assistance" ? 0 : 2 }, reason === "missing-need" ? {} : { a: reason === "no-need" ? 0 : 2 });
+    const grant = grantHelpFavor(initial, command());
+    const before = structuredClone(grant);
+    expect(helpOpportunities(grant, 1337).candidates[0]!.reason).toBe(reason);
+    expect(grant).toEqual(before);
+  });
+  it("throws for forged references and malformed consumed factors, not quiet eligibility", () => {
+    const bad = grantHelpFavor(helpState(), command());
+    bad.obligations[0]!.origin = "unknown";
+    expect(() => helpOpportunities(bad, 1337)).toThrow();
+    const factors = helpState();
+    factors.people.b!.mind.facets.altruism = 101;
+    const grant = grantHelpFavor(factors, command());
+    expect(() => helpOpportunities(grant, 1337)).toThrow();
+  });
+});
 
 describe("C1 atomic later help", () => {
   it.each([0.1, 0.9])("settles from recorded noise %s with explicit resources and directed ties", (noise) => {
