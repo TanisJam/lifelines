@@ -4,6 +4,7 @@ import { R2, R_COMPASS, R_DIAL, R_PROGRESS, SPARK } from "@/lib/sky/constants";
 import { arcPath, dialAngle, type Timeline } from "@/lib/sky/dial";
 import { edgeKey } from "@/lib/sky/layout";
 import { polar } from "@/lib/sky/motion";
+import type { ReelEntry } from "@/lib/sky/reel-model";
 import { villagePos } from "@/lib/sky/village";
 
 /** A distant sky for depth: fixed, keyed, never part of the story. */
@@ -22,7 +23,7 @@ const FLARE = Array.from({ length: 8 }, (_, i) => {
  * The constellation's nodes, rendered once. Every moving attribute (transform, path data, opacity, state
  * classes) is written by the engine through the `data-*` hooks below, so React never re-renders a frame.
  */
-export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLabels }: { scene: LifeScene; timeline: Timeline; label: string; svgRef: Ref<SVGSVGElement>; relation: (person: ScenePerson) => string; bandLabels: Record<string, string> }) {
+export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLabels, entries }: { scene: LifeScene; timeline: Timeline; entries: readonly ReelEntry[]; label: string; svgRef: Ref<SVGSVGElement>; relation: (person: ScenePerson) => string; bandLabels: Record<string, string> }) {
   const years = Array.from({ length: line.dialSpan }, (_, k) => line.dialStart + k);
   return (
     <svg ref={svgRef} className="sky-svg" viewBox="-400 -400 800 800" role="img" aria-label={label}>
@@ -95,6 +96,15 @@ export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLab
             <text key={l} className="sky-compass-label" x={f1(x)} y={f1(y)}>
               {l}
             </text>
+          );
+        })}
+        {entries.map((e) => {
+          // Each event leaves a bead on the progress ring at its moment; turns are small diamonds.
+          const [x, y] = polar(dialAngle(e.at, line.dialStart, line.dialSpan), R_PROGRESS);
+          return e.turn ? (
+            <rect key={e.id} data-bead={e.id} className="sky-bead" x={-2.3} y={-2.3} width={4.6} height={4.6} transform={`translate(${f1(x)},${f1(y)}) rotate(45)`} />
+          ) : (
+            <circle key={e.id} data-bead={e.id} className="sky-bead" cx={f1(x)} cy={f1(y)} r={1.9} />
           );
         })}
         <g data-marker>

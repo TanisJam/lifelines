@@ -59,9 +59,10 @@ export function entryLook(y: number, future: boolean): { opacity: number; node: 
 /** How strongly the entry being told is "in focus": ramps in over 0.12 years, releases as it slides away. Callers pass 0 for every other entry. */
 export const toldStrength = (y: number, t: number, at: number): number => clamp01(1 - (y - GAP * 0.55) / (GAP * 0.9)) * clamp01((t - at) / 0.12);
 
-/** Angles (degrees) where the visible rail starts and ends. */
+/** Angles (degrees) where the visible rail starts (a little above the present, never past the arc's top) and ends. */
 export function railAngles(geo: ReelGeo): { from: number; to: number } {
-  return { from: (Math.asin(Math.sin((A_NOW * Math.PI) / 180) - (GAP * 1.6) / geo.ra) * 180) / Math.PI, to: (Math.asin(ARC_LIMIT) * 180) / Math.PI };
+  const above = Math.max(-ARC_LIMIT, Math.sin((A_NOW * Math.PI) / 180) - (GAP * 1.6) / geo.ra);
+  return { from: (Math.asin(above) * 180) / Math.PI, to: (Math.asin(ARC_LIMIT) * 180) / Math.PI };
 }
 
 /**

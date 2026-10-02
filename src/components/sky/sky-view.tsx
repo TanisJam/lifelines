@@ -7,12 +7,14 @@ import type { Chronicle } from "@/contracts/life";
 import type { Dictionary } from "@/i18n/dictionary";
 import { describeStar, relationLabel } from "@/lib/sky/describe-star";
 import { rolled, timeline } from "@/lib/sky/dial";
+import { reelEntries } from "@/lib/sky/reel-model";
 import type { Frame } from "@/lib/sky/scene-model";
 import "./sky.css";
 import { BackdropCanvas } from "./backdrop-canvas";
 import { Legend } from "./legend";
 import { Odometer } from "./odometer";
 import { Player } from "./player";
+import { Reel } from "./reel";
 import { SkySvg } from "./sky-svg";
 import { StarTip } from "./star-tip";
 import { useSkyEngine } from "./use-sky-engine";
@@ -28,6 +30,7 @@ export function SkyView({ chronicle, dict, lang, saved = true }: { chronicle: Ch
   const { sky } = dict;
   const line = useMemo(() => timeline(scene, scene.span.end ?? scene.span.start), [scene]);
   const { svgRef, store, state, controls } = useSkyEngine(scene, line);
+  const entries = useMemo(() => reelEntries(chronicle.entries), [chronicle.entries]);
   const readYear = useMemo(() => (frame: Frame) => rolled(frame.t, line.dialStart), [line.dialStart]);
 
   const tipRef = useRef<HTMLDivElement>(null);
@@ -51,12 +54,13 @@ export function SkyView({ chronicle, dict, lang, saved = true }: { chronicle: Ch
       <div className="sky-area">
         <h1 className="sky-heading">{sky.title(chronicle.protagonist.name)}</h1>
         <div className="sky-disc">
-          <SkySvg svgRef={svgRef} scene={scene} timeline={line} label={sky.constellationLabel(chronicle.protagonist.name)} relation={relation} bandLabels={bandLabels} />
+          <SkySvg svgRef={svgRef} scene={scene} timeline={line} label={sky.constellationLabel(chronicle.protagonist.name)} relation={relation} bandLabels={bandLabels} entries={entries} />
           <StarTip tipRef={tipRef} />
         </div>
         <div className="sky-now">
           <Odometer store={store} digits={4} read={readYear} className="big" />
         </div>
+        <Reel entries={entries} store={store} seek={controls.seek} openPerson={saved ? setOpenPersonId : undefined} labels={sky.reel} />
       </div>
       <div className="sky-bottom">
         <Player store={store} state={state} controls={controls} start={line.start} end={line.end} labels={sky.player} />

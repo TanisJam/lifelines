@@ -77,6 +77,7 @@ export const es: Dictionary = {
     title: (name: string) => `La constelación de ${name}`,
     constellationLabel: (name: string) => `Constelación de las relaciones de ${name}`,
     player: { play: "Reproducir", pause: "Pausar", speed: "Velocidad de reproducción", year: "Año", caption: "Una vida en movimiento" },
+    reel: { label: "Crónica", go: "Ir a este momento." },
     plague: { "black-death": "Gran Mortandad", "second-pestilence": "Segunda pestilencia" },
     /** "madre", "segundo esposo": los cónyuges llevan ordinal cuando hay más de uno. */
     relation: (code: RelCode, sex: LifeSex, nth: number, of: number): string => {

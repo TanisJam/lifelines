@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { A_NOW, GAP, R_COMPASS } from "./constants";
-import { arcPlace, entryLook, inReelZone, reelGeo, toldStrength, yNow } from "./reel-geometry";
+import { arcPlace, entryLook, inReelZone, railAngles, reelGeo, toldStrength, yNow } from "./reel-geometry";
 
 const area = { left: 100, top: 50, width: 1200, height: 700 };
 const disc = { left: 340, top: 100, width: 600, height: 600 };
@@ -59,6 +59,17 @@ describe("toldStrength", () => {
   it("builds up over the first 0.12 years, and lets go as the entry slides away", () => {
     expect(toldStrength(0, 1510.06, 1510)).toBeCloseTo(0.5, 9);
     expect(toldStrength(GAP * 2, 1512, 1510)).toBe(0);
+  });
+});
+
+describe("railAngles", () => {
+  it("runs from above the present down the arc, in finite degrees even on a small stage", () => {
+    const { from, to } = railAngles(geo);
+    expect(from).toBeLessThan(A_NOW);
+    expect(to).toBeGreaterThan(A_NOW);
+    const small = railAngles(reelGeo(area, { ...disc, width: 300, height: 300 }));
+    expect(Number.isFinite(small.from)).toBe(true);
+    expect(small.from).toBeGreaterThanOrEqual(-90);
   });
 });
 

@@ -82,6 +82,7 @@ export const en = {
     title: (name: string) => `The constellation of ${name}`,
     constellationLabel: (name: string) => `Constellation of ${name}'s relationships`,
     player: { play: "Play", pause: "Pause", speed: "Playback speed", year: "Year", caption: "A life in motion" },
+    reel: { label: "Chronicle", go: "Go to this moment." },
     plague: { "black-death": "Great Mortality", "second-pestilence": "Second pestilence" },
     /** "mother", "second husband": spouses carry an ordinal once there is more than one. */
     relation: (code: RelCode, sex: LifeSex, nth: number, of: number): string => {

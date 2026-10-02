@@ -107,6 +107,32 @@
 .sky-legend svg { width: 28px; height: 10px; overflow: visible; }
 .sky-closing { justify-self: end; max-width: 18ch; margin: 0 0 6px; text-align: right; font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 17px; line-height: 1.4; color: var(--sky-gold); quotes: "\201C" "\201D"; }
 
+/* Chronicle reel: entries hang on a great arc (placed and typed by the reel controller) */
+.sky-rail { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.sky-now-tick { stroke: var(--sky-gold); stroke-width: 1.4; opacity: 0.8; }
+.sky-reel { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; pointer-events: none; }
+.sky-reel li { position: absolute; left: 0; top: 0; width: var(--w, 240px); cursor: pointer; pointer-events: auto; will-change: transform, opacity; }
+.sky-reel li:focus-visible { outline: 1.5px solid var(--sky-gold); outline-offset: 3px; border-radius: 4px; }
+.sky-reel .node { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border: 1.5px solid transparent; border-radius: 50%; background: var(--ll-starlight); box-shadow: 0 0 6px 1px rgb(255 236 190 / 0.55); transition: width 0.6s linear, height 0.6s linear, left 0.6s linear, top 0.6s linear, background 0.6s linear, border-color 0.6s linear, box-shadow 0.6s linear; }
+.sky-reel li.focus .node { left: -10px; top: -10px; width: 20px; height: 20px; border-color: var(--sky-gold); background: radial-gradient(circle, var(--ll-starlight) 0 3px, transparent 3.5px); box-shadow: 0 0 14px 3px rgb(227 191 114 / 0.45), inset 0 0 6px rgb(227 191 114 / 0.4); }
+.sky-reel .body { position: absolute; left: 22px; top: -12px; width: calc(var(--w, 240px) - 22px); display: grid; grid-template-columns: 48px minmax(0, 1fr); column-gap: 12px; padding-block: 10px; border-block: 1px solid transparent; transition: border-color 0.6s linear, opacity 0.4s linear; }
+.sky-reel li.ruled .body { border-color: var(--ll-hair-strong); }
+.sky-reel .y { padding-top: 3px; font-size: 13px; color: var(--ll-ink-faint); font-variant-numeric: tabular-nums; transition: color 0.6s linear, font-size 0.6s linear; }
+.sky-reel .t { font-family: var(--font-cormorant), Georgia, serif; font-weight: 500; font-size: 18px; line-height: 1.15; color: var(--ll-ink); transition: color 0.5s linear, font-size 0.5s linear; }
+.sky-reel .p { margin-top: 3px; font-size: 13.5px; line-height: 1.38; color: var(--ll-ink-soft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; transition: color 0.6s linear; }
+.sky-reel .by { margin-bottom: 2px; font-family: var(--font-cinzel), Georgia, serif; font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--sky-gold); }
+.sky-reel li.turn .t::before { content: "◆"; margin-right: 8px; font-size: 9px; vertical-align: 3px; color: var(--sky-gold); }
+.sky-reel li.focus .t { font-size: 20.5px; color: var(--sky-gold-ink); }
+.sky-reel li.focus .y { padding-top: 2px; font-size: 15px; color: var(--sky-gold); }
+.sky-reel li.focus .p { -webkit-line-clamp: 3; color: var(--ll-ink); opacity: 0.88; }
+.sky-reel a { color: inherit; text-decoration: none; pointer-events: none; }
+.sky-reel.linkable a { pointer-events: auto; text-decoration: underline dotted; text-underline-offset: 3px; }
+.sky-reel.linkable a:hover { color: var(--sky-gold-ink); }
+.sky-caret { display: inline-block; width: 1px; height: 0.95em; margin-left: 1px; vertical-align: -0.12em; background: var(--sky-gold); box-shadow: 0 0 4px var(--sky-gold); }
+.sky-bead { fill: var(--ll-starlight); opacity: 0; transition: opacity 0.6s linear; }
+.sky-bead.on { opacity: 0.55; }
+.sky-bead.lit { fill: var(--sky-gold-ink); opacity: 1; filter: drop-shadow(0 0 4px var(--sky-gold)); }
+
 /* Player */
 .sky-bottom { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 420px) minmax(0, 1fr); gap: 28px; align-items: end; padding: 0 30px 22px; }
 .sky-player { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 16px; padding: 16px 22px 30px 16px; border: 1px solid var(--ll-hair); border-radius: 999px; background: var(--ll-panel); backdrop-filter: blur(6px); }
@@ -127,6 +153,8 @@
   .sky-node.self .sky-spin { animation: sky-spin 112s linear infinite; }
   .sky-node.self.dead .sky-spin { animation-play-state: paused; }
   .sky-node.self:not(.dead) .sky-halo { animation: sky-breathe 4.5s ease-in-out infinite; }
+  .sky-caret { animation: sky-caret 0.9s steps(1) infinite; }
+  @keyframes sky-caret { 50% { opacity: 0; } }
   @keyframes sky-tw { 50% { opacity: 0.08; } }
   @keyframes sky-spin { to { transform: rotate(360deg); } }
   @keyframes sky-breathe { 50% { transform: scale(1.12); } }
@@ -142,6 +170,12 @@
   .sky-area { display: grid; gap: 18px; padding: 14px 18px 8px; }
   .sky-heading, .sky-now { position: static; width: auto; }
   .sky-disc { position: relative; left: auto; top: auto; transform: none; width: 100%; height: auto; max-width: 560px; justify-self: center; }
+  .sky-rail { display: none; }
+  .sky-reel { position: static; display: grid; gap: 4px; }
+  .sky-reel li { position: relative; width: auto; transform: none !important; }
+  .sky-reel .node { left: 6px; top: 22px; }
+  .sky-reel li.focus .node { left: 0; top: 16px; }
+  .sky-reel .body { position: relative; left: 0; top: 0; width: auto; margin-left: 28px; }
   .sky-bottom { grid-template-columns: minmax(0, 1fr); padding: 0 14px 18px; }
   .sky-legend { border-radius: 18px; padding: 14px 18px; gap: 8px 18px; }
   .sky-closing { justify-self: start; text-align: left; }
