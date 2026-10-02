@@ -5,6 +5,7 @@ import { generateWorld, resolveProtagonistSex } from "@/domain/worldgen";
 import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
 import { buildLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
+import { createSceneTracker } from "@/server/life-scene";
 import { newLifeBranchId, newLifeId, registerLife } from "@/server/life-store";
 import { sseResponse, yieldToEventLoop } from "@/server/sse";
 
@@ -87,11 +88,14 @@ export async function POST(request: Request): Promise<Response> {
     // reported numbers are this life's alone, not inflated by whatever ran earlier in the process.
     const statsBefore = snapshotDecisionMakerStats(decisionMaker);
 
+    const tracker = createSceneTracker({ seed: config.seed });
     let report;
     try {
       report = await drainSimulation(
         simulateYears(config, people, events, { decisionMaker, backgroundDecisionMaker, engineSource, protagonistId: "protagonist" }),
         async (tick) => {
+          tracker.observe(tick.snapshot);
+          const scene = tracker.scene();
           const entries = await buildProvisionalTickEntries(
             "protagonist",
             tick.year,
@@ -102,8 +106,10 @@ export async function POST(request: Request): Promise<Response> {
             config.seed,
             config.town.name,
             locale,
+            scene,
           );
-          if (entries.length > 0) send("tick", { type: "tick", year: tick.year, entries });
+          // One tick per simulated year, quiet years included: the sky's clock needs the frontier to advance.
+          send("tick", { type: "tick", year: tick.year, entries, scene });
           // Decision 081: flush this year's frame (and let a disconnect register) before simulating the next.
           await yieldToEventLoop();
         },

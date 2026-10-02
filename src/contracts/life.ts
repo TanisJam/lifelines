@@ -127,6 +127,10 @@ export interface ChronicleEntry {
   /** At most one: "Follows her courtship with Greta Ravensworth (1506)". */
   readonly cause?: { readonly entryId?: string; readonly phrase: string; readonly year: number };
   readonly turn?: Turn;
+  /** Fractional year (1350.5 = mid-1350) the event happened; `year <= at < year + 1`. */
+  readonly at: number;
+  /** Scene person ids the entry involves; every id resolves in the accompanying `LifeScene`. */
+  readonly who: readonly string[];
 }
 
 export interface BranchInfo {
@@ -161,6 +165,8 @@ export interface Chronicle {
   readonly branches: readonly BranchInfo[];
   /** Left rail: people in this life with their relation to the protagonist. */
   readonly cast: readonly { readonly personId: string; readonly name: string; readonly relation: string }[];
+  /** The night-sky scene graph for the whole life. */
+  readonly scene: LifeScene;
 }
 
 /** GET /api/lives/:lifeId/people/:personId?branchId= — read-only side sheet. */
@@ -195,8 +201,8 @@ export type LifeStreamEvent =
   | { readonly type: "start"; readonly lifeId: string; readonly branchId: string; readonly villageName: string; readonly protagonist: { readonly name: string; readonly sex: LifeSex; readonly birthYear: number } }
   /** Rewrite only, sent first: the divergence entry with its old and new outcome labels. */
   | { readonly type: "divergence"; readonly entryId: string; readonly year: number; readonly originalLabel: string; readonly newLabel: string }
-  /** One per simulated year. `entries` are the protagonist's NEW chronicle entries for that year. */
-  | { readonly type: "tick"; readonly year: number; readonly entries: readonly ChronicleEntry[] }
+  /** One per simulated year, quiet years included (`entries` empty). `entries` are the protagonist's NEW chronicle entries for that year; `scene` is the full scene so far. */
+  | { readonly type: "tick"; readonly year: number; readonly entries: readonly ChronicleEntry[]; readonly scene: LifeScene }
   | {
       readonly type: "done";
       readonly chronicle: Chronicle;

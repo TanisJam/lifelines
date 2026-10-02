@@ -1,7 +1,8 @@
-import type { BranchInfo, Chronicle, ChronicleEntry, EntryLevel, LifeSex, PersonLink, PersonSheet, ProtagonistInfo, Turn, TurnOption } from "@/contracts/life";
+import type { BranchInfo, Chronicle, ChronicleEntry, EntryLevel, LifeScene, LifeSex, PersonLink, PersonSheet, ProtagonistInfo, Turn, TurnOption } from "@/contracts/life";
 import { ageInYear } from "@/domain/actuarial";
 import { isRealTurn } from "@/domain/chronicle-view";
 import type { DecisionRecord } from "@/domain/decisions";
+import { eventTimes } from "@/domain/month";
 import { DEFAULT_LOCALE, type Locale } from "@/domain/locale";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "@/domain/mortality";
 import { renderPortrait } from "@/domain/mind";
@@ -9,6 +10,7 @@ import { deathCauseDisplay, familyRelation, lifeSummary, narratePersonTimeline, 
 import type { Event, Person } from "@/domain/types";
 import { causeNounPhrase } from "@/server/chronicle-data";
 import { getDecisionMaker } from "@/server/decision-engine";
+import { sceneForBranch } from "@/server/life-scene";
 import { getLatestBranch, getLifeBranch, listLifeBranches } from "@/server/life-store";
 
 const PROTAGONIST_ID = "protagonist";
@@ -123,6 +125,8 @@ function buildEntryFromNarrated(
   protagonistId: string,
   protagonistSex: LifeSex,
   timeline: readonly NarratedEvent[],
+  times: ReadonlyMap<string, number>,
+  sceneIds: ReadonlySet<string>,
 ): ChronicleEntry {
   const { event, title, prose, significance } = narrated;
   const decision = decisionByEventId.get(event.id);
@@ -147,6 +151,8 @@ function buildEntryFromNarrated(
     links,
     cause,
     turn,
+    at: times.get(event.id) ?? event.year,
+    who: event.actors.filter((id) => sceneIds.has(id)),
   };
 }
 
@@ -167,6 +173,7 @@ export async function buildProvisionalTickEntries(
   seed: string,
   townName: string,
   locale: Locale,
+  scene: LifeScene,
 ): Promise<ChronicleEntry[]> {
   const yearEvents = events.filter((e) => e.year === year);
   const timeline = await narratePersonTimeline(protagonistId, events, people, undefined, 8, seed, townName, locale, yearEvents);
@@ -174,7 +181,10 @@ export async function buildProvisionalTickEntries(
   const decisionByEventId = new Map<string, DecisionRecord>();
   for (const decision of decisions) for (const eventId of decision.resultingEventIds) decisionByEventId.set(eventId, decision);
 
-  return timeline.map((narrated) => buildEntryFromNarrated(narrated, events, people, decisionByEventId, protagonistId, protagonistSex, timeline));
+  // Months only depend on a year's own events, so times from this year alone match the final chronicle's.
+  const times = eventTimes(seed, yearEvents, protagonistId);
+  const sceneIds = new Set(scene.people.map((p) => p.id));
+  return timeline.map((narrated) => buildEntryFromNarrated(narrated, events, people, decisionByEventId, protagonistId, protagonistSex, timeline, times, sceneIds));
 }
 
 export interface ChronicleResult {
@@ -221,7 +231,10 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string,
   const causeCode = deathEvent && typeof deathEvent.payload.cause === "string" ? (deathEvent.payload.cause as DeathCause) : undefined;
   const causeOfDeath = causeCode && causeCode in DEATH_CAUSE_PHRASE ? deathCauseDisplay(locale, causeCode) : locale === "es" ? "mala fortuna" : "misfortune";
 
-  const entries: ChronicleEntry[] = timeline.map((narrated) => buildEntryFromNarrated(narrated, events, people, decisionByEventId, PROTAGONIST_ID, protagonist.sex, timeline));
+  const scene = sceneForBranch(branch);
+  const times = eventTimes(seed, events, PROTAGONIST_ID);
+  const sceneIds = new Set(scene.people.map((p) => p.id));
+  const entries: ChronicleEntry[] = timeline.map((narrated) => buildEntryFromNarrated(narrated, events, people, decisionByEventId, PROTAGONIST_ID, protagonist.sex, timeline, times, sceneIds));
 
   // Decision 042 supersedes decision 038's period-summary rule for the protagonist: `simulate.ts`
   // now guarantees at least one event per year of their life (the `D1` everyday-life vignette,
@@ -259,6 +272,7 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string,
     entries: sorted,
     branches,
     cast: buildCast(protagonist, people),
+    scene,
   };
 
   return { data: chronicle };

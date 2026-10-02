@@ -8,6 +8,7 @@ import { validateOverride } from "@/domain/validate-override";
 import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
 import { buildLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
+import { createSceneTracker, friendSeenBefore } from "@/server/life-scene";
 import { getLife, getLifeBranch, newLifeBranchId, registerLifeBranch } from "@/server/life-store";
 import { sseResponse, yieldToEventLoop } from "@/server/sse";
 
@@ -98,6 +99,8 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
     // before/after this ONE run so the reported numbers are this rewrite's alone.
     const statsBefore = snapshotDecisionMakerStats(decisionMaker);
 
+    // Friend bonds that predate the fork resolve through the base branch chain, not the restored snapshot.
+    const tracker = createSceneTracker({ seed: life.config.seed, fork: { forkYear, priorSeen: friendSeenBefore(lifeId, branchId, forkYear) } });
     let report;
     try {
       report = await drainSimulation(
@@ -110,6 +113,8 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
           protagonistId: "protagonist",
         }),
         async (tick) => {
+          tracker.observe(tick.snapshot);
+          const scene = tracker.scene();
           const entries = await buildProvisionalTickEntries(
             "protagonist",
             tick.year,
@@ -120,8 +125,10 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
             life.config.seed,
             life.config.town.name,
             locale,
+            scene,
           );
-          if (entries.length > 0) send("tick", { type: "tick", year: tick.year, entries });
+          // One tick per simulated year, quiet years included (see stream/route.ts).
+          send("tick", { type: "tick", year: tick.year, entries, scene });
           // Decision 081: flush this year's frame (and let a disconnect register) before simulating the next.
           await yieldToEventLoop();
         },

@@ -76,6 +76,11 @@ describe("POST /api/lives/:lifeId/rewrite/stream — incremental-simulation capa
     // Resuming from the restored snapshot never re-simulates (or re-ticks) a year before the fork.
     expect(tickFrames.every((f) => f.data.year >= forkYear)).toBe(true);
     expect(tickFrames[0]!.data.year).toBe(forkYear);
+    // One tick per year, consecutive, each with the full scene so far.
+    const years = tickFrames.map((f) => f.data.year);
+    expect(years).toEqual(Array.from({ length: years.length }, (_, i) => forkYear + i));
+    for (const f of tickFrames) expect(f.data.scene.people.some((p) => p.id === "protagonist")).toBe(true);
+    expect(doneData.chronicle.scene.people.length).toBeGreaterThan(0);
 
     deleteLife(lifeId);
   });

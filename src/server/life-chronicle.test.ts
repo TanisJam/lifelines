@@ -4,6 +4,7 @@ import { createMind } from "@/domain/mind";
 import { simulate } from "@/domain/simulate";
 import type { DecisionRecord } from "@/domain/decisions";
 import type { Event, Person, SimulationResult } from "@/domain/types";
+import { deriveLifeScene } from "@/domain/scene";
 import { generateWorld } from "@/domain/worldgen";
 import { buildLifeChronicle, buildProvisionalTickEntries } from "./life-chronicle";
 import { deleteLife, registerLife } from "./life-store";
@@ -62,6 +63,17 @@ describe("buildLifeChronicle — contract shape (fixture-free, a real simulated 
     expect(chronicle.protagonist.ageAtDeath).toBe(chronicle.protagonist.deathYear - chronicle.protagonist.birthYear);
     expect(chronicle.protagonist.causeOfDeath.length).toBeGreaterThan(0);
     expect(chronicle.protagonist.deathYear).toBeGreaterThanOrEqual(chronicle.protagonist.birthYear);
+  });
+
+  it("carries the scene, and gives every entry a time inside its year and scene-resolvable people", () => {
+    const ids = new Set(chronicle.scene.people.map((p) => p.id));
+    expect(ids.has("protagonist")).toBe(true);
+    for (const entry of chronicle.entries) {
+      expect(entry.at).toBeGreaterThanOrEqual(entry.year);
+      expect(entry.at).toBeLessThan(entry.year + 1);
+      for (const id of entry.who) expect(ids.has(id)).toBe(true);
+    }
+    expect(chronicle.scene.span.end).toBeCloseTo(chronicle.protagonist.deathYear, -1);
   });
 
   it("has a non-empty branches list, with the original branch labeled 'Original life'", () => {
@@ -170,10 +182,14 @@ describe("buildProvisionalTickEntries — live SSE ticks (incremental-simulation
       result.config.seed,
       result.config.town.name,
       "en",
+      deriveLifeScene({ seed: result.config.seed, people: result.people, events: result.events, protagonistId: "protagonist" }),
     );
     expect(entries).toHaveLength(1);
     expect(entries[0]!.id).toBe("ev-ap1");
     expect(entries[0]!.year).toBe(1510);
+    expect(entries[0]!.at).toBeGreaterThanOrEqual(1510);
+    expect(entries[0]!.at).toBeLessThan(1511);
+    expect(entries[0]!.who).toContain("protagonist");
   });
 
   it("a different year returns a different, non-overlapping entry set (triangulation)", async () => {
@@ -188,6 +204,7 @@ describe("buildProvisionalTickEntries — live SSE ticks (incremental-simulation
       result.config.seed,
       result.config.town.name,
       "en",
+      deriveLifeScene({ seed: result.config.seed, people: result.people, events: result.events, protagonistId: "protagonist" }),
     );
     expect(entries).toHaveLength(1);
     expect(entries[0]!.id).toBe("ev-birth");

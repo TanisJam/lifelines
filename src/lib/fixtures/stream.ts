@@ -4,7 +4,7 @@ export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-import type { ChronicleEntry } from "@/contracts/life";
+import type { ChronicleEntry, LifeScene } from "@/contracts/life";
 
 /** Groups entries by year, in ascending year order — one SSE `tick` per year, per the contract. */
 export function groupByYear(entries: readonly ChronicleEntry[]): (readonly [number, ChronicleEntry[]])[] {
@@ -15,6 +15,34 @@ export function groupByYear(entries: readonly ChronicleEntry[]): (readonly [numb
     map.set(e.year, arr);
   }
   return [...map.entries()].sort((a, b) => a[0] - b[0]);
+}
+
+/** One `[year, entries]` per year from `from` to `to`, quiet years included (empty entries), like the live stream. */
+export function yearTicks(entries: readonly ChronicleEntry[], from: number, to: number): (readonly [number, ChronicleEntry[]])[] {
+  const byYear = new Map(groupByYear(entries));
+  return Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => [from + i, byYear.get(from + i) ?? []] as const);
+}
+
+/** The scene as it stands at the end of `year`: later people, bonds and souls are not there yet, and still-open ends are open. */
+export function sceneAt(scene: LifeScene, year: number): LifeScene {
+  const cutoff = year + 1;
+  /** Drops `key` when its value is not yet in the past at `cutoff`. */
+  function openEnd<T extends object, K extends keyof T>(item: T, key: K): T {
+    const value = item[key];
+    if (typeof value !== "number" || value < cutoff) return item;
+    const copy = { ...item };
+    delete copy[key];
+    return copy;
+  }
+  const people = scene.people.filter((p) => p.appearsAt < cutoff).map((p) => openEnd(p, "diedAt"));
+  const ids = new Set(people.map((p) => p.id));
+  return {
+    people,
+    edges: scene.edges.filter((e) => ids.has(e.a) && ids.has(e.b) && (e.fromAt === null || e.fromAt < cutoff)).map((e) => openEnd(e, "untilAt")),
+    village: scene.village.filter((v) => v.b < cutoff).map((v) => openEnd(v, "d")),
+    bands: scene.bands.filter((b) => b.from < cutoff).map((b) => ({ ...b, to: Math.min(b.to, cutoff) })),
+    span: { start: scene.span.start, end: scene.span.end !== null && scene.span.end < cutoff ? scene.span.end : null },
+  };
 }
 
 export function lowerFirst(s: string): string {

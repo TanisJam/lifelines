@@ -11,14 +11,33 @@
  * honest previews of the real product.
  */
 
-import type { BranchInfo, Chronicle, ChronicleEntry, LifeListItem, PersonSheet } from "@/contracts/life";
+import type { BranchInfo, Chronicle, ChronicleEntry, LifeListItem, LifeScene, PersonSheet, SceneEdge, ScenePerson } from "@/contracts/life";
+
+/** Hand-written entries carry only prose-level data; `at` and `who` are derived from them below. */
+type AuthoredEntry = Omit<ChronicleEntry, "at" | "who">;
+
+/** Spreads each year's entries across the year in order and ties them to the scene people their links name. */
+function withTiming(entries: readonly AuthoredEntry[], scene: LifeScene): ChronicleEntry[] {
+  const ids = new Set(scene.people.map((p) => p.id));
+  const perYear = new Map<number, number>();
+  for (const e of entries) perYear.set(e.year, (perYear.get(e.year) ?? 0) + 1);
+  const seen = new Map<number, number>();
+  return entries.map((e) => {
+    const k = seen.get(e.year) ?? 0;
+    seen.set(e.year, k + 1);
+    return { ...e, at: e.year + 0.1 + (0.8 * (k + 0.5)) / perYear.get(e.year)!, who: e.links.map((l) => l.personId).filter((id) => ids.has(id)) };
+  });
+}
+
+const person = (id: string, name: string, sex: ScenePerson["sex"], relCode: ScenePerson["relCode"], group: ScenePerson["group"], born: number, appearsAt: number, diedAt?: number): ScenePerson => ({ id, name, sex, relCode, group, born, appearsAt, ...(diedAt !== undefined ? { diedAt } : {}) });
+const edge = (a: string, b: string, kind: SceneEdge["kind"], fromAt: number | null, untilAt?: number): SceneEdge => ({ a, b, kind, fromAt, ...(untilAt !== undefined ? { untilAt } : {}) });
 
 const ORIGINAL: BranchInfo = { branchId: "branch-original", label: "Original life", parentBranchId: null, forkYear: null };
 const CHANGED_1516: BranchInfo = { branchId: "branch-1516", label: "Changed in 1516", parentBranchId: "branch-original", forkYear: 1516 };
 
 // --- Elin Marrow — the original branch ------------------------------------------------------
 
-const elinEntriesOriginal: ChronicleEntry[] = [
+const elinEntriesOriginal: AuthoredEntry[] = [
   {
     id: "e01",
     year: 1490,
@@ -429,7 +448,7 @@ const elinEpilogueOriginal = [
 
 // --- Elin Marrow — the "Changed in 1516" branch (rewrite demo) -----------------------------
 
-const elinEntriesChanged1516: ChronicleEntry[] = [
+const elinEntriesChanged1516: AuthoredEntry[] = [
   ...elinEntriesOriginal.slice(0, 11), // e01..e11, unchanged up to the 1516 turn
   {
     id: "e12b",
@@ -617,7 +636,83 @@ export const elinCast = [
   { personId: "hollis", name: "Hollis Fairwind", relation: "old rival" },
 ] as const;
 
-function chronicle(branch: BranchInfo, entries: readonly ChronicleEntry[], summary: string, epilogue: readonly string[]): Chronicle {
+
+const elinVillage: LifeScene["village"] = [
+  { k: "v-ansel", b: 1470 },
+  { k: "v-brida", b: 1488, d: 1531.4 },
+  { k: "v-corin", b: 1495 },
+  { k: "v-dorcas", b: 1510.3, d: 1548.6 },
+  { k: "v-edda", b: 1522.5 },
+];
+
+// --- Night-sky scenes (hand-authored; times are fractional years) -------------------------------
+
+const elinPeople = (died: Record<string, number>): ScenePerson[] => [
+  person("protagonist", "Elin Marrow", "f", "self", "self", 1490, 1490.3),
+  person("petra", "Petra Marrow", "f", "parent", "parents", 1465, 1490.3),
+  person("joren", "Joren Marrow", "m", "parent", "parents", 1462, 1490.3, died.joren),
+  person("margit", "Margit Holt", "f", "friend", "others", 1450, 1500.2, died.margit),
+  person("mireille", "Mireille Cade", "f", "friend", "others", 1490, 1502.4),
+  person("tomas", "Tomas Vell", "m", "lover", "others", 1488, 1508.5),
+  person("hollis", "Hollis Fairwind", "m", "rival", "others", 1486, 1530.3),
+];
+
+const elinSceneOriginal: LifeScene = {
+  people: [
+    ...elinPeople({ joren: 1535.4 }).map((p) => (p.id === "tomas" ? { ...p, relCode: "spouse" as const, group: "spouses" as const } : p)),
+    person("wren", "Wren Vell", "f", "child", "children", 1520, 1520.3),
+    person("cass", "Cass Vell", "m", "child", "children", 1526, 1526.2),
+  ].sort((a, b) => a.appearsAt - b.appearsAt),
+  edges: [
+    edge("petra", "protagonist", "parent", 1490.3),
+    edge("joren", "protagonist", "parent", 1490.3),
+    edge("petra", "joren", "spouse", null, 1535.4),
+    edge("protagonist", "margit", "friend", 1500.2, 1522.8),
+    edge("protagonist", "mireille", "friend", 1502.4),
+    edge("protagonist", "tomas", "lover", 1512.3, 1517.5),
+    edge("protagonist", "tomas", "spouse", 1517.5),
+    edge("protagonist", "hollis", "rival", 1530.3, 1551.4),
+    edge("protagonist", "wren", "parent", 1520.3),
+    edge("tomas", "wren", "parent", 1520.3),
+    edge("protagonist", "cass", "parent", 1526.2),
+    edge("tomas", "cass", "parent", 1526.2),
+  ],
+  village: elinVillage,
+  bands: [],
+  span: { start: 1490.3, end: 1554.6 },
+};
+
+const elinSceneChanged: LifeScene = {
+  people: elinPeople({ margit: 1535.3 }),
+  edges: [
+    edge("petra", "protagonist", "parent", 1490.3),
+    edge("joren", "protagonist", "parent", 1490.3),
+    edge("petra", "joren", "spouse", null),
+    edge("protagonist", "margit", "friend", 1500.2),
+    edge("protagonist", "mireille", "friend", 1502.4),
+    edge("protagonist", "tomas", "lover", 1512.3, 1521.6),
+    edge("protagonist", "hollis", "rival", 1530.3, 1551.4),
+  ],
+  village: elinVillage,
+  bands: [],
+  span: { start: 1490.3, end: 1560.6 },
+};
+
+const rosalindScene: LifeScene = {
+  people: [
+    person("protagonist", "Rosalind Thorn", "f", "self", "self", 1602, 1602.4),
+    person("elowen", "Elowen Thorn", "f", "parent", "parents", 1578, 1602.4),
+    person("bram", "Bram Thorn", "m", "parent", "parents", 1576, 1602.4),
+    person("sable", "Sable Underhill", "f", "friend", "others", 1602, 1605.4),
+  ],
+  edges: [edge("elowen", "protagonist", "parent", 1602.4), edge("bram", "protagonist", "parent", 1602.4), edge("elowen", "bram", "spouse", null), edge("protagonist", "sable", "friend", 1605.4)],
+  village: [{ k: "v-fenn", b: 1590 }, { k: "v-gale", b: 1599, d: 1606.5 }, { k: "v-hale", b: 1603.2 }],
+  bands: [],
+  span: { start: 1602.4, end: 1608.5 },
+};
+
+function chronicle(branch: BranchInfo, authored: readonly AuthoredEntry[], scene: LifeScene, summary: string, epilogue: readonly string[]): Chronicle {
+  const entries = withTiming(authored, scene);
   return {
     lifeId: "life-elin",
     branchId: branch.branchId,
@@ -637,21 +732,22 @@ function chronicle(branch: BranchInfo, entries: readonly ChronicleEntry[], summa
     ],
     epilogue,
     entries,
+    scene,
     branches: [ORIGINAL, CHANGED_1516],
     cast: elinCast.map((c) => ({ personId: c.personId, name: c.name, relation: c.relation })),
   };
 }
 
 export const elinChronicles: Readonly<Record<string, Chronicle>> = {
-  [ORIGINAL.branchId]: chronicle(ORIGINAL, elinEntriesOriginal, elinSummary, elinEpilogueOriginal),
-  [CHANGED_1516.branchId]: chronicle(CHANGED_1516, elinEntriesChanged1516, elinSummaryChanged, elinEpilogueChanged),
+  [ORIGINAL.branchId]: chronicle(ORIGINAL, elinEntriesOriginal, elinSceneOriginal, elinSummary, elinEpilogueOriginal),
+  [CHANGED_1516.branchId]: chronicle(CHANGED_1516, elinEntriesChanged1516, elinSceneChanged, elinSummaryChanged, elinEpilogueChanged),
 };
 
 // --- Rosalind Thorn — a short, early-death life --------------------------------------------
 
 const ROSALIND_BRANCH: BranchInfo = { branchId: "branch-original", label: "Original life", parentBranchId: null, forkYear: null };
 
-const rosalindEntries: ChronicleEntry[] = [
+const rosalindEntries: AuthoredEntry[] = [
   {
     id: "r01",
     year: 1602,
@@ -759,7 +855,8 @@ export const rosalindChronicle: Chronicle = {
     { personId: "bram", name: "Bram Thorn" },
   ],
   epilogue: rosalindEpilogue,
-  entries: rosalindEntries,
+  entries: withTiming(rosalindEntries, rosalindScene),
+  scene: rosalindScene,
   branches: [ROSALIND_BRANCH],
   cast: rosalindCast.map((c) => ({ personId: c.personId, name: c.name, relation: c.relation })),
 };

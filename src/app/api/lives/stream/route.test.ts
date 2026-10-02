@@ -63,6 +63,23 @@ describe("POST /api/lives/stream — incremental-simulation capability: live SSE
     const expectedYears = Array.from({ length: chronicle.protagonist.deathYear - chronicle.protagonist.birthYear + 1 }, (_, i) => chronicle.protagonist.birthYear + i);
     expect(tickFrames.map((f) => f.data.year)).toEqual(expectedYears);
 
+    // Every tick carries the scene so far; done's scene is a superset of the last tick's.
+    for (const f of tickFrames) expect(f.data.scene.people.some((p) => p.id === "protagonist")).toBe(true);
+    const lastScene = tickFrames[tickFrames.length - 1]!.data.scene;
+    const doneIds = new Set(chronicle.scene.people.map((p) => p.id));
+    for (const p of lastScene.people) expect(doneIds.has(p.id)).toBe(true);
+    // Entries carry fractional times and scene-resolvable people, equal ids in tick and done.
+    const doneEntries = new Map(chronicle.entries.map((e) => [e.id, e]));
+    for (const f of tickFrames) {
+      const sceneIds = new Set(f.data.scene.people.map((p) => p.id));
+      for (const e of f.data.entries) {
+        expect(e.at).toBeGreaterThanOrEqual(f.data.year);
+        expect(e.at).toBeLessThan(f.data.year + 1);
+        for (const id of e.who) expect(sceneIds.has(id)).toBe(true);
+        if (doneEntries.has(e.id)) expect(doneEntries.get(e.id)!.at).toBe(e.at);
+      }
+    }
+
     deleteLife(chronicle.lifeId);
   });
 });

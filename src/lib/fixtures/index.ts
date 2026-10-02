@@ -9,7 +9,7 @@
 
 import type { Chronicle, ChronicleEntry, CreateLifeRequest, LifeListItem, LifeStreamEvent, PersonSheet, RewriteRequest } from "@/contracts/life";
 import { elinChronicles, personSheets, rosalindChronicle, livesList } from "./data";
-import { delay, groupByYear, lowerFirst, renameProtagonistJson } from "./stream";
+import { delay, lowerFirst, renameProtagonistJson, sceneAt, yearTicks } from "./stream";
 
 type StreamEmit = (event: LifeStreamEvent) => void;
 
@@ -114,10 +114,10 @@ export async function streamCreateLife(req: CreateLifeRequest, onEvent: StreamEm
     protagonist: { name: chronicle.protagonist.name, sex: chronicle.protagonist.sex, birthYear: chronicle.protagonist.birthYear },
   });
 
-  for (const [year, entries] of groupByYear(chronicle.entries)) {
+  for (const [year, entries] of yearTicks(chronicle.entries, chronicle.protagonist.birthYear, chronicle.protagonist.deathYear)) {
     if (signal?.aborted) return;
-    await delay(160);
-    onEvent({ type: "tick", year, entries });
+    await delay(entries.length > 0 ? 160 : 60);
+    onEvent({ type: "tick", year, entries, scene: sceneAt(chronicle.scene, year) });
   }
   if (signal?.aborted) return;
 
@@ -193,6 +193,8 @@ function computeGenericRewrite(from: Chronicle, divergenceEntry: ChronicleEntry,
       title: `${firstName} lives on`,
       prose: `Against expectation, ${pronoun} lives past the year that once marked the end of this life.`,
       links: [],
+      at: divergenceEntry.year + 1.5,
+      who: [],
     };
     afterEntries = [lifeGoesOn];
   } else {
@@ -205,6 +207,8 @@ function computeGenericRewrite(from: Chronicle, divergenceEntry: ChronicleEntry,
       title: "Life takes a different shape",
       prose: `In the years that follow, ${pronoun} settles into a life shaped by that one different choice.`,
       links: [],
+      at: divergenceEntry.year + span + 0.5,
+      who: [],
     };
     const newDeath: ChronicleEntry = {
       id: `${divergenceEntry.id}-death`,
@@ -214,6 +218,8 @@ function computeGenericRewrite(from: Chronicle, divergenceEntry: ChronicleEntry,
       title: `${p.name}'s life reaches its end`,
       prose: `In time, ${firstName}'s own body finally gives out — though the years between were lived differently this time.`,
       links: [],
+      at: p.deathYear + 0.5,
+      who: [],
       turn: {
         decisionId: `dec-${p.deathYear}-death-${newBranchId}`,
         decidedBy: "Chance",
@@ -234,6 +240,7 @@ function computeGenericRewrite(from: Chronicle, divergenceEntry: ChronicleEntry,
     ...from,
     branchId: newBranchId,
     entries,
+    scene: { ...from.scene, span: { ...from.scene.span, end: lastYear + 0.5 } },
     protagonist: { ...p, deathYear: lastYear, ageAtDeath: lastYear - p.birthYear },
     branches: [...from.branches, newBranchInfo],
   };
@@ -276,10 +283,10 @@ export async function streamRewrite(lifeId: string, req: RewriteRequest, onEvent
 
   const newEntries = target.entries.filter((e) => e.year >= divergenceEntry.year && !from.entries.some((f) => f.id === e.id && f.year === e.year && f.title === e.title));
 
-  for (const [year, entries] of groupByYear(newEntries)) {
+  for (const [year, entries] of yearTicks(newEntries, divergenceEntry.year, target.protagonist.deathYear)) {
     if (signal?.aborted) return;
-    await delay(220);
-    onEvent({ type: "tick", year, entries });
+    await delay(entries.length > 0 ? 220 : 80);
+    onEvent({ type: "tick", year, entries, scene: sceneAt(target.scene, year) });
   }
   if (signal?.aborted) return;
 
