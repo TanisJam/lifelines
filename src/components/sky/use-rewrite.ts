@@ -9,6 +9,7 @@ import { getChronicle, rewriteStream } from "@/lib/life-client";
 import { travel } from "@/lib/sky/motion";
 import { prefersReducedMotion } from "@/lib/sky/motion-pref";
 import type { PlayerStore } from "@/lib/sky/player-store";
+import { runRewrite } from "@/lib/sky/rewrite-run";
 import { initialRewrite, rewriteBusy, rewriteFrontier, rewriteReducer, shownChronicle, type Fork } from "@/lib/sky/rewrite";
 import type { TurnEntry } from "./change-rules";
 
@@ -54,26 +55,15 @@ export function useRewrite(base: Chronicle, { lang, dict }: { lang: Locale; dict
       running.current = run;
       const reduced = prefersReducedMotion();
       dispatch({ type: "begin", fork });
-      try {
-        await sleep(reduced ? HOLD_REDUCED_MS : HOLD_A_MS, run.signal);
-        dispatch({ type: "hold" });
-        await sleep(reduced ? HOLD_REDUCED_MS : HOLD_B_MS, run.signal);
-        if (run.signal.aborted) return;
-        dispatch({ type: "stream", from });
-        let finished = false;
-        await rewriteStream(from.lifeId, { branchId: from.branchId, decisionId: turn.decisionId, optionId, lang, turnstileToken }, (event) => {
-          if (event.type === "tick") dispatch(event);
-          else if (event.type === "done") {
-            finished = true;
-            dispatch({ type: "done", chronicle: event.chronicle, ghosts: event.ghosts ?? {} });
-            window.history.replaceState(null, "", `/${lang}/life/${event.chronicle.lifeId}?branch=${event.chronicle.branchId}`);
-          } else if (event.type === "error") throw new Error(event.message);
-        }, run.signal);
-        if (!finished && !run.signal.aborted) throw new Error(dict.chronicle.rewriteIncomplete);
-      } catch (err) {
-        // The old life was never touched: dropping the stream restores it, and the message says why.
-        if (!run.signal.aborted) dispatch({ type: "fail", message: guardErrorMessage(err, dict, dict.chronicle.rewriteFailed) });
-      }
+      await runRewrite({
+        signal: run.signal,
+        sleep: (phase) => sleep(reduced ? HOLD_REDUCED_MS : phase === "A" ? HOLD_A_MS : HOLD_B_MS, run.signal),
+        dispatch,
+        from,
+        stream: (onEvent) => rewriteStream(from.lifeId, { branchId: from.branchId, decisionId: turn.decisionId, optionId, lang, turnstileToken }, onEvent, run.signal),
+        onDone: (saved) => window.history.replaceState(null, "", `/${lang}/life/${saved.lifeId}?branch=${saved.branchId}`),
+        messages: { incomplete: dict.chronicle.rewriteIncomplete, failed: (err) => guardErrorMessage(err, dict, dict.chronicle.rewriteFailed) },
+      });
     },
     [lang, dict],
   );

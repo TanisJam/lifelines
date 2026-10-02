@@ -3,11 +3,11 @@ import type { RewriteState } from "@/lib/sky/rewrite";
 
 /**
  * What the rewrite says about itself, over the sky: in A the divergence (original against new), in B and C that the
- * life is being rewritten and how far it has got, and the reason when it failed (the old life is back by then).
+ * life is being rewritten and how far it has got, and the reason when it failed (the old life is back by then, or the branch load failed in D).
  */
 export function RewriteCard({ state, firstName, dict }: { state: RewriteState; firstName: string; dict: Dictionary["chronicle"] }) {
   const { phase, fork, live, error } = state;
-  if (phase === "idle" && error) {
+  if (error && (phase === "idle" || phase === "D")) {
     return (
       <p className="sky-rewrite error" role="alert">
         {error}
