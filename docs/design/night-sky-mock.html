@@ -1,0 +1,1253 @@
+<title>Story Circle Constellation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+/* Layout: one framed night-sky screen. Left: title and place. Center: the constellation on the sky itself,
+   ringed by a compass and a dial of years. Right: the chronicle hung on a great arc. Bottom: player and legend.
+   A single night palette in either viewer theme: navy ground, starlight ink, one gold accent. */
+:root {
+  color-scheme: dark;
+  --night: #080c16;
+  --night-2: #0c1220;
+  --panel: rgb(14 20 34 / 0.72);
+  --ink: #efe7d4;
+  --ink-soft: #b9bac2;
+  --ink-faint: #7f8495;
+  --hair: rgb(222 214 190 / 0.14);
+  --hair-strong: rgb(222 214 190 / 0.26);
+  --gold: #e3bf72;
+  --gold-soft: rgb(227 191 114 / 0.55);
+  --gold-ink: #f3dca2;
+  --starlight: #fff3d1;
+  --sky: #0b1120;
+  --sky-red: #d98472;
+  --font-caps: "Cinzel", "Trajan Pro", Georgia, serif;
+  --font-display: "Cormorant Garamond", "Garamond", Georgia, serif;
+  --font-body: "EB Garamond", "Garamond", Georgia, serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--night); color: var(--ink); font-family: var(--font-body); font-size: 15.5px; line-height: 1.45; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 1.5px solid var(--gold); outline-offset: 3px; border-radius: 4px; }
+
+.frame { position: fixed; inset: 14px; border: 1px solid var(--hair); border-radius: 18px; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--night); }
+#backdrop { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
+.frame > *:not(#backdrop):not(.ornament) { position: relative; z-index: 1; }
+
+/* Header */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 34px 6px; }
+.brand { display: flex; align-items: baseline; gap: 26px; flex-wrap: wrap; }
+.logo { font-family: var(--font-caps); font-weight: 500; font-size: 15px; letter-spacing: 0.24em; color: var(--gold-ink); }
+.logo sup { font-size: 8px; color: var(--gold); margin-left: 2px; letter-spacing: 0; }
+.tagline { font-family: var(--font-caps); font-size: 9.5px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--ink-faint); }
+nav { display: flex; align-items: center; gap: 34px; }
+nav a { font-family: var(--font-caps); font-size: 10px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink-soft); padding-block: 6px; border-bottom: 1px solid transparent; transition: color 0.3s, border-color 0.3s; }
+nav a:hover { color: var(--gold-ink); }
+nav a.on { color: var(--gold-ink); }
+nav a.on::before { content: "·"; color: var(--gold); margin-right: 10px; }
+.iconbtn { width: 34px; height: 34px; display: grid; place-items: center; background: none; border: 0; cursor: pointer; color: var(--ink-soft); padding: 0; }
+.iconbtn.ringed { width: 40px; height: 40px; border: 1px solid var(--hair-strong); border-radius: 50%; color: var(--gold); }
+.iconbtn svg { width: 18px; height: 18px; }
+.iconbtn.ringed svg { width: 24px; height: 24px; }
+
+/* Stage */
+.area { position: relative; min-height: 0; }
+.intro { position: absolute; left: 38px; top: 6px; width: min(390px, 30%); display: grid; gap: 18px; }
+h1 { font-family: var(--font-display); font-weight: 500; font-size: clamp(34px, 3.7vw, 54px); line-height: 1.02; margin: 0; letter-spacing: -0.005em; text-wrap: balance; color: var(--ink); }
+.lede { margin: 0; color: var(--ink); opacity: 0.86; font-size: 15px; line-height: 1.5; max-width: 34ch; }
+.rule { width: 34px; height: 1px; background: var(--gold-soft); border: 0; margin: 0; }
+.motto { font-family: var(--font-display); font-style: italic; font-size: 17px; line-height: 1.4; color: var(--gold); margin: 0; }
+.motto.epitaph { color: var(--gold-ink); font-size: 17.5px; max-width: 32ch; }
+
+.place { position: absolute; left: 38px; bottom: 14px; display: grid; gap: 8px; width: min(320px, 30%); }
+.place .name { font-family: var(--font-caps); font-size: 12px; letter-spacing: 0.24em; color: var(--ink); }
+.place .coords { font-family: var(--font-body); font-size: 13px; letter-spacing: 0.06em; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.place .souls { font-size: 13px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.place .souls b { color: var(--gold); font-weight: 500; }
+.place q { font-family: var(--font-display); font-style: italic; font-size: 17px; line-height: 1.35; color: var(--ink); quotes: "\201C" "\201D"; }
+
+.disc { position: absolute; left: 45%; top: 50%; height: min(100%, 50vw); aspect-ratio: 1; transform: translate(-50%, -50%); }
+#sky { width: 100%; height: 100%; display: block; overflow: visible; }
+.rail { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+
+.now { position: absolute; top: 4px; display: grid; gap: 6px; }
+.odo { display: inline-flex; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
+.odo.big { font-family: var(--font-display); font-weight: 500; font-size: clamp(54px, 5.2vw, 76px); color: var(--ink); letter-spacing: 0.01em; }
+.odo .digit { height: 1em; overflow: hidden; display: inline-block; -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); }
+.odo .strip { display: flex; flex-direction: column; will-change: transform; }
+.odo .strip span { height: 1em; display: block; text-align: center; }
+.agerow { font-family: var(--font-body); font-size: 16.5px; color: var(--ink-soft); display: flex; align-items: baseline; gap: 7px; padding-left: 4px; }
+.agerow .odo { font-family: var(--font-body); font-size: 16.5px; color: var(--ink); }
+.agerow .sep { color: var(--ink-faint); margin-inline: 4px; }
+
+/* Chronicle on the arc */
+.reel { list-style: none; margin: 0; padding: 0; position: absolute; inset: 0; pointer-events: none; }
+.reel li { position: absolute; left: 0; top: 0; width: var(--w, 240px); pointer-events: auto; cursor: pointer; will-change: transform, opacity; }
+.reel .node { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--starlight); box-shadow: 0 0 6px 1px rgb(255 236 190 / 0.55); }
+.reel .body { position: absolute; left: 22px; top: -12px; width: calc(var(--w, 240px) - 22px); display: grid; grid-template-columns: 48px minmax(0, 1fr); column-gap: 12px; padding-block: 10px; }
+.reel .y { font-family: var(--font-body); font-size: 13px; color: var(--ink-faint); padding-top: 3px; font-variant-numeric: tabular-nums; }
+.reel .t { font-family: var(--font-display); font-weight: 500; font-size: 18px; line-height: 1.15; color: var(--ink); transition: color 0.5s linear, font-size 0.5s linear; }
+.reel .p { font-size: 13.5px; line-height: 1.38; color: var(--ink-soft); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.reel li.focus .p { -webkit-line-clamp: 3; }
+.reel .by { font-family: var(--font-caps); font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-bottom: 2px; }
+.reel li.turn .t::before { content: "◆"; color: var(--gold); font-size: 9px; margin-right: 8px; vertical-align: 3px; }
+.reel li.focus .node { left: -10px; top: -10px; width: 20px; height: 20px; background: radial-gradient(circle, var(--starlight) 0 3px, transparent 3.5px); border: 1.5px solid var(--gold); box-shadow: 0 0 14px 3px rgb(227 191 114 / 0.45), inset 0 0 6px rgb(227 191 114 / 0.4); }
+.reel li.ruled .body { border-top-color: var(--hair-strong); border-bottom-color: var(--hair-strong); }
+.caret { display: inline-block; width: 1px; height: 0.95em; margin-left: 1px; vertical-align: -0.12em; background: var(--gold); box-shadow: 0 0 4px var(--gold); }
+@media (prefers-reduced-motion: no-preference) { .caret { animation: caret 0.9s steps(1) infinite; } @keyframes caret { 50% { opacity: 0; } } }
+.reel li.focus .t { color: var(--gold-ink); font-size: 20.5px; }
+.reel li.focus .y { color: var(--gold); font-size: 15px; padding-top: 2px; }
+.reel li.focus .p { color: var(--ink); opacity: 0.88; }
+.leader { fill: none; stroke: var(--gold); stroke-width: 0.8; stroke-dasharray: 2 3; opacity: 0; }
+.leader-spark { fill: var(--gold-ink); filter: drop-shadow(0 0 3px var(--gold)); opacity: 0; }
+.now-tick { stroke: var(--gold); stroke-width: 1.4; opacity: 0.8; }
+.reel .node { transition: width 0.6s linear, height 0.6s linear, left 0.6s linear, top 0.6s linear, background 0.6s linear, border-color 0.6s linear, box-shadow 0.6s linear; border: 1.5px solid transparent; }
+.reel .body { border-top: 1px solid transparent; border-bottom: 1px solid transparent; transition: border-color 0.6s linear, opacity 0.4s linear; }
+.reel .y, .reel .p { transition: color 0.6s linear, font-size 0.6s linear; }
+.months { position: relative; width: min(320px, 100%); height: 30px; margin-top: 8px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 24%, #000 76%, transparent); mask-image: linear-gradient(90deg, transparent, #000 24%, #000 76%, transparent); }
+.tape { position: absolute; left: 0; top: 0; height: 100%; display: flex; will-change: transform; }
+.tape span { position: relative; flex: 0 0 64px; text-align: center; padding-top: 13px; font-family: var(--font-caps); font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-soft); transition: color 0.6s linear;
+  background: repeating-linear-gradient(90deg, rgb(222 214 190 / 0.22) 0 1px, transparent 1px 16px) 0 0 / 100% 5px no-repeat; }
+.tape span::before { content: ""; position: absolute; left: 0; top: 0; width: 1px; height: 9px; background: rgb(222 214 190 / 0.45); }
+.tape span.cur { color: var(--gold-ink); }
+.months .cursor { position: absolute; left: 50%; top: 0; width: 1px; height: 12px; background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+.bead { fill: var(--starlight); opacity: 0; transition: opacity 0.6s linear; }
+.bead.on { opacity: 0.55; }
+.bead.lit { fill: var(--gold-ink); opacity: 1; filter: drop-shadow(0 0 4px var(--gold)); }
+.ping { fill: none; stroke: var(--gold); stroke-width: 1; opacity: 0; transition: opacity 0.6s linear; }
+.node.named .ping { opacity: 0.85; }
+.node.named .halo { opacity: 0.95; }
+
+/* Right edge */
+.edge { position: absolute; right: 30px; top: 18px; bottom: 26px; width: 110px; display: grid; grid-template-rows: auto 1fr; justify-items: end; gap: 26px; }
+.edge q { font-family: var(--font-display); font-style: italic; font-size: 15.5px; line-height: 1.4; color: var(--gold); text-align: right; quotes: none; }
+.edge .rule { justify-self: end; }
+.timebar { position: relative; width: 100%; height: 100%; }
+.timebar .line { position: absolute; right: 22px; top: 70px; bottom: 30px; width: 1px; background: linear-gradient(var(--hair), var(--hair-strong) 30%, var(--hair) 100%); }
+.timebar .lbl { position: absolute; right: 30px; font-family: var(--font-caps); font-size: 8px; line-height: 1.9; letter-spacing: 0.28em; text-transform: uppercase; color: var(--ink-faint); text-align: right; }
+.timebar .lbl.top { top: 0; }
+.timebar .lbl.bottom { bottom: 60px; color: var(--gold); }
+.timebar .tick { position: absolute; right: 19px; width: 7px; height: 7px; transform: rotate(45deg); border: 1px solid var(--gold-soft); }
+.timebar .moon { position: absolute; right: 10px; width: 26px; height: 26px; margin-top: -13px; color: var(--ink-soft); }
+
+/* Footer */
+.bottom { display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 420px) minmax(0, 1fr); gap: 28px; align-items: end; padding: 0 30px 22px; }
+.player { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 16px; padding: 16px 22px 30px 16px; border: 1px solid var(--hair); border-radius: 999px; background: var(--panel); backdrop-filter: blur(6px); }
+.playbtn { width: 58px; height: 58px; border-radius: 50%; border: 1.5px solid var(--gold); background: radial-gradient(circle, rgb(227 191 114 / 0.16), transparent 70%); display: grid; place-items: center; cursor: pointer; box-shadow: 0 0 24px rgb(227 191 114 / 0.22); color: var(--gold-ink); padding: 0; }
+.playbtn svg { width: 20px; height: 20px; }
+.player .yr { font-family: var(--font-body); font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.speed { border: 1px solid var(--hair-strong); background: rgb(255 255 255 / 0.03); border-radius: 999px; min-width: 50px; height: 34px; font-size: 13px; color: var(--ink-soft); cursor: pointer; }
+.speed:hover, .playbtn:hover { border-color: var(--gold-ink); }
+.caption { position: absolute; left: 0; right: 0; bottom: 9px; text-align: center; font-family: var(--font-caps); font-size: 8.5px; letter-spacing: 0.42em; text-transform: uppercase; color: var(--ink-faint); pointer-events: none; }
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer; margin: 0; }
+input[type="range"]::-webkit-slider-runnable-track { height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--gold) 0 var(--p, 50%), rgb(255 255 255 / 0.16) var(--p, 50%) 100%); }
+input[type="range"]::-moz-range-track { height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--gold) 0 var(--p, 50%), rgb(255 255 255 / 0.16) var(--p, 50%) 100%); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -7px; border-radius: 50%; background: radial-gradient(circle, var(--starlight) 0 3px, var(--gold) 3.5px 100%); box-shadow: 0 0 12px 3px rgb(227 191 114 / 0.55); border: 0; }
+input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle, var(--starlight) 0 3px, var(--gold) 3.5px 100%); box-shadow: 0 0 12px 3px rgb(227 191 114 / 0.55); border: 0; }
+
+.legend { display: grid; grid-template-columns: repeat(2, max-content); gap: 9px 34px; padding: 16px 30px; border: 1px solid var(--hair); border-radius: 999px; background: var(--panel); backdrop-filter: blur(6px); font-size: 12.5px; color: var(--ink-soft); justify-self: start; }
+.legend span { display: inline-flex; align-items: center; gap: 10px; }
+.legend svg { width: 28px; height: 10px; overflow: visible; }
+.closing { justify-self: end; text-align: right; font-family: var(--font-display); font-style: italic; font-size: 17px; line-height: 1.4; color: var(--gold); margin: 0 0 6px; max-width: 18ch; quotes: "\201C" "\201D"; }
+.ornament { position: absolute; right: 0; bottom: 0; width: 320px; height: 320px; z-index: 0; pointer-events: none; }
+
+/* Sky */
+.bgstar { fill: #f0d389; transition: opacity 1.4s ease; }
+.bgstar.far { fill: var(--starlight); }
+.bgstar.bokeh { filter: url(#bokeh); }
+.bgstar.gone { opacity: 0 !important; }
+.kin { stroke: rgb(222 214 190 / 0.12); stroke-width: 0.5; fill: none; transition: opacity 1.4s ease; }
+.kin.gone { opacity: 0; }
+.ring { fill: none; stroke: rgb(222 214 190 / 0.16); stroke-width: 1; }
+.ring.faint { stroke: rgb(222 214 190 / 0.07); }
+.ring.compass { stroke: rgb(222 214 190 / 0.2); }
+.cross { stroke: rgb(222 214 190 / 0.07); stroke-width: 0.8; }
+.tick { stroke: rgb(222 214 190 / 0.22); stroke-width: 0.8; }
+.tick.major { stroke: rgb(222 214 190 / 0.5); }
+.dial-label { font-family: var(--font-body); font-size: 14px; fill: var(--ink); opacity: 0.85; text-anchor: middle; dominant-baseline: middle; font-variant-numeric: lining-nums; }
+.compass-label { font-family: var(--font-caps); font-size: 13px; fill: var(--ink-soft); text-anchor: middle; dominant-baseline: middle; letter-spacing: 0.1em; }
+.progress { fill: var(--gold); }
+.progress-glow { fill: var(--gold); filter: url(#bloom-sm); opacity: 0.55; }
+.plague { fill: var(--sky-red); opacity: 0.5; }
+.plague-label { font-family: var(--font-display); font-style: italic; font-size: 12.5px; fill: var(--sky-red); text-anchor: middle; opacity: 0.85; }
+.marker-ring { fill: none; stroke: var(--gold); stroke-width: 1.4; }
+.marker-glow { fill: var(--gold); filter: url(#bloom); opacity: 0.55; }
+.marker-dot { fill: var(--starlight); }
+.wash { fill: var(--sky-red); opacity: 0; pointer-events: none; }
+
+.edge-line { fill: none; stroke: rgb(232 205 146 / 0.5); stroke-width: 0.9; stroke-linecap: round; transition: opacity 1.4s ease, stroke-width 0.5s ease; }
+.edge-line.spouse { stroke: rgb(240 212 150 / 0.7); stroke-width: 1.1; }
+.edge-line.parent, .edge-line.friend { stroke: rgb(232 205 146 / 0.38); }
+.edge-line.rival { stroke: rgb(232 205 146 / 0.6); stroke-dasharray: 1 3.2; }
+.edge-line.former { stroke-dasharray: 3.5 3.5; }
+.edge-line.glow { stroke-width: 1.9; }
+svg.focus .edge-line { opacity: 0.12; }
+svg.focus .edge-line.hl { opacity: 1; }
+svg.focus .node { opacity: 0.3; }
+svg.focus .node.hl { opacity: 1; }
+.pulse, .head, .trail, .bloom { pointer-events: none; }
+.trail { fill: none; stroke: var(--gold); stroke-width: 0.8; }
+.bloom { fill: none; stroke: var(--gold); stroke-width: 1; }
+
+.node { cursor: pointer; }
+svg.focus .node { transition: opacity 0.4s; }
+.node .halo { fill: var(--starlight); filter: url(#bloom); opacity: 0.22; transition: opacity 0.9s linear; transform-box: fill-box; transform-origin: center; }
+.node.circle .halo { opacity: 0.62; }
+.node.dead .halo { opacity: 0; }
+.node.self .halo { opacity: 0.8; }
+.node .core { fill: var(--starlight); transition: fill 0.9s linear, transform 0.56s cubic-bezier(0.33, 0.67, 0.67, 1); transform-box: fill-box; transform-origin: center; }
+.node.outside .core { fill: #f0d389; transform: scale(0.72); }
+.node.dead .core { fill: #6f7482; transform: scale(0.62); }
+.node.focal .core { transform: scale(1.35); }
+.node .flare { fill: var(--starlight); opacity: 0.6; }
+.node.self.dead .flare { opacity: 0.15; }
+.node.self.dead .core { fill: #b9ae8c; }
+.node .spin { transform-box: fill-box; transform-origin: center; }
+.node text { paint-order: stroke; stroke: var(--sky); stroke-width: 3px; stroke-linejoin: round; text-anchor: middle; }
+.node .nm { font-family: var(--font-display); font-weight: 500; font-size: 14.5px; fill: var(--ink); transition: fill 0.9s linear; }
+.node.self .nm { font-size: 18px; font-weight: 500; }
+.node.outside .nm { fill: var(--ink-soft); font-style: italic; }
+.node.dead .nm { fill: var(--ink-faint); }
+.node:focus-visible { outline: none; }
+.node:focus-visible .core { stroke: var(--starlight); stroke-width: 2; }
+
+.tip { position: absolute; pointer-events: none; background: rgb(8 12 22 / 0.94); border: 1px solid var(--hair-strong); border-radius: 10px; padding: 9px 12px; font-size: 14px; line-height: 1.35; max-width: 230px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.4); color: var(--ink); z-index: 3; }
+.tip b { font-family: var(--font-display); font-size: 18px; font-weight: 500; display: block; }
+.tip .r { color: var(--gold); font-family: var(--font-caps); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; }
+.tip .s { color: var(--ink-soft); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .bgstar.tw { animation: tw 5.6s ease-in-out infinite; }
+  @keyframes tw { 50% { opacity: 0.08; } }
+  .node.self .spin { animation: spin 112s linear infinite; }
+  .node.self.dead .spin { animation-play-state: paused; }
+  .node.self:not(.dead) .halo { animation: breathe 4.5s ease-in-out infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes breathe { 50% { transform: scale(1.12); } }
+  .edge-line.rival.live { animation: crackle 1.1s linear infinite; }
+  @keyframes crackle { to { stroke-dashoffset: -8.4; } }
+}
+
+/* Narrow screens: the same parts, stacked and scrolling. */
+@media (max-width: 999px) {
+  .frame { position: relative; inset: auto; margin: 10px; min-height: calc(100% - 20px); display: block; }
+  .top { padding: 18px 18px 4px; flex-wrap: wrap; }
+  nav { gap: 18px; flex-wrap: wrap; }
+  .tagline { display: none; }
+  .area { display: grid; gap: 26px; padding: 14px 18px 24px; }
+  .intro, .place, .now, .edge { position: static; width: auto; }
+  .disc { position: relative; left: auto; top: auto; transform: none; width: 100%; height: auto; max-width: 560px; justify-self: center; margin-block: 18px; }
+  .rail, .edge .timebar { display: none; }
+  .edge { width: auto; display: block; }
+  .edge q { text-align: left; }
+  .reel { position: static; display: grid; gap: 4px; }
+  .reel li { position: relative; width: auto; transform: none !important; }
+  .reel .node { left: 6px; top: 22px; }
+  .reel li.focus .node { left: 0; top: 16px; }
+  .reel .body { position: relative; left: 0; top: 0; width: auto; margin-left: 28px; }
+  .bottom { grid-template-columns: minmax(0, 1fr); padding: 0 14px 18px; }
+  .legend { border-radius: 18px; padding: 14px 18px; gap: 8px 18px; }
+  .closing { justify-self: start; text-align: left; }
+  .ornament { display: none; }
+}
+</style>
+
+<div class="frame" id="frame">
+  <canvas id="backdrop" aria-hidden="true"></canvas>
+  <svg class="ornament" viewBox="0 0 320 320" aria-hidden="true">
+    <defs>
+      <linearGradient id="ornGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e3b0"/><stop offset="1" stop-color="#b98d45"/></linearGradient>
+    </defs>
+    <g fill="none" stroke="rgb(227 191 114 / 0.18)" stroke-width="1">
+      <path d="M320 40 A280 280 0 0 0 40 320"/>
+      <path d="M320 96 A224 224 0 0 0 96 320"/>
+      <path d="M320 150 C250 160 190 210 170 320" stroke="rgb(227 191 114 / 0.12)"/>
+      <path d="M320 200 C270 205 230 250 222 320" stroke="rgb(227 191 114 / 0.1)"/>
+    </g>
+    <g transform="translate(234 222)">
+      <path d="M0 -46 L5 -5 L46 0 L5 5 L0 46 L-5 5 L-46 0 L-5 -5 Z" fill="url(#ornGold)" opacity="0.85"/>
+      <path d="M0 -22 L3 -3 L22 0 L3 3 L0 22 L-3 3 L-22 0 L-3 -3 Z" fill="url(#ornGold)" opacity="0.6" transform="rotate(45)"/>
+      <circle r="2" fill="#fff3d1"/>
+    </g>
+  </svg>
+
+  <header class="top">
+    <div class="brand"><span class="logo">LIFELINES<sup>✦</sup></span><span class="tagline">A life in constellations</span></div>
+    <nav aria-label="Sections">
+      <a href="#story" class="on" aria-current="page">Story</a>
+      <a href="#people">People</a>
+      <a href="#places">Places</a>
+      <a href="#insights">Insights</a>
+      <button class="iconbtn" type="button" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 L21 21"/></svg></button>
+      <button class="iconbtn ringed" type="button" aria-label="Orientation"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 L13.2 10.8 L22 12 L13.2 13.2 L12 22 L10.8 13.2 L2 12 L10.8 10.8 Z" opacity="0.9"/></svg></button>
+    </nav>
+  </header>
+
+  <main class="area" id="area">
+    <section class="intro">
+      <h1>The constellation of Agnes atte Well</h1>
+      <p class="lede">Each star is someone in her life. The bright ones are her story circle, the people whose choices shape her own story. Ties appear the year they form, and they fade when they end. The ring around the sky is her lifetime, and the dim stars behind are the rest of the village of Ashcombe.</p>
+      <hr class="rule">
+      <p class="motto" id="motto">People make a life.<br>Time gives it meaning.</p>
+      <hr class="rule">
+    </section>
+
+    <div class="disc" id="disc">
+      <svg id="sky" viewBox="-400 -400 800 800" role="img" aria-label="Constellation of Agnes atte Well's relationships"></svg>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+    <svg class="rail" id="rail" aria-hidden="true"></svg>
+
+    <section class="now" id="now" aria-label="Current year">
+      <div class="odo big" id="year-odo" role="img" aria-label="1355"></div>
+      <div class="agerow"><span id="age-pre">Age</span><span class="odo" id="age-odo"></span><span class="sep">·</span><span id="where">In Ashcombe</span></div>
+      <div class="months" aria-hidden="true"><div class="tape" id="tape"></div><span class="cursor"></span></div>
+    </section>
+
+    <ol class="reel" id="feed" aria-label="Chronicle"></ol>
+
+    <aside class="edge">
+      <div><q>The same sky,<br>a different you.</q><hr class="rule" style="margin-top:14px"></div>
+      <div class="timebar" aria-hidden="true">
+        <div class="lbl top">Future<br>still<br>unwritten</div>
+        <div class="line"></div>
+        <div class="tick" style="top:42%"></div>
+        <div class="tick" style="top:88%"></div>
+        <svg class="moon" id="moon" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 3.5 A8.5 8.5 0 1 0 20.5 17 A7 7 0 1 1 15.5 3.5 Z"/></svg>
+        <div class="lbl bottom">Deeper<br>in time</div>
+      </div>
+    </aside>
+
+    <section class="place">
+      <div class="name">ASHCOMBE</div>
+      <div class="coords">51.2073° N · 1.3091° W</div>
+      <div class="souls"><b id="souls">0</b> souls in the village · <b id="circle-count">0</b> in her circle</div>
+      <hr class="rule">
+      <q>Here, among ordinary people,<br>an extraordinary life.</q>
+    </section>
+  </main>
+
+  <footer class="bottom">
+    <div class="player">
+      <button class="playbtn" id="play" type="button" aria-label="Play"><svg id="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5 L19 12 L8 19 Z"/></svg></button>
+      <span class="yr">1327</span>
+      <input id="year-range" type="range" min="1327.2" max="1371.9" step="0.01" value="1355.5" aria-label="Year">
+      <span class="yr">1371</span>
+      <button class="speed" id="speed" type="button" aria-label="Playback speed">1×</button>
+      <div class="caption">A life in motion</div>
+    </div>
+    <div class="legend" aria-label="Legend">
+      <span><svg viewBox="0 0 28 10"><circle cx="14" cy="5" r="5" fill="#fff3d1" opacity="0.35" filter="url(#bloom-sm)"/><circle cx="14" cy="5" r="2.6" fill="#fff3d1"/></svg>In her story circle</span>
+      <span><svg viewBox="0 0 28 10"><circle cx="14" cy="5" r="1.5" fill="#f0d389"/></svg>Others in Ashcombe</span>
+      <span><svg viewBox="0 0 28 10"><line x1="2" y1="5" x2="26" y2="5" stroke="rgb(240 212 150 / 0.8)" stroke-width="1.1"/></svg>Relationship</span>
+      <span><svg viewBox="0 0 28 10"><line x1="2" y1="5" x2="26" y2="5" stroke="rgb(232 205 146 / 0.7)" stroke-width="1" stroke-dasharray="3.5 3.5"/></svg>Former bond</span>
+      <span><svg viewBox="0 0 28 10"><line x1="2" y1="5" x2="26" y2="5" stroke="rgb(232 205 146 / 0.8)" stroke-width="1.2" stroke-dasharray="1 3.2" stroke-linecap="round"/></svg>Conflict</span>
+    </div>
+    <q class="closing">All our stories share the same sky.</q>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+(() => {
+  // Time is continuous: a fractional year. M(year, month) is the middle of that month.
+  const M = (y, m) => y + (m - 0.5) / 12;
+  const START = 1327, START_T = 1327.2, SELF = "agnes";
+  const RATE = 0.56; // years per second at 1×
+  const R1 = 150, R2 = 248;
+  const R_DIAL = 318, R_PROGRESS = 345, R_COMPASS = 372;
+  const ARRIVE_LEAD = 0.45, ARRIVE = 1.2;
+  const GROW_LEAD = 0.25, GROW = 1.3, GROW_PARENT = 0.9;
+  const LET_GO = 1.0;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const people = [
+    { id: "agnes", name: "Agnes atte Well", born: 1327, appearsAt: START_T, diedAt: M(1371, 3), group: "self", rel: "herself" },
+    { id: "maud", name: "Maud", born: 1301, appearsAt: START_T, diedAt: M(1349, 6), group: "parents", rel: "mother" },
+    { id: "walter", name: "Walter Reeve", born: 1296, appearsAt: START_T, diedAt: M(1340, 8), group: "parents", rel: "father" },
+    { id: "john", name: "John", born: 1324, appearsAt: START_T, diedAt: M(1349, 7), group: "siblings", rel: "brother" },
+    { id: "alice", name: "Alice", born: 1330, appearsAt: M(1330, 1), group: "siblings", rel: "sister", parents: ["maud", "walter"] },
+    { id: "hugh", name: "Hugh", born: 1333, appearsAt: M(1333, 5), diedAt: M(1336, 1), group: "siblings", rel: "brother", parents: ["maud", "walter"] },
+    { id: "wulfric", name: "Wulfric Shepherd", born: 1322, appearsAt: M(1345, 10), diedAt: M(1361, 5), group: "spouses", rel: "first husband" },
+    { id: "gilbert", name: "Gilbert Smith", born: 1318, appearsAt: M(1362, 11), group: "spouses", rel: "second husband" },
+    { id: "sam", name: "Sam", born: 1347, appearsAt: M(1347, 2), group: "children", rel: "son", parents: ["agnes", "wulfric"] },
+    { id: "joan", name: "Joan", born: 1349, appearsAt: M(1349, 7), diedAt: M(1349, 8), group: "children", rel: "daughter", parents: ["agnes", "wulfric"] },
+    { id: "ned", name: "Ned", born: 1351, appearsAt: M(1351, 5), group: "children", rel: "son", parents: ["agnes", "wulfric"] },
+    { id: "cecily", name: "Cecily", born: 1354, appearsAt: M(1354, 8), group: "children", rel: "daughter", parents: ["agnes", "wulfric"] },
+    { id: "peter", name: "Peter", born: 1357, appearsAt: M(1357, 3), group: "children", rel: "son", parents: ["agnes", "wulfric"] },
+    { id: "ralph", name: "Ralph Fitzgerald", born: 1320, appearsAt: M(1346, 11), group: "others", rel: "rival, the manor's bailiff" },
+    { id: "thomas", name: "Thomas Carter", born: 1323, appearsAt: M(1343, 5), group: "others", rel: "first love" },
+    { id: "edith", name: "Edith Miller", born: 1326, appearsAt: M(1334, 10), group: "others", rel: "friend" },
+    { id: "mary", name: "Mary Fowler", born: 1350, appearsAt: M(1367, 9), group: "outer", anchor: "sam", offset: -11, rel: "her son's wife" },
+    { id: "ann", name: "Ann", born: 1370, appearsAt: M(1370, 11), group: "outer", anchor: "sam", offset: 11, rel: "granddaughter", parents: ["sam", "mary"] },
+  ];
+  const byId = Object.fromEntries(people.map(p => [p.id, p]));
+  byId.agnes.bornAt = START_T;
+  const T_END = byId.agnes.diedAt + 0.7;
+
+  const parentOf = (parents, child) => parents.map(a => ({ a, b: child, kind: "parent", fromAt: byId[child].appearsAt }));
+  const edges = [
+    { a: "maud", b: "walter", kind: "spouse", fromAt: START_T - 5, untilAt: byId.walter.diedAt },
+    ...parentOf(["maud", "walter"], "agnes"),
+    ...parentOf(["maud", "walter"], "john"),
+    ...parentOf(["maud", "walter"], "alice"),
+    ...parentOf(["maud", "walter"], "hugh"),
+    { a: "agnes", b: "edith", kind: "friend", fromAt: M(1335, 6) },
+    { a: "agnes", b: "thomas", kind: "lover", fromAt: M(1343, 9), untilAt: M(1345, 4) },
+    { a: "thomas", b: "edith", kind: "spouse", fromAt: M(1346, 6) },
+    { a: "agnes", b: "wulfric", kind: "spouse", fromAt: M(1346, 4), untilAt: byId.wulfric.diedAt },
+    { a: "agnes", b: "ralph", kind: "rival", fromAt: M(1347, 4), untilAt: M(1358, 10) },
+    ...parentOf(["agnes", "wulfric"], "sam"),
+    ...parentOf(["agnes", "wulfric"], "joan"),
+    ...parentOf(["agnes", "wulfric"], "ned"),
+    ...parentOf(["agnes", "wulfric"], "cecily"),
+    ...parentOf(["agnes", "wulfric"], "peter"),
+    { a: "agnes", b: "gilbert", kind: "spouse", fromAt: M(1363, 6) },
+    { a: "sam", b: "mary", kind: "spouse", fromAt: M(1368, 5) },
+    ...parentOf(["sam", "mary"], "ann"),
+  ].map(e => ({ ...e, key: `${e.a}-${e.b}-${e.kind}` }));
+  edges.forEach(e => { if (e.fromAt <= START_T) e.fromAt = START_T - 5; });
+
+  const entries = [
+    { at: START_T, level: 2, who: ["agnes", "maud", "walter"], title: "Agnes is born", prose: "Born to Maud and Walter Reeve in the last week of Lent, in a cottage by the well that gives her family its name." },
+    { at: M(1330, 1), level: 1, who: ["alice", "maud"], title: "A sister, Alice", prose: "Maud brings Alice into the world in a hard January." },
+    { at: M(1333, 5), level: 1, who: ["hugh"], title: "A brother, Hugh", prose: "Hugh is born small and loud." },
+    { at: M(1335, 6), level: 1, who: ["edith", "agnes"], title: "Edith Miller", prose: "Agnes and Edith, the miller's girl, become inseparable at the mill race." },
+    { at: M(1336, 1), level: 2, who: ["hugh", "maud"], title: "Hugh dies in his third winter", prose: "A cough that would not leave him. Maud does not speak for a week." },
+    { at: M(1340, 8), level: 2, who: ["walter"], title: "Walter Reeve dies at harvest", prose: "A fever takes him in four days. The family loses the reeve's portion of the harvest." },
+    { at: M(1343, 9), level: 3, who: ["thomas", "agnes"], title: "She lets Thomas Carter court her", prose: "Thomas walks her home from the Michaelmas fair, and she does not send him away.", by: "Her choice" },
+    { at: M(1345, 4), level: 3, who: ["thomas", "agnes"], title: "Thomas breaks it off", prose: "He wants a girl with a dowry. Agnes has a well and a widowed mother.", by: "Thomas Carter's choice" },
+    { at: M(1346, 4), level: 3, who: ["wulfric", "agnes"], title: "She marries Wulfric Shepherd", prose: "A quiet man with forty sheep and no family left. She says yes at the second asking.", by: "Her choice" },
+    { at: M(1346, 6), level: 1, who: ["thomas", "edith"], title: "Thomas weds Edith", prose: "Her oldest friend marries her first love." },
+    { at: M(1347, 2), level: 2, who: ["sam", "wulfric"], title: "A son, Sam", prose: "Born at Candlemas, named for Wulfric's father." },
+    { at: M(1347, 4), level: 3, who: ["ralph", "agnes"], title: "Ralph Fitzgerald takes the river strip", prose: "The bailiff claims the strip her father worked. She refuses to give it up quietly, and a feud begins.", by: "Her choice" },
+    { at: M(1348, 10), level: 2, who: [], title: "The Great Mortality reaches Ashcombe", prose: "It comes up the river road in October. The priest is the first to die." },
+    { at: M(1349, 6), level: 2, who: ["maud", "john", "wulfric"], title: "Maud and John die within weeks", prose: "Her mother, then her brother. There is no one left to dig, so Wulfric digs." },
+    { at: M(1349, 7), level: 2, who: ["joan"], title: "Joan, born and buried in one summer", prose: "A daughter lives a few short weeks." },
+    { at: M(1351, 5), level: 1, who: ["ned"], title: "A son, Ned", prose: "Born strong, in a village with half its people gone." },
+    { at: M(1354, 8), level: 1, who: ["cecily", "wulfric"], title: "A daughter, Cecily", prose: "Wulfric carves her a cradle from the old pear tree." },
+    { at: M(1357, 3), level: 1, who: ["peter"], title: "A son, Peter", prose: "Her last child, and her easiest birth." },
+    { at: M(1358, 10), level: 3, who: ["ralph", "agnes"], title: "She makes peace with Ralph", prose: "At the manor court she accepts half the strip and a handshake. Eleven years of grudge, ended in a morning.", by: "Her choice" },
+    { at: M(1361, 5), level: 2, who: ["wulfric"], title: "The pestilence returns, and Wulfric dies", prose: "The second coming kills the young and the strong. It takes Wulfric in May." },
+    { at: M(1363, 6), level: 3, who: ["gilbert", "agnes"], title: "She marries Gilbert Smith", prose: "A widower with a forge and a temper. She needs a roof for Peter and Cecily, and he needs someone to keep his house.", by: "Her choice" },
+    { at: M(1368, 5), level: 1, who: ["sam", "mary"], title: "Sam marries Mary Fowler", prose: "Agnes walks her son to the church door." },
+    { at: M(1370, 11), level: 2, who: ["ann", "sam"], title: "Ann, her first grandchild", prose: "Sam's daughter, born at Martinmas." },
+    { at: byId.agnes.diedAt, level: 2, who: ["agnes", "gilbert"], title: "Agnes dies, aged 44", prose: "A late winter fever. Gilbert and four of her children are by the hearth." },
+  ].map((e, i) => ({ ...e, id: `e${i}`, year: Math.floor(e.at) }));
+
+  const plagues = [
+    { a: M(1348, 10), b: 1350.0, label: "Great Mortality" },
+    { a: M(1361, 3), b: 1361.95, label: "Second pestilence" },
+  ];
+
+  // Village souls (they live and die; the plague sweeps from the river road), a distant sky for depth, kinship threads.
+  const RIVER_ROAD = (200 * Math.PI) / 180;
+  let seed = 1327;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const village = Array.from({ length: 340 }, () => {
+    const born = rand() < 0.78 ? 1270 + rand() * 57 : 1328 + rand() * 43;
+    const r = 40 + Math.sqrt(rand()) * 262, a = rand() * Math.PI * 2;
+    let gap = Math.abs(a - RIVER_ROAD) % (Math.PI * 2);
+    if (gap > Math.PI) gap = Math.PI * 2 - gap;
+    const roll = rand();
+    let died = roll < 0.34 ? plagues[0].a + (gap / Math.PI) * 0.9 + rand() * 0.25
+      : roll < 0.44 ? plagues[1].a + (gap / Math.PI) * 0.45 + rand() * 0.15
+      : born + 25 + rand() * 45;
+    if (died <= born) died = born + 1 + rand() * 30;
+    return { x: r * Math.cos(a), y: r * Math.sin(a), size: 0.6 + rand() * 1.3, born, died, base: 0.3 + rand() * 0.45, delay: rand() * 5.6, tw: rand() < 0.4 };
+  });
+  const distant = Array.from({ length: 300 }, () => {
+    const bokeh = rand() < 0.22;
+    const r = Math.sqrt(rand()) * 310, a = rand() * Math.PI * 2;
+    return { x: r * Math.cos(a), y: r * Math.sin(a), size: bokeh ? 2 + rand() * 3 : 0.35 + rand() * 0.6, base: bokeh ? 0.08 + rand() * 0.12 : 0.18 + rand() * 0.3, delay: rand() * 5.6, tw: !bokeh && rand() < 0.5, layer: bokeh ? "bokeh" : "far" };
+  });
+  const kin = [];
+  village.forEach((v, i) => {
+    if (rand() > 0.62) return;
+    const near = village.map((w, j) => [j, (w.x - v.x) ** 2 + (w.y - v.y) ** 2]).filter(([j]) => j !== i).sort((p, q) => p[1] - q[1]);
+    kin.push([i, near[0][0]]);
+    if (rand() < 0.35) kin.push([i, near[1 + Math.floor(rand() * 3)][0]]);
+  });
+
+  // Layout: protagonist at the center; each relation group owns an arc of the inner ring.
+  const sectors = { parents: [-118, -62], siblings: [-168, -128], spouses: [-26, 26], children: [40, 128], others: [140, 196] };
+  const RADIUS = { children: R1 + 12, others: R1 + 50 };
+  const polar = (deg, r) => [r * Math.cos((deg * Math.PI) / 180), r * Math.sin((deg * Math.PI) / 180)];
+  for (const [group, [a0, a1]] of Object.entries(sectors)) {
+    const members = people.filter(p => p.group === group).sort((x, y) => x.born - y.born);
+    members.forEach((p, i) => { p.angle = a0 + ((i + 0.5) * (a1 - a0)) / members.length; p.home = polar(p.angle, RADIUS[group] ?? R1); });
+  }
+  byId.agnes.home = [0, 0];
+  people.filter(p => p.group === "outer").forEach(p => { p.angle = byId[p.anchor].angle + p.offset; p.home = polar(p.angle, R2); });
+  people.forEach((p, i) => {
+    p.cur = p.home.slice();
+    p.phase = i * 1.7;
+    p.orbit = (0.176 + (i % 5) * 0.024) * (i % 2 ? 1 : -1);
+    p.amp = p.id === SELF ? 1.4 : 3;
+    const parent = (p.parents || []).map(id => byId[id]).find(q => q.appearsAt < p.appearsAt);
+    p.originParent = parent || null;
+    p.originStar = parent ? null : Math.floor(Math.abs(Math.sin(p.born * 7.13 + p.name.length)) * village.length);
+  });
+  // Which way each curve bows is decided once, from fixed places, so a curve never flips.
+  const sideFor = (a, b) => {
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+    return Math.hypot(mx - dy / len, my + dx / len) >= Math.hypot(mx + dy / len, my - dx / len) ? 1 : -1;
+  };
+  edges.forEach(e => { e.side = sideFor(byId[e.a].home, byId[e.b].home); });
+  people.forEach(p => { p.arriveSide = sideFor(p.originParent ? p.originParent.home : [village[p.originStar].x, village[p.originStar].y], p.home); });
+
+  // Motion: one constant speed, braking gently to rest over the last SETTLE share. No acceleration, no bounce.
+  const clamp01 = x => Math.min(1, Math.max(0, x));
+  const SETTLE = 0.2;
+  const travel = u => {
+    const x = clamp01(u), a = 1 - SETTLE, v = 1 / (a + SETTLE / 2);
+    if (x <= a) return x * v;
+    const y = (x - a) / SETTLE;
+    return a * v + v * SETTLE * (y - (y * y) / 2);
+  };
+  const alive = (p, t) => p.diedAt === undefined || p.diedAt > t;
+  const active = (e, t) => e.fromAt <= t && (e.untilAt === undefined || e.untilAt > t);
+  const touchesSelf = (e, id) => (e.a === SELF && e.b === id) || (e.b === SELF && e.a === id);
+  const inCircle = (p, t) => {
+    if (p.id === SELF) return true;
+    if (["parents", "siblings", "children"].includes(p.group)) return true;
+    return edges.some(e => touchesSelf(e, p.id) && ["spouse", "lover", "rival"].includes(e.kind) && active(e, t));
+  };
+  const presence = (p, t) => (p.appearsAt <= START_T ? 1 : clamp01((t - (p.appearsAt - ARRIVE_LEAD)) / ARRIVE));
+  const growth = (e, t) => clamp01((t - (e.fromAt - GROW_LEAD)) / (e.kind === "parent" ? GROW_PARENT : GROW));
+  const diedYear = p => Math.floor(p.diedAt);
+
+  const control = (a, b, bowK, side) => {
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+    const k = len * bowK * side;
+    return [mx - (dy / len) * k, my + (dx / len) * k];
+  };
+  const quad = (p0, c, p1, s) => {
+    const u = 1 - s;
+    return [u * u * p0[0] + 2 * u * s * c[0] + s * s * p1[0], u * u * p0[1] + 2 * u * s * c[1] + s * s * p1[1]];
+  };
+  // Share of the curve's length -> Bezier parameter, so whatever travels along it keeps a constant speed.
+  const paramAt = (p0, c, p1, s) => {
+    if (s <= 0 || s >= 1) return s;
+    const N = 16, acc = [0];
+    let prev = p0;
+    for (let i = 1; i <= N; i++) { const q = quad(p0, c, p1, i / N); acc.push(acc[i - 1] + Math.hypot(q[0] - prev[0], q[1] - prev[1])); prev = q; }
+    const target = s * acc[N];
+    let i = 1;
+    while (i < N && acc[i] < target) i++;
+    const seg = acc[i] - acc[i - 1] || 1;
+    return (i - 1 + (target - acc[i - 1]) / seg) / N;
+  };
+  const lerp = (a, b, s) => [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
+  const partial = (p0, c, p1, s) => {
+    const q = lerp(p0, c, s), end = quad(p0, c, p1, s);
+    return `M${p0[0].toFixed(1)},${p0[1].toFixed(1)} Q${q[0].toFixed(1)},${q[1].toFixed(1)} ${end[0].toFixed(1)},${end[1].toFixed(1)}`;
+  };
+  const starPath = (outer, inner, points) => {
+    let d = "";
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 ? inner : outer, a = (i * Math.PI) / points - Math.PI / 2;
+      d += `${i ? "L" : "M"}${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`;
+    }
+    return d + "Z";
+  };
+  const SPARK = { parent: "#fff3d1", spouse: "#f3d58e", lover: "#f6e3b0", rival: "#e9a27f", friend: "#fff3d1" };
+  const KIND_PULSE = { spouse: [0.55, 4.4], lover: [0.9, 3.2], rival: [0.7, 2.2], parent: [0.22, 5.2], friend: [0.3, 4.8] };
+
+  // --- The constellation SVG ---
+  const svg = d3.select("#sky");
+  const defs = svg.append("defs");
+  const blur = (id, sd) => defs.append("filter").attr("id", id).attr("x", "-300%").attr("y", "-300%").attr("width", "700%").attr("height", "700%")
+    .append("feGaussianBlur").attr("stdDeviation", sd);
+  blur("bloom", 4.5); blur("bloom-sm", 2); blur("bokeh", 1.6);
+  const gDistant = svg.append("g"), gKin = svg.append("g"), gBg = svg.append("g");
+  const wash = svg.append("circle").attr("class", "wash").attr("r", R_DIAL - 4);
+  const gDial = svg.append("g"), gTrails = svg.append("g"), gEdges = svg.append("g"), gPulses = svg.append("g"), gNodes = svg.append("g"), gFxTop = svg.append("g");
+
+  gDistant.selectAll("circle").data(distant).join("circle")
+    .attr("class", d => `bgstar ${d.layer}` + (d.tw ? " tw" : ""))
+    .attr("cx", d => d.x).attr("cy", d => d.y).attr("r", d => d.size)
+    .style("opacity", d => d.base).style("animation-delay", d => `${d.delay}s`);
+  const kinLines = gKin.selectAll("line").data(kin).join("line").attr("class", "kin")
+    .attr("x1", ([i]) => village[i].x).attr("y1", ([i]) => village[i].y).attr("x2", ([, j]) => village[j].x).attr("y2", ([, j]) => village[j].y);
+  const bg = gBg.selectAll("circle").data(village).join("circle")
+    .attr("class", d => "bgstar" + (d.tw ? " tw" : ""))
+    .attr("cx", d => d.x).attr("cy", d => d.y).attr("r", d => d.size)
+    .style("opacity", d => d.base).style("animation-delay", d => `${d.delay}s`);
+  const bgNodes = bg.nodes();
+
+  // Rings: a faint inner circle, crosshairs, the dial of years, the progress ring, and the compass.
+  const span = 1372 - START;
+  const dialAngle = t => ((t - START) / span) * 360 - 90;
+  const toRad = t => ((t - START) / span) * Math.PI * 2;
+  gDial.append("circle").attr("class", "ring faint").attr("r", R2 + 4);
+  gDial.append("line").attr("class", "cross").attr("x1", 0).attr("y1", -R_COMPASS).attr("x2", 0).attr("y2", R_COMPASS);
+  gDial.append("line").attr("class", "cross").attr("x1", -R_COMPASS).attr("y1", 0).attr("x2", R_COMPASS).attr("y2", 0);
+  gDial.append("circle").attr("class", "ring").attr("r", R_DIAL);
+  for (let y = START; y <= 1371; y++) {
+    const major = y % 10 === 0 || y === START;
+    const [x1, y1] = polar(dialAngle(y), R_DIAL), [x2, y2] = polar(dialAngle(y), R_DIAL - (major ? 9 : 4));
+    gDial.append("line").attr("class", "tick" + (major ? " major" : "")).attr("x1", x1).attr("y1", y1).attr("x2", x2).attr("y2", y2);
+    if (major) {
+      const [lx, ly] = polar(dialAngle(y), R_DIAL - 24);
+      gDial.append("text").attr("class", "dial-label").attr("x", lx).attr("y", ly).text(y);
+    }
+  }
+  const band = d3.arc().innerRadius(R_DIAL - 1.6).outerRadius(R_DIAL + 1.6);
+  plagues.forEach(pl => {
+    pl.path = gDial.append("path").attr("class", "plague").attr("d", band({ startAngle: toRad(pl.a), endAngle: toRad(pl.b) }));
+    const [lx, ly] = polar(dialAngle((pl.a + pl.b) / 2), R_DIAL + 13);
+    gDial.append("text").attr("class", "plague-label").attr("x", lx).attr("y", ly).attr("dominant-baseline", "middle").text(pl.label);
+  });
+  gDial.append("circle").attr("class", "ring faint").attr("r", R_PROGRESS);
+  const progArc = d3.arc().innerRadius(R_PROGRESS - 1.1).outerRadius(R_PROGRESS + 1.1).startAngle(toRad(START_T));
+  const progressGlow = gDial.append("path").attr("class", "progress-glow");
+  const progress = gDial.append("path").attr("class", "progress");
+  gDial.append("circle").attr("class", "ring compass").attr("r", R_COMPASS);
+  for (let a = 0; a < 360; a += 5) {
+    const major = a % 45 === 0;
+    const [x1, y1] = polar(a, R_COMPASS), [x2, y2] = polar(a, R_COMPASS + (major ? 8 : 3.5));
+    gDial.append("line").attr("class", "tick" + (major ? " major" : "")).attr("x1", x1).attr("y1", y1).attr("x2", x2).attr("y2", y2);
+  }
+  [["N", -90], ["E", 0], ["S", 90], ["W", 180]].forEach(([l, a]) => {
+    const [x, y] = polar(a, R_COMPASS + 22);
+    gDial.append("text").attr("class", "compass-label").attr("x", x).attr("y", y).text(l);
+  });
+  const marker = gDial.append("g");
+  marker.append("circle").attr("class", "marker-glow").attr("r", 9);
+  marker.append("circle").attr("class", "marker-ring").attr("r", 8.5);
+  marker.append("circle").attr("class", "marker-dot").attr("r", 3.2);
+
+  // Ties.
+  edges.forEach(e => {
+    e.el = gEdges.append("path").attr("class", `edge-line ${e.kind}`).node();
+    e.head = gEdges.append("circle").attr("class", "head").attr("r", 2.4)
+      .style("fill", SPARK[e.kind]).style("filter", `drop-shadow(0 0 3px ${SPARK[e.kind]})`).style("opacity", 0).node();
+    e.nextPulse = 0;
+  });
+
+  // People: a cream core inside a soft bloom; her star carries a faint four-point flare.
+  let focused = null, focusSet = null;
+  people.forEach(p => {
+    p.trail = gTrails.append("path").attr("class", "trail").style("opacity", 0).node();
+    const g = gNodes.append("g").datum(p).attr("class", "node" + (p.id === SELF ? " self" : "")).attr("tabindex", 0).attr("role", "button").attr("aria-label", `${p.name}, ${p.rel}`);
+    g.append("circle").attr("class", "halo").attr("r", p.id === SELF ? 18 : p.group === "outer" ? 7 : 9);
+    if (p.id === SELF) {
+      g.append("g").attr("class", "spin").append("path").attr("class", "flare").attr("d", starPath(34, 0.8, 4));
+      g.append("circle").attr("class", "core").attr("r", 8);
+    } else g.append("circle").attr("class", "core").attr("r", p.group === "outer" ? 3.4 : 4.4);
+    g.append("text").attr("class", "nm").attr("y", p.id === SELF ? 30 : 19).text(p.name);
+    g.on("mouseenter focus", () => setFocus(p)).on("mouseleave blur", () => setFocus(null))
+      .on("click", () => setFocus(focused === p ? null : p));
+    p.el = g.node();
+    p.core = g.select(".core").node();
+  });
+  const blooms = [0, 1, 2].map(() => gFxTop.append("circle").attr("class", "bloom").attr("r", 0).style("opacity", 0).node());
+
+  // --- Clock ---
+  let t = 1355.55, playing = false, speed = 1, lastFrame = performance.now();
+
+  // --- Sparks travelling along living ties (real time: the sky is never still, even when paused) ---
+  const pulses = [];
+  function emitPulse(e, now, { from = null, life = null } = {}) {
+    if (reduced) return;
+    const tint = SPARK[e.kind];
+    const el = gPulses.append("circle").attr("class", "pulse").attr("r", e.kind === "spouse" ? 2.3 : e.kind === "parent" ? 1.6 : 1.9)
+      .style("fill", tint).style("filter", `drop-shadow(0 0 2.5px ${tint}) drop-shadow(0 0 6px ${tint})`).node();
+    pulses.push({ e, el, born: now, life: life || KIND_PULSE[e.kind][1] * (0.85 + Math.random() * 0.3), reverse: from ? from === e.b : Math.random() < 0.5 });
+  }
+
+  // --- Odometers ---
+  function buildOdo(el, digits) {
+    el.innerHTML = Array.from({ length: digits }, () => `<span class="digit"><span class="strip">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(n => `<span>${n}</span>`).join("")}</span></span>`).join("");
+    return [...el.querySelectorAll(".strip")];
+  }
+  const rolled = (value, floor) => {
+    const whole = Math.floor(value), frac = value - whole;
+    return Math.max(floor, whole - 1 + travel(frac / 0.33));
+  };
+  function setOdo(strips, value, dropLeadingZero = false) {
+    if (dropLeadingZero) strips[0].parentElement.style.display = value < 9.5 ? "none" : "";
+    let v = Math.floor(value), carry = value - v;
+    for (let k = strips.length - 1; k >= 0; k--) {
+      const d = v % 10;
+      strips[k].style.transform = `translateY(${-(d + carry)}em)`;
+      carry = d === 9 ? carry : 0;
+      v = Math.floor(v / 10);
+    }
+  }
+  const yearOdo = document.getElementById("year-odo"), ageOdo = document.getElementById("age-odo");
+  const yearStrips = buildOdo(yearOdo, 4), ageStrips = buildOdo(ageOdo, 2);
+  const SEASONS = ["Epiphany", "Candlemas", "Lent", "Easter", "Whitsun", "Midsummer", "Haymaking", "Lammas", "Michaelmas", "Winter sowing", "Martinmas", "Christmas"];
+
+  // --- Focus: one star, or the people of one chronicle entry ---
+  const disc = document.getElementById("disc"), tip = document.getElementById("tip");
+  const describe = p => {
+    const life = !alive(p, t) ? `${p.born}–${diedYear(p)}` : `born ${p.born}`;
+    const status = p.id === SELF ? (alive(p, t) ? `Age ${Math.floor(t - p.bornAt)}` : "Her life is written") : inCircle(p, t) ? (alive(p, t) ? "In her story circle" : "Dead, still family") : "Outside her story circle now";
+    return `<span class="r">${p.rel}</span><b>${p.name}</b><span class="s">${life}. ${status}.</span>`;
+  };
+  function placeTip() {
+    if (!focused) return;
+    const rect = disc.getBoundingClientRect(), scale = rect.width / 800;
+    const px = (focused.cur[0] + 400) * scale, py = (focused.cur[1] + 400) * scale;
+    tip.style.left = Math.min(Math.max(px - 115, 0), rect.width - 230) + "px";
+    tip.style.top = (py > rect.height / 2 ? py - tip.offsetHeight - 22 : py + 26) + "px";
+  }
+  function applyFocus(ids, pulseFrom) {
+    const svgEl = svg.node();
+    if (!ids) {
+      svgEl.classList.remove("focus");
+      people.forEach(q => q.el.classList.remove("hl", "focal"));
+      edges.forEach(e => e.el.classList.remove("hl"));
+      return;
+    }
+    const linked = new Set(ids);
+    const now = performance.now() / 1000;
+    edges.forEach(e => {
+      const on = (ids.includes(e.a) || ids.includes(e.b)) && growth(e, t) > 0 && (pulseFrom ? true : ids.includes(e.a) && ids.includes(e.b) || ids.length === 1);
+      e.el.classList.toggle("hl", on);
+      if (on) {
+        if (pulseFrom) { linked.add(e.a); linked.add(e.b); }
+        if (pulseFrom && (e.a === pulseFrom || e.b === pulseFrom)) emitPulse(e, now, { from: pulseFrom, life: 1.4 });
+      }
+    });
+    people.forEach(q => { q.el.classList.toggle("hl", linked.has(q.id)); q.el.classList.toggle("focal", ids.length === 1 && q.id === ids[0]); });
+    svgEl.classList.add("focus");
+  }
+  function setFocus(p) {
+    const changed = focused !== p;
+    focused = p;
+    if (!p) { tip.hidden = true; applyFocus(focusSet, null); return; }
+    applyFocus([p.id], changed ? p.id : null);
+    tip.innerHTML = describe(p);
+    tip.hidden = false;
+    placeTip();
+  }
+  function setFocusSet(ids) {
+    focusSet = ids && ids.length ? ids : null;
+    if (!focused) applyFocus(focusSet, null);
+  }
+
+  // --- The scene, every frame ---
+  function draw(now) {
+    for (const p of people) {
+      const pres = presence(p, t);
+      const float = reduced ? [0, 0] : [Math.cos(now * p.orbit + p.phase) * p.amp, Math.sin(now * p.orbit + p.phase) * p.amp];
+      const home = [p.home[0] + float[0], p.home[1] + float[1]];
+      if (pres <= 0) { p.el.style.display = "none"; p.trail.style.opacity = 0; p.cur = home; continue; }
+      p.el.style.display = "";
+      if (pres < 1) {
+        const src = p.originParent ? p.originParent.cur : [village[p.originStar].x, village[p.originStar].y];
+        const c = control(src, home, 0.22, p.arriveSide);
+        const s = travel(pres);
+        p.cur = quad(src, c, home, paramAt(src, c, home, s));
+        p.trail.setAttribute("d", partial(src, c, home, paramAt(src, c, home, Math.min(1, s))));
+        p.trail.style.opacity = String(0.5 * Math.min(1, pres * 4) * (1 - pres));
+        p.el.setAttribute("transform", `translate(${p.cur[0].toFixed(1)},${p.cur[1].toFixed(1)}) scale(${(0.35 + 0.65 * s).toFixed(3)})`);
+        p.el.setAttribute("opacity", Math.min(1, pres * 2.5).toFixed(3));
+        if (p.originStar !== null) bgNodes[p.originStar].setAttribute("r", village[p.originStar].size * (1 + 3 * Math.sin(Math.PI * Math.min(1, pres * 1.6))));
+      } else {
+        p.cur = home;
+        p.trail.style.opacity = 0;
+        p.el.setAttribute("transform", `translate(${home[0].toFixed(1)},${home[1].toFixed(1)})`);
+        p.el.setAttribute("opacity", 1);
+      }
+      const living = alive(p, t);
+      let coreOpacity = 1;
+      if (p.diedAt !== undefined && living) {
+        const window = Math.min(0.55, p.diedAt - p.appearsAt);
+        const dim = clamp01((t - (p.diedAt - window)) / window);
+        coreOpacity = 1 - 0.55 * dim + (reduced ? 0 : Math.sin(now * 13.6 + p.phase) * 0.18 * dim);
+      }
+      p.core.style.opacity = coreOpacity.toFixed(3);
+      const circle = inCircle(p, t);
+      p.el.classList.toggle("circle", circle);
+      p.el.classList.toggle("outside", !circle);
+      p.el.classList.toggle("dead", !living);
+    }
+
+    for (const e of edges) {
+      const g = growth(e, t);
+      const pa = byId[e.a], pb = byId[e.b];
+      if (g <= 0 || presence(pa, t) <= 0 || presence(pb, t) <= 0) { e.el.style.display = "none"; e.head.style.opacity = 0; e.drawn = false; continue; }
+      e.el.style.display = "";
+      const c = control(pa.cur, pb.cur, 0.16, e.side);
+      e.c = c;
+      const gp = paramAt(pa.cur, c, pb.cur, g);
+      e.el.setAttribute("d", partial(pa.cur, c, pb.cur, g >= 1 ? 1 : gp));
+      e.drawn = g >= 1;
+      if (g < 1) {
+        const [hx, hy] = quad(pa.cur, c, pb.cur, gp);
+        e.head.setAttribute("cx", hx.toFixed(1)); e.head.setAttribute("cy", hy.toFixed(1));
+        e.head.style.opacity = String(Math.sin(Math.PI * g));
+      } else e.head.style.opacity = 0;
+      // An ended tie becomes a former bond: dashed, and dimmer over a year.
+      const former = e.untilAt !== undefined && t > e.untilAt;
+      let op = 1;
+      if (former) op = 1 - 0.45 * clamp01((t - e.untilAt) / LET_GO);
+      if (e.kind === "parent" && !alive(pa, t) && !alive(pb, t)) op = Math.min(op, 0.5);
+      e.el.setAttribute("stroke-opacity", op.toFixed(3));
+      e.el.classList.toggle("former", former);
+      e.el.classList.toggle("live", e.drawn && active(e, t) && e.kind === "rival");
+      e.el.classList.toggle("glow", !alive(byId.agnes, t) && t - byId.agnes.diedAt < 0.5 && (e.a === SELF || e.b === SELF) && !former);
+
+      const living = e.drawn && (e.kind === "parent" ? alive(pa, t) && alive(pb, t) : active(e, t) && alive(pa, t) && alive(pb, t));
+      if (living && !reduced && now >= e.nextPulse) {
+        if (e.nextPulse) emitPulse(e, now);
+        e.nextPulse = now + -Math.log(1 - Math.random()) / KIND_PULSE[e.kind][0];
+      }
+      if (!living) e.nextPulse = 0;
+    }
+
+    for (let i = pulses.length - 1; i >= 0; i--) {
+      const pu = pulses[i];
+      const k = (now - pu.born) / pu.life;
+      if (k >= 1 || !pu.e.c || pu.e.el.style.display === "none") { pu.el.remove(); pulses.splice(i, 1); continue; }
+      const pa = byId[pu.e.a], pb = byId[pu.e.b];
+      const s = pu.reverse ? 1 - k : k;
+      const [x, y] = quad(pa.cur, pu.e.c, pb.cur, paramAt(pa.cur, pu.e.c, pb.cur, s));
+      pu.el.setAttribute("cx", x.toFixed(1)); pu.el.setAttribute("cy", y.toFixed(1));
+      pu.el.style.opacity = (Math.sin(Math.PI * k) * 0.95).toFixed(3);
+    }
+
+    const since = t - byId.agnes.diedAt;
+    blooms.forEach((b, i) => {
+      const local = (since - i * 0.12) / 0.45;
+      if (since < 0 || local <= 0 || local >= 1 || reduced) { b.style.opacity = 0; return; }
+      b.setAttribute("r", (18 + 160 * travel(local)).toFixed(1));
+      b.style.opacity = (0.55 * (1 - local)).toFixed(3);
+    });
+    placeTip();
+  }
+
+  // --- Dial, panel, moon ---
+  const souls = document.getElementById("souls"), circleCount = document.getElementById("circle-count");
+  const where = document.getElementById("where"), agePre = document.getElementById("age-pre"), motto = document.getElementById("motto");
+  const range = document.getElementById("year-range"), moon = document.getElementById("moon");
+  const MOTTO = motto.innerHTML;
+  const EPITAPH = "Agnes atte Well, 1327–1371. Twice wed, mother of five. She lived through the Great Mortality twice.";
+  let lastStep = -1, lastWhere = "", lastLiving = null, lastYear = -1;
+  function continuous() {
+    progress.attr("d", progArc({ endAngle: toRad(t) }));
+    progressGlow.attr("d", progArc({ endAngle: toRad(t) }));
+    const [mx, my] = polar(dialAngle(t), R_PROGRESS);
+    marker.attr("transform", `translate(${mx.toFixed(1)},${my.toFixed(1)})`);
+
+    setOdo(yearStrips, rolled(t, START));
+    const self = byId.agnes, living = alive(self, t);
+    setOdo(ageStrips, living ? rolled(t - self.bornAt, 0) : Math.floor(self.diedAt - self.bornAt), true);
+    const yr = Math.floor(t);
+    if (yr !== lastYear) { yearOdo.setAttribute("aria-label", String(yr)); lastYear = yr; }
+    const w = `${SEASONS[Math.min(11, Math.floor((t - yr) * 12))]} in Ashcombe`;
+    if (w !== lastWhere) { where.textContent = w; lastWhere = w; }
+    if (living !== lastLiving) {
+      agePre.textContent = living ? "Age" : "Died at";
+      motto.innerHTML = living ? MOTTO : EPITAPH;
+      motto.classList.toggle("epitaph", !living);
+      if (!reduced && playing) motto.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1200, easing: "linear" });
+      lastLiving = living;
+    }
+
+    const step = Math.floor(t * 48);
+    if (step !== lastStep) {
+      bg.classed("gone", d => !(d.born <= t && d.died > t));
+      kinLines.classed("gone", ([i, j]) => !(village[i].born <= t && village[i].died > t && village[j].born <= t && village[j].died > t));
+      souls.textContent = village.filter(v => v.born <= t && v.died > t).length;
+      circleCount.textContent = people.filter(p => p.id !== SELF && presence(p, t) >= 1 && inCircle(p, t) && alive(p, t)).length;
+      lastStep = step;
+    }
+    let intensity = 0;
+    for (const pl of plagues) if (t > pl.a && t < pl.b) intensity = Math.max(intensity, Math.sin((Math.PI * (t - pl.a)) / (pl.b - pl.a)));
+    wash.style("opacity", 0.08 * intensity);
+    plagues.forEach(pl => pl.path.style("opacity", t > pl.a && t < pl.b ? 0.5 + 0.5 * intensity : 0.5));
+
+    const share = (t - START_T) / (T_END - START_T);
+    range.style.setProperty("--p", `${(share * 100).toFixed(2)}%`);
+    // The moon is the present on the right-hand time bar: it climbs from deep time toward the unwritten future.
+    moon.style.top = `${(88 - share * 46).toFixed(2)}%`;
+  }
+
+  // --- The chronicle reel: entries flow along a great arc with time itself. ---
+  // Each entry's place on the arc is a pure function of the clock: it comes down from the unwritten
+  // future as a faint node, is inked in as it reaches the present, and keeps drifting into deeper time.
+  // Entries closer than GAP push the older one down, smoothly, so they never overlap.
+  const area = document.getElementById("area"), feedEl = document.getElementById("feed"), rail = d3.select("#rail"), nowEl = document.getElementById("now");
+  const PX_PER_YEAR = 48, GAP = 128, A_NOW = -26;
+  let wide = true, geo = { cx: 0, cy: 0, ra: 0, right: 0, dx: 0, dy: 0, unit: 1 };
+  let hovered = null, leadG = null;
+  // Typewriter, on the life's own clock: sim-years per character. The title is typed first, then the rest, faster.
+  const TYPE_TITLE = 0.016, TYPE_FAST = 0.0045;
+  const esc = str => str.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  // Returns true once every character is down.
+  function typeEntry(e) {
+    let left = t - e.at, key = "", html = [], done = true, caretPlaced = false;
+    for (const [, text, rate] of e.parts) {
+      const n = Math.max(0, Math.min(text.length, Math.floor(left / rate)));
+      left -= text.length * rate;
+      key += n + ",";
+      const typing = n < text.length && !caretPlaced && (n > 0 || html.every(h => h.full));
+      if (n < text.length) done = false;
+      html.push({ n, text, full: n === text.length, caret: typing });
+      if (typing) caretPlaced = true;
+    }
+    if (key !== e.typedKey) {
+      e.parts.forEach(([el], i) => {
+        const h = html[i];
+        el.innerHTML = esc(h.text.slice(0, h.n)) + (h.caret ? '<span class="caret"></span>' : "");
+        el.style.display = h.n > 0 || h.caret ? "" : "none";
+      });
+      e.typedKey = key;
+    }
+    return done;
+  }
+  const leaders = new Map();
+  entries.forEach(e => {
+    const li = document.createElement("li");
+    li.className = e.level === 3 ? "turn" : "";
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.setAttribute("aria-label", `${e.year}: ${e.title}. Go to this moment.`);
+    li.innerHTML = `<span class="node"></span><div class="body"><span class="y">${e.year}</span><div class="txt"><div class="t"></div>${e.by ? `<div class="by"></div>` : ""}<div class="p"></div></div></div>`;
+    const enter = () => { hovered = e; setFocusSet(e.who); };
+    const leave = () => { if (hovered === e) hovered = null; setFocusSet(null); };
+    li.addEventListener("mouseenter", enter); li.addEventListener("mouseleave", leave);
+    li.addEventListener("focus", enter); li.addEventListener("blur", leave);
+    li.addEventListener("click", () => { jump(Math.min(T_END, e.at + 0.03)); range.value = t; });
+    feedEl.appendChild(li);
+    e.li = li;
+    e.txt = li.querySelector(".txt");
+    e.parts = [[li.querySelector(".t"), e.title, TYPE_TITLE], ...(e.by ? [[li.querySelector(".by"), e.by, TYPE_FAST]] : []), [li.querySelector(".p"), e.prose, TYPE_FAST]];
+    e.typedKey = "";
+    e.bodyEl = li.querySelector(".body");
+  });
+  // Each event leaves a bead on the progress ring at its moment; turns are small diamonds.
+  const gBeads = gDial.insert("g", () => marker.node());
+  entries.forEach(e => {
+    const [x, y] = polar(dialAngle(e.at), R_PROGRESS);
+    e.bead = (e.level === 3
+      ? gBeads.append("rect").attr("x", -2.3).attr("y", -2.3).attr("width", 4.6).attr("height", 4.6).attr("transform", `translate(${x},${y}) rotate(45)`)
+      : gBeads.append("circle").attr("cx", x).attr("cy", y).attr("r", 1.9)).attr("class", "bead").node();
+    e.beadXY = [x, y];
+  });
+  people.forEach(p => { p.ping = d3.select(p.el).insert("circle", ".core").attr("class", "ping").attr("r", p.id === SELF ? 15 : 10).node(); });
+
+  const toPx = ([x, y]) => [geo.dx + (x + 400) * geo.unit, geo.dy + (y + 400) * geo.unit];
+  // The entries sit on a fixed tape: consecutive entries are as far apart as their time gap, but never
+  // closer than GAP. The clock scrolls the tape continuously so each entry crosses "now" exactly at its
+  // moment; nothing is ever pushed, so nothing jumps.
+  const tapeY = [];
+  entries.forEach((e, i) => { tapeY[i] = i === 0 ? 0 : tapeY[i - 1] + Math.max(GAP, (e.at - entries[i - 1].at) * PX_PER_YEAR); });
+  function scrollAt(time) {
+    const n = entries.length;
+    if (time <= entries[0].at) return tapeY[0] - (entries[0].at - time) * PX_PER_YEAR;
+    if (time >= entries[n - 1].at) return tapeY[n - 1] + (time - entries[n - 1].at) * PX_PER_YEAR;
+    let i = 0;
+    while (entries[i + 1].at <= time) i++;
+    return tapeY[i] + ((time - entries[i].at) / (entries[i + 1].at - entries[i].at)) * (tapeY[i + 1] - tapeY[i]);
+  }
+  function reelLayout() {
+    const S = scrollAt(t);
+    entries.forEach((e, i) => { e.y = S - tapeY[i]; });
+  }
+  function leader(key) {
+    let l = leaders.get(key);
+    if (!l) {
+      const path = leadG.append("path").attr("class", "leader").node();
+      const spark = leadG.append("circle").attr("class", "leader-spark").attr("r", 1.8).node();
+      l = { path, spark, used: false, phase: Math.random() };
+      leaders.set(key, l);
+    }
+    l.used = true;
+    return l;
+  }
+  function drawLeader(key, from, to, strength, now, bow = 0.18) {
+    const l = leader(key);
+    const dx = to[0] - from[0], dy = to[1] - from[1], len = Math.hypot(dx, dy) || 1;
+    const c = [(from[0] + to[0]) / 2 + (dy / len) * len * bow, (from[1] + to[1]) / 2 - (dx / len) * len * bow];
+    l.path.setAttribute("d", `M${from[0].toFixed(1)},${from[1].toFixed(1)} Q${c[0].toFixed(1)},${c[1].toFixed(1)} ${to[0].toFixed(1)},${to[1].toFixed(1)}`);
+    l.path.style.opacity = (0.55 * strength).toFixed(3);
+    // A spark keeps travelling from the event out to the person, at one constant speed.
+    const k = reduced ? 0.5 : (now * (90 / len) + l.phase) % 1;
+    const [sx, sy] = quad(from, c, to, paramAt(from, c, to, k));
+    l.spark.setAttribute("cx", sx.toFixed(1)); l.spark.setAttribute("cy", sy.toFixed(1));
+    l.spark.style.opacity = reduced ? 0 : (strength * Math.sin(Math.PI * k)).toFixed(3);
+  }
+  function drawReel(nowMs) {
+    const now = nowMs / 1000;
+    reelLayout();
+    const yNow = geo.ra * Math.sin((A_NOW * Math.PI) / 180);
+    // The entry being told: the newest one already written, for as long as it stays near the present.
+    const told = entries.filter(e => e.at <= t).pop();
+    leaders.forEach(l => { l.used = false; });
+    const named = new Set();
+    let order = 0;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i], li = e.li;
+      const future = e.at > t;
+      let op, nodeOp = 1;
+      if (future) { op = clamp01(1 + e.y / (GAP * 1.4)); nodeOp = 0.45; }
+      else op = Math.max(0, 1 - Math.max(0, e.y - GAP * 0.8) / (GAP * 4.2));
+      const strength = e === told ? clamp01(1 - (e.y - GAP * 0.55) / (GAP * 0.9)) * clamp01((t - e.at) / 0.12) : 0;
+      const isFocus = strength > 0.5 || hovered === e;
+      if (op < 0.01) { if (li.style.display !== "none") li.style.display = "none"; if (!future) e.bead.classList.add("on"); continue; }
+      if (wide) {
+        const s = (yNow + e.y) / geo.ra;
+        if (Math.abs(s) > 0.92) { li.style.display = "none"; e.bead.classList.toggle("on", !future); continue; }
+        const a = Math.asin(s);
+        const x = geo.cx + geo.ra * Math.cos(a), y = geo.cy + geo.ra * Math.sin(a);
+        li.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+        li.style.setProperty("--w", `${Math.max(190, Math.min(330, geo.right - x)).toFixed(0)}px`);
+        e.px = [x, y];
+      } else {
+        if (future) { li.style.display = "none"; continue; }
+        li.style.order = String(order++);
+      }
+      if (li.style.display === "none") li.style.display = "";
+      li.style.opacity = op.toFixed(3);
+      li.querySelector(".node").style.opacity = nodeOp;
+      e.bodyEl.style.opacity = future ? 0 : 1;
+      const typed = future ? false : typeEntry(e);
+      li.classList.toggle("focus", isFocus);
+      // The rules above and below arrive only once the entry is fully written.
+      li.classList.toggle("ruled", isFocus && typed);
+      e.bead.classList.toggle("on", !future);
+      e.bead.classList.toggle("lit", isFocus);
+
+      // Threads from the event to its moment on the ring of years, and to each person it touches.
+      const pull = Math.max(strength, hovered === e ? 1 : 0);
+      if (wide && pull > 0.02 && leadG) {
+        drawLeader(`${e.id}-time`, e.px, toPx(e.beadXY), pull * 0.8, now, -0.12);
+        for (const id of e.who) {
+          const p = byId[id];
+          if (presence(p, t) < 1) continue;
+          drawLeader(`${e.id}-${id}`, e.px, toPx(p.cur), pull, now);
+          if (pull > 0.5) named.add(id);
+        }
+      }
+    }
+    leaders.forEach(l => { if (!l.used) { l.path.style.opacity = 0; l.spark.style.opacity = 0; } });
+    people.forEach(p => p.el.classList.toggle("named", named.has(p.id)));
+  }
+
+  // --- Months: a tape of the calendar sliding under a gold cursor, continuously ---
+  const tape = document.getElementById("tape"), CELL = 64;
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  tape.innerHTML = Array.from({ length: 36 }, (_, i) => `<span>${MONTHS[i % 12]}</span>`).join("");
+  const tapeCells = [...tape.children];
+  let lastMonthCell = -1;
+  function drawMonths() {
+    const frac = t - Math.floor(t), w = tape.parentElement.clientWidth;
+    const p = 12 + frac * 12;
+    tape.style.transform = `translateX(${(w / 2 - p * CELL).toFixed(1)}px)`;
+    const cell = 12 + Math.floor(frac * 12);
+    if (cell !== lastMonthCell) {
+      tapeCells[lastMonthCell]?.classList.remove("cur");
+      tapeCells[cell].classList.add("cur");
+      lastMonthCell = cell;
+    }
+  }
+
+  // --- Geometry of the arc, the year block and the backdrop, recomputed on resize ---
+  function layout() {
+    wide = matchMedia("(min-width: 1000px)").matches;
+    const ar = area.getBoundingClientRect(), dr = disc.getBoundingClientRect();
+    geo.unit = dr.width / 800;
+    geo.dx = dr.left - ar.left;
+    geo.dy = dr.top - ar.top;
+    geo.cx = geo.dx + dr.width / 2;
+    geo.cy = geo.dy + dr.height / 2;
+    geo.ra = (R_COMPASS + 72) * geo.unit;
+    geo.right = ar.width - 160;
+    rail.attr("viewBox", `0 0 ${ar.width} ${ar.height}`).selectAll("*").remove();
+    leaders.clear();
+    leadG = null;
+    if (wide) {
+      const arcAt = deg => [geo.cx + geo.ra * Math.cos((deg * Math.PI) / 180), geo.cy + geo.ra * Math.sin((deg * Math.PI) / 180)];
+      const a0 = (Math.asin(Math.sin((A_NOW * Math.PI) / 180) - (GAP * 1.6) / geo.ra) * 180) / Math.PI, a1 = (Math.asin(0.92) * 180) / Math.PI;
+      const [x0, y0] = arcAt(a0), [x1, y1] = arcAt(a1);
+      const grad = rail.append("defs").append("linearGradient").attr("id", "railGrad").attr("gradientUnits", "userSpaceOnUse").attr("x1", 0).attr("y1", y0).attr("x2", 0).attr("y2", y1);
+      grad.append("stop").attr("offset", 0).attr("stop-color", "rgb(227 191 114 / 0.08)");
+      grad.append("stop").attr("offset", 0.28).attr("stop-color", "rgb(227 191 114 / 0.65)");
+      grad.append("stop").attr("offset", 1).attr("stop-color", "rgb(227 191 114 / 0.06)");
+      rail.append("path").attr("d", `M${x0},${y0} A${geo.ra},${geo.ra} 0 0 1 ${x1},${y1}`).attr("fill", "none").attr("stroke", "url(#railGrad)").attr("stroke-width", 1.2);
+      // The present: a small gold tick across the arc where entries are inked in.
+      const [nx, ny] = arcAt(A_NOW);
+      const na = (A_NOW * Math.PI) / 180;
+      rail.append("line").attr("class", "now-tick").attr("x1", nx - Math.cos(na) * 9).attr("y1", ny - Math.sin(na) * 9).attr("x2", nx + Math.cos(na) * 9).attr("y2", ny + Math.sin(na) * 9);
+      leadG = rail.append("g");
+      nowEl.style.left = `${(geo.cx + (R_COMPASS + 8) * geo.unit * 0.98).toFixed(0)}px`;
+    } else nowEl.style.left = "";
+    paintBackdrop();
+  }
+
+  // --- Painted backdrop: night gradient, clouds and nebula, scattered stars, and a sleeping village on the hill ---
+  const canvas = document.getElementById("backdrop"), frameEl = document.getElementById("frame");
+  function paintBackdrop() {
+    const W = frameEl.clientWidth, H = frameEl.scrollHeight, dpr = Math.min(2, devicePixelRatio || 1);
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.height = H + "px";
+    const c = canvas.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    let s = 1371;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+
+    const sky = c.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, "#0a0f1c"); sky.addColorStop(0.55, "#0b1121"); sky.addColorStop(1, "#060910");
+    c.fillStyle = sky; c.fillRect(0, 0, W, H);
+
+    // Clouds and nebula: many large, faint, soft blobs.
+    const blob = (x, y, r, rgb, a) => {
+      const g = c.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+      c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+    };
+    for (let i = 0; i < 46; i++) blob(rnd() * W * 0.55, rnd() * H * 0.5, 80 + rnd() * 260, "86,104,140", 0.025 + rnd() * 0.035);
+    for (let i = 0; i < 26; i++) blob(W * (0.45 + rnd() * 0.3), H * (0.1 + rnd() * 0.5), 100 + rnd() * 240, "70,86,122", 0.015 + rnd() * 0.025);
+    for (let i = 0; i < 40; i++) blob(W * (0.62 + rnd() * 0.42), H * (0.62 + rnd() * 0.45), 70 + rnd() * 200, "74,88,120", 0.03 + rnd() * 0.04);
+    for (let i = 0; i < 30; i++) blob(W * (0.65 + rnd() * 0.4), H * (0.7 + rnd() * 0.35), 60 + rnd() * 160, "3,5,10", 0.35 + rnd() * 0.3);
+
+    // Stars over the whole sky.
+    for (let i = 0; i < Math.round((W * H) / 2600); i++) {
+      const x = rnd() * W, y = rnd() * H * 0.9, r = rnd() < 0.92 ? 0.3 + rnd() * 0.6 : 0.8 + rnd() * 0.8;
+      const warm = rnd() < 0.5;
+      c.globalAlpha = 0.15 + rnd() * 0.55;
+      c.fillStyle = warm ? "#f6e2b0" : "#dfe6f6";
+      if (r > 0.9) { c.shadowColor = c.fillStyle; c.shadowBlur = 6; }
+      c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+      c.shadowBlur = 0;
+    }
+    c.globalAlpha = 1;
+
+    // The village on the hill, bottom left.
+    const LW = Math.min(W * 0.36, 560), base = H - (W >= 1000 ? 70 : 0), S = Math.max(0.9, Math.min(1.3, W / 1150));
+    const ridge = (x, amp, off, freq) => base - off - Math.sin(x * freq + 1.3) * amp - Math.sin(x * freq * 2.7 + 0.4) * amp * 0.35;
+    const glow = c.createRadialGradient(LW * 0.35, base - 150, 0, LW * 0.35, base - 150, LW * 0.8);
+    glow.addColorStop(0, "rgba(120,110,95,0.10)"); glow.addColorStop(1, "rgba(120,110,95,0)");
+    c.fillStyle = glow; c.fillRect(0, base - 420, LW * 1.4, 420);
+    const hill = (amp, off, freq, color, extent) => {
+      c.beginPath(); c.moveTo(0, base);
+      for (let x = 0; x <= extent; x += 6) c.lineTo(x, ridge(x, amp, off, freq) + Math.pow(x / extent, 3) * (off + 40));
+      c.lineTo(extent, base); c.closePath(); c.fillStyle = color; c.fill();
+    };
+    hill(30 * S, 250 * S, 0.006 / S, "#0c1322", LW * 1.25);
+    hill(22 * S, 190 * S, 0.009 / S, "#080d18", LW * 1.1);
+
+    const conifer = (x, y, h, color) => {
+      c.fillStyle = color;
+      for (let k = 0; k < 4; k++) {
+        const ty = y - h * (k * 0.22), w = h * (0.34 - k * 0.06);
+        c.beginPath(); c.moveTo(x - w, ty); c.lineTo(x, ty - h * 0.42); c.lineTo(x + w, ty); c.closePath(); c.fill();
+      }
+      c.fillRect(x - 1.5, y - 2, 3, 6);
+    };
+    const leafy = (x, y, h, color) => {
+      c.fillStyle = color;
+      for (let k = 0; k < 6; k++) { c.beginPath(); c.arc(x + (rnd() - 0.5) * h * 0.5, y - h * 0.55 - rnd() * h * 0.35, h * (0.18 + rnd() * 0.14), 0, Math.PI * 2); c.fill(); }
+      c.fillRect(x - 1.5, y - h * 0.4, 3, h * 0.4);
+    };
+    // Far tree line along the hill.
+    for (let x = 4; x < LW * 1.05; x += 7 + rnd() * 9) {
+      const y = ridge(x, 22 * S, 190 * S, 0.009 / S) + Math.pow(x / (LW * 1.1), 3) * 230 * S + 4;
+      const h = (18 + rnd() * 30) * S * (1 - x / (LW * 1.6));
+      (rnd() < 0.55 ? conifer : leafy)(x, y, h, "#070b15");
+    }
+    // The church: nave, tower, spire; warm lit windows.
+    const cx0 = LW * 0.38, cy0 = ridge(cx0, 22 * S, 190 * S, 0.009 / S) + Math.pow(cx0 / (LW * 1.1), 3) * 230 * S + 2;
+    c.save(); c.translate(cx0, cy0); c.scale(S, S); c.translate(-cx0, -cy0);
+    c.fillStyle = "#05080f";
+    c.fillRect(cx0, cy0 - 34, 74, 36);
+    c.beginPath(); c.moveTo(cx0 - 3, cy0 - 34); c.lineTo(cx0 + 37, cy0 - 56); c.lineTo(cx0 + 77, cy0 - 34); c.closePath(); c.fill();
+    c.fillRect(cx0 - 22, cy0 - 78, 24, 80);
+    c.beginPath(); c.moveTo(cx0 - 25, cy0 - 78); c.lineTo(cx0 - 10, cy0 - 142); c.lineTo(cx0 + 5, cy0 - 78); c.closePath(); c.fill();
+    c.fillRect(cx0 - 10.6, cy0 - 156, 1.2, 14); c.fillRect(cx0 - 14, cy0 - 151, 8, 1.2);
+    const lit = (x, y, w, h) => {
+      c.save(); c.shadowColor = "rgba(255,190,100,0.9)"; c.shadowBlur = 10; c.fillStyle = "#f3c068";
+      c.beginPath(); c.moveTo(x, y + h); c.lineTo(x, y + w / 2); c.arc(x + w / 2, y + w / 2, w / 2, Math.PI, 0); c.lineTo(x + w, y + h); c.closePath(); c.fill(); c.restore();
+    };
+    lit(cx0 + 12, cy0 - 26, 5, 11); lit(cx0 + 30, cy0 - 26, 5, 11); lit(cx0 + 48, cy0 - 26, 5, 11); lit(cx0 - 13, cy0 - 64, 5, 10);
+    c.restore();
+    // Cottages.
+    [[0.6, 30, 18], [0.7, 24, 15], [0.82, 26, 16], [0.16, 26, 16]].forEach(([fx, w0, h0]) => {
+      const w = w0 * S, h = h0 * S;
+      const x = LW * fx, y = ridge(x, 22 * S, 190 * S, 0.009 / S) + Math.pow(x / (LW * 1.1), 3) * 230 * S + 3;
+      c.fillStyle = "#05080f"; c.fillRect(x, y - h, w, h + 2);
+      c.beginPath(); c.moveTo(x - 3, y - h); c.lineTo(x + w / 2, y - h - 11); c.lineTo(x + w + 3, y - h); c.closePath(); c.fill();
+      if (rnd() < 0.8) { c.save(); c.shadowColor = "rgba(255,190,100,0.9)"; c.shadowBlur = 8; c.fillStyle = "#f0b860"; c.fillRect(x + w * 0.3, y - h * 0.6, 3.5, 4); c.restore(); }
+    });
+    // Near trees: tall ones at the left edge, smaller toward the middle.
+    for (let x = -10; x < LW * 0.9; x += 16 + rnd() * 22) {
+      const tall = x < LW * 0.2;
+      const h = (tall ? 110 + rnd() * 120 : (34 + rnd() * 40) * (1 - x / LW)) * S;
+      (tall || rnd() < 0.6 ? conifer : leafy)(x, base - 30 - rnd() * 30, h, "#03060c");
+    }
+    c.fillStyle = "#03060b";
+    c.beginPath(); c.moveTo(0, base);
+    for (let x = 0; x <= LW * 1.2; x += 8) c.lineTo(x, base - 46 + Math.sin(x * 0.013) * 10 + Math.pow(x / (LW * 1.2), 2) * 46);
+    c.lineTo(LW * 1.2, base); c.closePath(); c.fill();
+
+    // Vignette.
+    const v = c.createRadialGradient(W * 0.5, H * 0.45, Math.min(W, H) * 0.35, W * 0.5, H * 0.5, Math.max(W, H) * 0.8);
+    v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.45)");
+    c.fillStyle = v; c.fillRect(0, 0, W, H);
+  }
+
+  // --- One loop for everything ---
+  const playBtn = document.getElementById("play"), playIcon = document.getElementById("play-icon"), speedBtn = document.getElementById("speed");
+  range.max = T_END.toFixed(2);
+  const ICON_PLAY = '<path d="M8 5 L19 12 L8 19 Z"/>', ICON_PAUSE = '<rect x="6.5" y="5" width="3.6" height="14" rx="1"/><rect x="13.9" y="5" width="3.6" height="14" rx="1"/>';
+  function setPlaying(on) {
+    playing = on;
+    playIcon.innerHTML = on ? ICON_PAUSE : ICON_PLAY;
+    playBtn.setAttribute("aria-label", on ? "Pause" : t >= T_END ? "Live it again" : "Play");
+  }
+  function frame(ms) {
+    const dt = Math.min(0.1, (ms - lastFrame) / 1000);
+    lastFrame = ms;
+    if (playing) {
+      const nt = Math.min(T_END, t + dt * RATE * speed);
+      t = nt;
+      range.value = t;
+      if (t >= T_END) setPlaying(false);
+    }
+    continuous();
+    draw(ms / 1000);
+    drawReel(ms);
+    drawMonths();
+    requestAnimationFrame(frame);
+  }
+  function jump(nt) {
+    t = nt;
+    pulses.splice(0).forEach(p => p.el.remove());
+  }
+  playBtn.addEventListener("click", () => {
+    if (playing) return setPlaying(false);
+    if (t >= T_END) { jump(START_T); range.value = t; }
+    setPlaying(true);
+  });
+  speedBtn.addEventListener("click", () => { speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; speedBtn.textContent = `${speed}×`; });
+  range.addEventListener("input", () => { if (playing) setPlaying(false); jump(+range.value); });
+  // Scrolling over the chronicle moves through time: down goes deeper into the past.
+  // Scrolling anywhere over the chronicle zone (right of the compass, gaps included) moves through time.
+  area.addEventListener("wheel", evt => {
+    if (!wide) return;
+    const ar = area.getBoundingClientRect();
+    if (evt.clientX - ar.left < geo.cx + (R_COMPASS + 30) * geo.unit) return;
+    evt.preventDefault();
+    if (playing) setPlaying(false);
+    jump(Math.max(START_T, Math.min(T_END, t - evt.deltaY * 0.004)));
+    range.value = t;
+  }, { passive: false });
+  document.addEventListener("click", evt => { if (focused && !evt.target.closest(".node")) setFocus(null); });
+  addEventListener("resize", layout);
+
+  layout();
+  jump(t);
+  range.value = t;
+  setPlaying(false);
+  requestAnimationFrame(frame);
+})();
+</script>
