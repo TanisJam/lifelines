@@ -46,6 +46,7 @@ function setup() {
   const store = createPlayerStore();
   const seek = vi.fn();
   const openPerson = vi.fn();
+  const change = vi.fn();
   const focus = { setEntry: vi.fn(), setNamed: vi.fn() };
   const reel = createReel({
     area: area as unknown as HTMLElement,
@@ -57,9 +58,10 @@ function setup() {
     focus,
     seek,
     openPerson,
+    change,
   });
   const draw = (t: number) => store.emitFrame(frameAt(scene, layout, t));
-  return { area, ol, rail, store, seek, openPerson, focus, reel, draw, rows: ol.children };
+  return { area, ol, rail, store, seek, openPerson, change, focus, reel, draw, rows: ol.children };
 }
 
 describe("createReel", () => {
@@ -76,6 +78,14 @@ describe("createReel", () => {
     ol.fire("keydown", { key: "a" }, rows[0]!);
     expect(enter.prevented).toBe(true);
     expect(seek.mock.calls).toEqual([[entries[1]!.at + 0.03], [entries[3]!.at + 0.03]]);
+  });
+
+  it("a click on \"Change what happened\" asks for that entry and does not seek", () => {
+    const { ol, seek, change, rows } = setup();
+    const button = new FakeEl("button", { "data-change": "" }, rows[4]!);
+    ol.fire("click", {}, button);
+    expect(change).toHaveBeenCalledWith(entries[4]!.id);
+    expect(seek).not.toHaveBeenCalled();
   });
 
   it("a click on a person link opens the person and does not seek", () => {

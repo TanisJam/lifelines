@@ -11,13 +11,15 @@ export interface ReelLabels {
   readonly label: string;
   /** "Go to this moment." appended to each row's accessible name. */
   readonly go: string;
+  /** The turn's "Change what happened" button. */
+  readonly change: string;
 }
 
 /**
  * The chronicle on its arc. React renders each row once, keyed by entry id (so a later tick or done never
  * remounts a row); the controller types, places and fades them from the clock.
  */
-export function Reel({ entries, store, timeline, focus, seek, openPerson, labels }: { entries: readonly ReelEntry[]; store: PlayerStore; timeline: Timeline; focus: ReelInit["focus"]; seek: (t: number) => void; openPerson?: (personId: string) => void; labels: ReelLabels }) {
+export function Reel({ entries, store, timeline, focus, seek, openPerson, change, ghosts, forkAt, labels }: { entries: readonly ReelEntry[]; store: PlayerStore; timeline: Timeline; focus: ReelInit["focus"]; seek: (t: number) => void; openPerson?: (personId: string) => void; change?: (entryId: string) => void; ghosts?: Readonly<Record<string, string>>; forkAt?: number | null; labels: ReelLabels }) {
   const olRef = useRef<HTMLOListElement>(null);
   const railRef = useRef<SVGSVGElement>(null);
   /** Where the previous controller left the clock and the tape, so a new one (new tick, done) eases instead of hopping. */
@@ -29,12 +31,12 @@ export function Reel({ entries, store, timeline, focus, seek, openPerson, labels
     if (!ol || !rail || !area) return;
     const from = carry.current;
     const tapeOffset = from ? tapeShift(from.scroll, entries.map((e) => e.at), from.t) : 0;
-    const reel = createReel({ area, ol, rail, entries, store, timeline, focus, seek, openPerson, tapeOffset });
+    const reel = createReel({ area, ol, rail, entries, store, timeline, focus, seek, openPerson, change, tapeOffset });
     return () => {
       carry.current = reel.snapshot();
       reel.destroy();
     };
-  }, [entries, store, timeline, focus, seek, openPerson]);
+  }, [entries, store, timeline, focus, seek, openPerson, change]);
   return (
     <>
       <svg ref={railRef} className="sky-rail" aria-hidden="true">
@@ -51,7 +53,7 @@ export function Reel({ entries, store, timeline, focus, seek, openPerson, labels
       </svg>
       <ol ref={olRef} className={`sky-reel${openPerson ? " linkable" : ""}`} aria-label={labels.label}>
         {entries.map((e) => (
-          <li key={e.id} className={e.turn ? "turn" : undefined} tabIndex={0} role="button" aria-label={`${e.year}: ${e.text.title}. ${labels.go}`} style={{ display: "none" }}>
+          <li key={e.id} className={e.turn ? "turn" : undefined} data-after={forkAt != null && e.at > forkAt ? "" : undefined} tabIndex={0} role="button" aria-label={`${e.year}: ${e.text.title}. ${labels.go}`} style={{ display: "none" }}>
             <span className="node" />
             <div className="body">
               <span className="y">{e.year}</span>
@@ -59,6 +61,12 @@ export function Reel({ entries, store, timeline, focus, seek, openPerson, labels
                 <div className="t" />
                 {e.text.by !== undefined && <div className="by" />}
                 <div className="p" />
+                {ghosts?.[e.id] && <div className="ghost">{ghosts[e.id]}</div>}
+                {e.turn && change && (
+                  <button type="button" className="change" data-change>
+                    {labels.change}
+                  </button>
+                )}
               </div>
             </div>
           </li>

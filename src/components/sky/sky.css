@@ -164,6 +164,29 @@
 .sky-bead.on { opacity: 0.55; }
 .sky-bead.lit { fill: var(--sky-gold-ink); opacity: 1; filter: drop-shadow(0 0 4px var(--sky-gold)); }
 
+/* Rewrite: ghost line and "Change what happened" show on a focused entry once it is fully written; the old future blurs away. */
+.sky-reel .ghost, .sky-reel .change { display: none; }
+.sky-reel li.ruled .ghost { display: block; margin-top: 6px; font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 13.5px; line-height: 1.35; color: var(--sky-gold); opacity: 0.85; }
+.sky-reel .txt { position: relative; }
+.sky-reel li.ruled .change { position: absolute; top: -9px; right: 0; display: block; padding: 0; border: 0; background: transparent; font: italic 12px/1 var(--font-cormorant), Georgia, serif; color: var(--sky-gold-ink); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+.sky-reel li.ruled .change:hover, .sky-reel li.ruled .change:focus-visible { color: var(--ll-starlight); }
+.sky-frame [data-after] { transition: filter 0.9s linear; }
+.sky-frame.rewriting [data-after] { filter: blur(2.5px) saturate(0.15) brightness(0.8); }
+.sky-branches { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: -6px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.sky-branches button { padding: 0; border: 0; background: transparent; font: inherit; color: var(--ll-ink-faint); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+.sky-branches button:hover:not(:disabled), .sky-branches button[aria-current="true"] { color: var(--sky-gold-ink); }
+.sky-branches button:disabled { cursor: default; opacity: 0.6; }
+.sky-branch-ribbon { margin: 0; font-family: var(--font-cinzel), Georgia, serif; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--sky-gold); }
+.sky-branch-ribbon button { padding: 0; border: 0; background: transparent; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; text-decoration: underline dotted; text-underline-offset: 4px; cursor: pointer; }
+.sky-rewrite { position: absolute; left: 50%; bottom: 14px; z-index: 5; display: grid; gap: 6px; max-width: min(460px, 92%); transform: translateX(-50%); padding: 12px 18px; border: 1px solid var(--ll-hair-strong); border-radius: 18px; background: var(--ll-panel); backdrop-filter: blur(6px); font-size: 13.5px; line-height: 1.35; text-align: center; }
+.sky-rewrite .mark { font-family: var(--font-cinzel), Georgia, serif; font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--sky-gold); }
+.sky-rewrite .row { display: flex; gap: 10px; justify-content: center; align-items: baseline; }
+.sky-rewrite .row b { font: 500 9px var(--font-cinzel), Georgia, serif; letter-spacing: 0.2em; color: var(--ll-ink-faint); }
+.sky-rewrite .row.new { color: var(--sky-gold-ink); }
+.sky-rewrite.error { color: var(--ll-danger); }
+.sky-rewrite .dot { display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--sky-gold); animation: sky-blink 1s infinite; }
+@keyframes sky-blink { 50% { opacity: 0.25; } }
+
 /* Player */
 .sky-bottom { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 420px) minmax(0, 1fr); gap: 28px; align-items: end; padding: 0 30px 22px; }
 .sky-player { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 16px; padding: 16px 22px 30px 16px; border: 1px solid var(--ll-hair); border-radius: 999px; background: var(--ll-panel); backdrop-filter: blur(6px); }

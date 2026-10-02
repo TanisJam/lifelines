@@ -23,6 +23,8 @@ export interface ReelInit {
   seek(t: number): void;
   /** Set once the life is saved: linked names in prose then open the person sheet. */
   openPerson?: (personId: string) => void;
+  /** Set when a turn may be changed: its "Change what happened" button then asks for the entry's id. */
+  change?: (entryId: string) => void;
   /** The tape's position under the present just moved by this many pixels (entries were added or replaced): ease it away instead of jumping. */
   tapeOffset?: number;
 }
@@ -65,7 +67,7 @@ const toggle = (el: Element, name: string, on: boolean) => {
  * `typed`), so pausing and scrubbing carry the reel with them. Driven by player-store frames; React
  * renders the rows once and never sees a frame.
  */
-export function createReel({ area, ol, rail, entries, store, timeline: line, focus, seek, openPerson, tapeOffset = 0 }: ReelInit) {
+export function createReel({ area, ol, rail, entries, store, timeline: line, focus, seek, openPerson, change, tapeOffset = 0 }: ReelInit) {
   const disc = area.querySelector<HTMLElement>(".sky-disc")!;
   const ats = entries.map((e) => e.at);
   const tape = tapeYs(ats);
@@ -264,10 +266,15 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
     }
     const li = activate(ev);
     const i = li ? rows.findIndex((r) => r.li === li) : -1;
-    if (i >= 0) seek(entries[i]!.at + 0.03);
+    if (i < 0) return;
+    if ((ev.target as Element).closest("button[data-change]")) {
+      if (change) change(entries[i]!.id);
+      return;
+    }
+    seek(entries[i]!.at + 0.03);
   };
   const onKey = (ev: KeyboardEvent) => {
-    if ((ev.key !== "Enter" && ev.key !== " ") || (ev.target as Element).closest("a")) return;
+    if ((ev.key !== "Enter" && ev.key !== " ") || (ev.target as Element).closest("a, button")) return;
     const i = rows.findIndex((r) => r.li === ev.target);
     if (i < 0) return;
     ev.preventDefault();

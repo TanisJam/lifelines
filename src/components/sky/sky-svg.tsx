@@ -23,7 +23,9 @@ const FLARE = Array.from({ length: 8 }, (_, i) => {
  * The constellation's nodes, rendered once. Every moving attribute (transform, path data, opacity, state
  * classes) is written by the engine through the `data-*` hooks below, so React never re-renders a frame.
  */
-export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLabels, entries }: { scene: LifeScene; timeline: Timeline; entries: readonly ReelEntry[]; label: string; svgRef: Ref<SVGSVGElement>; relation: (person: ScenePerson) => string; bandLabels: Record<string, string> }) {
+export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLabels, entries, forkAt }: { forkAt?: number | null; scene: LifeScene; timeline: Timeline; entries: readonly ReelEntry[]; label: string; svgRef: Ref<SVGSVGElement>; relation: (person: ScenePerson) => string; bandLabels: Record<string, string> }) {
+  /** Everything after the fork is the old future: it blurs away while a rewrite runs (`data-after`, styled by `.sky-frame.rewriting`). */
+  const after = (at: number) => (forkAt != null && at > forkAt ? "" : undefined);
   const years = Array.from({ length: line.dialSpan }, (_, k) => line.dialStart + k);
   return (
     <svg ref={svgRef} className="sky-svg" viewBox="-400 -400 800 800" role="img" aria-label={label}>
@@ -102,9 +104,9 @@ export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLab
           // Each event leaves a bead on the progress ring at its moment; turns are small diamonds.
           const [x, y] = polar(dialAngle(e.at, line.dialStart, line.dialSpan), R_PROGRESS);
           return e.turn ? (
-            <rect key={e.id} data-bead={e.id} className="sky-bead" x={-2.3} y={-2.3} width={4.6} height={4.6} transform={`translate(${f1(x)},${f1(y)}) rotate(45)`} />
+            <rect key={e.id} data-bead={e.id} data-after={after(e.at)} className="sky-bead" x={-2.3} y={-2.3} width={4.6} height={4.6} transform={`translate(${f1(x)},${f1(y)}) rotate(45)`} />
           ) : (
-            <circle key={e.id} data-bead={e.id} className="sky-bead" cx={f1(x)} cy={f1(y)} r={1.9} />
+            <circle key={e.id} data-bead={e.id} data-after={after(e.at)} className="sky-bead" cx={f1(x)} cy={f1(y)} r={1.9} />
           );
         })}
         <g data-marker>
@@ -134,7 +136,7 @@ export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLab
         {scene.people.map((p) => {
           const self = p.group === "self";
           return (
-            <g key={p.id} data-person={p.id} className={`sky-node${self ? " self" : ""}`} role="button" tabIndex={0} aria-label={`${p.name}, ${relation(p)}`} style={{ display: "none" }}>
+            <g key={p.id} data-person={p.id} data-after={after(p.appearsAt)} className={`sky-node${self ? " self" : ""}`} role="button" tabIndex={0} aria-label={`${p.name}, ${relation(p)}`} style={{ display: "none" }}>
               <circle className="sky-halo" r={self ? 18 : p.group === "outer" ? 7 : 9} />
               <circle className="sky-ping" r={self ? 15 : 10} />
               {self && (
