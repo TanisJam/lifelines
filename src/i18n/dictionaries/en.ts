@@ -82,6 +82,26 @@ export const en = {
     title: (name: string) => `The constellation of ${name}`,
     constellationLabel: (name: string) => `Constellation of ${name}'s relationships`,
     player: { play: "Play", pause: "Pause", speed: "Playback speed", year: "Year", caption: "A life in motion" },
+    intro: {
+      lede: (sex: LifeSex, village: string) => {
+        const her = sex === "f" ? "her" : "his";
+        return `Each star is someone in ${her} life. The bright ones are ${her} story circle, the people whose choices shape ${her} own story. Ties appear the year they form, and they fade when they end. The ring around the sky is ${her} lifetime, and the dim stars behind are the rest of the village of ${village}.`;
+      },
+      mottoA: "People make a life.",
+      mottoB: "Time gives it meaning.",
+      epitaph: (name: string, born: number, died: number) => `${name}, ${born}–${died}.`,
+    },
+    now: {
+      age: "Age",
+      died: "Died at",
+      where: (festival: string, village: string) => `${festival} in ${village}`,
+    },
+    place: {
+      souls: "souls in the village",
+      circle: (sex: LifeSex) => `in ${sex === "f" ? "her" : "his"} circle`,
+      quote: "Here, among ordinary people, an extraordinary life.",
+    },
+    edge: { quote: "The same sky, a different you.", future: "Future still unwritten", deeper: "Deeper in time" },
     reel: { label: "Chronicle", go: "Go to this moment." },
     plague: { "black-death": "Great Mortality", "second-pestilence": "Second pestilence" },
     /** "mother", "second husband": spouses carry an ordinal once there is more than one. */

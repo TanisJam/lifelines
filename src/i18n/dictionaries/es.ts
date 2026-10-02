@@ -77,6 +77,24 @@ export const es: Dictionary = {
     title: (name: string) => `La constelación de ${name}`,
     constellationLabel: (name: string) => `Constelación de las relaciones de ${name}`,
     player: { play: "Reproducir", pause: "Pausar", speed: "Velocidad de reproducción", year: "Año", caption: "Una vida en movimiento" },
+    intro: {
+      lede: (_sex: LifeSex, village: string) =>
+        `Cada estrella es alguien en su vida. Las más brillantes son su círculo de historia, las personas cuyas decisiones moldean su propia historia. Los vínculos aparecen el año en que nacen y se desvanecen cuando terminan. El anillo que rodea el cielo es su vida entera, y las estrellas tenues del fondo son el resto del pueblo de ${village}.`,
+      mottoA: "Las personas hacen una vida.",
+      mottoB: "El tiempo le da sentido.",
+      epitaph: (name: string, born: number, died: number) => `${name}, ${born}–${died}.`,
+    },
+    now: {
+      age: "Edad",
+      died: "Murió a los",
+      where: (festival: string, village: string) => `${festival} en ${village}`,
+    },
+    place: {
+      souls: "almas en el pueblo",
+      circle: () => "en su círculo",
+      quote: "Aquí, entre gente corriente, una vida extraordinaria.",
+    },
+    edge: { quote: "El mismo cielo, un tú distinto.", future: "Futuro aún sin escribir", deeper: "Más hondo en el tiempo" },
     reel: { label: "Crónica", go: "Ir a este momento." },
     plague: { "black-death": "Gran Mortandad", "second-pestilence": "Segunda pestilencia" },
     /** "madre", "segundo esposo": los cónyuges llevan ordinal cuando hay más de uno. */

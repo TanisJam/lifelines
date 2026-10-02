@@ -22,10 +22,39 @@
 }
 .sky-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: -1; }
 .sky-area { position: relative; min-height: 0; }
-.sky-heading { position: absolute; left: 38px; top: 18px; width: min(390px, 30%); margin: 0; font-family: var(--font-cormorant), Georgia, serif; font-weight: 500; font-size: clamp(30px, 3.4vw, 50px); line-height: 1.02; text-wrap: balance; }
+.sky-intro { position: absolute; left: 38px; top: 18px; display: grid; gap: 18px; width: min(390px, 30%); }
+.sky-heading { margin: 0; font-family: var(--font-cormorant), Georgia, serif; font-weight: 500; font-size: clamp(30px, 3.4vw, 50px); line-height: 1.02; text-wrap: balance; }
+.sky-lede { max-width: 34ch; margin: 0; font-size: 15px; line-height: 1.5; opacity: 0.86; }
+.sky-rule { width: 34px; height: 1px; margin: 0; border: 0; background: rgb(227 191 114 / 0.55); }
+.sky-motto { margin: 0; font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 17px; line-height: 1.4; color: var(--sky-gold); }
+.sky-motto.epitaph { max-width: 32ch; font-size: 17.5px; color: var(--sky-gold-ink); }
+.sky-place { position: absolute; left: 38px; bottom: 14px; display: grid; gap: 8px; width: min(320px, 30%); }
+.sky-place .name { font-family: var(--font-cinzel), Georgia, serif; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; }
+.sky-place .souls { font-size: 13px; color: var(--ll-ink-faint); font-variant-numeric: tabular-nums; }
+.sky-place .souls b { font-weight: 500; color: var(--sky-gold); }
+.sky-place q { font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 17px; line-height: 1.35; quotes: "\201C" "\201D"; }
+.sky-edge-panel { position: absolute; right: 30px; top: 18px; bottom: 26px; display: grid; grid-template-rows: auto 1fr; justify-items: end; gap: 26px; width: 110px; }
+.sky-edge-panel q { font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 15.5px; line-height: 1.4; text-align: right; color: var(--sky-gold); quotes: none; }
+.sky-edge-panel .sky-rule { margin: 14px 0 0 auto; }
+.sky-timebar { position: relative; width: 100%; height: 100%; }
+.sky-timebar .line { position: absolute; right: 22px; top: 70px; bottom: 30px; width: 1px; background: linear-gradient(var(--ll-hair), var(--ll-hair-strong) 30%, var(--ll-hair) 100%); }
+.sky-timebar .lbl { position: absolute; right: 30px; font-family: var(--font-cinzel), Georgia, serif; font-size: 8px; line-height: 1.9; letter-spacing: 0.28em; text-transform: uppercase; text-align: right; color: var(--ll-ink-faint); }
+.sky-timebar .lbl.top { top: 0; }
+.sky-timebar .lbl.bottom { bottom: 60px; color: var(--sky-gold); }
+.sky-timebar .tick { position: absolute; right: 19px; width: 7px; height: 7px; border: 1px solid rgb(227 191 114 / 0.55); transform: rotate(45deg); }
+.sky-timebar .moon { position: absolute; top: 88%; right: 10px; width: 26px; height: 26px; margin-top: -13px; color: var(--ll-ink-soft); }
 .sky-disc { position: absolute; left: 45%; top: 50%; height: min(100%, 50vw); aspect-ratio: 1; transform: translate(-50%, -50%); }
 .sky-svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.sky-now { position: absolute; top: 4px; left: calc(45% + min(50%, 25vw) * 0.96 + 10px); }
+.sky-now { position: absolute; top: 4px; left: calc(45% + min(50%, 25vw) * 0.96 + 10px); display: grid; gap: 6px; }
+.sky-agerow { display: flex; align-items: baseline; gap: 7px; padding-left: 4px; font-size: 16.5px; color: var(--ll-ink-soft); }
+.sky-agerow .sky-odo { font-size: 16.5px; color: var(--ll-ink); }
+.sky-agerow .sep { margin-inline: 4px; color: var(--ll-ink-faint); }
+.sky-months { position: relative; width: min(250px, 100%); height: 30px; margin-top: 8px; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 24%, #000 76%, transparent); }
+.sky-tape { position: absolute; left: 0; top: 0; display: flex; height: 100%; will-change: transform; }
+.sky-tape span { position: relative; flex: 0 0 64px; padding-top: 13px; text-align: center; font-family: var(--font-cinzel), Georgia, serif; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ll-ink-soft); background: repeating-linear-gradient(90deg, rgb(222 214 190 / 0.22) 0 1px, transparent 1px 16px) 0 0 / 100% 5px no-repeat; transition: color 0.6s linear; }
+.sky-tape span::before { content: ""; position: absolute; left: 0; top: 0; width: 1px; height: 9px; background: rgb(222 214 190 / 0.45); }
+.sky-tape span.cur { color: var(--sky-gold-ink); }
+.sky-months .cursor { position: absolute; left: 50%; top: 0; width: 1px; height: 12px; background: var(--sky-gold); box-shadow: 0 0 6px var(--sky-gold); }
 
 /* Year odometer */
 .sky-odo { display: inline-flex; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
@@ -170,7 +199,10 @@
 @media (max-width: 999px) {
   .sky-frame { display: block; height: auto; min-height: 0; margin: 10px; padding-bottom: 8px; }
   .sky-area { display: grid; gap: 18px; padding: 14px 18px 8px; }
-  .sky-heading, .sky-now { position: static; width: auto; }
+  .sky-intro, .sky-place, .sky-now, .sky-edge-panel { position: static; width: auto; }
+  .sky-edge-panel { display: block; }
+  .sky-edge-panel q { text-align: left; }
+  .sky-timebar { display: none; }
   .sky-disc { position: relative; left: auto; top: auto; transform: none; width: 100%; height: auto; max-width: 560px; justify-self: center; }
   .sky-rail { display: none; }
   .sky-reel { position: static; display: grid; gap: 4px; }

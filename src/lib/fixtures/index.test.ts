@@ -58,3 +58,12 @@ describe("fixture parity with the live contract", () => {
     expect(fixtureChronicle("life-elin", done!.chronicle.branchId).scene.people.length).toBeGreaterThan(0);
   });
 });
+
+describe("fixture scenes match the real derivation", () => {
+  it("every finished life's protagonist dies exactly where the span ends", () => {
+    for (const [lifeId, branchId] of [["life-elin", undefined], ["life-elin", "branch-1516"], ["life-rosalind", undefined]] as const) {
+      const { scene } = fixtureChronicle(lifeId, branchId);
+      expect(scene.people.find((p) => p.group === "self")?.diedAt).toBe(scene.span.end);
+    }
+  });
+});

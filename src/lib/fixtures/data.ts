@@ -648,7 +648,7 @@ const elinVillage: LifeScene["village"] = [
 // --- Night-sky scenes (hand-authored; times are fractional years) -------------------------------
 
 const elinPeople = (died: Record<string, number>): ScenePerson[] => [
-  person("protagonist", "Elin Marrow", "f", "self", "self", 1490, 1490.3),
+  person("protagonist", "Elin Marrow", "f", "self", "self", 1490, 1490.3, died.protagonist),
   person("petra", "Petra Marrow", "f", "parent", "parents", 1465, 1490.3),
   person("joren", "Joren Marrow", "m", "parent", "parents", 1462, 1490.3, died.joren),
   person("margit", "Margit Holt", "f", "friend", "others", 1450, 1500.2, died.margit),
@@ -659,7 +659,7 @@ const elinPeople = (died: Record<string, number>): ScenePerson[] => [
 
 const elinSceneOriginal: LifeScene = {
   people: [
-    ...elinPeople({ joren: 1535.4 }).map((p) => (p.id === "tomas" ? { ...p, relCode: "spouse" as const, group: "spouses" as const } : p)),
+    ...elinPeople({ protagonist: 1554.6, joren: 1535.4 }).map((p) => (p.id === "tomas" ? { ...p, relCode: "spouse" as const, group: "spouses" as const } : p)),
     person("wren", "Wren Vell", "f", "child", "children", 1520, 1520.3),
     person("cass", "Cass Vell", "m", "child", "children", 1526, 1526.2),
   ].sort((a, b) => a.appearsAt - b.appearsAt),
@@ -683,7 +683,7 @@ const elinSceneOriginal: LifeScene = {
 };
 
 const elinSceneChanged: LifeScene = {
-  people: elinPeople({ margit: 1535.3 }),
+  people: elinPeople({ protagonist: 1560.6, margit: 1535.3 }),
   edges: [
     edge("petra", "protagonist", "parent", 1490.3),
     edge("joren", "protagonist", "parent", 1490.3),
@@ -700,7 +700,7 @@ const elinSceneChanged: LifeScene = {
 
 const rosalindScene: LifeScene = {
   people: [
-    person("protagonist", "Rosalind Thorn", "f", "self", "self", 1602, 1602.4),
+    person("protagonist", "Rosalind Thorn", "f", "self", "self", 1602, 1602.4, 1608.5),
     person("elowen", "Elowen Thorn", "f", "parent", "parents", 1578, 1602.4),
     person("bram", "Bram Thorn", "m", "parent", "parents", 1576, 1602.4),
     person("sable", "Sable Underhill", "f", "friend", "others", 1602, 1605.4),
