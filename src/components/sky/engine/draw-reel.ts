@@ -6,7 +6,7 @@ import type { PlayerStore } from "@/lib/sky/player-store";
 import { arcPlace, entryLook, inReelZone, leaderCurve, railAngles, reelGeo, reelWidth, toPx, toldStrength, type ReelGeo } from "@/lib/sky/reel-geometry";
 import type { ReelEntry } from "@/lib/sky/reel-model";
 import type { Frame } from "@/lib/sky/scene-model";
-import { entryYs, tapeYs } from "@/lib/sky/tape";
+import { entryYs, scrollAt, tapeYs } from "@/lib/sky/tape";
 import { typed, typedKey, typedMarkup, type Typed } from "@/lib/sky/typewriter";
 
 export interface ReelInit {
@@ -23,7 +23,7 @@ export interface ReelInit {
   seek(t: number): void;
   /** Set once the life is saved: linked names in prose then open the person sheet. */
   openPerson?: (personId: string) => void;
-  /** The tape's position under the present just moved by this many pixels (a reconcile): glide it away instead of jumping. */
+  /** The tape's position under the present just moved by this many pixels (entries were added or replaced): ease it away instead of jumping. */
   tapeOffset?: number;
 }
 
@@ -165,12 +165,13 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
   };
 
   const glideFrom = performance.now();
+  let shift = 0;
   const draw = (frame: Frame) => {
     last = frame;
     const t = frame.t;
-    // The reel's tape shifted under the present: ease that shift out over GLIDE_MS (travel's brake, no overshoot).
-    const shift = tapeOffset * (1 - travel(Math.min(1, (performance.now() - glideFrom) / GLIDE_MS)));
-    const ys = tapeOffset === 0 ? entryYs(ats, tape, t) : entryYs(ats, tape, t).map((y) => y - shift);
+    // The tape shifted under the present: ease that shift out over GLIDE_MS (travel's brake, no overshoot).
+    shift = tapeOffset * (1 - travel(Math.min(1, (performance.now() - glideFrom) / GLIDE_MS)));
+    const ys = shift === 0 ? entryYs(ats, tape, t) : entryYs(ats, tape, t).map((y) => y - shift);
     let toldIdx = -1;
     ats.forEach((at, i) => {
       if (at <= t) toldIdx = i;
@@ -307,6 +308,10 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
   const offFrame = store.onFrame(draw);
 
   return {
+    /** Where the clock was and which tape position was under the present on the last frame: what a successor reel eases from. */
+    snapshot(): { t: number; scroll: number } | null {
+      return last ? { t: last.t, scroll: scrollAt(ats, tape, last.t) - shift } : null;
+    },
     destroy() {
       offFrame();
       observer.disconnect();

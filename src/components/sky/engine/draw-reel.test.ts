@@ -5,6 +5,7 @@ import { computeLayout } from "@/lib/sky/layout";
 import { createPlayerStore } from "@/lib/sky/player-store";
 import { reelEntries } from "@/lib/sky/reel-model";
 import { frameAt } from "@/lib/sky/scene-model";
+import { scrollAt, tapeYs } from "@/lib/sky/tape";
 import { createReel } from "./draw-reel";
 import { FakeEl } from "./fake-dom";
 
@@ -133,6 +134,14 @@ describe("createReel", () => {
     });
     expect(rows[k]!.style.display).toBe("");
     expect(rows[k]!.style.order).toBeDefined();
+  });
+
+  it("snapshots the clock and the tape position under the present for a successor reel to ease from", () => {
+    const { reel, draw } = setup();
+    expect(reel.snapshot()).toBeNull();
+    draw(1520);
+    const ats = entries.map((e) => e.at);
+    expect(reel.snapshot()).toEqual({ t: 1520, scroll: scrollAt(ats, tapeYs(ats), 1520) });
   });
 
   it("destroy removes every listener and stops the observer", () => {

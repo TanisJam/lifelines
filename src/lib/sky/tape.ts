@@ -26,3 +26,12 @@ export function entryYs(ats: readonly number[], ys: readonly number[], t: number
   const scroll = scrollAt(ats, ys, t);
   return ys.map((y) => scroll - y);
 }
+
+/**
+ * When entries are added or replaced, the tape position under the present changes. This is how far it moved
+ * against what the reader was last shown (`shownScroll` at `t`): the reel starts that far off and eases back,
+ * so a new tick or the done swap never makes the rows hop.
+ */
+export function tapeShift(shownScroll: number, ats: readonly number[], t: number): number {
+  return scrollAt(ats, tapeYs(ats), t) - shownScroll;
+}

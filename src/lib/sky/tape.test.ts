@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GAP, PX_PER_YEAR } from "./constants";
-import { entryYs, scrollAt, tapeYs } from "./tape";
+import { entryYs, scrollAt, tapeShift, tapeYs } from "./tape";
 
 const ats = [1500, 1500.5, 1510];
 
@@ -50,5 +50,21 @@ describe("entryYs", () => {
     expect(at[2]).toBeCloseTo(0, 9);
     expect(at[0]).toBeGreaterThan(at[1]!);
     expect(at[1]).toBeGreaterThan(0);
+  });
+});
+
+describe("tapeShift", () => {
+  const t = 1511;
+  const shown = scrollAt(ats, tapeYs(ats), t);
+
+  it("is zero while the entries are the same", () => {
+    expect(tapeShift(shown, ats, t)).toBe(0);
+  });
+
+  it("measures the hop a new entry just after the present would cause, so the reel can ease it away", () => {
+    const grown = [...ats, 1511.5];
+    const shift = tapeShift(shown, grown, t);
+    expect(shift).not.toBe(0);
+    expect(shown + shift).toBeCloseTo(scrollAt(grown, tapeYs(grown), t), 9);
   });
 });

@@ -2,7 +2,6 @@
 
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Chronicle } from "@/components/chronicle";
 import { SkyView } from "@/components/sky/sky-view";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/get-dictionary";
@@ -10,7 +9,7 @@ import { getChronicle } from "@/lib/life-client";
 import type { Chronicle as ChronicleData } from "@/contracts/life";
 
 /**
- * The Living Chronicle route. A client component rather than a server-fetched one: the real
+ * A saved life as a night sky (the default view). A client component rather than a server-fetched one: the real
  * `/api/lives/:lifeId` endpoint lives in the engine worktree and doesn't exist here yet, and the
  * fixture layer (`NEXT_PUBLIC_LIFE_FIXTURE=1`) only runs client-side, so both backends are reached
  * the same way `life-client.ts` reaches every other endpoint — a plain client fetch.
@@ -22,19 +21,16 @@ export default function LifePage() {
   // remounts this loader — the idiomatic way to reset state on a prop change without an
   // unconditional setState at the top of an effect. `branch` is read once, below, deliberately
   // NOT as part of this key: see `ChronicleLoader`'s own comment for why.
-  return <ChronicleLoader key={params.lifeId} lifeId={params.lifeId} lang={params.lang} initialBranchId={searchParams.get("branch") ?? undefined} sky={searchParams.get("view") === "sky"} />;
+  return <ChronicleLoader key={params.lifeId} lifeId={params.lifeId} lang={params.lang} initialBranchId={searchParams.get("branch") ?? undefined} />;
 }
 
-/** `sky` is the temporary `?view=sky` flag (removed by the cutover slice): the parchment chronicle stays the default. */
-function ChronicleLoader({ lifeId, lang, initialBranchId, sky }: { lifeId: string; lang: Locale; initialBranchId?: string; sky: boolean }) {
+function ChronicleLoader({ lifeId, lang, initialBranchId }: { lifeId: string; lang: Locale; initialBranchId?: string }) {
   const dict = getDictionary(lang);
-  // Frozen at mount, deliberately not re-read from the URL afterward. `<Chronicle>` owns every
-  // later branch change itself — both from a rewrite and from `switchBranch` (the history rail) —
-  // and syncs the address bar with a raw, write-only `history.replaceState`. Next's App Router
-  // observes the History API globally, so if this effect depended on a *live* `branch` search
-  // param, that same replaceState call would re-trigger this fetch and silently overwrite
-  // `<Chronicle>`'s in-memory state (`ghosts` in particular, which only exists on the SSE `done`
-  // payload, never on a plain GET) — a real bug caught live via Playwright, not a hypothetical.
+  // Frozen at mount, deliberately not re-read from the URL afterward. Branch changes (a rewrite, the
+  // history switcher) sync the address bar with a raw, write-only `history.replaceState`, and Next's
+  // App Router observes the History API globally: if this effect depended on a *live* `branch` search
+  // param, that same replaceState call would re-trigger this fetch and silently overwrite the in-memory
+  // state (`ghosts` in particular, which only exists on the SSE `done` payload, never on a plain GET).
   const [branchIdAtMount] = useState(initialBranchId);
   const [data, setData] = useState<ChronicleData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,5 +65,5 @@ function ChronicleLoader({ lifeId, lang, initialBranchId, sky }: { lifeId: strin
     );
   }
 
-  return sky ? <SkyView chronicle={data} dict={dict} lang={lang} /> : <Chronicle initial={data} />;
+  return <SkyView chronicle={data} dict={dict} lang={lang} />;
 }

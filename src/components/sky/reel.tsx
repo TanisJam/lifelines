@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { Timeline } from "@/lib/sky/dial";
 import type { PlayerStore } from "@/lib/sky/player-store";
 import type { ReelEntry } from "@/lib/sky/reel-model";
+import { tapeShift } from "@/lib/sky/tape";
 import { createReel, type ReelInit } from "./engine/draw-reel";
 
 export interface ReelLabels {
@@ -16,17 +17,24 @@ export interface ReelLabels {
  * The chronicle on its arc. React renders each row once, keyed by entry id (so a later tick or done never
  * remounts a row); the controller types, places and fades them from the clock.
  */
-export function Reel({ entries, store, timeline, focus, seek, openPerson, tapeOffset, labels }: { entries: readonly ReelEntry[]; store: PlayerStore; timeline: Timeline; focus: ReelInit["focus"]; seek: (t: number) => void; openPerson?: (personId: string) => void; tapeOffset?: number; labels: ReelLabels }) {
+export function Reel({ entries, store, timeline, focus, seek, openPerson, labels }: { entries: readonly ReelEntry[]; store: PlayerStore; timeline: Timeline; focus: ReelInit["focus"]; seek: (t: number) => void; openPerson?: (personId: string) => void; labels: ReelLabels }) {
   const olRef = useRef<HTMLOListElement>(null);
   const railRef = useRef<SVGSVGElement>(null);
+  /** Where the previous controller left the clock and the tape, so a new one (new tick, done) eases instead of hopping. */
+  const carry = useRef<{ t: number; scroll: number } | null>(null);
   useEffect(() => {
     const ol = olRef.current;
     const rail = railRef.current;
     const area = ol?.parentElement;
     if (!ol || !rail || !area) return;
+    const from = carry.current;
+    const tapeOffset = from ? tapeShift(from.scroll, entries.map((e) => e.at), from.t) : 0;
     const reel = createReel({ area, ol, rail, entries, store, timeline, focus, seek, openPerson, tapeOffset });
-    return () => reel.destroy();
-  }, [entries, store, timeline, focus, seek, openPerson, tapeOffset]);
+    return () => {
+      carry.current = reel.snapshot();
+      reel.destroy();
+    };
+  }, [entries, store, timeline, focus, seek, openPerson]);
   return (
     <>
       <svg ref={railRef} className="sky-rail" aria-hidden="true">

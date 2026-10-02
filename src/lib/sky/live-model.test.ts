@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ChronicleEntry } from "@/contracts/life";
 import { fixtureChronicle } from "@/lib/fixtures";
 import { sceneAt, yearTicks } from "@/lib/fixtures/stream";
 import { startModel, mergeTick, reconcileDone } from "./live-model";
-import { reelEntries } from "./reel-model";
-import { scrollAt, tapeYs } from "./tape";
 import { timeline } from "./dial";
 
 const done = fixtureChronicle("life-elin");
@@ -53,36 +50,11 @@ describe("mergeTick", () => {
 });
 
 describe("reconcileDone", () => {
-  const live = () => ticks.reduce((m, t) => mergeTick(m, t), startModel(birth));
-
   it("swaps in the saved scene and entries, marks the model saved and opens the frontier to the end of the life", () => {
-    const { model } = reconcileDone(live(), done, 1520);
+    const model = reconcileDone(done);
     expect(model.scene).toBe(done.scene);
     expect(model.entries).toBe(done.entries);
     expect(model.saved).toBe(true);
     expect(model.frontier).toBe(timeline(done.scene, 0).end);
-  });
-
-  it("moves nothing when the entries behind the clock are the same", () => {
-    const sameReel = { ...done, entries: live().entries };
-    expect(reconcileDone(live(), sameReel, 1520).tapeOffsetDelta).toBe(0);
-  });
-
-  it("reports how far the tape position under the present moved when done adds an entry behind the clock", () => {
-    const before = live();
-    const extra: ChronicleEntry = { ...before.entries[0]!, id: "extra-entry", at: 1495.5, year: 1495 };
-    const richer = { ...done, entries: [extra, ...done.entries] };
-    const t = 1520;
-    const oldAts = reelEntries(before.entries).map((e) => e.at);
-    const newAts = reelEntries(richer.entries).map((e) => e.at);
-    const expected = scrollAt(newAts, tapeYs(newAts), t) - scrollAt(oldAts, tapeYs(oldAts), t);
-    const { tapeOffsetDelta } = reconcileDone(before, richer, t);
-    expect(tapeOffsetDelta).toBeCloseTo(expected, 9);
-    expect(tapeOffsetDelta).not.toBe(0);
-  });
-
-  it("ignores period summaries, which never reach the reel", () => {
-    const withSummary = { ...done, entries: [...live().entries, { ...live().entries[0]!, id: "period-x", kind: "period" as const }] };
-    expect(reconcileDone(live(), withSummary, 1520).tapeOffsetDelta).toBe(0);
   });
 });

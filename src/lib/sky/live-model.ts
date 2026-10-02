@@ -1,7 +1,5 @@
 import type { Chronicle, ChronicleEntry, LifeScene } from "@/contracts/life";
 import { timeline } from "./dial";
-import { reelEntries } from "./reel-model";
-import { scrollAt, tapeYs } from "./tape";
 
 /** What the sky shows while a life is being written: the scene so far, the entries streamed so far, and how far the clock may run. */
 export interface LiveModel {
@@ -30,18 +28,7 @@ export function mergeTick(model: LiveModel, tick: { readonly year: number; reado
   };
 }
 
-const reelTape = (entries: readonly ChronicleEntry[], t: number): number => {
-  const ats = reelEntries(entries).map((e) => e.at);
-  return scrollAt(ats, tapeYs(ats), t);
-};
-
-/**
- * The saved life replaces the streamed one. The clock is untouched; `tapeOffsetDelta` is how far the tape
- * position under the present moves (new minus old at `t`), which the reel glides away instead of jumping.
- */
-export function reconcileDone(model: LiveModel, chronicle: Pick<Chronicle, "scene" | "entries">, t: number): { model: LiveModel; tapeOffsetDelta: number } {
-  return {
-    model: { scene: chronicle.scene, entries: chronicle.entries, frontier: timeline(chronicle.scene, chronicle.scene.span.start).end, saved: true },
-    tapeOffsetDelta: reelTape(chronicle.entries, t) - reelTape(model.entries, t),
-  };
+/** The saved life replaces the streamed one; the clock is untouched, and the frontier opens to the end of the life. */
+export function reconcileDone(chronicle: Pick<Chronicle, "scene" | "entries">): LiveModel {
+  return { scene: chronicle.scene, entries: chronicle.entries, frontier: timeline(chronicle.scene, chronicle.scene.span.start).end, saved: true };
 }
