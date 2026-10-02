@@ -82,8 +82,34 @@
 .sky-node.outside .sky-nm { fill: var(--ll-ink-soft); font-style: italic; }
 .sky-node.dead .sky-nm { fill: var(--ll-ink-faint); }
 
+/* Focus: one star or the people of one entry stay bright, everything else dims */
+.sky-svg.focus .sky-edge { opacity: 0.12; }
+.sky-svg.focus .sky-edge.hl { opacity: 1; }
+.sky-svg.focus .sky-node { opacity: 0.3; transition: opacity 0.4s; }
+.sky-svg.focus .sky-node.hl { opacity: 1; }
+.sky-node { cursor: pointer; }
+.sky-node:focus-visible { outline: none; }
+.sky-node:focus-visible .sky-core { stroke: var(--ll-starlight); stroke-width: 2; }
+.sky-node.focal .sky-core { transform: scale(1.35); }
+.sky-ping { fill: none; stroke: var(--sky-gold); stroke-width: 1; opacity: 0; transition: opacity 0.6s linear; }
+.sky-node.named .sky-ping { opacity: 0.85; }
+.sky-node.named .sky-halo { opacity: 0.95; }
+.sky-plague-label { font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 12.5px; fill: var(--sky-red); text-anchor: middle; dominant-baseline: middle; opacity: 0.85; }
+.sky-tip { position: absolute; z-index: 3; max-width: 230px; padding: 9px 12px; border: 1px solid var(--ll-hair-strong); border-radius: 10px; background: rgb(8 12 22 / 0.94); box-shadow: 0 6px 20px rgb(0 0 0 / 0.4); font-size: 14px; line-height: 1.35; color: var(--ll-ink); pointer-events: none; }
+.sky-tip[hidden] { display: none; }
+.sky-tip b { display: block; font-family: var(--font-cormorant), Georgia, serif; font-size: 18px; font-weight: 500; }
+.sky-tip .r { font-family: var(--font-cinzel), Georgia, serif; font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--sky-gold); }
+.sky-tip .s { color: var(--ll-ink-soft); }
+
+/* Legend and closing line */
+.sky-legend { display: grid; grid-template-columns: repeat(2, max-content); gap: 9px 34px; justify-self: start; padding: 16px 30px; border: 1px solid var(--ll-hair); border-radius: 999px; background: var(--ll-panel); backdrop-filter: blur(6px); font-size: 12.5px; color: var(--ll-ink-soft); }
+.sky-legend span { display: inline-flex; align-items: center; gap: 10px; }
+.sky-legend svg { width: 28px; height: 10px; overflow: visible; }
+.sky-closing { justify-self: end; max-width: 18ch; margin: 0 0 6px; text-align: right; font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 17px; line-height: 1.4; color: var(--sky-gold); quotes: "\201C" "\201D"; }
+
 /* Player */
-.sky-player { position: relative; z-index: 1; justify-self: start; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 16px; width: min(640px, calc(100% - 60px)); margin: 0 30px 22px; padding: 16px 22px 30px 16px; border: 1px solid var(--ll-hair); border-radius: 999px; background: var(--ll-panel); backdrop-filter: blur(6px); }
+.sky-bottom { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 420px) minmax(0, 1fr); gap: 28px; align-items: end; padding: 0 30px 22px; }
+.sky-player { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 16px; padding: 16px 22px 30px 16px; border: 1px solid var(--ll-hair); border-radius: 999px; background: var(--ll-panel); backdrop-filter: blur(6px); }
 .sky-playbtn { width: 58px; height: 58px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--sky-gold); background: radial-gradient(circle, rgb(227 191 114 / 0.16), transparent 70%); box-shadow: 0 0 24px rgb(227 191 114 / 0.22); color: var(--sky-gold-ink); cursor: pointer; }
 .sky-playbtn svg { width: 20px; height: 20px; }
 .sky-yr { font-size: 14px; color: var(--ll-ink-soft); font-variant-numeric: tabular-nums; }
@@ -116,5 +142,7 @@
   .sky-area { display: grid; gap: 18px; padding: 14px 18px 8px; }
   .sky-heading, .sky-now { position: static; width: auto; }
   .sky-disc { position: relative; left: auto; top: auto; transform: none; width: 100%; height: auto; max-width: 560px; justify-self: center; }
-  .sky-player { width: auto; }
+  .sky-bottom { grid-template-columns: minmax(0, 1fr); padding: 0 14px 18px; }
+  .sky-legend { border-radius: 18px; padding: 14px 18px; gap: 8px 18px; }
+  .sky-closing { justify-self: start; text-align: left; }
 }

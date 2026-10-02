@@ -1,5 +1,5 @@
 import type { Ref } from "react";
-import type { LifeScene } from "@/contracts/life";
+import type { LifeScene, ScenePerson } from "@/contracts/life";
 import { R2, R_COMPASS, R_DIAL, R_PROGRESS, SPARK } from "@/lib/sky/constants";
 import { arcPath, dialAngle, type Timeline } from "@/lib/sky/dial";
 import { edgeKey } from "@/lib/sky/layout";
@@ -22,7 +22,7 @@ const FLARE = Array.from({ length: 8 }, (_, i) => {
  * The constellation's nodes, rendered once. Every moving attribute (transform, path data, opacity, state
  * classes) is written by the engine through the `data-*` hooks below, so React never re-renders a frame.
  */
-export function SkySvg({ scene, timeline: line, label, svgRef }: { scene: LifeScene; timeline: Timeline; label: string; svgRef: Ref<SVGSVGElement> }) {
+export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLabels }: { scene: LifeScene; timeline: Timeline; label: string; svgRef: Ref<SVGSVGElement>; relation: (person: ScenePerson) => string; bandLabels: Record<string, string> }) {
   const years = Array.from({ length: line.dialSpan }, (_, k) => line.dialStart + k);
   return (
     <svg ref={svgRef} className="sky-svg" viewBox="-400 -400 800 800" role="img" aria-label={label}>
@@ -67,9 +67,17 @@ export function SkySvg({ scene, timeline: line, label, svgRef }: { scene: LifeSc
             </g>
           );
         })}
-        {scene.bands.map((b) => (
-          <path key={b.kind} data-band={b.kind} data-from={b.from} data-to={b.to} className="sky-plague" d={arcPath(R_DIAL, dialAngle(b.from, line.dialStart, line.dialSpan), dialAngle(b.to, line.dialStart, line.dialSpan))} />
-        ))}
+        {scene.bands.map((b) => {
+          const [lx, ly] = polar(dialAngle((b.from + b.to) / 2, line.dialStart, line.dialSpan), R_DIAL + 13);
+          return (
+            <g key={b.kind}>
+              <path data-band={b.kind} data-from={b.from} data-to={b.to} className="sky-plague" d={arcPath(R_DIAL, dialAngle(b.from, line.dialStart, line.dialSpan), dialAngle(b.to, line.dialStart, line.dialSpan))} />
+              <text className="sky-plague-label" x={f1(lx)} y={f1(ly)}>
+                {bandLabels[b.kind]}
+              </text>
+            </g>
+          );
+        })}
         <circle className="sky-ring faint" r={R_PROGRESS} />
         <path data-progress-glow className="sky-progress glow" />
         <path data-progress className="sky-progress" />
@@ -116,8 +124,9 @@ export function SkySvg({ scene, timeline: line, label, svgRef }: { scene: LifeSc
         {scene.people.map((p) => {
           const self = p.group === "self";
           return (
-            <g key={p.id} data-person={p.id} className={`sky-node${self ? " self" : ""}`} role="img" aria-label={p.name} style={{ display: "none" }}>
+            <g key={p.id} data-person={p.id} className={`sky-node${self ? " self" : ""}`} role="button" tabIndex={0} aria-label={`${p.name}, ${relation(p)}`} style={{ display: "none" }}>
               <circle className="sky-halo" r={self ? 18 : p.group === "outer" ? 7 : 9} />
+              <circle className="sky-ping" r={self ? 15 : 10} />
               {self && (
                 <g className="sky-spin">
                   <path className="sky-flare" d={FLARE} />
