@@ -55,7 +55,7 @@ describe("reconcileDone", () => {
     expect(model.scene).toBe(done.scene);
     expect(model.entries).toBe(done.entries);
     expect(model.saved).toBe(true);
-    expect(model.frontier).toBe(timeline(done.scene, 0).end);
+    expect(model.frontier).toBe(timeline(done.scene, 0, done.entries).end);
   });
 });
 

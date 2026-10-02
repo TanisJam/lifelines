@@ -44,7 +44,7 @@ export function SkyView({ chronicle: base, dict, lang, saved = true, frontier: l
   const frontier = rewrite.frontier ?? (saved ? undefined : liveFrontier);
   const { scene } = chronicle;
   const { sky } = dict;
-  const line = useMemo(() => timeline(scene, scene.span.end ?? frontier ?? scene.span.start), [scene, frontier]);
+  const line = useMemo(() => timeline(scene, scene.span.end ?? frontier ?? scene.span.start, chronicle.entries), [scene, frontier, chronicle.entries]);
   const { svgRef, store, state, controls } = useSkyEngine(scene, line, { frontier, autoplay: !saved });
   const entries = useMemo(() => reelEntries(chronicle.entries), [chronicle.entries]);
   useForkGlide(rw.phase, rw.fork, store, controls.seek, controls.toggle);

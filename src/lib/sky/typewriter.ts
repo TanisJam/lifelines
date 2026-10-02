@@ -85,3 +85,11 @@ export function typedMarkup(text: string, links: readonly LinkRange[], n: number
   }
   return html + esc(text.slice(at, n));
 }
+
+/** Sim-years an entry takes to type out completely, after its moment. */
+export const typeDuration = (entry: Pick<ChronicleEntry, "title" | "prose" | "links" | "turn">): number =>
+  typeParts(entryText(entry)).reduce((total, part) => total + part.text.length * part.rate, 0);
+
+/** The moment the last entry finishes typing; `-Infinity` for none. */
+export const typingEnd = (entries: readonly Pick<ChronicleEntry, "at" | "title" | "prose" | "links" | "turn">[]): number =>
+  entries.reduce((end, entry) => Math.max(end, entry.at + typeDuration(entry)), -Infinity);

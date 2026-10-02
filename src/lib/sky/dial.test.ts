@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { arcPath, dialAngle, monthTapeX, odometerOffsets, plagueIntensity, rolled } from "./dial";
+import { arcPath, dialAngle, monthTapeX, odometerOffsets, plagueIntensity, rolled, timeline } from "./dial";
+import { TYPE_FAST, TYPE_TITLE } from "./typewriter";
 
 describe("dial", () => {
   it("maps a year to an angle starting at the top", () => {
@@ -39,5 +40,26 @@ describe("month tape", () => {
   it("centres the cursor on the current month", () => {
     expect(monthTapeX(1350, 800, 64)).toBe(400 - 12 * 64);
     expect(monthTapeX(1350.5, 800, 64)).toBe(400 - 18 * 64);
+  });
+});
+
+describe("timeline end", () => {
+  const scene = { people: [], edges: [], village: [], bands: [], span: { start: 1327, end: 1403.2 } };
+  const entry = (at: number, title: string, prose: string) => ({ at, title, prose, links: [], turn: undefined });
+
+  it("keeps the 0.7 tail when every entry finishes typing before it", () => {
+    expect(timeline(scene, 1403.2, [entry(1403.2, "Dies", "He died.")]).end).toBeCloseTo(1403.9, 9);
+  });
+
+  it("extends the clock so the last entry finishes typing", () => {
+    const long = entry(1403.8, "Widowed", "x".repeat(120));
+    const end = timeline(scene, 1403.2, [long]).end;
+    expect(end).toBeGreaterThanOrEqual(1403.8 + "Widowed".length * TYPE_TITLE + 120 * TYPE_FAST);
+    expect(timeline(scene, 1403.2, [long]).end).toBe(end);
+  });
+
+  it("is unchanged by entries while the life is still being written", () => {
+    const live = { ...scene, span: { start: 1327, end: null } };
+    expect(timeline(live, 1340, [entry(1339, "t", "p")]).end).toBe(timeline(live, 1340).end);
   });
 });

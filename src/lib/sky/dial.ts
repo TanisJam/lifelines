@@ -1,5 +1,6 @@
-import type { LifeScene, SceneBand } from "@/contracts/life";
+import type { ChronicleEntry, LifeScene, SceneBand } from "@/contracts/life";
 import { polar, travel } from "./motion";
+import { typingEnd } from "./typewriter";
 
 /** Angle (degrees, top = -90) of year `t` on a dial of `span` years starting at `start`. */
 export const dialAngle = (t: number, start: number, span: number): number => ((t - start) / span) * 360 - 90;
@@ -56,11 +57,11 @@ export interface Timeline {
   readonly dialSpan: number;
 }
 
-/** The life's time axis. Live (end unknown) it stays at least 60 years wide and 8 past the frontier; once known the clock runs 0.7 past the death. */
-export function timeline(scene: LifeScene, frontier: number): Timeline {
+/** The life's time axis. Live (end unknown) it stays at least 60 years wide and 8 past the frontier; once known the clock runs 0.7 past the death, or longer if the last entry needs more time to finish typing. */
+export function timeline(scene: LifeScene, frontier: number, entries: readonly Pick<ChronicleEntry, "at" | "title" | "prose" | "links" | "turn">[] = []): Timeline {
   const { start, end } = scene.span;
   const known = end !== null;
-  const stop = known ? end + 0.7 : Math.max(start + 60, frontier + 8);
+  const stop = known ? Math.max(end + 0.7, typingEnd(entries)) : Math.max(start + 60, frontier + 8);
   const dialStart = Math.floor(start);
   return { start, end: stop, dialStart, dialSpan: Math.ceil(stop) - dialStart };
 }

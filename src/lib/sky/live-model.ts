@@ -30,7 +30,7 @@ export function mergeTick(model: LiveModel, tick: { readonly year: number; reado
 
 /** The saved life replaces the streamed one; the clock is untouched, and the frontier opens to the end of the life. */
 export function reconcileDone(chronicle: Pick<Chronicle, "scene" | "entries">): LiveModel {
-  return { scene: chronicle.scene, entries: chronicle.entries, frontier: timeline(chronicle.scene, chronicle.scene.span.start).end, saved: true };
+  return { scene: chronicle.scene, entries: chronicle.entries, frontier: timeline(chronicle.scene, chronicle.scene.span.start, chronicle.entries).end, saved: true };
 }
 
 /** What the `start` event says about the life; everything else arrives with the ticks and done. */
