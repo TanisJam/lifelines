@@ -465,6 +465,37 @@ may shift, while competing debt for the same creditor can legitimately change it
 No production simulation, annual hazards/providers, storage, UI, models, regeneration, inferred
 appraisals, macro rules, director weights or A/B/C1 version migration is introduced.
 
+### Unit D1: standalone capsule and serialized-memory repository proof
+
+D1 preserves admitted C2 records across canonical string serialization and fresh repository instances.
+It **does not close D or prove production durability**. The selected full D continues with D2's
+explicit versioned human-fork authority, then D3's real SQLite adapter tested only against isolated
+temporary databases. D1 imports no production DB, LifeStore, provider, environment or A replay code.
+
+**Quick path:** `createFavorCapsule(scheduler)` → `serializeFavorCapsule(capsule)` →
+`deserializeFavorCapsule(wire)`. `FavorRepository.save(capsule)` returns its SHA-256 digest key;
+`load(key)` returns a detached admitted capsule or `undefined` for an absent record.
+`MemoryFavorRecords(sharedMap)` permits fresh-instance cold loads from persisted **strings**, not
+live capsule references. The Map is a proof fixture, not a durable storage adapter.
+
+| Review point | D1 contract |
+|---|---|
+| Supported manifest | Schema/projection `favor-capsule-d1`, engine/reducer `favor-c1`, scheduler `favor-scheduler-c2`, RNG `keyed-mulberry32-c2`. Immutable declared config: two slots per creditor/year, `.25` activation, `first-eligible-utf8-c2`. Policy semantics remain those of the existing C versions; unsupported tuples/configs fail closed. |
+| Complete payload | One C people registry, full legacy initial events, explicit initial/current resources, recorded effects and annual attempts. The admitted scheduler supplies seed, initial/completed frontiers and original prefix boundary; no duplicate unchecked metadata or initial/final Person mirror. People are fixed frontier-valid C inputs, **not** a production as-of reconstruction. |
+| Traversal | Capture actual people-registry order before canonical key sorting; hash the exact complete unique ID array and restore it before C2 admission. Own `__proto__`, Unicode and lone-surrogate keys remain data. Unrepresentable traversal declarations (including inconsistent integer-key order) reject. |
+| Encoding/integrity | Descriptor-first plain/null records and standard arrays; reject executable hooks, cycles, sparse/extended arrays, hidden/symbol fields, nonfinite values and unsupported undefined. Sort object keys, preserve array order, normalize negative zero through JSON number encoding. SHA-256 covers the exact canonical payload excluding only `digest`. Deserialization requires canonical wire bytes, rejecting duplicate keys, whitespace and alternate syntax. |
+| Semantic admission | Existing `admitFavorScheduler` remains authority for checkpoint/effect and annual evidence consistency, even when a tamperer recomputes the digest. Hash integrity is **not authenticated authorship**; rewriting complete initial ground truth is outside that promise. Legacy cards and provenance-less results cannot be canonical imports; legacy viewing/rewriting is unchanged. |
+| Repository | Immutable content-addressed records; identical retries reuse one string without executing grants or effects. Corruption, conflicts and key/hash disagreement throw without overwrite or fallback. The trusted storage port must provide atomic immutable insertion, including no publication on failure; untrusted record bytes are always decoded/admitted. No latest pointers, branch registration or override API. |
+
+**Explicit optional normalization:** own undefined values are omitted only for Person's declared
+`deathYear`, `spouseId`, `motherId`, `fatherId`, `socialClass`, `literate`, `away`, `lifeState`;
+`lifeState.marriageableSince`, `marital.partnerId`, `residence.place`, `vocation.masterId`;
+`mind.thoughts[].personId`, `mind.memories[].personId`; and legacy Event `significance`.
+No undefined array element, required field, arbitrary extension or JSON payload entry is omitted.
+Normalization precedes hashing/admission, so declared absence and supported own undefined agree.
+This is a narrow versioned wire, not a generic historical codec/migration framework, Proxy sandbox,
+portability/scaling claim, SQLite/storage integration or production canonical-input capture.
+
 ### A-baseline: reproducible local measurements
 
 **Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,
