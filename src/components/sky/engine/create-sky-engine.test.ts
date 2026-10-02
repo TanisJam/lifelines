@@ -94,4 +94,20 @@ describe("createSkyEngine controls", () => {
     expect(cancelled).toEqual([frameCallbacks.length]);
     expect(mqListeners.size).toBe(0);
   });
+
+  it("update grows the scene over the same clock: t stays, the frontier opens, nothing remounts", () => {
+    const early = { ...scene, people: scene.people.filter((p) => p.appearsAt < 1510), edges: [], span: { ...scene.span, end: null } };
+    const store = createPlayerStore();
+    const engine = createSkyEngine({ svg: fakeSvg(), scene: early, timeline: timeline(early, 1505), store, frontier: 1505 });
+    const seen: number[] = [];
+    store.onFrame((f) => seen.push(f.t));
+    engine.seek(1530);
+    expect(seen.at(-1)).toBe(1505);
+    const grown = timeline(scene, scene.span.end!);
+    engine.update({ scene, timeline: grown });
+    expect(seen.at(-1)).toBe(1505);
+    engine.seek(1530);
+    expect(seen.at(-1)).toBe(1530);
+    expect(cancelled).toEqual([]);
+  });
 });

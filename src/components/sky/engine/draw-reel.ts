@@ -1,6 +1,6 @@
 import { A_NOW, R_COMPASS, R_PROGRESS } from "@/lib/sky/constants";
 import { dialAngle, type Timeline } from "@/lib/sky/dial";
-import { paramAt, polar, quad } from "@/lib/sky/motion";
+import { paramAt, polar, quad, travel } from "@/lib/sky/motion";
 import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/sky/motion-pref";
 import type { PlayerStore } from "@/lib/sky/player-store";
 import { arcPlace, entryLook, inReelZone, leaderCurve, railAngles, reelGeo, reelWidth, toPx, toldStrength, type ReelGeo } from "@/lib/sky/reel-geometry";
@@ -23,6 +23,8 @@ export interface ReelInit {
   seek(t: number): void;
   /** Set once the life is saved: linked names in prose then open the person sheet. */
   openPerson?: (personId: string) => void;
+  /** The tape's position under the present just moved by this many pixels (a reconcile): glide it away instead of jumping. */
+  tapeOffset?: number;
 }
 
 interface Row {
@@ -46,6 +48,8 @@ const CARET = '<span class="sky-caret"></span>';
 const WIDE = "(min-width: 1000px)";
 /** Years the clock moves per wheel pixel (scrolling down goes deeper into the past). */
 const WHEEL_YEARS = 0.004;
+/** How long a reconcile's tape shift takes to settle. */
+const GLIDE_MS = 600;
 const NS = "http://www.w3.org/2000/svg";
 const show = (el: HTMLElement, on: boolean) => {
   const want = on ? "" : "none";
@@ -61,7 +65,7 @@ const toggle = (el: Element, name: string, on: boolean) => {
  * `typed`), so pausing and scrubbing carry the reel with them. Driven by player-store frames; React
  * renders the rows once and never sees a frame.
  */
-export function createReel({ area, ol, rail, entries, store, timeline: line, focus, seek, openPerson }: ReelInit) {
+export function createReel({ area, ol, rail, entries, store, timeline: line, focus, seek, openPerson, tapeOffset = 0 }: ReelInit) {
   const disc = area.querySelector<HTMLElement>(".sky-disc")!;
   const ats = entries.map((e) => e.at);
   const tape = tapeYs(ats);
@@ -160,10 +164,13 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
     });
   };
 
+  const glideFrom = performance.now();
   const draw = (frame: Frame) => {
     last = frame;
     const t = frame.t;
-    const ys = entryYs(ats, tape, t);
+    // The reel's tape shifted under the present: ease that shift out over GLIDE_MS (travel's brake, no overshoot).
+    const shift = tapeOffset * (1 - travel(Math.min(1, (performance.now() - glideFrom) / GLIDE_MS)));
+    const ys = tapeOffset === 0 ? entryYs(ats, tape, t) : entryYs(ats, tape, t).map((y) => y - shift);
     let toldIdx = -1;
     ats.forEach((at, i) => {
       if (at <= t) toldIdx = i;

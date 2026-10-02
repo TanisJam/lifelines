@@ -24,15 +24,16 @@ import { useSkyEngine } from "./use-sky-engine";
 import { useSkyFocus } from "./use-sky-focus";
 
 /**
- * The finished life as a night sky. Mounted behind `?view=sky` until the cutover slice makes it the default.
- * `saved` is false while a life is still being generated: stars then focus and show their tooltip, and the
- * person sheet (which reads persisted data) opens once the life is saved.
+ * A life as a night sky: saved (the default) or still being written. `saved` is false while the life is generated:
+ * the scene grows tick by tick over the same engine (never a remount), the clock plays up to `frontier` and waits
+ * there, stars focus and show their tooltip, and the person sheet (which reads persisted data) opens once the life
+ * is saved. `tapeOffset` is the reconcile shift the reel glides away when done replaces the streamed entries.
  */
-export function SkyView({ chronicle, dict, lang, saved = true }: { chronicle: Chronicle; dict: Dictionary; lang: Locale; saved?: boolean }) {
+export function SkyView({ chronicle, dict, lang, saved = true, frontier, tapeOffset }: { chronicle: Chronicle; dict: Dictionary; lang: Locale; saved?: boolean; frontier?: number; tapeOffset?: number }) {
   const { scene } = chronicle;
   const { sky } = dict;
-  const line = useMemo(() => timeline(scene, scene.span.end ?? scene.span.start), [scene]);
-  const { svgRef, store, state, controls } = useSkyEngine(scene, line);
+  const line = useMemo(() => timeline(scene, scene.span.end ?? frontier ?? scene.span.start), [scene, frontier]);
+  const { svgRef, store, state, controls } = useSkyEngine(scene, line, { frontier: saved ? undefined : frontier, autoplay: !saved });
   const entries = useMemo(() => reelEntries(chronicle.entries), [chronicle.entries]);
 
   const tipRef = useRef<HTMLDivElement>(null);
@@ -62,10 +63,10 @@ export function SkyView({ chronicle, dict, lang, saved = true }: { chronicle: Ch
         <NowPanel scene={scene} store={store} lang={lang} village={chronicle.villageName} sky={sky} yearFloor={line.dialStart} />
         <TimeBar sky={sky} store={store} start={line.start} end={line.end} />
         <PlacePanel village={chronicle.villageName} sex={chronicle.protagonist.sex} sky={sky} store={store} />
-        <Reel entries={entries} store={store} timeline={line} focus={focus} seek={controls.seek} openPerson={saved ? setOpenPersonId : undefined} labels={sky.reel} />
+        <Reel entries={entries} store={store} timeline={line} focus={focus} seek={controls.seek} openPerson={saved ? setOpenPersonId : undefined} tapeOffset={tapeOffset} labels={sky.reel} />
       </div>
       <div className="sky-bottom">
-        <Player store={store} state={state} controls={controls} start={line.start} end={line.end} labels={sky.player} />
+        <Player store={store} state={state} controls={controls} start={line.start} end={line.end} open={!saved} labels={sky.player} />
         <Legend sky={sky} village={chronicle.villageName} sex={chronicle.protagonist.sex} />
       </div>
       <AnimatePresence>

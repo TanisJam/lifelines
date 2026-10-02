@@ -81,7 +81,7 @@ export const en = {
   sky: {
     title: (name: string) => `The constellation of ${name}`,
     constellationLabel: (name: string) => `Constellation of ${name}'s relationships`,
-    player: { play: "Play", pause: "Pause", speed: "Playback speed", year: "Year", caption: "A life in motion" },
+    player: { play: "Play", pause: "Pause", speed: "Playback speed", year: "Year", caption: "A life in motion", waiting: "Waiting for the next year to be written…", open: "…" },
     intro: {
       lede: (sex: LifeSex, village: string) => {
         const her = sex === "f" ? "her" : "his";

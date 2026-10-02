@@ -16,7 +16,7 @@ export interface ReelLabels {
  * The chronicle on its arc. React renders each row once, keyed by entry id (so a later tick or done never
  * remounts a row); the controller types, places and fades them from the clock.
  */
-export function Reel({ entries, store, timeline, focus, seek, openPerson, labels }: { entries: readonly ReelEntry[]; store: PlayerStore; timeline: Timeline; focus: ReelInit["focus"]; seek: (t: number) => void; openPerson?: (personId: string) => void; labels: ReelLabels }) {
+export function Reel({ entries, store, timeline, focus, seek, openPerson, tapeOffset, labels }: { entries: readonly ReelEntry[]; store: PlayerStore; timeline: Timeline; focus: ReelInit["focus"]; seek: (t: number) => void; openPerson?: (personId: string) => void; tapeOffset?: number; labels: ReelLabels }) {
   const olRef = useRef<HTMLOListElement>(null);
   const railRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -24,9 +24,9 @@ export function Reel({ entries, store, timeline, focus, seek, openPerson, labels
     const rail = railRef.current;
     const area = ol?.parentElement;
     if (!ol || !rail || !area) return;
-    const reel = createReel({ area, ol, rail, entries, store, timeline, focus, seek, openPerson });
+    const reel = createReel({ area, ol, rail, entries, store, timeline, focus, seek, openPerson, tapeOffset });
     return () => reel.destroy();
-  }, [entries, store, timeline, focus, seek, openPerson]);
+  }, [entries, store, timeline, focus, seek, openPerson, tapeOffset]);
   return (
     <>
       <svg ref={railRef} className="sky-rail" aria-hidden="true">

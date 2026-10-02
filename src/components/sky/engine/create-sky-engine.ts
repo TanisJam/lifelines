@@ -1,4 +1,4 @@
-import type { LifeScene } from "@/contracts/life";
+import type { LifeScene, SceneEdge } from "@/contracts/life";
 import { R_PROGRESS } from "@/lib/sky/constants";
 import { arcPath, dialAngle, type Timeline } from "@/lib/sky/dial";
 import { control, paramAt, partial, polar, quad, travel, type Vec } from "@/lib/sky/motion";
@@ -14,6 +14,15 @@ export interface SkyEngineInit {
   readonly scene: LifeScene;
   readonly timeline: Timeline;
   readonly store: PlayerStore;
+  /** How far the clock may run; defaults to the end of the timeline (a saved life). */
+  readonly frontier?: number;
+}
+
+/** What changes while a life is being written. */
+export interface SkyUpdate {
+  readonly scene: LifeScene;
+  readonly timeline: Timeline;
+  readonly frontier?: number;
 }
 
 export interface SkyEngine {
@@ -22,6 +31,11 @@ export interface SkyEngine {
   cycleSpeed(): void;
   /** Jumps to a year (paused). Clamped to the life. */
   seek(t: number): void;
+  /**
+   * A grown scene (a new tick, or done) over the same sky: nodes are re-bound and the layout recomputed, but the
+   * clock and every star already placed stay where they are. Call after React has rendered the new nodes.
+   */
+  update(next: SkyUpdate): void;
   destroy(): void;
 }
 
@@ -35,28 +49,40 @@ const setClass = (el: Element, name: string, on: boolean) => {
  * once (see SkySvg) and never sees a frame. Everything scene-derived comes from the pure `frameAt(t)`; only
  * the ambient layer (drift, sparks) reads wall-clock time.
  */
-export function createSkyEngine({ svg, scene, timeline: line, store }: SkyEngineInit): SkyEngine {
-  const layout = computeLayout(scene);
-  const bounds = { start: line.start, frontier: line.end, end: line.end };
-  const personEls = new Map<string, { g: SVGGElement; core: SVGElement; trail: SVGPathElement }>();
-  scene.people.forEach((p) => {
-    const g = one<SVGGElement>(svg, `[data-person="${CSS.escape(p.id)}"]`);
-    personEls.set(p.id, { g, core: one(g, ".sky-core"), trail: one(svg, `[data-trail="${CSS.escape(p.id)}"]`) });
-  });
-  const edgeEls = new Map<string, { path: SVGPathElement; head: SVGCircleElement }>();
-  scene.edges.forEach((e) => {
-    const key = edgeKey(e);
-    edgeEls.set(key, { path: one(svg, `[data-edge="${CSS.escape(key)}"]`), head: one(svg, `[data-head="${CSS.escape(key)}"]`) });
-  });
-  const edgeByKey = new Map(scene.edges.map((e) => [edgeKey(e), e]));
-  const villageEls = [...svg.querySelectorAll<SVGElement>("[data-village]")];
-  const bandEls = [...svg.querySelectorAll<SVGElement>("[data-band]")];
+export function createSkyEngine({ svg, scene: initialScene, timeline: initialLine, store, frontier: initialFrontier }: SkyEngineInit): SkyEngine {
+  let scene = initialScene;
+  let line = initialLine;
+  let layout = computeLayout(scene);
+  let bounds = { start: line.start, frontier: initialFrontier ?? line.end, end: line.end };
+  let personEls = new Map<string, { g: SVGGElement; core: SVGElement; trail: SVGPathElement }>();
+  let edgeEls = new Map<string, { path: SVGPathElement; head: SVGCircleElement }>();
+  let edgeByKey = new Map<string, SceneEdge>();
+  let villageEls: SVGElement[] = [];
+  let bandEls: SVGElement[] = [];
+  let selfId: string | undefined;
+  /** Finds the nodes SkySvg rendered for the current scene. */
+  const bind = () => {
+    personEls = new Map();
+    scene.people.forEach((p) => {
+      const g = one<SVGGElement>(svg, `[data-person="${CSS.escape(p.id)}"]`);
+      personEls.set(p.id, { g, core: one(g, ".sky-core"), trail: one(svg, `[data-trail="${CSS.escape(p.id)}"]`) });
+    });
+    edgeEls = new Map();
+    scene.edges.forEach((e) => {
+      const key = edgeKey(e);
+      edgeEls.set(key, { path: one(svg, `[data-edge="${CSS.escape(key)}"]`), head: one(svg, `[data-head="${CSS.escape(key)}"]`) });
+    });
+    edgeByKey = new Map(scene.edges.map((e) => [edgeKey(e), e]));
+    villageEls = [...svg.querySelectorAll<SVGElement>("[data-village]")];
+    bandEls = [...svg.querySelectorAll<SVGElement>("[data-band]")];
+    selfId = scene.people.find((p) => p.group === "self")?.id;
+  };
+  bind();
   const progress = one<SVGPathElement>(svg, "[data-progress]");
   const glow = one<SVGPathElement>(svg, "[data-progress-glow]");
   const marker = one<SVGGElement>(svg, "[data-marker]");
   const wash = one<SVGElement>(svg, "[data-wash]");
   const ambient = createAmbient(one<SVGGElement>(svg, "[data-sparks]"));
-  const selfId = scene.people.find((p) => p.group === "self")?.id;
 
   let t = line.start;
   let reduced = prefersReducedMotion();
@@ -180,6 +206,16 @@ export function createSkyEngine({ svg, scene, timeline: line, store }: SkyEngine
       store.set({ playing: false, waiting: false });
       t = scrubTo(target, bounds);
       ambient.clear();
+      render(performance.now() / 1000);
+    },
+    update(next) {
+      scene = next.scene;
+      line = next.timeline;
+      layout = computeLayout(scene);
+      bounds = { start: line.start, frontier: next.frontier ?? line.end, end: line.end };
+      t = Math.min(t, Math.min(bounds.frontier, bounds.end));
+      bind();
+      villageStep = -1;
       render(performance.now() / 1000);
     },
     destroy() {

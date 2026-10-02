@@ -76,7 +76,7 @@ export const es: Dictionary = {
   sky: {
     title: (name: string) => `La constelación de ${name}`,
     constellationLabel: (name: string) => `Constelación de las relaciones de ${name}`,
-    player: { play: "Reproducir", pause: "Pausar", speed: "Velocidad de reproducción", year: "Año", caption: "Una vida en movimiento" },
+    player: { play: "Reproducir", pause: "Pausar", speed: "Velocidad de reproducción", year: "Año", caption: "Una vida en movimiento", waiting: "Esperando que se escriba el próximo año…", open: "…" },
     intro: {
       lede: (_sex: LifeSex, village: string) =>
         `Cada estrella es alguien en su vida. Las más brillantes son su círculo de historia, las personas cuyas decisiones moldean su propia historia. Los vínculos aparecen el año en que nacen y se desvanecen cuando terminan. El anillo que rodea el cielo es su vida entera, y las estrellas tenues del fondo son el resto del pueblo de ${village}.`,

@@ -10,6 +10,10 @@ export interface PlayerLabels {
   readonly speed: string;
   readonly year: string;
   readonly caption: string;
+  /** Shown instead of the caption while the clock waits for the next year to be written. */
+  readonly waiting: string;
+  /** The end of a life still being written is not known: this stands in for its year. */
+  readonly open: string;
 }
 
 export interface PlayerControls {
@@ -19,7 +23,7 @@ export interface PlayerControls {
 }
 
 /** Play/pause, speed and the year scrubber. The scrubber follows the clock through frames, never through state. */
-export function Player({ store, state, controls, start, end, labels }: { store: PlayerStore; state: PlayerState; controls: PlayerControls; start: number; end: number; labels: PlayerLabels }) {
+export function Player({ store, state, controls, start, end, open = false, labels }: { store: PlayerStore; state: PlayerState; controls: PlayerControls; start: number; end: number; open?: boolean; labels: PlayerLabels }) {
   const range = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const el = range.current;
@@ -45,11 +49,11 @@ export function Player({ store, state, controls, start, end, labels }: { store: 
       </button>
       <span className="sky-yr">{Math.floor(start)}</span>
       <input ref={range} type="range" min={start} max={end} step={0.01} defaultValue={start} aria-label={labels.year} onChange={(e) => controls.seek(Number(e.currentTarget.value))} />
-      <span className="sky-yr">{Math.floor(end)}</span>
+      <span className="sky-yr">{open ? labels.open : Math.floor(end)}</span>
       <button type="button" className="sky-speed" onClick={controls.cycleSpeed} aria-label={labels.speed}>
         {state.speed}×
       </button>
-      <div className="sky-caption">{labels.caption}</div>
+      <div className="sky-caption">{state.waiting ? labels.waiting : labels.caption}</div>
     </div>
   );
 }
