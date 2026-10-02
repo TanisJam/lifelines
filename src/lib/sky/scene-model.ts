@@ -53,12 +53,16 @@ export function frameAt(scene: LifeScene, layout: Layout, t: number): Frame {
     }
     people.push({ id: p.id, presence: pres, pos, alive: living, inCircle: inCircle(scene, p, t), coreOpacity });
   }
-  const shown = new Set(people.map((p) => p.id));
+  const byId = new Map(people.map((p) => [p.id, p]));
   const edges: EdgeFrame[] = [];
   for (const e of scene.edges) {
     const g = growth(e, t);
-    if (g <= 0 || !shown.has(e.a) || !shown.has(e.b)) continue;
-    edges.push({ key: edgeKey(e), growth: g, active: edgeActive(e, t), opacity: formerOpacity(e, t), former: e.untilAt !== undefined && t > e.untilAt });
+    const a = byId.get(e.a);
+    const b = byId.get(e.b);
+    if (g <= 0 || !a || !b) continue;
+    // A parent bond between two who have both died stays on the sky, but half as bright.
+    const opacity = e.kind === "parent" && !a.alive && !b.alive ? Math.min(0.5, formerOpacity(e, t)) : formerOpacity(e, t);
+    edges.push({ key: edgeKey(e), growth: g, active: edgeActive(e, t), opacity, former: e.untilAt !== undefined && t > e.untilAt });
   }
   return { t, people, edges, souls: soulsAlive(scene.village, t), circle: circleCount(scene, t), plague: plagueIntensity(scene.bands, t) };
 }

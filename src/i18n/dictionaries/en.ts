@@ -11,6 +11,22 @@
  * server-only-bundle-size rationale doesn't hold here, and at this dictionary's size (roughly 150
  * short strings) the cost of shipping both locales is negligible either way.
  */
+import type { LifeSex, RelCode } from "@/contracts/life";
+
+const ORDINALS = ["first", "second", "third", "fourth", "fifth"];
+const EN_RELATION: Record<RelCode, readonly [string, string]> = {
+  self: ["herself", "himself"],
+  parent: ["mother", "father"],
+  sibling: ["sister", "brother"],
+  spouse: ["wife", "husband"],
+  child: ["daughter", "son"],
+  lover: ["love", "love"],
+  rival: ["rival", "rival"],
+  friend: ["friend", "friend"],
+  childSpouse: ["daughter-in-law", "son-in-law"],
+  grandchild: ["granddaughter", "grandson"],
+};
+
 export const en = {
   meta: {
     title: "Lifelines — a chronicle simulator",
@@ -66,6 +82,33 @@ export const en = {
     title: (name: string) => `The constellation of ${name}`,
     constellationLabel: (name: string) => `Constellation of ${name}'s relationships`,
     player: { play: "Play", pause: "Pause", speed: "Playback speed", year: "Year", caption: "A life in motion" },
+    plague: { "black-death": "Great Mortality", "second-pestilence": "Second pestilence" },
+    /** "mother", "second husband": spouses carry an ordinal once there is more than one. */
+    relation: (code: RelCode, sex: LifeSex, nth: number, of: number): string => {
+      const word = EN_RELATION[code]?.[sex === "f" ? 0 : 1] ?? String(code);
+      return code === "spouse" && of > 1 ? `${ORDINALS[nth - 1] ?? `${nth}th`} ${word}` : word;
+    },
+    tip: {
+      born: (year: number) => `born ${year}`,
+      lived: (born: number, died: number) => `${born}–${died}`,
+      status: (kind: string, sex: LifeSex, age: number) => {
+        const her = sex === "f" ? "her" : "his";
+        if (kind === "age") return `Age ${age}`;
+        if (kind === "written") return `${her[0]!.toUpperCase()}${her.slice(1)} life is written`;
+        if (kind === "circle") return `In ${her} story circle`;
+        if (kind === "deadFamily") return "Dead, still family";
+        return `Outside ${her} story circle now`;
+      },
+    },
+    legend: {
+      label: "Legend",
+      circle: (sex: LifeSex) => `In ${sex === "f" ? "her" : "his"} story circle`,
+      others: (village: string) => `Others in ${village}`,
+      bond: "Relationship",
+      former: "Former bond",
+      conflict: "Conflict",
+      closing: "All our stories share the same sky.",
+    },
   },
   chronicle: {
     brand: "Lifelines",

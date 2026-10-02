@@ -6,6 +6,22 @@ import type { Dictionary } from "../dictionary";
  * England setting without translating person or place names. Typed against `Dictionary` (`en.ts`'s
  * inferred shape): a missing or mistyped key here is a `pnpm typecheck` failure, not a silent gap.
  */
+import type { LifeSex, RelCode } from "@/contracts/life";
+
+const ORDINALS: readonly (readonly [string, string])[] = [["primer", "primera"], ["segundo", "segunda"], ["tercer", "tercera"], ["cuarto", "cuarta"], ["quinto", "quinta"]];
+const ES_RELATION: Record<RelCode, readonly [string, string]> = {
+  self: ["ella misma", "él mismo"],
+  parent: ["madre", "padre"],
+  sibling: ["hermana", "hermano"],
+  spouse: ["esposa", "esposo"],
+  child: ["hija", "hijo"],
+  lover: ["amor", "amor"],
+  rival: ["rival", "rival"],
+  friend: ["amiga", "amigo"],
+  childSpouse: ["nuera", "yerno"],
+  grandchild: ["nieta", "nieto"],
+};
+
 export const es: Dictionary = {
   meta: {
     title: "Lifelines — un simulador de crónicas",
@@ -61,6 +77,33 @@ export const es: Dictionary = {
     title: (name: string) => `La constelación de ${name}`,
     constellationLabel: (name: string) => `Constelación de las relaciones de ${name}`,
     player: { play: "Reproducir", pause: "Pausar", speed: "Velocidad de reproducción", year: "Año", caption: "Una vida en movimiento" },
+    plague: { "black-death": "Gran Mortandad", "second-pestilence": "Segunda pestilencia" },
+    /** "madre", "segundo esposo": los cónyuges llevan ordinal cuando hay más de uno. */
+    relation: (code: RelCode, sex: LifeSex, nth: number, of: number): string => {
+      const i = sex === "f" ? 0 : 1;
+      const word = ES_RELATION[code]?.[i] ?? String(code);
+      return code === "spouse" && of > 1 ? `${ORDINALS[nth - 1]?.[i] ?? `${nth}.º`} ${word}` : word;
+    },
+    tip: {
+      born: (year: number) => `nació en ${year}`,
+      lived: (born: number, died: number) => `${born}–${died}`,
+      status: (kind: string, sex: LifeSex, age: number) => {
+        if (kind === "age") return `${age} años`;
+        if (kind === "written") return "Su vida está escrita";
+        if (kind === "circle") return "En su círculo de historia";
+        if (kind === "deadFamily") return "Fallecido, aún familia";
+        return "Fuera de su círculo de historia por ahora";
+      },
+    },
+    legend: {
+      label: "Leyenda",
+      circle: () => "En su círculo de historia",
+      others: (village: string) => `Otros en ${village}`,
+      bond: "Relación",
+      former: "Vínculo pasado",
+      conflict: "Conflicto",
+      closing: "Todas nuestras historias comparten el mismo cielo.",
+    },
   },
   chronicle: {
     brand: "Lifelines",
