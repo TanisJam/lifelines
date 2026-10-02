@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { A_NOW, GAP, R_COMPASS } from "./constants";
-import { arcPlace, entryLook, inReelZone, railAngles, reelGeo, toldStrength, yNow } from "./reel-geometry";
+import { arcPlace, entryLook, inReelZone, leaderCurve, railAngles, reelGeo, toldStrength, yNow } from "./reel-geometry";
 
 const area = { left: 100, top: 50, width: 1200, height: 700 };
 const disc = { left: 340, top: 100, width: 600, height: 600 };
@@ -90,5 +90,18 @@ describe("inReelZone", () => {
     expect(inReelZone(1400, 400, ring, r, stage)).toBe(false);
     expect(inReelZone(1000, 800, ring, r, stage)).toBe(false);
     expect(inReelZone(1000, 10, ring, r, stage)).toBe(false);
+  });
+});
+
+describe("leaderCurve", () => {
+  it("starts and ends at its endpoints, bowing off the straight line by the given share of its length", () => {
+    const { d, c } = leaderCurve([0, 0], [100, 0], 0.2);
+    expect(d).toBe("M0.0,0.0 Q50.0,-20.0 100.0,0.0");
+    expect(c).toEqual([50, -20]);
+    expect(leaderCurve([0, 0], [100, 0], -0.2).c).toEqual([50, 20]);
+  });
+
+  it("does not blow up for coincident endpoints", () => {
+    expect(leaderCurve([5, 5], [5, 5]).d).not.toContain("NaN");
   });
 });

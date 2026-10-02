@@ -44,7 +44,7 @@ export function SkyView({ chronicle, dict, lang, saved = true }: { chronicle: Ch
     },
     [saved],
   );
-  useSkyFocus({ svgRef, tipRef, scene, store, describe, activate });
+  const focus = useSkyFocus({ svgRef, tipRef, scene, store, describe, activate });
   const bandLabels = sky.plague;
   const relation = useMemo(() => relationLabel.bind(null, sky, scene), [sky, scene]);
 
@@ -60,7 +60,7 @@ export function SkyView({ chronicle, dict, lang, saved = true }: { chronicle: Ch
         <div className="sky-now">
           <Odometer store={store} digits={4} read={readYear} className="big" />
         </div>
-        <Reel entries={entries} store={store} seek={controls.seek} openPerson={saved ? setOpenPersonId : undefined} labels={sky.reel} />
+        <Reel entries={entries} store={store} timeline={line} focus={focus} seek={controls.seek} openPerson={saved ? setOpenPersonId : undefined} labels={sky.reel} />
       </div>
       <div className="sky-bottom">
         <Player store={store} state={state} controls={controls} start={line.start} end={line.end} labels={sky.player} />

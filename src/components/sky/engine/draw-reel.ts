@@ -1,6 +1,9 @@
-import { A_NOW } from "@/lib/sky/constants";
+import { A_NOW, R_COMPASS, R_PROGRESS } from "@/lib/sky/constants";
+import { dialAngle, type Timeline } from "@/lib/sky/dial";
+import { paramAt, polar, quad } from "@/lib/sky/motion";
+import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/sky/motion-pref";
 import type { PlayerStore } from "@/lib/sky/player-store";
-import { arcPlace, entryLook, railAngles, reelGeo, reelWidth, toldStrength, type ReelGeo } from "@/lib/sky/reel-geometry";
+import { arcPlace, entryLook, inReelZone, leaderCurve, railAngles, reelGeo, reelWidth, toPx, toldStrength, type ReelGeo } from "@/lib/sky/reel-geometry";
 import type { ReelEntry } from "@/lib/sky/reel-model";
 import type { Frame } from "@/lib/sky/scene-model";
 import { entryYs, tapeYs } from "@/lib/sky/tape";
@@ -13,6 +16,9 @@ export interface ReelInit {
   readonly rail: SVGSVGElement;
   readonly entries: readonly ReelEntry[];
   readonly store: PlayerStore;
+  readonly timeline: Timeline;
+  /** Hover focus on the sky: lights the people of an entry, rings the ones it names. */
+  readonly focus: { setEntry(ids: readonly string[] | null): void; setNamed(ids: ReadonlySet<string>): void };
   /** Jumps the clock to a year (pausing it). */
   seek(t: number): void;
   /** Set once the life is saved: linked names in prose then open the person sheet. */
@@ -29,8 +35,17 @@ interface Row {
   key: string;
 }
 
+interface Leader {
+  readonly path: SVGPathElement;
+  readonly spark: SVGCircleElement;
+  readonly phase: number;
+  used: boolean;
+}
+
 const CARET = '<span class="sky-caret"></span>';
 const WIDE = "(min-width: 1000px)";
+/** Years the clock moves per wheel pixel (scrolling down goes deeper into the past). */
+const WHEEL_YEARS = 0.004;
 const NS = "http://www.w3.org/2000/svg";
 const show = (el: HTMLElement, on: boolean) => {
   const want = on ? "" : "none";
@@ -46,7 +61,7 @@ const toggle = (el: Element, name: string, on: boolean) => {
  * `typed`), so pausing and scrubbing carry the reel with them. Driven by player-store frames; React
  * renders the rows once and never sees a frame.
  */
-export function createReel({ area, ol, rail, entries, store, seek, openPerson }: ReelInit) {
+export function createReel({ area, ol, rail, entries, store, timeline: line, focus, seek, openPerson }: ReelInit) {
   const disc = area.querySelector<HTMLElement>(".sky-disc")!;
   const ats = entries.map((e) => e.at);
   const tape = tapeYs(ats);
@@ -66,12 +81,48 @@ export function createReel({ area, ol, rail, entries, store, seek, openPerson }:
   let geo: ReelGeo = reelGeo({ left: 0, top: 0, width: 0, height: 0 }, { left: 0, top: 0, width: 0, height: 0 });
   let wide = true;
   let last: Frame | null = null;
+  let hovered = -1;
+  let reduced = prefersReducedMotion();
+  const offReduced = subscribeReducedMotion((r) => (reduced = r));
+  const leaders = new Map<string, Leader>();
+  const leaderLayer = rail.querySelector("[data-rail-leaders]")!;
+  const beadPx = entries.map((e) => polar(dialAngle(e.at, line.dialStart, line.dialSpan), R_PROGRESS));
+
+  /** A dotted thread from an entry to a star or its bead, with a spark that keeps crossing it at one speed. */
+  const drawLeader = (key: string, from: readonly [number, number], to: readonly [number, number], strength: number, now: number, bow?: number) => {
+    let l = leaders.get(key);
+    if (!l) {
+      const path = document.createElementNS(NS, "path");
+      path.setAttribute("class", "sky-leader");
+      const spark = document.createElementNS(NS, "circle");
+      spark.setAttribute("class", "sky-leader-spark");
+      spark.setAttribute("r", "1.8");
+      leaderLayer.append(path, spark);
+      l = { path, spark, phase: Math.random(), used: true };
+      leaders.set(key, l);
+    }
+    l.used = true;
+    const { d, c } = leaderCurve(from, to, bow);
+    l.path.setAttribute("d", d);
+    l.path.style.opacity = (0.55 * strength).toFixed(3);
+    const len = Math.hypot(to[0] - from[0], to[1] - from[1]) || 1;
+    const k = reduced ? 0.5 : (now * (90 / len) + l.phase) % 1;
+    const [sx, sy] = quad(from, c, to, paramAt(from, c, to, k));
+    l.spark.setAttribute("cx", sx.toFixed(1));
+    l.spark.setAttribute("cy", sy.toFixed(1));
+    l.spark.style.opacity = reduced ? "0" : (strength * Math.sin(Math.PI * k)).toFixed(3);
+  };
+  const clearLeaders = () => {
+    leaders.clear();
+    leaderLayer.replaceChildren();
+  };
 
   const layout = () => {
     wide = matchMedia(WIDE).matches;
     const a = area.getBoundingClientRect();
     geo = reelGeo(a, disc.getBoundingClientRect());
     rail.setAttribute("viewBox", `0 0 ${a.width} ${a.height}`);
+    clearLeaders();
     const arc = rail.querySelector("[data-rail-arc]")!;
     const nowTick = rail.querySelector("[data-rail-now]")!;
     if (!wide) {
@@ -117,6 +168,10 @@ export function createReel({ area, ol, rail, entries, store, seek, openPerson }:
     ats.forEach((at, i) => {
       if (at <= t) toldIdx = i;
     });
+    const now = performance.now() / 1000;
+    const people = new Map(frame.people.map((p) => [p.id, p]));
+    const named = new Set<string>();
+    leaders.forEach((l) => (l.used = false));
     let order = 0;
     for (let i = entries.length - 1; i >= 0; i--) {
       const row = rows[i]!;
@@ -158,15 +213,37 @@ export function createReel({ area, ol, rail, entries, store, seek, openPerson }:
         write(i, state);
       }
       const strength = i === toldIdx ? toldStrength(y, t, entry.at) : 0;
-      const focus = strength > 0.5;
-      toggle(row.li, "focus", focus);
+      const focused = strength > 0.5 || hovered === i;
+      toggle(row.li, "focus", focused);
       // The rules above and below arrive only once the entry is fully written.
-      toggle(row.li, "ruled", focus && state.done);
+      toggle(row.li, "ruled", focused && state.done);
       if (row.bead) {
         toggle(row.bead, "on", !future);
-        toggle(row.bead, "lit", focus);
+        toggle(row.bead, "lit", focused);
+      }
+      // Threads run from the entry to its moment on the ring and to each person it touches, while it is told or hovered.
+      const pull = Math.max(strength, hovered === i ? 1 : 0);
+      if (wide && pull > 0.02) {
+        const from = arcPlace(geo, y);
+        if (from) {
+          const origin = [from.x, from.y] as const;
+          drawLeader(`${entry.id}-time`, origin, toPx(geo, beadPx[i]!), pull * 0.8, now, -0.12);
+          for (const id of entry.who) {
+            const p = people.get(id);
+            if (!p || p.presence < 1) continue;
+            drawLeader(`${entry.id}-${id}`, origin, toPx(geo, p.pos), pull, now);
+            if (pull > 0.5) named.add(id);
+          }
+        }
       }
     }
+    leaders.forEach((l) => {
+      if (!l.used) {
+        l.path.style.opacity = "0";
+        l.spark.style.opacity = "0";
+      }
+    });
+    focus.setNamed(named);
   };
 
   const activate = (ev: Event): HTMLElement | null => (ev.target as Element).closest<HTMLElement>("li");
@@ -188,6 +265,29 @@ export function createReel({ area, ol, rail, entries, store, seek, openPerson }:
     ev.preventDefault();
     seek(entries[i]!.at + 0.03);
   };
+  const hover = (i: number) => {
+    hovered = i;
+    focus.setEntry(i >= 0 ? entries[i]!.who : null);
+    if (last) draw(last);
+  };
+  const hoverHandlers = rows.map((row, i) => {
+    const enter = () => hover(i);
+    const leave = () => hovered === i && hover(-1);
+    row.li.addEventListener("mouseenter", enter);
+    row.li.addEventListener("mouseleave", leave);
+    row.li.addEventListener("focus", enter);
+    row.li.addEventListener("blur", leave);
+    return { enter, leave };
+  });
+  /** Scrolling anywhere over the reel zone (right of the compass, the gaps between rows included) moves through time. */
+  const onWheel = (ev: WheelEvent) => {
+    if (!wide || !last) return;
+    const a = area.getBoundingClientRect();
+    if (!inReelZone(ev.clientX, ev.clientY, { x: a.left + geo.cx, y: a.top + geo.cy }, (R_COMPASS + 30) * geo.unit, a)) return;
+    ev.preventDefault();
+    seek(last.t - ev.deltaY * (ev.deltaMode === 1 ? 33 : 1) * WHEEL_YEARS);
+  };
+  area.addEventListener("wheel", onWheel, { passive: false });
   ol.addEventListener("click", onClick);
   ol.addEventListener("keydown", onKey);
 
@@ -205,6 +305,15 @@ export function createReel({ area, ol, rail, entries, store, seek, openPerson }:
       observer.disconnect();
       ol.removeEventListener("click", onClick);
       ol.removeEventListener("keydown", onKey);
+      area.removeEventListener("wheel", onWheel);
+      rows.forEach((row, i) => {
+        row.li.removeEventListener("mouseenter", hoverHandlers[i]!.enter);
+        row.li.removeEventListener("mouseleave", hoverHandlers[i]!.leave);
+        row.li.removeEventListener("focus", hoverHandlers[i]!.enter);
+        row.li.removeEventListener("blur", hoverHandlers[i]!.leave);
+      });
+      offReduced();
+      clearLeaders();
     },
   };
 }

@@ -72,3 +72,12 @@ export function railAngles(geo: ReelGeo): { from: number; to: number } {
 export function inReelZone(x: number, y: number, ringCenter: { x: number; y: number }, ringOuterR: number, stage: { left: number; top: number; right: number; bottom: number }): boolean {
   return x >= ringCenter.x + ringOuterR && x >= stage.left && x <= stage.right && y >= stage.top && y <= stage.bottom;
 }
+
+/** A thread from an entry to a star or to its bead: a gentle quadratic whose control point bows by `bow` of the length. */
+export function leaderCurve(from: Vec, to: Vec, bow = 0.18): { d: string; c: Vec } {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const c: Vec = [(from[0] + to[0]) / 2 + (dy / len) * len * bow, (from[1] + to[1]) / 2 - (dx / len) * len * bow];
+  return { d: `M${from[0].toFixed(1)},${from[1].toFixed(1)} Q${c[0].toFixed(1)},${c[1].toFixed(1)} ${to[0].toFixed(1)},${to[1].toFixed(1)}`, c };
+}

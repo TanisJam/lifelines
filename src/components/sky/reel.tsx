@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { Timeline } from "@/lib/sky/dial";
 import type { PlayerStore } from "@/lib/sky/player-store";
 import type { ReelEntry } from "@/lib/sky/reel-model";
-import { createReel } from "./engine/draw-reel";
+import { createReel, type ReelInit } from "./engine/draw-reel";
 
 export interface ReelLabels {
   readonly label: string;
@@ -15,7 +16,7 @@ export interface ReelLabels {
  * The chronicle on its arc. React renders each row once, keyed by entry id (so a later tick or done never
  * remounts a row); the controller types, places and fades them from the clock.
  */
-export function Reel({ entries, store, seek, openPerson, labels }: { entries: readonly ReelEntry[]; store: PlayerStore; seek: (t: number) => void; openPerson?: (personId: string) => void; labels: ReelLabels }) {
+export function Reel({ entries, store, timeline, focus, seek, openPerson, labels }: { entries: readonly ReelEntry[]; store: PlayerStore; timeline: Timeline; focus: ReelInit["focus"]; seek: (t: number) => void; openPerson?: (personId: string) => void; labels: ReelLabels }) {
   const olRef = useRef<HTMLOListElement>(null);
   const railRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
@@ -23,9 +24,9 @@ export function Reel({ entries, store, seek, openPerson, labels }: { entries: re
     const rail = railRef.current;
     const area = ol?.parentElement;
     if (!ol || !rail || !area) return;
-    const reel = createReel({ area, ol, rail, entries, store, seek, openPerson });
+    const reel = createReel({ area, ol, rail, entries, store, timeline, focus, seek, openPerson });
     return () => reel.destroy();
-  }, [entries, store, seek, openPerson]);
+  }, [entries, store, timeline, focus, seek, openPerson]);
   return (
     <>
       <svg ref={railRef} className="sky-rail" aria-hidden="true">
@@ -38,6 +39,7 @@ export function Reel({ entries, store, seek, openPerson, labels }: { entries: re
         </defs>
         <path data-rail-arc fill="none" stroke="url(#sky-rail-grad)" strokeWidth="1.2" />
         <line data-rail-now className="sky-now-tick" />
+        <g data-rail-leaders />
       </svg>
       <ol ref={olRef} className={`sky-reel${openPerson ? " linkable" : ""}`} aria-label={labels.label}>
         {entries.map((e) => (
