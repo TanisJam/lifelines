@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LifeScene } from "@/contracts/life";
 import { stepClock } from "./clock";
+import { RATE } from "./constants";
 import { elinScene } from "./fixture-scene";
 import { computeLayout } from "./layout";
 import { fixtureChronicle } from "@/lib/fixtures";
@@ -11,13 +12,14 @@ import { entryText, typed, typeParts } from "./typewriter";
 const scene = elinScene();
 const layout = computeLayout(scene);
 const line = timeline(scene, scene.span.end!);
+const speed = 4;
 
 describe("frameAt determinism", () => {
   it("is deep-equal whether t was reached by stepping, a jump, or a backward scrub", () => {
     for (const target of [1500.1, 1517.5, 1520.4, 1535.4, 1553]) {
-      let state = { t: scene.span.start, playing: true, speed: 4, frontier: line.end, end: line.end };
+      let state = { t: scene.span.start, playing: true, speed, frontier: line.end, end: line.end };
       while (state.t < target) {
-        const dt = Math.min(0.016, (target - state.t) / (0.56 * 4));
+        const dt = Math.min(0.016, (target - state.t) / (RATE * speed));
         state = { ...state, ...stepClock(state, dt) };
         if (target - state.t < 1e-9) break;
       }
@@ -54,9 +56,9 @@ describe("reel determinism (typewriter and tape)", () => {
 
   it("is deep-equal whether t was reached by stepping, a jump, or a backward scrub", () => {
     for (const target of [1490.6, 1504.55, 1517.5, 1526.6, 1554]) {
-      let state = { t: scene.span.start, playing: true, speed: 4, frontier: line.end, end: line.end };
+      let state = { t: scene.span.start, playing: true, speed, frontier: line.end, end: line.end };
       while (state.t < target - 1e-9) {
-        state = { ...state, ...stepClock(state, Math.min(0.016, (target - state.t) / (0.56 * 4))) };
+        state = { ...state, ...stepClock(state, Math.min(0.016, (target - state.t) / (RATE * speed))) };
       }
       const stepped = reelAt(state.t);
       const afterOvershoot = reelAt(line.end);
