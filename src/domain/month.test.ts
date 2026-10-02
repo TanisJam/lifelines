@@ -59,6 +59,15 @@ describe("resolveMonths", () => {
     }
   });
 
+  it("puts a death after the same person's birth in the same year", () => {
+    for (let year = 1330; year < 1380; year++) {
+      const birth = event(`b${year}`, "birth", year, ["kid", "mum", "dad"]);
+      const death = event(`d${year}`, "death", year, ["kid"]);
+      const times = eventTimes("seed", [birth, death], "p");
+      expect(times.get(death.id)!).toBeGreaterThan(times.get(birth.id)!);
+    }
+  });
+
   it("is stable for a year whether or not later years are present", () => {
     const early = [event("m1", "marriage", 1340, ["a", "b"]), event("b1", "birth", 1340, ["k", "a", "b"], { causes: ["m1"] })];
     const later = [...early, event("d2", "death", 1345, ["a"])];

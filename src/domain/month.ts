@@ -60,9 +60,16 @@ export function monthFor(seed: string, event: Event, protagonistId: string): num
  */
 export function resolveMonths(seed: string, events: readonly Event[], protagonistId: string): Map<string, number> {
   const byId = new Map(events.map((e) => [e.id, e]));
+  // A person who dies in the year they were born dies after the birth, even without a recorded cause.
+  const birthOf = new Map<string, Event>();
+  for (const e of events) if (e.kind === "birth" && e.actors[0] && !birthOf.has(e.actors[0])) birthOf.set(e.actors[0], e);
+  const causesOf = (event: Event): readonly string[] => {
+    const birth = event.kind === "death" && event.actors[0] ? birthOf.get(event.actors[0]) : undefined;
+    return birth && birth.year === event.year ? [...event.causes, birth.id] : event.causes;
+  };
   const effectsOf = new Map<string, Event[]>();
   for (const event of events) {
-    for (const causeId of event.causes) {
+    for (const causeId of causesOf(event)) {
       const cause = byId.get(causeId);
       if (!cause || cause.year !== event.year) continue;
       effectsOf.set(causeId, [...(effectsOf.get(causeId) ?? []), event]);
@@ -86,7 +93,7 @@ export function resolveMonths(seed: string, events: readonly Event[], protagonis
   for (const event of events) {
     const allowed = allowedMonths(seed, event, protagonistId);
     let lower = 1;
-    for (const causeId of event.causes) {
+    for (const causeId of causesOf(event)) {
       const cause = byId.get(causeId);
       const causeMonth = cause && cause.year === event.year ? months.get(causeId) : undefined;
       if (causeMonth !== undefined) lower = Math.max(lower, causeMonth);

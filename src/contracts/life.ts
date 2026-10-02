@@ -63,6 +63,56 @@ export interface Turn {
   readonly occurrenceProbability?: number;
 }
 
+/** Night-sky scene graph (spec: life-scene). Times are fractional years (1350.5 = mid-1350). */
+export type SceneGroup = "self" | "parents" | "siblings" | "spouses" | "children" | "others" | "outer";
+export type RelCode = "self" | "parent" | "sibling" | "spouse" | "child" | "lover" | "rival" | "friend" | "childSpouse" | "grandchild";
+export type EdgeKind = "parent" | "spouse" | "lover" | "rival" | "friend";
+
+export interface ScenePerson {
+  readonly id: string;
+  readonly name: string;
+  readonly sex: LifeSex;
+  readonly relCode: RelCode;
+  readonly group: SceneGroup;
+  readonly born: number;
+  readonly appearsAt: number;
+  readonly diedAt?: number;
+  /** Outer ring only: the child this person hangs from. */
+  readonly anchor?: string;
+}
+
+export interface SceneEdge {
+  readonly a: string;
+  readonly b: string;
+  readonly kind: EdgeKind;
+  /** `null` = the bond predates the life. */
+  readonly fromAt: number | null;
+  readonly untilAt?: number;
+}
+
+/** A background villager. `k` is the person id: a stable placement key, never an array index. */
+export interface VillageSoul {
+  readonly k: string;
+  /** Born or arrival year. */
+  readonly b: number;
+  /** Death or departure year; absent while present. */
+  readonly d?: number;
+}
+
+export interface SceneBand {
+  readonly kind: "black-death" | "second-pestilence";
+  readonly from: number;
+  readonly to: number;
+}
+
+export interface LifeScene {
+  readonly people: readonly ScenePerson[];
+  readonly edges: readonly SceneEdge[];
+  readonly village: readonly VillageSoul[];
+  readonly bands: readonly SceneBand[];
+  readonly span: { readonly start: number; readonly end: number | null };
+}
+
 export interface ChronicleEntry {
   readonly id: string;
   readonly year: number;
