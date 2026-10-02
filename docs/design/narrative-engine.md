@@ -384,6 +384,33 @@ Runtime diagnostics disclose this distinction without a gate that prevents local
 claim of cross-runtime numeric portability. Bump/review baseline versions when behavior changes;
 there is no implicit compatibility or migration promise.
 
+### Unit B: standalone atomic grant boundary
+
+`effects.ts` and `obligations.ts` provide a model-free **standalone** `favor-b1`
+state/schema/reducer/event boundary; it is not admitted by A's v1 envelope. C/D integration
+must explicitly version engine, state and projection rather than extend legacy `Person` or `Event`.
+
+- `createFavorState` requires explicit abstract grain allocations (nonnegative safe integers).
+  Missing allocation is unknown, not zero or wealth inferred from occupation/class.
+- `grantFavor` transfers exactly one unit from creditor to debtor and opens one objective
+  **HELP** obligation. No grain repayment, guaranteed gratitude or reconciliation is inferred.
+  Optional appraisals are supplied gratitude/resentment interpretations, intensity 0–100;
+  conflicting interpretations can coexist, including for one actor. Fear awaits C's consuming rule.
+- Registered effects carry source/party checks. Sparse directed trust (−100–100) and resentment
+  (0–100) use integer deltas with rejection, not clamping; absent supplemental ties start neutral,
+  not from compatibility. Legacy bonds, minds, life axes and situations remain unchanged.
+- Evidence uses year plus ordered commit position, ordered creditor/debtor actors, and a stable
+  command-key/event-ordinal ID (the single grant ordinal is 0). Only earlier B commits can be
+  causes; self, missing, duplicate, forward and future-year references reject. Legacy events
+  supply location fallback through `ensureLifeState`, not fabricated B causes or assets.
+- Apply/replay validates the entire recorded prefix against explicit initial allocations before
+  accepting a checkpoint. All effects stage on detached copies; errors publish nothing and both
+  success and rejection leave inputs unchanged. Retries reject instead of transferring twice.
+
+**Limits:** this small boundary replays prefixes for checkpoint admission (not a scaling solution);
+there is no scheduler, help/refusal transition, automatic appraisal, persistence or UI integration.
+Initial people/log and allocations remain explicit checkpoint inputs, not authenticated provenance.
+
 ### A-baseline: reproducible local measurements
 
 **Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,
