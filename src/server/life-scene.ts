@@ -57,12 +57,10 @@ export function createSceneTracker(options: SceneTrackerOptions): SceneTracker {
     },
     scene(source) {
       if (!latest) throw new Error("createSceneTracker: scene() before any snapshot was observed");
+      // First-seen order, never re-sorted: the cap in deriveLifeScene keeps the earliest-shown friends,
+      // so a person in an earlier tick's scene is never evicted from a later one.
       const live = new Set(current);
-      const dropped = [...firstSeen.keys()].filter((id) => !live.has(id)).sort((a, b) => lastSeen.get(b)! - lastSeen.get(a)! || (a < b ? -1 : 1));
-      const friends: SceneFriend[] = [
-        ...current.map((id) => ({ id, fromAt: firstSeen.get(id) ?? null })),
-        ...dropped.map((id) => ({ id, fromAt: firstSeen.get(id) ?? null, untilAt: lastSeen.get(id)! + 1 })),
-      ];
+      const friends: SceneFriend[] = [...firstSeen.keys()].map((id) => (live.has(id) ? { id, fromAt: firstSeen.get(id) ?? null } : { id, fromAt: firstSeen.get(id) ?? null, untilAt: lastSeen.get(id)! + 1 }));
       return deriveLifeScene({ seed, people: source?.people ?? latest.people, events: source?.events ?? latest.events, protagonistId, friends, through: latest.year });
     },
   };
@@ -74,12 +72,15 @@ export function friendSeenBefore(lifeId: string, branchId: string, beforeYear: n
   if (!branch) return undefined;
   const seen = new Map<string, number>();
   const visited = new Set<string>();
+  let limit = beforeYear;
   while (branch && !visited.has(branch.id)) {
     visited.add(branch.id);
     for (const [year, snapshot] of branch.snapshots) {
-      if (year >= beforeYear) continue;
+      if (year >= limit) continue;
       for (const id of friendIds(snapshot.people[protagonistId])) seen.set(id, Math.min(seen.get(id) ?? Infinity, year));
     }
+    // An ancestor only speaks for the years before the fork of the child it was reached through.
+    if (branch.forkYear !== undefined) limit = Math.min(limit, branch.forkYear);
     branch = branch.parentBranchId ? getLifeBranch(lifeId, branch.parentBranchId) : undefined;
   }
   return seen;

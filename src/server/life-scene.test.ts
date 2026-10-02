@@ -47,6 +47,25 @@ describe("createSceneTracker — friend edges", () => {
   });
 });
 
+describe("createSceneTracker — monotone scene", () => {
+  it("never evicts a friend shown earlier when more friends than the cap arrive", () => {
+    const tracker = createSceneTracker({ seed: SEED, protagonistId: "protagonist" });
+    const ids = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    const shown = new Set<string>();
+    ids.forEach((id, i) => {
+      const friends: Record<string, number> = {};
+      for (const x of ids.slice(0, i + 1)) friends[x] = 1330;
+      // The oldest friend is dropped once the eighth arrives; the others stay.
+      if (i >= 7) friends.a = 1400; // still a person, no longer a friend
+      tracker.observe(snapshot(1331 + i, friends));
+      const scene = tracker.scene();
+      const present = new Set(scene.people.map((p) => p.id));
+      for (const id of shown) expect(present.has(id)).toBe(true);
+      for (const p of scene.people) shown.add(p.id);
+    });
+  });
+});
+
 describe("createSceneTracker — rewrite branch fallback", () => {
   const fork = { forkYear: 1350 };
 
@@ -95,6 +114,32 @@ describe("friendSeenBefore / sceneForBranch — through the branch chain", () =>
     expect(friendSeenBefore(lifeId, "nope", 1340)).toBeUndefined();
     expect(friendSeenBefore(lifeId, "root", 1340)?.get("pal")).toBe(1335);
     expect(friendSeenBefore(lifeId, "root", 1335)?.has("pal")).toBe(false);
+    deleteLife(lifeId);
+  });
+
+  it("caps each ancestor at the fork year of the child it was reached through", () => {
+    const lifeId = "scene-chain-c";
+    const result = register(lifeId);
+    const fromYear = (start: number, id: string) => {
+      const snaps = new Map<number, YearSnapshot>();
+      for (let year = start; year <= 1345; year++) snaps.set(year, snapshot(year, { [id]: 1330 }));
+      return snaps;
+    };
+    // root (1330..1345, pal) <- mid forked 1340 <- leaf forked 1342
+    registerLifeBranch(lifeId, "mid", "root", 1340, { id: "o", decisionId: "d", optionId: "x" }, result as never, fromYear(1340, "pal"), "Changed in 1340");
+    registerLifeBranch(lifeId, "leaf", "mid", 1342, { id: "o", decisionId: "d", optionId: "x" }, result as never, fromYear(1342, "pal"), "Changed in 1342");
+    // Seen from the leaf before 1344, mid only counts up to its child's fork (1342), root up to mid's fork (1340).
+    const seen = friendSeenBefore(lifeId, "leaf", 1344)!;
+    expect(seen.get("pal")).toBe(1335);
+    const mid = getLifeBranch(lifeId, "mid")!;
+    (mid.snapshots as Map<number, YearSnapshot>).set(1341, snapshot(1341, { late: 1330 }));
+    (mid.snapshots as Map<number, YearSnapshot>).set(1343, snapshot(1343, { later: 1330 }));
+    const capped = friendSeenBefore(lifeId, "leaf", 1344)!;
+    expect(capped.get("late")).toBe(1341);
+    expect(capped.has("later")).toBe(false);
+    const root = getLifeBranch(lifeId, "root")!;
+    (root.snapshots as Map<number, YearSnapshot>).set(1341, snapshot(1341, { overreach: 1330 }));
+    expect(friendSeenBefore(lifeId, "leaf", 1344)!.has("overreach")).toBe(false);
     deleteLife(lifeId);
   });
 
