@@ -1,0 +1,120 @@
+/*
+ * The night sky (S5: constellation, year odometer, player). Ported from docs/design/night-sky-mock.html onto
+ * the --ll-* night tokens. Class names are `sky-*` so they can outlive the legacy `cw-*` rules.
+ */
+.sky-frame {
+  --sky-bg: #0b1120;
+  --sky-red: #d98472;
+  --sky-gold: var(--ll-forest);
+  --sky-gold-ink: var(--ll-sun-ink);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: calc(100svh - 7.5rem);
+  min-height: 640px;
+  margin: 14px;
+  border: 1px solid var(--ll-hair);
+  border-radius: 18px;
+  background: var(--ll-parchment);
+  color: var(--ll-ink);
+}
+.sky-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: -1; }
+.sky-area { position: relative; min-height: 0; }
+.sky-heading { position: absolute; left: 38px; top: 18px; width: min(390px, 30%); margin: 0; font-family: var(--font-cormorant), Georgia, serif; font-weight: 500; font-size: clamp(30px, 3.4vw, 50px); line-height: 1.02; text-wrap: balance; }
+.sky-disc { position: absolute; left: 45%; top: 50%; height: min(100%, 50vw); aspect-ratio: 1; transform: translate(-50%, -50%); }
+.sky-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.sky-now { position: absolute; top: 4px; left: calc(45% + min(50%, 25vw) * 0.96 + 10px); }
+
+/* Year odometer */
+.sky-odo { display: inline-flex; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
+.sky-odo.big { font-family: var(--font-cormorant), Georgia, serif; font-weight: 500; font-size: clamp(54px, 5.2vw, 76px); letter-spacing: 0.01em; }
+.sky-digit { display: inline-block; height: 1em; overflow: hidden; mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); }
+.sky-strip { display: flex; flex-direction: column; will-change: transform; }
+.sky-strip span { display: block; height: 1em; text-align: center; }
+
+/* Rings, dial and compass */
+.sky-ring { fill: none; stroke: rgb(222 214 190 / 0.16); stroke-width: 1; }
+.sky-ring.faint { stroke: rgb(222 214 190 / 0.07); }
+.sky-ring.compass { stroke: rgb(222 214 190 / 0.2); }
+.sky-cross { stroke: rgb(222 214 190 / 0.07); stroke-width: 0.8; }
+.sky-tick { stroke: rgb(222 214 190 / 0.22); stroke-width: 0.8; }
+.sky-tick.major { stroke: rgb(222 214 190 / 0.5); }
+.sky-dial-label { font-family: var(--font-eb-garamond), Georgia, serif; font-size: 14px; fill: var(--ll-ink); opacity: 0.85; text-anchor: middle; dominant-baseline: middle; font-variant-numeric: lining-nums; }
+.sky-compass-label { font-family: var(--font-cinzel), Georgia, serif; font-size: 13px; fill: var(--ll-ink-soft); text-anchor: middle; dominant-baseline: middle; letter-spacing: 0.1em; }
+.sky-progress { fill: none; stroke: var(--sky-gold); stroke-width: 2.2; }
+.sky-progress.glow { filter: url(#sky-bloom-sm); opacity: 0.55; }
+.sky-plague { fill: none; stroke: var(--sky-red); stroke-width: 3.2; opacity: 0.5; }
+.sky-wash { fill: var(--sky-red); opacity: 0; pointer-events: none; }
+.sky-marker-ring { fill: none; stroke: var(--sky-gold); stroke-width: 1.4; }
+.sky-marker-glow { fill: var(--sky-gold); filter: url(#sky-bloom); opacity: 0.55; }
+.sky-marker-dot { fill: var(--ll-starlight); }
+
+/* Background souls */
+.sky-bgstar { fill: #f0d389; transition: opacity 1.4s ease; }
+.sky-bgstar.far { fill: var(--ll-starlight); }
+.sky-bgstar.gone { opacity: 0 !important; }
+
+/* Bonds */
+.sky-edge { fill: none; stroke: rgb(232 205 146 / 0.5); stroke-width: 0.9; stroke-linecap: round; }
+.sky-edge.spouse { stroke: rgb(240 212 150 / 0.7); stroke-width: 1.1; }
+.sky-edge.parent, .sky-edge.friend { stroke: rgb(232 205 146 / 0.38); }
+.sky-edge.rival { stroke: rgb(232 205 146 / 0.6); stroke-dasharray: 1 3.2; }
+.sky-edge.former { stroke-dasharray: 3.5 3.5; }
+.sky-head, .sky-sparks, .sky-trail { pointer-events: none; }
+.sky-trail { fill: none; stroke: var(--sky-gold); stroke-width: 0.8; }
+
+/* People: a cream core inside a soft bloom; the protagonist carries a faint four-point flare */
+.sky-halo { fill: var(--ll-starlight); filter: url(#sky-bloom); opacity: 0.22; transition: opacity 0.9s linear; transform-box: fill-box; transform-origin: center; }
+.sky-node.circle .sky-halo { opacity: 0.62; }
+.sky-node.dead .sky-halo { opacity: 0; }
+.sky-node.self .sky-halo { opacity: 0.8; }
+.sky-core { fill: var(--ll-starlight); transition: fill 0.9s linear, transform 0.56s cubic-bezier(0.33, 0.67, 0.67, 1); transform-box: fill-box; transform-origin: center; }
+.sky-node.outside .sky-core { fill: #f0d389; transform: scale(0.72); }
+.sky-node.dead .sky-core { fill: #6f7482; transform: scale(0.62); }
+.sky-flare { fill: var(--ll-starlight); opacity: 0.6; }
+.sky-node.self.dead .sky-flare { opacity: 0.15; }
+.sky-node.self.dead .sky-core { fill: #b9ae8c; }
+.sky-spin { transform-box: fill-box; transform-origin: center; }
+.sky-nm { font-family: var(--font-cormorant), Georgia, serif; font-weight: 500; font-size: 14.5px; fill: var(--ll-ink); text-anchor: middle; paint-order: stroke; stroke: var(--sky-bg); stroke-width: 3px; stroke-linejoin: round; transition: fill 0.9s linear; }
+.sky-node.self .sky-nm { font-size: 18px; }
+.sky-node.outside .sky-nm { fill: var(--ll-ink-soft); font-style: italic; }
+.sky-node.dead .sky-nm { fill: var(--ll-ink-faint); }
+
+/* Player */
+.sky-player { position: relative; z-index: 1; justify-self: start; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 16px; width: min(640px, calc(100% - 60px)); margin: 0 30px 22px; padding: 16px 22px 30px 16px; border: 1px solid var(--ll-hair); border-radius: 999px; background: var(--ll-panel); backdrop-filter: blur(6px); }
+.sky-playbtn { width: 58px; height: 58px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--sky-gold); background: radial-gradient(circle, rgb(227 191 114 / 0.16), transparent 70%); box-shadow: 0 0 24px rgb(227 191 114 / 0.22); color: var(--sky-gold-ink); cursor: pointer; }
+.sky-playbtn svg { width: 20px; height: 20px; }
+.sky-yr { font-size: 14px; color: var(--ll-ink-soft); font-variant-numeric: tabular-nums; }
+.sky-speed { min-width: 50px; height: 34px; border: 1px solid var(--ll-hair-strong); border-radius: 999px; background: rgb(255 255 255 / 0.03); font-size: 13px; color: var(--ll-ink-soft); cursor: pointer; }
+.sky-speed:hover, .sky-playbtn:hover { border-color: var(--sky-gold-ink); }
+.sky-caption { position: absolute; left: 0; right: 0; bottom: 9px; text-align: center; font-family: var(--font-cinzel), Georgia, serif; font-size: 8.5px; letter-spacing: 0.42em; text-transform: uppercase; color: var(--ll-ink-faint); pointer-events: none; }
+.sky-player input[type="range"] { appearance: none; width: 100%; height: 18px; margin: 0; background: transparent; cursor: pointer; }
+.sky-player input[type="range"]::-webkit-slider-runnable-track { height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--sky-gold) 0 var(--p, 0%), rgb(255 255 255 / 0.16) var(--p, 0%) 100%); }
+.sky-player input[type="range"]::-moz-range-track { height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--sky-gold) 0 var(--p, 0%), rgb(255 255 255 / 0.16) var(--p, 0%) 100%); }
+.sky-player input[type="range"]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -7px; border: 0; border-radius: 50%; background: radial-gradient(circle, var(--ll-starlight) 0 3px, var(--sky-gold) 3.5px 100%); box-shadow: 0 0 12px 3px rgb(227 191 114 / 0.55); }
+.sky-player input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: radial-gradient(circle, var(--ll-starlight) 0 3px, var(--sky-gold) 3.5px 100%); box-shadow: 0 0 12px 3px rgb(227 191 114 / 0.55); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .sky-bgstar.tw { animation: sky-tw 5.6s ease-in-out infinite; }
+  .sky-node.self .sky-spin { animation: sky-spin 112s linear infinite; }
+  .sky-node.self.dead .sky-spin { animation-play-state: paused; }
+  .sky-node.self:not(.dead) .sky-halo { animation: sky-breathe 4.5s ease-in-out infinite; }
+  @keyframes sky-tw { 50% { opacity: 0.08; } }
+  @keyframes sky-spin { to { transform: rotate(360deg); } }
+  @keyframes sky-breathe { 50% { transform: scale(1.12); } }
+}
+/* The ambient layers are engine-drawn and gated by the engine; this stops every CSS transition too. */
+@media (prefers-reduced-motion: reduce) {
+  .sky-frame *, .sky-frame *::before, .sky-frame *::after { animation: none !important; transition: none !important; }
+}
+
+/* Narrow screens: the sky stacks above the player and scrolls. */
+@media (max-width: 999px) {
+  .sky-frame { display: block; height: auto; min-height: 0; margin: 10px; padding-bottom: 8px; }
+  .sky-area { display: grid; gap: 18px; padding: 14px 18px 8px; }
+  .sky-heading, .sky-now { position: static; width: auto; }
+  .sky-disc { position: relative; left: auto; top: auto; transform: none; width: 100%; height: auto; max-width: 560px; justify-self: center; }
+  .sky-player { width: auto; }
+}

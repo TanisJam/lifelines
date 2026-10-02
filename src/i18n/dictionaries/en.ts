@@ -62,6 +62,11 @@ export const en = {
     loadError: "Couldn't load this life.",
     opening: "Opening the chronicle…",
   },
+  sky: {
+    title: (name: string) => `The constellation of ${name}`,
+    constellationLabel: (name: string) => `Constellation of ${name}'s relationships`,
+    player: { play: "Play", pause: "Pause", speed: "Playback speed", year: "Year", caption: "A life in motion" },
+  },
   chronicle: {
     brand: "Lifelines",
     historyToggle: "History ▾",

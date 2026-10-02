@@ -57,6 +57,11 @@ export const es: Dictionary = {
     loadError: "No se pudo cargar esta vida.",
     opening: "Abriendo la crónica…",
   },
+  sky: {
+    title: (name: string) => `La constelación de ${name}`,
+    constellationLabel: (name: string) => `Constelación de las relaciones de ${name}`,
+    player: { play: "Reproducir", pause: "Pausar", speed: "Velocidad de reproducción", year: "Año", caption: "Una vida en movimiento" },
+  },
   chronicle: {
     brand: "Lifelines",
     historyToggle: "Historial ▾",

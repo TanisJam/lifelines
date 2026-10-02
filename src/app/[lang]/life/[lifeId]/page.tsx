@@ -3,6 +3,7 @@
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Chronicle } from "@/components/chronicle";
+import { SkyView } from "@/components/sky/sky-view";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/get-dictionary";
 import { getChronicle } from "@/lib/life-client";
@@ -21,10 +22,11 @@ export default function LifePage() {
   // remounts this loader — the idiomatic way to reset state on a prop change without an
   // unconditional setState at the top of an effect. `branch` is read once, below, deliberately
   // NOT as part of this key: see `ChronicleLoader`'s own comment for why.
-  return <ChronicleLoader key={params.lifeId} lifeId={params.lifeId} lang={params.lang} initialBranchId={searchParams.get("branch") ?? undefined} />;
+  return <ChronicleLoader key={params.lifeId} lifeId={params.lifeId} lang={params.lang} initialBranchId={searchParams.get("branch") ?? undefined} sky={searchParams.get("view") === "sky"} />;
 }
 
-function ChronicleLoader({ lifeId, lang, initialBranchId }: { lifeId: string; lang: Locale; initialBranchId?: string }) {
+/** `sky` is the temporary `?view=sky` flag (removed by the cutover slice): the parchment chronicle stays the default. */
+function ChronicleLoader({ lifeId, lang, initialBranchId, sky }: { lifeId: string; lang: Locale; initialBranchId?: string; sky: boolean }) {
   const dict = getDictionary(lang);
   // Frozen at mount, deliberately not re-read from the URL afterward. `<Chronicle>` owns every
   // later branch change itself — both from a rewrite and from `switchBranch` (the history rail) —
@@ -67,5 +69,5 @@ function ChronicleLoader({ lifeId, lang, initialBranchId }: { lifeId: string; la
     );
   }
 
-  return <Chronicle initial={data} />;
+  return sky ? <SkyView chronicle={data} dict={dict} /> : <Chronicle initial={data} />;
 }
