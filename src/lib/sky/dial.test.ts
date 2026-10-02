@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dialAngle, monthTapeX, odometerOffsets, plagueIntensity, rolled } from "./dial";
+import { arcPath, dialAngle, monthTapeX, odometerOffsets, plagueIntensity, rolled } from "./dial";
 
 describe("dial", () => {
   it("maps a year to an angle starting at the top", () => {
@@ -11,6 +11,14 @@ describe("dial", () => {
     const bands = [{ kind: "black-death" as const, from: 1348.5, to: 1350 }];
     expect(plagueIntensity(bands, 1340)).toBe(0);
     expect(plagueIntensity(bands, 1349.25)).toBeCloseTo(1, 9);
+  });
+});
+
+describe("arcPath", () => {
+  it("is empty without a sweep and flags the long way round past half a turn", () => {
+    expect(arcPath(100, -90, -90)).toBe("");
+    expect(arcPath(100, -90, 0)).toBe("M0.00,-100.00 A100,100 0 0 1 100.00,0.00");
+    expect(arcPath(100, -90, 100)).toContain(" 0 1 1 ");
   });
 });
 

@@ -1,9 +1,18 @@
 import type { LifeScene, SceneBand } from "@/contracts/life";
-import { travel } from "./motion";
+import { polar, travel } from "./motion";
 
 /** Angle (degrees, top = -90) of year `t` on a dial of `span` years starting at `start`. */
 export const dialAngle = (t: number, start: number, span: number): number => ((t - start) / span) * 360 - 90;
 export const dialRad = (t: number, start: number, span: number): number => ((t - start) / span) * Math.PI * 2;
+
+/** SVG path of a stroked arc on radius `r` between two angles in degrees. Empty for no sweep; a full circle stops a hair short so it still draws. */
+export function arcPath(r: number, from: number, to: number): string {
+  const sweep = Math.min(Math.max(to - from, 0), 359.99);
+  if (sweep === 0) return "";
+  const [x0, y0] = polar(from, r);
+  const [x1, y1] = polar(from + sweep, r);
+  return `M${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${sweep > 180 ? 1 : 0} 1 ${x1.toFixed(2)},${y1.toFixed(2)}`;
+}
 
 /** 0..1 sine swell while inside a plague band, 0 outside. */
 export function plagueIntensity(bands: readonly SceneBand[], t: number): number {

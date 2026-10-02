@@ -32,3 +32,8 @@ export const SECTORS = { parents: [-118, -62], siblings: [-168, -128], spouses: 
 export const GROUP_RADIUS = { children: R1 + 12, others: R1 + 50 } as const;
 /** Angular step (degrees) between outer-ring people hanging from the same child. */
 export const OUTER_STEP = 11;
+
+/** Spark colour per bond kind. */
+export const SPARK = { parent: "#fff3d1", spouse: "#f3d58e", lover: "#f6e3b0", rival: "#e9a27f", friend: "#fff3d1" } as const;
+/** Per bond kind: sparks per second, and seconds a spark takes to cross. */
+export const KIND_PULSE = { spouse: [0.55, 4.4], lover: [0.9, 3.2], rival: [0.7, 2.2], parent: [0.22, 5.2], friend: [0.3, 4.8] } as const;
