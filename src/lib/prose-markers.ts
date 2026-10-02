@@ -23,7 +23,13 @@ export function parseProseMarkers(prose: string, links: readonly PersonLink[]): 
   while ((match = MARKER.exec(prose))) {
     if (match.index > lastIndex) parts.push({ kind: "text", text: prose.slice(lastIndex, match.index) });
     const personId = match[1];
-    parts.push({ kind: "link", personId, name: byId.get(personId) ?? personId });
+    const name = byId.get(personId);
+    // A marker no link resolves must never reach the reader as an id: it degrades to nothing.
+    if (name === undefined) {
+      lastIndex = match.index + match[0].length;
+      continue;
+    }
+    parts.push({ kind: "link", personId, name });
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < prose.length) parts.push({ kind: "text", text: prose.slice(lastIndex) });

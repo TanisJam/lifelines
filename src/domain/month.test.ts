@@ -137,3 +137,17 @@ describe("over a simulated life", () => {
     }
   });
 });
+
+describe("a protagonist's death closes their own year", () => {
+  it("lands after every same-year event that precedes it and involves the protagonist (spouse death, widowed)", () => {
+    for (let year = 1330; year < 1400; year++) {
+      for (const seed of ["a", "b", "c"]) {
+        const spouseDeath = event(`sd${year}`, "death", year, ["sp"]);
+        const widowed = event(`w${year}`, "widowed", year, ["protagonist", "sp"], { causes: [spouseDeath.id] });
+        const death = event(`d${year}`, "death", year, ["protagonist"]);
+        const times = eventTimes(seed, [spouseDeath, widowed, death], "protagonist");
+        expect(times.get(death.id)!).toBeGreaterThan(times.get(widowed.id)!);
+      }
+    }
+  });
+});

@@ -405,3 +405,24 @@ describe("PR5: manorial-fine and period-marker narration (restrained copy, both 
     expect(title.length).toBeGreaterThan(0);
   });
 });
+
+describe("lifeSummary: leaving and returning reads consistently", () => {
+  const move = (away: boolean, year: number): Event => ({ id: `m${year}`, year, kind: "move", actors: ["p001"], payload: away ? { away: true } : { away: false, returned: true }, causes: [] });
+  const dreamer = (status: "realized" | "pursuing") => makePerson("p001", { sex: "m", birthYear: 1340, deathYear: 1416, mind: { ...createMind("seed-1", "p001", 1340), dream: { goal: "leave for the city", status, since: 1340 } } });
+
+  it("a realized leave-for-the-city dream after a return says he left for a time and came back, never 'never left'", () => {
+    const p = dreamer("realized");
+    for (const [locale, bad] of [["es", "nunca abandonó"], ["en", "never permanently left"]] as const) {
+      const summary = lifeSummary(p, { p001: p }, [move(true, 1370), move(false, 1373)], "Netherfield", locale);
+      expect(summary).not.toContain(bad);
+    }
+    expect(lifeSummary(p, { p001: p }, [move(true, 1370), move(false, 1373)], "Netherfield", "es")).toContain("volvió");
+  });
+
+  it("a leave-for-the-city dream cannot read as realized for someone who never moved away", () => {
+    const p = dreamer("realized");
+    const summary = lifeSummary(p, { p001: p }, [], "Netherfield", "es");
+    expect(summary).toContain("nunca abandonó");
+    expect(summary).not.toContain("se hizo realidad");
+  });
+});

@@ -6,7 +6,8 @@ import type { DecisionRecord } from "@/domain/decisions";
 import type { Event, Person, SimulationResult } from "@/domain/types";
 import { deriveLifeScene } from "@/domain/scene";
 import { generateWorld } from "@/domain/worldgen";
-import { buildLifeChronicle, buildProvisionalTickEntries } from "./life-chronicle";
+import type { ChronicleEntry } from "@/contracts/life";
+import { buildEpilogue, buildLifeChronicle, buildProvisionalTickEntries, finishAtDeath } from "./life-chronicle";
 import { deleteLife, registerLife } from "./life-store";
 
 async function buildRealChronicle(seed: string) {
@@ -260,5 +261,44 @@ describe("buildLifeChronicle — NPC-decided turns are labeled (fixture)", () =>
         deleteLife(life.id);
       }
     }
+  });
+});
+
+describe("finishAtDeath", () => {
+  const e = (id: string, at: number, kind: string): ChronicleEntry => ({ id, year: Math.floor(at), level: 1, kind, title: id, prose: id, links: [], at, who: [] });
+
+  it("orders entries by their moment, not just their year", () => {
+    const sorted = finishAtDeath([e("reflection", 1401.81, "reflection"), e("levy", 1401.87, "levy"), e("a", 1401.1, "vignette"), e("death", 1403.19, "death")], "death");
+    expect(sorted.map((x) => x.id)).toEqual(["a", "reflection", "levy", "death"]);
+  });
+
+  it("emits nothing after the protagonist's death", () => {
+    const sorted = finishAtDeath([e("death", 1403.19, "death"), e("widowed", 1403.81, "widowed")], "death");
+    expect(sorted.map((x) => x.id)).toEqual(["death"]);
+  });
+});
+
+describe("buildLifeChronicle — end of life invariants", () => {
+  it.each(["end-1", "end-2", "end-3"])("entries are ordered by time and none follow the death (%s)", async (seed) => {
+    const { result } = await buildRealChronicle(seed);
+    const entries = result.data!.entries;
+    for (let i = 1; i < entries.length; i++) expect(entries[i]!.at).toBeGreaterThanOrEqual(entries[i - 1]!.at);
+    const death = entries.find((x) => x.kind === "death" && x.who.includes("protagonist") && x.level === 3);
+    expect(death).toBeDefined();
+    expect(entries[entries.length - 1]).toBe(death);
+  });
+});
+
+describe("buildEpilogue", () => {
+  const protagonist = { id: "protagonist", sex: "m" } as Person;
+  const child = { id: "c1", motherId: "x", fatherId: "protagonist" } as Person;
+  const people = { protagonist, c1: child };
+
+  it("speaks Spanish for an es life", () => {
+    expect(buildEpilogue(protagonist, people, "Netherfield", "es")).toEqual(["Un hijo continuó el apellido de la familia."]);
+  });
+
+  it("keeps English as the default", () => {
+    expect(buildEpilogue(protagonist, people, "Netherfield")).toEqual(["One child carried the family name forward."]);
   });
 });

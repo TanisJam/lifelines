@@ -1095,22 +1095,26 @@ export function lifeSummary(person: Person, people: Readonly<Record<string, Pers
     person.job !== "none" ? ` ${capitalize(subject)} spent much of ${pronounPossessive} life as ${withArticle(person.job)}.` : "",
     person.job !== "none" ? ` ${capitalize(subjectEs)} pasó buena parte de su vida como ${withArticleEs(person.job, person.sex)}.` : "",
   );
-  const leftClause = t(
-    locale,
-    awayFromTown ? ` ${capitalize(subject)} left ${townName} behind and never returned.` : ` ${capitalize(subject)} never permanently left the town where ${subject} was born.`,
-    awayFromTown ? ` ${capitalize(subjectEs)} dejó atrás ${townName} y nunca regresó.` : ` ${capitalize(subjectEs)} nunca abandonó para siempre el pueblo donde nació.`,
-  );
+  // Whether they ever left, even if they came back: a dream of leaving is only coherent with a real departure.
+  const everLeft = events.some((e) => e.kind === "move" && e.actors.includes(person.id) && e.payload.away === true);
+  const leftClause = awayFromTown
+    ? t(locale, ` ${capitalize(subject)} left ${townName} behind and never returned.`, ` ${capitalize(subjectEs)} dejó atrás ${townName} y nunca regresó.`)
+    : everLeft
+      ? t(locale, ` ${capitalize(subject)} left ${townName} for a time, then came back.`, ` ${capitalize(subjectEs)} se marchó de ${townName} por un tiempo y volvió.`)
+      : t(locale, ` ${capitalize(subject)} never permanently left the town where ${subject} was born.`, ` ${capitalize(subjectEs)} nunca abandonó para siempre el pueblo donde nació.`);
+  // "Leave for the city" can't have come true for someone who never went anywhere.
+  const dreamStatus = person.mind.dream.goal === "leave for the city" && person.mind.dream.status === "realized" && !everLeft ? "pursuing" : person.mind.dream.status;
   const goal = dreamGoalDisplay(locale, person.mind.dream.goal);
   const dreamClause = t(
     locale,
-    person.mind.dream.status === "realized"
+    dreamStatus === "realized"
       ? ` ${pronounPossessive === "her" ? "Her" : "His"} dream of ${goal} came true.`
-      : person.mind.dream.status === "abandoned"
+      : dreamStatus === "abandoned"
         ? ` ${pronounPossessive === "her" ? "Her" : "His"} dream of ${goal} was let go along the way.`
         : ` ${pronounPossessive === "her" ? "Her" : "His"} dream of ${goal} never came to pass.`,
-    person.mind.dream.status === "realized"
+    dreamStatus === "realized"
       ? ` Su sueño de ${goal} se hizo realidad.`
-      : person.mind.dream.status === "abandoned"
+      : dreamStatus === "abandoned"
         ? ` Su sueño de ${goal} quedó atrás con el paso del tiempo.`
         : ` Su sueño de ${goal} nunca llegó a cumplirse.`,
   );

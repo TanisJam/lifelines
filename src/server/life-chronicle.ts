@@ -83,15 +83,31 @@ function levelFor(event: Event, decision: DecisionRecord | undefined, isProtagon
   return 1;
 }
 
-function buildEpilogue(protagonist: Person, people: Readonly<Record<string, Person>>, townName: string): string[] {
+export function buildEpilogue(protagonist: Person, people: Readonly<Record<string, Person>>, townName: string, locale: Locale = DEFAULT_LOCALE): string[] {
   const lines: string[] = [];
   if (protagonist.spouseId) {
     const spouse = people[protagonist.spouseId];
-    if (spouse && spouse.deathYear === undefined) lines.push(`${spouse.name} lived on in ${townName}, after ${protagonist.sex === "f" ? "her" : "his"} passing.`);
+    if (spouse && spouse.deathYear === undefined) {
+      lines.push(locale === "es" ? `${spouse.name} siguió viviendo en ${townName}, tras su fallecimiento.` : `${spouse.name} lived on in ${townName}, after ${protagonist.sex === "f" ? "her" : "his"} passing.`);
+    }
   }
   const livingChildren = Object.values(people).filter((c) => (c.motherId === protagonist.id || c.fatherId === protagonist.id) && c.deathYear === undefined);
-  if (livingChildren.length > 0) lines.push(livingChildren.length === 1 ? "One child carried the family name forward." : `${livingChildren.length} children carried the family name forward.`);
+  if (livingChildren.length > 0) {
+    const n = livingChildren.length;
+    if (locale === "es") lines.push(n === 1 ? "Un hijo continuó el apellido de la familia." : `${n} hijos continuaron el apellido de la familia.`);
+    else lines.push(n === 1 ? "One child carried the family name forward." : `${n} children carried the family name forward.`);
+  }
   return lines;
+}
+
+/**
+ * The protagonist's chronicle in the order it happened: by moment (`at`), not just by year, and
+ * closed by their own death — nothing is told from their point of view after it.
+ */
+export function finishAtDeath(entries: readonly ChronicleEntry[], deathEntryId: string | undefined): ChronicleEntry[] {
+  const ordered = [...entries].sort((a, b) => a.at - b.at);
+  const death = deathEntryId === undefined ? undefined : ordered.find((e) => e.id === deathEntryId);
+  return death ? ordered.filter((e) => e.at <= death.at) : ordered;
 }
 
 function buildCast(protagonist: Person, people: Readonly<Record<string, Person>>): Chronicle["cast"] {
@@ -239,8 +255,8 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string,
   // Decision 042 supersedes decision 038's period-summary rule for the protagonist: `simulate.ts`
   // now guarantees at least one event per year of their life (the `D1` everyday-life vignette,
   // when nothing else happened), so a multi-year "quiet years passed" gap can no longer occur here
-  // — sorting by year is all that's left to do.
-  const sorted = [...entries].sort((a, b) => a.year - b.year);
+  // — ordering by moment and ending at their death is all that's left to do.
+  const sorted = finishAtDeath(entries, deathEvent?.id);
 
   const summaryRaw = lifeSummary(protagonist, people, events, townName, locale);
   const { text: summary, links: summaryLinks } = markLinks(summaryRaw, Object.keys(people), people, PROTAGONIST_ID);
@@ -268,7 +284,7 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string,
     protagonist: protagonistInfo,
     summary,
     summaryLinks,
-    epilogue: buildEpilogue(protagonist, people, townName),
+    epilogue: buildEpilogue(protagonist, people, townName, locale),
     entries: sorted,
     branches,
     cast: buildCast(protagonist, people),

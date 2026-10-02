@@ -28,10 +28,9 @@ describe("parseProseMarkers", () => {
     ]);
   });
 
-  it("falls back to the raw id when a marker has no matching link", () => {
+  it("drops a marker that has no matching link instead of showing its id", () => {
     expect(parseProseMarkers("She meets {{ghost}}.", [])).toEqual([
       { kind: "text", text: "She meets " },
-      { kind: "link", personId: "ghost", name: "ghost" },
       { kind: "text", text: "." },
     ]);
   });
@@ -49,5 +48,15 @@ describe("parseProseMarkers", () => {
 
   it("returns an empty array for an empty string", () => {
     expect(parseProseMarkers("", [])).toEqual([]);
+  });
+});
+
+describe("parseProseMarkers: unresolved markers", () => {
+  it("never leaks the raw id or braces when a marker has no link", () => {
+    const parts = parseProseMarkers("Pancho mourned {{child-p052-1340}} deeply.", []);
+    const plain = parts.map((p) => (p.kind === "link" ? p.name : p.text)).join("");
+    expect(plain).not.toContain("{{");
+    expect(plain).not.toContain("child-p052-1340");
+    expect(parts.every((p) => p.kind === "text")).toBe(true);
   });
 });

@@ -63,9 +63,19 @@ export function resolveMonths(seed: string, events: readonly Event[], protagonis
   // A person who dies in the year they were born dies after the birth, even without a recorded cause.
   const birthOf = new Map<string, Event>();
   for (const e of events) if (e.kind === "birth" && e.actors[0] && !birthOf.has(e.actors[0])) birthOf.set(e.actors[0], e);
+  // The protagonist's own death ends their story: whatever else happened to them that year, earlier in
+  // the event order, comes first (a spouse dying the same year widows them before their own death).
+  const precedingOfDeath = new Map<string, string[]>();
+  const seenThisYear = new Map<number, string[]>();
+  for (const e of events) {
+    if (e.kind === "death" && e.actors[0] === protagonistId) precedingOfDeath.set(e.id, [...(seenThisYear.get(e.year) ?? [])]);
+    else if (e.actors.includes(protagonistId)) seenThisYear.set(e.year, [...(seenThisYear.get(e.year) ?? []), e.id]);
+  }
   const causesOf = (event: Event): readonly string[] => {
     const birth = event.kind === "death" && event.actors[0] ? birthOf.get(event.actors[0]) : undefined;
-    return birth && birth.year === event.year ? [...event.causes, birth.id] : event.causes;
+    const base = birth && birth.year === event.year ? [...event.causes, birth.id] : event.causes;
+    const preceding = precedingOfDeath.get(event.id);
+    return preceding && preceding.length > 0 ? [...base, ...preceding] : base;
   };
   const effectsOf = new Map<string, Event[]>();
   for (const event of events) {
