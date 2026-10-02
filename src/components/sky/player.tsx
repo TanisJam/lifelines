@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { progressOf } from "@/lib/sky/clock";
 import type { PlayerState, PlayerStore } from "@/lib/sky/player-store";
 
 export interface PlayerLabels {
@@ -25,7 +26,7 @@ export function Player({ store, state, controls, start, end, labels }: { store: 
     if (!el) return;
     return store.onFrame((frame) => {
       el.value = String(frame.t);
-      el.style.setProperty("--p", `${(((frame.t - start) / (end - start)) * 100).toFixed(2)}%`);
+      el.style.setProperty("--p", `${(progressOf(frame.t, start, end) * 100).toFixed(2)}%`);
     });
   }, [store, start, end]);
   return (

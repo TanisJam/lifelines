@@ -29,3 +29,10 @@ export function stepClock(clock: ClockInput, dt: number): ClockState {
 export function scrubTo(t: number, bounds: { readonly start: number; readonly frontier: number; readonly end: number }): number {
   return Math.max(bounds.start, Math.min(Math.min(bounds.frontier, bounds.end), t));
 }
+
+/** Share of the life already played, 0..1. A zero-length (or inverted) span reads as 0 so callers never see NaN or Infinity. */
+export function progressOf(t: number, start: number, end: number): number {
+  const span = end - start;
+  if (!(span > 0)) return 0;
+  return Math.max(0, Math.min(1, (t - start) / span));
+}

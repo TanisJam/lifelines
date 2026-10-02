@@ -33,6 +33,7 @@ describe("motion-pref", () => {
   });
 
   it("defaults to full motion where matchMedia does not exist", () => {
+    vi.stubGlobal("matchMedia", undefined);
     expect(prefersReducedMotion()).toBe(false);
     expect(subscribeReducedMotion(() => {})()).toBeUndefined();
   });

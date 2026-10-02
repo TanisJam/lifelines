@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RATE } from "./constants";
-import { scrubTo, stepClock } from "./clock";
+import { progressOf, scrubTo, stepClock } from "./clock";
 
 const base = { t: 1500, playing: true, speed: 1, frontier: 1600, end: 1700 };
 
@@ -46,5 +46,19 @@ describe("scrubTo", () => {
     expect(scrubTo(1400, bounds)).toBe(1490.3);
     expect(scrubTo(1530, bounds)).toBe(1520);
     expect(scrubTo(1500, bounds)).toBe(1500);
+  });
+});
+
+describe("progressOf", () => {
+  it("is the played share, kept inside 0..1", () => {
+    expect(progressOf(1550, 1500, 1600)).toBe(0.5);
+    expect(progressOf(1400, 1500, 1600)).toBe(0);
+    expect(progressOf(1700, 1500, 1600)).toBe(1);
+  });
+
+  it("reads 0, never NaN or Infinity, for a zero or inverted span", () => {
+    expect(progressOf(1500, 1500, 1500)).toBe(0);
+    expect(progressOf(1520, 1500, 1500)).toBe(0);
+    expect(progressOf(1500, 1500, 1400)).toBe(0);
   });
 });
