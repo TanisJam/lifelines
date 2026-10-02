@@ -57,8 +57,8 @@ All references are repository-relative. Line numbers describe the checkout revie
 | Rewrite stream | `src/app/api/lives/[lifeId]/rewrite/stream/route.ts:55–79, 108–155`: recorded decision year, validation, restored inputs, divergence/ticks, completion-only registration. | Route/store/contract migration must be coordinated, not domain-only. |
 | Period | `src/app/api/lives/stream/route.ts:14–17`; `src/domain/period/events.ts:79, 101, 141–145`. | Run starts 1327; dated pressures include 1348–49 and 1361–62 pestilences and labour legislation. |
 
-**Current limitation:** the model-free adapter exists, but this document has not executed replay or
-performance tests. Neither remote caching nor comments about determinism prove the full invariant.
+**Current limitation:** the standalone rules replay and A-baseline measurements below do not prove
+the full production invariant. Neither remote caching nor comments about determinism prove it.
 The UI route permits up to 100 lifespan years after 1327; the named period does not imply every
 later year has researched content. Older Tudor comments/specifications are not the current setting.
 
@@ -384,6 +384,63 @@ Runtime diagnostics disclose this distinction without a gate that prevents local
 claim of cross-runtime numeric portability. Bump/review baseline versions when behavior changes;
 there is no implicit compatibility or migration promise.
 
+### A-baseline: reproducible local measurements
+
+**Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,
+V8 **14.6.202.34-node.28**, Linux x64. Four seeds (`baseline-1327-0` through `-3`),
+Baseline town, 1327–1362 cap, six adult founders and Alice/f (`protagonist`) produced eight
+independent world generations and eight sequential rules replays. All input/output pairs matched;
+envelopes and canonical output hashes stayed unchanged through measurement. Baseline Node 24
+validation remains pending. The guarded CLI emits one JSON report to stdout, with no saved lives
+or measurement data file; importing its helpers does not execute the corpus.
+
+**Method:** retain both people and initial events from each independent world; create separate
+Unit A envelopes and canonical-JSON-roundtrip the second. Replay instantiates a fresh rules adapter
+each time. Fail on input/output mismatch or instrumentation mutation. Report resolved config,
+generation/effective options, version tuple and their hashes. Time worldgen, envelope creation and
+roundtrip separately from externally measured replay (admission, simulation, projection, hashing)
+and the simulation report's wall time. Serialize result and year-keyed snapshot object independently;
+count UTF-8 buffer bytes, with envelope/canonical bytes separate. Serialization includes buffer
+creation; compression-only synchronous elapsed time uses gzip level 6 and persistence-compatible
+Brotli quality 5. Full reports are released between runs, retaining only small observations.
+
+The snapshot range starts at **1326**, the initial checkpoint, not a simulated year. Normalize by
+**inclusive simulated years** (`last snapshot year - 1327 + 1`), not protagonist age. All four lives
+stopped at death; only seeds 1 and 3 reached the 1348–49 plague window, and none reached the cap.
+
+| Seed suffix | Last year / simulated years (age) | Snapshots | People initial → final | Events initial → final (generated) | Decisions / calls | Replay elapsed ms, runs 1 / 2 | Simulation wall ms, runs 1 / 2 |
+|---|---|---|---|---|---|---|---|
+| 0 | 1327 / 1 (0) | 2 | 11 → 11 | 14 → 15 (1) | 13 / 7 | 25.50 / 7.17 | 18 / 3 |
+| 1 | 1351 / 25 (24) | 26 | 11 → 34 | 14 → 138 (124) | 594 / 212 | 178.58 / 142.69 | 134 / 105 |
+| 2 | 1328 / 2 (1) | 3 | 9 → 10 | 11 → 15 (4) | 37 / 15 | 7.82 / 7.08 | 3 / 3 |
+| 3 | 1349 / 23 (22) | 24 | 11 → 25 | 13 → 107 (94) | 491 / 186 | 110.39 / 98.88 | 83 / 78 |
+
+All hazard-fallback maps were empty. Bytes matched within pairs; the following sizes are bytes,
+not characters or MiB. Timings above are individual observations, not performance budgets.
+
+| Seed suffix | Envelope / canonical | Result raw / gzip6 / Brotli5 | Snapshots raw / gzip6 / Brotli5 |
+|---|---|---|---|
+| 0 | 11,056 / 17,319 | 22,006 / 4,201 / 3,788 | 32,275 / 4,293 / 3,822 |
+| 1 | 11,077 / 229,821 | 453,098 / 54,649 / 48,900 | 5,661,675 / 686,099 / 55,182 |
+| 2 | 9,052 / 22,686 | 36,282 / 6,187 / 5,645 | 67,718 / 6,637 / 5,835 |
+| 3 | 10,838 / 182,433 | 364,509 / 46,112 / 41,142 | 4,433,786 / 565,569 / 46,864 |
+
+Across the eight observations, worldgen took 0.54–2.45 ms, envelope creation 1.67–5.21 ms,
+and the four roundtrips 0.50–0.92 ms. Result serialization took 0.06–1.68 ms; snapshot serialization
+0.14–26.87 ms. Compression-only result gzip/Brotli ranges were 0.30–3.53 / 0.57–6.27 ms;
+snapshot gzip/Brotli ranges were 0.27–41.79 / 0.55–16.42 ms (rounded).
+
+| Seed suffix | Matching canonical output SHA-256 (both runs, before/after measurement) |
+|---|---|
+| 0 | `154acbbfbd4eebc1135062fa22ffe62f711536a80447ae4094c62d0b7a46f698` |
+| 1 | `885500759a850a9563f6f8c0207788a190009c504b519cc3eb37d6b505390dd7` |
+| 2 | `7a58ffb067513e09ce11214433cf16045159e3ef5025255efc58695a6269852c` |
+| 3 | `91ee04201c27b67b893cb97a63016e2688c819d085264be9895bb314207d748b` |
+
+**Limits:** tiny corpus, one local invocation, no p95/true peak heap/scenario coverage guarantees,
+no narration/storage/annual SSE/fork benchmarks and no cross-runtime portability claim. Seed 0's
+first run includes cold-start effects. These observations do not calibrate future hidden density.
+
 ## 9. Optional LLM wording remains downstream
 
 **Adopted:** no LLM in canonical world generation, opportunities, director or choice resolution.
@@ -416,8 +473,9 @@ deaths, required causal effects and valid overrides outside discretionary slot t
 a hard safety limit must produce a diagnostic/failure or versioned deferral, never dropped canon.
 Maintain sparse relationship indexes and active/dormant obligation indexes; preserve old evidence.
 
-No new measured runtime/storage baseline was collected for this document. `src/server/db.ts:165–168`
-records an older 81-year rules-life compression experiment (~32MB JSON, ~71KB/80ms at quality 5);
+A-baseline above measures only the current standalone rules corpus, not the proposed workload.
+`src/server/db.ts:165–168` records an older 81-year rules-life compression experiment
+(~32MB JSON, ~71KB/80ms at quality 5);
 it is repository evidence, **not** a benchmark for this proposed workload. Re-measure on the actual
 supported runtime before agreeing p95 latency, heap, per-life bytes, or snapshot interval limits.
 

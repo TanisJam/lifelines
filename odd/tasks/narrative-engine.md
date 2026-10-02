@@ -1,51 +1,40 @@
-# Narrative engine — ODD implementation tracking
+# Narrative engine — ODD tasks
 
-## Goal and authorization
-Implement `docs/design/narrative-engine.md` step by step: seeded model-free reality, persistent causal consequences, opportunity-only director, downstream narrative selection. Hidden activity is a selection pool, not more UI cards.
-User authorized implementation on 2026-10-02: "dale, vamos con todo paso por paso" and local work-unit commits: "si, anda haciendo comits". Push/PR/merge/deploy remain unauthorized. Functional acceptance is separate from full task closure, which needs a work-unit commit. Branch `feat/narrative-engine`, baseline `main`/`d5d9ad5`. One writer; parallel independent readers/verifiers allowed. Preserve `.claude/` and design. English artifacts, Spanish conversation; test-first when applicable.
+## Intent, authorization and invariants
+Implement `docs/design/narrative-engine.md`: deterministic model-free reality, persistent causes, opportunity-only director, read-only selection. Hidden activity supplies material, not UI-card quotas. User authorized stepwise implementation and local commits2026-10-02; push/PR/merge/deploy unauthorized. Branch `feat/narrative-engine`; baseline `main`/d5d9ad5. One writer; independent readers/verifiers parallel, preserve `.claude/`. English artifacts; Spanish conversation. Applicable tests RED/GREEN, no fake evidence.
 
-## Stable tasks and acceptance
+## Tasks and acceptance
+### A — Standalone replay
+- [x] A: envelope/strict SHA256 canonicalization/projection/full independent rules replay.
+Complete people/events/options and registry order; reject unsupported versions/types/undefined/nonfinite/sparse/cycles/accessors/coerced enums before simulation; separate narrative/diagnostics; tamper/alias/roundtrip tests. No engine/production changes, no general override-history promise. Commits design0acd452626203f596f71817a13980bb541d25032(492 additions), replay/tests/tracker927c346094091e0b11b2bd3dd2159b70e004b0b2(614 additions). Mapping mur9md1k-3-5n6v, writer mur9ttyr-4-va5a, correction murakyk5-7-q1t8, verifier muraoa13-8-0drf PASS.44tests Node24/26/type/lint PASS; two-case runtime hashes equal, no universal portability.
 
-### A — Standalone versioned rules replay
-- [ ] A: implement, verify and close replay work unit.
-Surfaces: `src/domain/replay.ts`, `src/domain/replay.test.ts`, design contract clarification. Standalone full rules runs only; no simulation/RNG/adapter/route/storage/fork behavior changes. Complete initial people/events, registry order/effective options captured; general override history unsupported. Strict SHA-256 canonical JSON, version/options admission before simulation, no getters/coercion, array order/behavior state retained; narrative/diagnostics excluded; independent complete worlds, tampering, alias safety and roundtrip covered.
-Route: mapper `mur9md1k-3-5n6v`; writer `mur9ttyr-4-va5a`; correction `murakyk5-7-q1t8`; corrected independent verifier `muraoa13-8-0drf` PASS. Status: functional acceptance PASS; local commit authorized and being recorded. Full task closure follows observed commit evidence.
-
-### A-baseline — Measurements
-- [ ] A-baseline: reproducible rules corpus and actual timing/size evidence.
-Depends A functional acceptance (met); source execution still awaiting A work-unit closure decision. Planner `muraf2m3-6-89q8` complete; candidate script `scripts/replay-baseline.ts`, test `src/domain/replay-baseline.test.ts`, concise methodology. Forecast180–280 additions. Four fixed seeds, explicit1327–1362/six founders/Alice-f, two complete independent worlds/runs per seed. Measure actual reached years/counts, simulation/external replay/serialization/compression separately, snapshot Map converted, UTF-8 bytes, Brotli5/gzip settings. No persisted lives/remote calls, tiny-corpus p95 or true peak heap. Status pending; local commit authorized after verification.
+### A-baseline — Corpus metrics
+- [ ] A-baseline: guarded CLI/measurement helpers/tests, actual paired corpus evidence.
+Depends A closed. Surfaces `scripts/replay-baseline.ts`, `src/domain/replay-baseline.test.ts`, concise design methodology. Planner muraf2m3-6-89q8, writer murb77g0-9-ijff completed; verifier murbfl2u-a-7yqu PARTIAL, corrective capture murbkvka-c-5s77 running. No baseline commit yet.
+Acceptance: four explicit1327–1362/six-founder/Alice-f seeds, eight independently generated worlds/replays/fresh rules; actual reached years vs age/start-1 checkpoint, UTF8/Map bytes, separated generation/admission/replay/simulation/serialization/compression timings; Brotli5/gzip6 documented, hashes invariant after metrics, no DB/models/data file, no tiny-corpus p95/true peak heap/coverage/scaling claim.
+Writer RED missing module->5GREEN, combined49/type/lint/whitespace PASS. Node26 paired runs all match, reached1327/1351/1328/1349, generated events1/124/4/94, decisions13/594/37/491, calls7/212/15/186, no fallback. Two early deaths/no cap. Largest snapshots5,661,675 raw/686,099 gzip6/55,182 Brotli5; replay7.08–178.58ms/simulation3–134ms observations only. Script164/tests102/design62+/4-;328 additions.
+Independent source review: no material defect,49tests PASS local/Node24, tsc/lint PASS. Corpus parser wrongly asserted cross-runtime gzip equality, aborted seed1/discarded later data. Verification-tool issue, NOT code failure. Node24 seed1 gzip54,646(result)/686,079(snapshots) differs from Node26 54,649/686,099; raw/Brotli matched checked records. One extra buffered capture authorized; canonical hashes/counts compared, compressed bytes recorded per runtime. Seeds2/3 complete verification/native review pending.
 
 ### B — Atomic favor/obligation
-- [ ] B: validated transfer, objective obligation, directed ties, evidence-linked appraisal.
-Depends A; vocabulary/exact surfaces gated before delegated writer. Reject half-effects/duplicates/invalid causes atomically; objective commitments differ from subjective memories. Status pending resource/relationship decision; local commit authorized after verification.
+- [ ] B: conserved grain favor, objective help obligation, directional effects/evidence-linked appraisal.
+Depends A; map murbg1n6-b-kpkc complete. Proposed bounded defaults accepted for prototype: integer abstract grain, trust-100..100/resentment0..100, no economic calibration/UI, typed fear deferred. Supplemental versioned state does not duplicate Person identities/axes or obligation copies; B not admitted as A-v1. New effects/obligations modules+tests candidate; exact surfaces before dispatch. Atomic rejection/missing causes/replay/contradictory appraisal tests required. No B implementation yet; baseline closure first.
 
-### C — Annual causal slice
-- [ ] C: favor -> obligation -> later help/refusal -> relationship consequence, director off.
-Depends B; scheduling/numeric gate. Delegated writer; replay equality, liveness/absence/resources/conflicts guarded, unrelated keyed draws stable, annual hazards not multiplied, obligation genuinely consumed by policy. Status pending; local commit authorized after verification.
-
+### C — Causal slice
+- [ ] C: favor->obligation->later help/refusal->relationship change; director off.
+Depends B; scheduler/numeric gate. Replay stable, liveness/location/resources/conflicts, unrelated keyed RNG, annual hazards unchanged, obligation actually influences choices. Delegated writer; pending.
 ### D — Durable replay/forks
-- [ ] D: provenance persistence, event/decision-prefix preservation.
-Depends A/C; legacy/suffix gates. Delegated writer; cold-load equality, year-before prefix IDs retained, inherited overrides explicit, no fabricated legacy state. Status pending; local commit authorized after verification.
-
-### E — Sifter/production integration
-- [ ] E: live/retrospective selection, model-free canonical path, compatible annual SSE.
-Depends C/D; compression/editability/display-time gates. Delegated writer; no hindsight leakage, causal context preserved, no canonical model calls including initialization, quiet progress/cancellation/completed persistence preserved. Status pending; local commit authorized after verification.
-
+- [ ] D: provenance persistence/event-decision prefix IDs.
+Depends A/C; legacy/suffix gate. Cold-load equality, year-before prefix unchanged, inherited overrides explicit/no invented legacy state. Delegated writer; pending.
+### E — Sifter/production
+- [ ] E: live/final selection and model-free canonical path with annual SSE.
+Depends C/D; compression/editability/time gate. No hindsight leakage, causal evidence, no canonical models including init, quiet progress/abort/completed persistence. Delegated writer; pending.
 ### F — Director/calibration
-- [ ] F: bounded deterministic opportunity-only weighting and measured comparisons.
-Depends C/E; budget gate. Delegated writer/verifier; clamp/cooldown/no-op, no outcome/eligibility authority, no drama/closure quotas, measured runtime/storage/consequence/variation. Status pending; local commit authorized after verification.
+- [ ] F: bounded deterministic opportunity weights/measured corpus comparisons.
+Depends C/E; budget gate. Clamp/cooldown/no-op, no outcome/eligibility authority or drama/closure quota; real runtime/storage/variation metrics. Delegated writer/verifier; pending.
 
-## Observed checks and correction evidence
-- Design writer `mur8c8vk-1-lqts`, verifier `mur8ndxu-2-bevh`: documentation PASS. Design commit `0acd452626203f596f71817a13980bb541d25032` (492 authored additions).
-- Initial A RED missing module then GREEN28. Simulator first120s timeout, rerun PASS77/136.23s. Initial type/lint errors corrected; checks PASS, whitespace clean, Vite warning unchanged.
-- Pre-fix verifier `muraet3d-5-q1vh`: FAIL two P2 despite 28tests Node24/26: bond array admitted via String; getter evaluated before rejection. Correction RED7 failures, GREEN44, type/lint/whitespace PASS. No engine/production changes.
-- Corrected verifier PASS: 44/44 Node26.8.1/V8 14.6.202.34-node.28 and Node24.21.0/V8 13.6.233.17-node.53; independent bond rejection and zero-getter probes PASS, local tsc/eslint PASS.
-- Two explicit verify-a-1/verify-a-2 worlds (Verification,1327–1350,six founders,Alice/f) retain equal direct/roundtrip and Node24/26 output hashes after corrections: `0e244e9778dd783f0e803883ced154ff351d77647dfd4d6f90384b8a25f5bd68`, `10041c61b175222459267805160b7016ec8eec4e5f2b70e0310c14175043ee6e`. Limited corpus, not universal portability.
-- Corrected source SHA256 parent-readback matches verifier: replay.ts `d4b627d0ce86fa1ec942f6a41816a7e9f6451ffbc6bb9329061fa0be387687c2`; test `931b0898c1ebe27262d7af4b0d8cd895d305ae85cc374501207f7f1e63b0266a`.
-- Node24 Vitest initial token-cache startup failed, passed with ephemeral cache/tmpfs, read-only repo/network none. Host token predates work; no new token/project mutation observed. No cleanup.
-- Native review on A source/tests only: `review-27ef7f8639835ce6`, medium,563 changed lines, one reliability lens. Approved then exact acknowledgement completed; authority burned for target `sha256:65fdd45157907186b49518471b26d57ac14f39875bf8a06855722205c419b0bd`, consumed revision `sha256:97e9f57c5af4efebe38b130d7fc8ab8ebf720b5d7c684359dbba3b14507db472`. Review grants no delivery authority.
-- ASSESS unavailable earlier due untracked declaration; independent verifier completed instead. No full-suite/build/browser rerun for isolated guard correction. Full feature/runtime budgets/baseline benchmarks remain pending.
+## Review, checks and limitations
+A initial RED->28GREEN; simulator120s timeout then77PASS/136.23s; pre-fix verifier found bond coercion/getters, correction7RED->44GREEN independent PASS. Source hashes d4b627d0ce86fa1ec942f6a41816a7e9f6451ffbc6bb9329061fa0be387687c2(replay),931b0898c1ebe27262d7af4b0d8cd895d305ae85cc374501207f7f1e63b0266a(test) parent-matched. Native A review-27ef7f8639835ce6 medium reliability approved/acknowledged target65fdd45157907186b49518471b26d57ac14f39875bf8a06855722205c419b0bd; passive tracker review-a5fb3a8372307f2b consumed separately, not baseline approval.
+ASSESS unassessable due untracked declaration; independent verifier required. Node24 cached Docker read-only repo/network none/tmpfs cache solved Vitest token startup; host token predates work/no new mutation/cleanup. No full-suite/build/browser rerun for standalone/guard work; baseline/broader budgets scoped, no universal portability. B-F still unimplemented.
 
 ## Delivery and next step
-Strategy ask-on-risk, publication/PR shape undecided. A source563 lines; readability/tests retained over advisory400 heuristic. Design currently492 lines, separate passive design artifact. Full B–F forecast unknown. Committed lines0, boundary `d5d9ad5`. No task marked closed without commit; ask explicit authorization for local work-unit commits before accumulating subsequent source units. Push/PR/merge/deploy remain separate decisions. Optional LLM prose/resumability later scopes.
-A is functionally verified and native review consumed. Resolve local commit authorization; then start A-baseline test-first from bounded surfaces and updated task/mirror. Keep product gates for B–F visible.
+Local verified work-unit commits authorized; publishing strategy ask-on-risk/undecided. Committed1106 additions across two units, A-source563 kept coherent over advisory400. Baseline forecast180–280/actual328; B-F unknown. Current boundary927c346, no code-golf/fake closure. Await corrected complete Node24 capture, then native review/commit baseline and dispatch B after exact tracking/surfaces. Optional LLM prose/resumability later scopes. Full Engram mirror/UI reflect this file.
