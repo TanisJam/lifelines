@@ -33,17 +33,6 @@ export function VineCorner({ className }: OrnamentProps) {
   );
 }
 
-/** Hairline rule with a small central three-leaf sprig. Separates masthead / hero / timeline. */
-export function SprigDivider({ className }: OrnamentProps) {
-  return (
-    <svg viewBox="0 0 20 14" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" width="20" height="14" className={className} aria-hidden="true">
-      <path d="M10 13V4" />
-      <path d="M10 8c-3-1-4-3-3.5-5.5C9 3 10 5 10 8Z" />
-      <path d="M10 8c3-1 4-3 3.5-5.5C11 3 10 5 10 8Z" />
-    </svg>
-  );
-}
-
 /** Small branch icon at the start of an option card. */
 export function LeafGlyph({ className }: OrnamentProps) {
   return (
@@ -71,14 +60,6 @@ export function CheckCircleIcon({ className }: OrnamentProps) {
   );
 }
 
-export function MenuIcon({ className }: OrnamentProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" width="20" height="20" className={className} aria-hidden="true">
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
-  );
-}
-
 /** Sprout — "Life" / home nav. */
 export function SproutIcon({ className }: OrnamentProps) {
   return (
@@ -90,33 +71,12 @@ export function SproutIcon({ className }: OrnamentProps) {
   );
 }
 
-/** Compass star — "Explore" nav. */
-export function CompassStarIcon({ className }: OrnamentProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" width="20" height="20" className={className} aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M15 9l-2 4.5L9 15l2-4.5L15 9Z" />
-    </svg>
-  );
-}
-
 /** Open book — "Library" nav. */
 export function OpenBookIcon({ className }: OrnamentProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" width="20" height="20" className={className} aria-hidden="true">
       <path d="M12 6c-2-1.4-4.6-2-8-2v13c3.4 0 6 .6 8 2 2-1.4 4.6-2 8-2V4c-3.4 0-6 .6-8 2Z" />
       <path d="M12 6v13" />
-    </svg>
-  );
-}
-
-/** Three dots — "More" nav. */
-export function DotsIcon({ className }: OrnamentProps) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width="20" height="20" className={className} aria-hidden="true">
-      <circle cx="5" cy="12" r="1.6" />
-      <circle cx="12" cy="12" r="1.6" />
-      <circle cx="19" cy="12" r="1.6" />
     </svg>
   );
 }

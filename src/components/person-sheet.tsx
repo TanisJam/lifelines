@@ -12,7 +12,7 @@ import "@/components/sky/sky-sheet.css";
  * The read-only side sheet (single-life pivot, decision 041): clicking a `{{personId}}` link or a
  * cast-rail entry no longer switches the protagonist — there is only one protagonist now — it
  * opens this panel instead. A right-anchored slide-in panel on desktop, a bottom sheet on mobile,
- * on the night palette (`sky-sheet-*`, sky-sheet.css) so it no longer leans on the legacy `cw-*` rules.
+ * on the night palette (`sky-sheet-*`, sky-sheet.css).
  */
 /** Callers should pass `key={personId}` so switching to a different person remounts this panel
  * (and its loading state) from scratch, instead of resetting state imperatively inside an effect. */

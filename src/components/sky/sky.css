@@ -1,6 +1,6 @@
 /*
  * The night sky (S5: constellation, year odometer, player). Ported from docs/design/night-sky-mock.html onto
- * the --ll-* night tokens. Class names are `sky-*` so they can outlive the legacy `cw-*` rules.
+ * the --ll-* night tokens. Class names are `sky-*`.
  */
 .sky-frame {
   --sky-bg: #0b1120;

@@ -1,6 +1,5 @@
 /**
- * Pure view-logic for the Living Chronicle (round 8, decision 033) — split out of
- * `src/components/chronicle.tsx` (a client component) so it's directly unit-testable with vitest,
+ * Pure view-logic for the Living Chronicle (round 8, decision 033) — split out of the UI so it is directly unit-testable with vitest,
  * with no React/Next.js runtime involved. Framework-free by design: only plain objects in, plain
  * values out.
  */

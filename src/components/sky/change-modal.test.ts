@@ -49,7 +49,7 @@ describe("ChangeModal markup", () => {
     expect(html).toContain(turn.chosen.label);
   });
 
-  it("is night-scoped: no legacy cw- classes", () => {
+  it("is night-scoped: no legacy parchment classes", () => {
     expect(html).not.toContain("cw-");
   });
 });
