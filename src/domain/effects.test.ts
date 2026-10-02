@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMind } from "./mind";
 import type { Event, Person } from "./types";
-import { applyFavorEvent, createFavorState, grantFavor, replayFavorEvents, type FavorCommand, type FavorEvent } from "./effects";
+import { applyFavorEvent, createFavorState, grantFavor, replayFavorEvents, createHelpFavorState, grantHelpFavor, requestHelp, respondHelp, applyHelpFavorEvent, replayHelpFavorEvents, type FavorCommand, type FavorEvent } from "./effects";
 
 const person = (id: string): Person => ({ id, name: id, sex: "f", birthYear: 1300, traits: [], job: "none", founder: true, mind: createMind("favor", id, 1300) });
 const people = () => ({ a: person("a"), b: person("b"), c: person("c") });
@@ -10,6 +10,220 @@ const command = (key = "grant"): FavorCommand => ({ key, year: 1336, creditor: "
 const full = (): FavorCommand => ({ ...command(), ties: [{ actor: "b", trust: 10, resentment: 3 }], appraisals: [{ actor: "b", interpretation: "gratitude", intensity: 80 }, { actor: "a", interpretation: "resentment", intensity: 20 }] });
 const event = (): FavorEvent => grantFavor(state(), full()).events[0]!;
 const roundtrip = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+const helpState = () => {
+  const registry = people();
+  registry.b.mind.facets.altruism = 50;
+  registry.b.mind.facets.anxiety = 50;
+  registry.b.mind.values.wealth = 0;
+  return createHelpFavorState(registry, [], { a: 3, b: 0 }, { b: 2 }, { a: 2 });
+};
+const requested = () => {
+  const granted = grantHelpFavor(helpState(), command());
+  return requestHelp(granted, { key: "request", year: 1337, obligation: granted.obligations[0]!.id });
+};
+const responded = (noise = 0.1) => {
+  const input = requested();
+  return respondHelp(input, { request: input.events[1]!.id, year: 1337, noise, appraisals: [] });
+};
+
+describe("C1 atomic later help", () => {
+  it.each([0.1, 0.9])("settles from recorded noise %s with explicit resources and directed ties", (noise) => {
+    const input = requested();
+    const before = structuredClone(input);
+    const next = respondHelp(input, { request: input.events[1]!.id, year: 1337, noise, appraisals: [] });
+    const help = noise === 0.1;
+    expect(next.schema).toBe("favor-c1");
+    expect(next.obligations[0]!.status).toBe(help ? "fulfilled" : "broken");
+    expect(next.assistance).toEqual({ b: help ? 1 : 2 });
+    expect(next.need).toEqual({ a: help ? 1 : 2 });
+    expect(next.grain).toEqual(input.grain);
+    expect(next.ties).toEqual([{ actor: "a", counterpart: "b", trust: help ? 5 : -5, resentment: help ? 0 : 5 }]);
+    expect(next.appraisals).toEqual([]);
+    expect(next.people).toEqual(input.people);
+    expect(input).toEqual(before);
+    expect(replayHelpFavorEvents(helpState(), roundtrip(next.events))).toEqual(next);
+    expect(replayHelpFavorEvents(roundtrip(next), [])).toEqual(next);
+    expect(next.events.slice(0, 2)).toEqual(input.events);
+  });
+  it("recomputes latest factors after an intervening grant, rejecting stale imported evidence", () => {
+    const input = requested();
+    const stale = responded().events[2]!;
+    const changed = grantHelpFavor(input, { ...command("competing"), year: 1337, ties: [{ actor: "b", trust: -100, resentment: 100 }] });
+    const next = respondHelp(changed, { request: input.events[1]!.id, year: 1337, noise: 0.5, appraisals: [] });
+    expect(next.events[3]).toMatchObject({ evidence: { factors: { trust: -100, resentment: 100 }, selected: "refuse" } });
+    const bad = roundtrip(stale);
+    bad.position = 3;
+    expect(() => applyHelpFavorEvent(changed, bad)).toThrow();
+    expect(next.events.slice(0, 2)).toEqual(input.events);
+  });
+  it("clamps actual creditor-directed deltas and leaves reverse/legacy relationships unchanged", () => {
+    const initial = helpState();
+    const granted = grantHelpFavor(initial, { ...command(), ties: [{ actor: "a", trust: 98, resentment: 99 }, { actor: "b", trust: 2, resentment: 0 }] });
+    const input = requestHelp(granted, { key: "req", year: 1337, obligation: granted.obligations[0]!.id });
+    const help = respondHelp(input, { request: input.events[1]!.id, year: 1337, noise: 0, appraisals: [] });
+    expect(help.ties[0]).toMatchObject({ trust: 100, resentment: 99 });
+    expect(help.ties[1]).toEqual(input.ties[1]);
+    const refusal = respondHelp(input, { request: input.events[1]!.id, year: 1337, noise: 0.99, appraisals: [] });
+    expect(refusal.ties[0]).toMatchObject({ trust: 93, resentment: 100 });
+  });
+  it.each(["missing-capacity", "exhausted", "missing-need", "no-need", "dead", "same-year-dead", "unborn", "away", "log-away"])("rejects ineligible request %s atomically", (kind) => {
+    const registry = people();
+    if (kind === "dead") registry.b.deathYear = 1337;
+    if (kind === "same-year-dead") registry.a.deathYear = 1337;
+    if (kind === "unborn") registry.b = { ...registry.b, birthYear: 1338 };
+    if (kind === "away") registry.b = { ...registry.b, away: true };
+    const log: Event[] = kind === "log-away" ? [{ id: "move", year: 1337, kind: "move", actors: ["b"], payload: { away: true }, causes: [] }] : [];
+    const initial = createHelpFavorState(registry, log, { a: 2, b: 0 }, kind === "missing-capacity" ? {} : { b: kind === "exhausted" ? 0 : 2 }, kind === "missing-need" ? {} : { a: kind === "no-need" ? 0 : 1 });
+    const before = structuredClone(initial);
+    expect(() => {
+      const grant = grantHelpFavor(initial, command());
+      requestHelp(grant, { key: "req", year: 1337, obligation: grant.obligations[0]!.id });
+    }).toThrow();
+    expect(initial).toEqual(before);
+  });
+  it("rejects duplicate requests, duplicate responses, closed debts and arbitrary supplied outcomes", () => {
+    const input = requested();
+    expect(() => requestHelp(input, { key: "another", year: 1337, obligation: input.obligations[0]!.id })).toThrow();
+    const closed = responded();
+    expect(() => respondHelp(closed, { request: input.events[1]!.id, year: 1337, noise: 0, appraisals: [] })).toThrow();
+    expect(() => requestHelp(closed, { key: "another", year: 1338, obligation: closed.obligations[0]!.id })).toThrow();
+    expect(() => respondHelp(input, { request: input.events[1]!.id, year: 1337, noise: 0.9, appraisals: [], outcome: "help" } as never)).toThrow();
+    expect(() => requestHelp(input, { key: "forward", year: 1336, obligation: input.obligations[0]!.id })).toThrow();
+  });
+  it.each(["version", "actors", "cause", "origin", "effect", "factor", "draw", "selected", "options", "distribution", "extra", "request"])("rejects forged response %s without publishing effects", (kind) => {
+    const input = requested();
+    const before = structuredClone(input);
+    const bad = roundtrip(responded().events[2]!);
+    if (kind === "version") Object.assign(bad, { version: "favor-b1" });
+    if (kind === "actors") bad.actors.reverse();
+    if (kind === "cause") bad.causes = [bad.id];
+    if (kind === "origin") Object.assign(bad.effects[0]!, { origin: "wrong" });
+    if (kind === "effect") Object.assign(bad.effects.at(-1)!, { trust: 6 });
+    if (kind === "factor") Object.assign(bad.evidence!.factors, { altruism: 100 });
+    if (kind === "draw") Object.assign(bad.evidence!, { noise: 1 });
+    if (kind === "selected") Object.assign(bad.evidence!, { selected: "refuse" });
+    if (kind === "options") bad.evidence!.options.reverse();
+    if (kind === "distribution") bad.evidence!.distribution.reverse();
+    if (kind === "extra") Object.assign(bad, { extra: 1 });
+    if (kind === "request") Object.assign(bad, { request: "unknown" });
+    expect(() => applyHelpFavorEvent(input, bad)).toThrow();
+    expect(input).toEqual(before);
+  });
+  it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN, "2"])("rejects invalid explicit C resources %s", (value) => {
+    expect(() => createHelpFavorState(people(), [], { a: 2, b: 0 }, { b: value } as never, { a: 1 })).toThrow();
+    expect(() => createHelpFavorState(people(), [], { a: 2, b: 0 }, { b: 2 }, { a: value } as never)).toThrow();
+  });
+  it("rejects unknown initial resource actors and invalid consumed mind factors", () => {
+    expect(() => createHelpFavorState(people(), [], {}, { unknown: 2 }, {})).toThrow();
+    const registry = people();
+    registry.b.mind.values.wealth = 51;
+    const grant = grantHelpFavor(createHelpFavorState(registry, [], { a: 2, b: 0 }, { b: 2 }, { a: 1 }), command());
+    const before = structuredClone(grant);
+    expect(() => requestHelp(grant, { key: "r", year: 1337, obligation: grant.obligations[0]!.id })).toThrow();
+    expect(grant).toEqual(before);
+  });
+  it("rejects invented settled state, capacity, and mixed prefixes without upgrading B", () => {
+    const next = responded();
+    for (const patch of [{ assistance: { b: 9 } }, { initialAssistance: { b: -1 } }, { reducer: "favor-b1" }]) {
+      expect(() => replayHelpFavorEvents({ ...next, ...patch } as never, [])).toThrow();
+    }
+    expect(() => replayHelpFavorEvents(helpState(), [event()] as never)).toThrow();
+    expect(() => replayFavorEvents(state(), [next.events[0]!] as never)).toThrow();
+    expect(() => createHelpFavorState(state() as never, [], {}, {}, {})).toThrow();
+    expect(() => grantFavor(helpState() as never, command())).toThrow();
+    expect(() => grantHelpFavor(state() as never, command())).toThrow();
+    expect(() => replayFavorEvents(helpState() as never, [])).toThrow();
+    expect(() => replayHelpFavorEvents(state() as never, [])).toThrow();
+    const b = grantFavor(state(), full());
+    expect(b.schema).toBe("favor-b1");
+    expect(b.events[0]).toEqual(event());
+    expect(Object.keys(b)).not.toContain("assistance");
+    expect(JSON.stringify(replayFavorEvents(state(), b.events))).toBe(JSON.stringify(b));
+  });
+  it.each(["capacity", "need"])("revalidates competing response consumption of %s", (resource) => {
+    const initial = createHelpFavorState(people(), [], { a: 2, b: 0 }, { b: resource === "capacity" ? 1 : 2 }, { a: resource === "need" ? 1 : 2 });
+    const first = grantHelpFavor(initial, command("one"));
+    const second = grantHelpFavor(first, command("two"));
+    const r1 = requestHelp(second, { key: "r1", year: 1337, obligation: second.obligations[0]!.id });
+    const r2 = requestHelp(r1, { key: "r2", year: 1337, obligation: second.obligations[1]!.id });
+    const resolved = respondHelp(r2, { request: r1.events[2]!.id, year: 1337, noise: 0, appraisals: [] });
+    const before = structuredClone(resolved);
+    expect(() => respondHelp(resolved, { request: r2.events[3]!.id, year: 1337, noise: 0.99, appraisals: [] })).toThrow();
+    expect(resolved).toEqual(before);
+    expect(resolved.obligations[1]!.status).toBe("open");
+  });
+  it("revalidates response year liveness and legacy log location rather than request eligibility", () => {
+    for (const kind of ["death", "move"] as const) {
+      const registry = people();
+      if (kind === "death") registry.b.deathYear = 1338;
+      const log: Event[] = kind === "move" ? [{ id: "move", year: 1338, kind: "move", actors: ["b"], payload: { away: true }, causes: [] }] : [];
+      const initial = createHelpFavorState(registry, log, { a: 2, b: 0 }, { b: 2 }, { a: 1 });
+      const grant = grantHelpFavor(initial, command());
+      const input = requestHelp(grant, { key: "r", year: 1337, obligation: grant.obligations[0]!.id });
+      const before = structuredClone(input);
+      expect(() => respondHelp(input, { request: input.events[1]!.id, year: 1338, noise: 0.99, appraisals: [] })).toThrow();
+      expect(input).toEqual(before);
+    }
+  });
+  it("stages explicit appraisals, rejecting late invalid evidence without earlier settlement", () => {
+    const input = requested();
+    const valid = respondHelp(input, { request: input.events[1]!.id, year: 1337, noise: 0, appraisals: [{ actor: "b", interpretation: "resentment", intensity: 20 }] });
+    expect(valid.appraisals[0]).toMatchObject({ origin: valid.events[2]!.id, interpretation: "resentment" });
+    const bad = roundtrip(valid.events[2]!);
+    Object.assign(bad.effects.at(-1)!, { actor: "c" });
+    const before = structuredClone(input);
+    expect(() => applyHelpFavorEvent(input, bad)).toThrow();
+    expect(input).toEqual(before);
+  });
+  it.each(["same-year", "forward", "self", "parties", "closed", "extra-effect", "origin", "version"])("rejects invalid request %s", (kind) => {
+    const input = grantHelpFavor(helpState(), command());
+    const bad = roundtrip(requested().events[1]!);
+    if (kind === "same-year") bad.year = 1336;
+    if (kind === "forward") bad.causes = [responded().events[2]!.id];
+    if (kind === "self") bad.causes = [bad.id];
+    if (kind === "parties") bad.actors = ["a", "a"];
+    if (kind === "closed") bad.obligation = "invented";
+    if (kind === "extra-effect") bad.effects.push(event().effects[0]!);
+    if (kind === "origin") bad.causes = [];
+    if (kind === "version") Object.assign(bad, { version: "unsupported" });
+    const before = structuredClone(input);
+    expect(() => applyHelpFavorEvent(input, bad)).toThrow();
+    expect(input).toEqual(before);
+  });
+  it("B grant fixture retains its exact prior admission and JSON record", () => {
+    const id = '["favor-b1","grant",0]';
+    const expected: FavorEvent = {
+      version: "favor-b1", id, key: "grant", ordinal: 0, kind: "grain-grant", year: 1336, position: 0, actors: ["a", "b"], causes: [], effects: [
+        { kind: "grain", from: "a", to: "b", amount: 1 },
+        { kind: "obligation", id: `${id}/help`, debtor: "b", creditor: "a", origin: id, status: "open" },
+        { kind: "tie", origin: id, counterpart: "a", actor: "b", trust: 10, resentment: 3 },
+        { kind: "appraisal", id: `${id}/appraisal/3`, origin: id, actor: "b", interpretation: "gratitude", intensity: 80 },
+        { kind: "appraisal", id: `${id}/appraisal/4`, origin: id, actor: "a", interpretation: "resentment", intensity: 20 },
+      ],
+    };
+    expect(JSON.stringify(event())).toBe(JSON.stringify(expected));
+    expect(applyFavorEvent(state(), expected)).toEqual(grantFavor(state(), full()));
+  });
+  it("keeps consumed policy evidence independent of future suffix and does not mutate command inputs", () => {
+    const input = requested();
+    const cmd = { request: input.events[1]!.id, year: 1337, noise: 0.1, appraisals: [] };
+    const before = structuredClone(cmd);
+    const response = respondHelp(input, cmd);
+    const snapshot = structuredClone(response.events);
+    const suffix = grantHelpFavor(response, { ...command("future"), year: 1338, ties: [{ actor: "b", trust: 20, resentment: 2 }] });
+    expect(suffix.events.slice(0, 3)).toEqual(snapshot);
+    expect(response.events).toEqual(snapshot);
+    expect(cmd).toEqual(before);
+  });
+  it("rejects C array hooks before any execution", () => {
+    let calls = 0;
+    const bad = responded().events[2]!;
+    Object.setPrototypeOf(bad.evidence!.distribution, Object.create(Array.prototype, { toJSON: { value() { calls++; return []; } } }));
+    expect(() => applyHelpFavorEvent(requested(), bad)).toThrow();
+    expect(calls).toBe(0);
+  });
+});
 
 describe("standalone atomic favor", () => {
   it("conserves explicit grain, opens exactly one HELP and records supplied conflicting interpretations", () => {

@@ -278,14 +278,14 @@ This does not claim the repository already has a grain economy or this storylet.
 
 | Commit | Valid preconditions | Canonical evidence and lasting effects |
 |---|---|---|
-| E1: favor granted | Both present/alive; lender has one transferable unit; borrower can receive it | Transfer unit; create obligation O1; record beneficiary's gratitude memory anchored to E1. |
-| E2: help requested later | Creditor needs help; debtor alive/present; O1 open; help/refuse both feasible | E1 enables E2; record eligible options and deterministic response distribution informed by values, fear, resources and O1. |
-| E3: help or refusal | Revalidate chosen option and O1 | Cause E2 (and O1 origin); fulfill/break O1; update directed trust/resentment; create evidenced appraisal. |
+| E1: favor granted | Both present/alive; lender has one transferable unit; borrower can receive it | Transfer unit; create obligation O1; record explicitly supplied appraisals only (no automatic gratitude). |
+| E2: help requested later | Creditor needs help; debtor alive/present; O1 open; help/refuse both feasible | E1 enables E2; record eligible options and distribution informed by consumed facets, values, supplemental ties and O1; validate resources separately. |
+| E3: help or refusal | Revalidate chosen option and O1 | Cause E2 (and O1 origin); fulfill/break O1; update directed trust/resentment; record supplied evidenced appraisals. |
 
 The earlier favor can remain hidden live, then be cited when E3 is selected. It becomes important
 because a registered rule actually consumed O1, not because the sifter invented gratitude later.
-Verify the choice distribution differs when the obligation is removed under otherwise equal
-conditions; a probabilistic influence need not flip every seed. Record which state factors were
+Verify the choice distribution differs when debt salience is masked in a pure policy evaluation
+under otherwise equal conditions, without deleting the obligation; influence need not flip every seed. Record which state factors were
 read so “why?” is answerable without asserting that one factor fully determined a human choice.
 
 For the initial year-level fork fixture, E1 must occur in a year strictly before the E3 decision's
@@ -410,6 +410,37 @@ must explicitly version engine, state and projection rather than extend legacy `
 **Limits:** this small boundary replays prefixes for checkpoint admission (not a scaling solution);
 there is no scheduler, help/refusal transition, automatic appraisal, persistence or UI integration.
 Initial people/log and allocations remain explicit checkpoint inputs, not authenticated provenance.
+
+### Unit C1: standalone help request and response
+
+C1 demonstrates **grant → later request → recorded response**, not annual scheduling or production
+integration. It does not close C; keyed seeded opportunity/response draws remain C2.
+
+**Quick path:** `createHelpFavorState(people, legacyEvents, grain, assistance, need)` creates fresh
+`favor-c1` inputs. `grantHelpFavor` shares B's narrow grant/tie/appraisal reducers; `requestHelp`
+references its open obligation in a later year (1336 → 1337+). `respondHelp` takes that request,
+a response year, explicit uniform noise `0 <= u < 1`, and supplied appraisals—not a chosen outcome.
+`applyHelpFavorEvent` / `replayHelpFavorEvents` reconstruct and validate recorded C prefixes.
+
+| Contract | C1 behavior |
+|---|---|
+| Versions | Separate C state/event/reducer; reject mixed/unsupported versions. B factory/admission/JSON remain `favor-b1`, with no upgrades or imported B prefix in the C factory. One existing Person registry and one supplemental obligation/tie collection. |
+| Resources | Explicit nonnegative safe-integer assistance capacity and current need by known actor. Missing is unknown, not zero. Help consumes one debtor effort unit and resolves one creditor need unit; neither is grain repayment, currency or inferred wealth. No regeneration. |
+| Objective settlement | Open HELP → fulfilled for help, broken for feasible refusal. Refusal consumes no capacity/need. Both outcomes require current capacity/need, alive/present parties, matching grant/request/obligation and strict prior causes. Pending requests are identified from the event prefix, not a second obligation mirror. |
+| Policy | Consumes openDebt, debtor `mind.facets.altruism` / `anxiety` (0–100), `mind.values.wealth` (−50–50), and debtor→creditor supplemental trust (−100–100) / resentment (0–100). Sparse supplementary ties are numeric neutral, never legacy strength. |
+| Probability | `clamp(.10, .90, .40 + .20*openDebt + (altruism−50)/500 − (anxiety−50)/1000 − wealthPreference/500 + trust/1000 − resentment/1000)`. Ordered `[help, refuse]`, normalized `[p, 1−p]`; select help iff `u < p`. These are calibrated-later engineering defaults, not historical truths. |
+| Evidence | Request snapshot and response-frontier consumed factors, explicit resource feasibility, options/distribution; response also records noise/selection. Recompute at the latest frontier and reject stale imported evidence, arbitrary effects/outcomes, duplicate responses or closed-debt reuse. Replay validates recorded noise without drawing new randomness. |
+| Relationships | Response changes creditor→debtor only: actual clamped trust delta ≤5 toward +100 for help, toward −100 for refusal; refusal resentment ≤5 toward 100. Reverse ties and legacy bonds/strength unchanged. Appraisals remain explicitly supplied interpretations, not objective motives or automatic gratitude/fear. |
+| Identity and atomicity | Response key is a canonical tuple of rule, ordered parties, year, request identity and purpose, independent of prefix length/noise/transport. Complete transactions stage on detached data. Checkpoints reconstruct initial resources and every effect; future suffixes preserve earlier factor/event records. |
+
+**Counterfactual:** `favorPolicy(factors, true)` masks debt salience in a pure evaluation only;
+it neither deletes an obligation nor forges a checkpoint. Neutral `.60` versus masked `.40`
+changes the distribution, but not every noise value flips the outcome. Both outcomes remain possible.
+
+**Limits:** fixtures must provide frontier-valid Person/lifeState inputs; final persisted lifeState
+is not an as-of projection. `ensureLifeState` fallback remains pure. No scheduler, annual hazards,
+seeded draws, storage, fork/override integration, model calls, UI, authenticated provenance,
+Proxy/global-monkeypatch hardening or general portability/performance claim is introduced.
 
 ### A-baseline: reproducible local measurements
 

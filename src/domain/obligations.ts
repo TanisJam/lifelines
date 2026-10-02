@@ -1,11 +1,11 @@
-/** B-only objective commitment; no repayment asset, scheduling or inferred motive. */
+/** Objective commitment; B only opens it, C may settle it. No inferred motive. */
 export interface HelpObligation {
   id: string;
   kind: "HELP";
   debtor: string;
   creditor: string;
   origin: string;
-  status: "open";
+  status: "open" | "fulfilled" | "broken";
 }
 
 export function requireId(value: unknown): asserts value is string {
