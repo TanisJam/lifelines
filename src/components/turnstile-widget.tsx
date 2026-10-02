@@ -51,9 +51,8 @@ function loadTurnstileScript(): Promise<void> {
  * Renders a Cloudflare Turnstile widget (bot protection, decision: enabled only when
  * `TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY` are both set — see `src/server/turnstile.ts`). Only
  * ever mounted by a caller that already has a real `siteKey` (from `useTurnstileSiteKey()`), so
- * this component itself doesn't need its own "is Turnstile even on" branch. `data-theme="auto"`
- * (via the `theme: "auto"` render option) matches the app's light/dark solarpunk-medieval theming
- * without this widget needing to know which one is active.
+ * this component itself doesn't need its own "is Turnstile even on" branch. The widget renders
+ * with the `dark` theme to match the app's single night palette.
  */
 export function TurnstileWidget({ siteKey, onToken, className }: { siteKey: string; onToken: (token: string | null) => void; className?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -72,7 +71,7 @@ export function TurnstileWidget({ siteKey, onToken, className }: { siteKey: stri
         if (cancelled || !containerRef.current || !window.turnstile) return;
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
           sitekey: siteKey,
-          theme: "auto",
+          theme: "dark",
           callback: (token) => onTokenRef.current(token),
           "expired-callback": () => onTokenRef.current(null),
           "error-callback": () => onTokenRef.current(null),
@@ -88,5 +87,5 @@ export function TurnstileWidget({ siteKey, onToken, className }: { siteKey: stri
     };
   }, [siteKey]);
 
-  return <div ref={containerRef} className={className} data-theme="auto" />;
+  return <div ref={containerRef} className={className} />;
 }

@@ -1,45 +1,44 @@
 @import "tailwindcss";
 
 /*
- * "Solarpunk Medieval" design system — see docs/design/design-system.md, which is the source of
- * truth for every value below. An illuminated manuscript with a garden growing through it: warm
- * parchment surfaces (never dark chrome or glass), sage/forest green for life and choice, sun
- * gold for time and turning points, botanical vine/sprig/sun ornament, and an all-serif voice
- * that extends from the reading content into UI chrome. Supersedes the "Living Chronicle"
- * editorial theme (decisions 029/031) for surfaces, color, type and ornament — the interaction
- * contracts from ui-ux-handoff.md (change flow, streaming, rewrite animation) still apply.
+ * Night-sky design system — the single theme (dark only, no toggle). Palette, type and
+ * surfaces come from docs/design/night-sky-mock.html. The `--ll-*` token names are kept so every
+ * page and the `cw-*` rules keep compiling until the chronicle is removed (S9); only their
+ * values changed: deep indigo night, warm ivory ink, gold for time and turning points.
  */
 :root {
-  /* Solarpunk Medieval palette (design-system.md §2) — light ("illuminated page"). */
-  --ll-parchment: #f4ecdb;
-  --ll-paper: #f8f2e4;
-  --ll-paper-deep: #ece1c9;
-  --ll-ink: #2c2a22;
-  --ll-ink-soft: #5c5746;
-  --ll-ink-faint: #9c9480;
-  --ll-rule: #d6c7a3;
-  --ll-leaf: #6f8a4c;
-  --ll-forest: #3e5a3a;
-  --ll-forest-ink: #f6efdc;
-  --ll-sage-tint: #e2e5cf;
-  --ll-sun: #c8962f;
-  --ll-sun-ink: #86611a;
-  --ll-sun-tint: #f1e2bd;
-  --ll-sun-edge: #dcc186;
-  --ll-danger: #8e413d;
+  --ll-parchment: #080c16;
+  --ll-paper: #0c1220;
+  --ll-paper-deep: #060911;
+  --ll-ink: #efe7d4;
+  --ll-ink-soft: #b9bac2;
+  --ll-ink-faint: #7f8495;
+  --ll-rule: rgb(222 214 190 / 0.18);
+  --ll-leaf: rgb(227 191 114 / 0.55);
+  --ll-forest: #e3bf72;
+  --ll-forest-ink: #080c16;
+  --ll-sage-tint: #141b2c;
+  --ll-sun: #e3bf72;
+  --ll-sun-ink: #f3dca2;
+  --ll-sun-tint: #2a2518;
+  --ll-sun-edge: rgb(227 191 114 / 0.4);
+  --ll-danger: #d98472;
+  --ll-starlight: #fff3d1;
+  --ll-panel: rgb(14 20 34 / 0.72);
+  --ll-hair: rgb(222 214 190 / 0.14);
+  --ll-hair-strong: rgb(222 214 190 / 0.26);
 
-  /* Shape & elevation (design-system.md §4). */
+  /* Shape & elevation. */
   --ll-radius-sm: 6px;
   --ll-radius: 12px;
   --ll-radius-lg: 20px;
   --ll-radius-pill: 999px;
-  --ll-shadow-card: 0 1px 2px rgb(60 45 20 / 0.06), 0 4px 12px rgb(60 45 20 / 0.06);
-  --ll-shadow-sheet: 0 -12px 40px rgb(40 30 10 / 0.18);
-  --ll-shadow-page: 0 1px 3px rgb(60 45 20 / 0.05), 0 20px 50px rgb(60 45 20 / 0.1);
-  --ll-scrim: rgb(30 26 18 / 0.5);
+  --ll-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px rgb(0 0 0 / 0.3);
+  --ll-shadow-sheet: 0 -12px 40px rgb(0 0 0 / 0.5);
+  --ll-shadow-page: 0 1px 3px rgb(0 0 0 / 0.3), 0 20px 50px rgb(0 0 0 / 0.45);
+  --ll-scrim: rgb(4 6 12 / 0.7);
 
-  /* Base app tokens, re-pointed onto the palette above so every page (Loom/Town/World/Compare/
-   * Lives) that isn't individually restyled still reads as one coherent surface. */
+  /* Base app tokens, pointed at the palette so every page reads as one surface. */
   --background: var(--ll-parchment);
   --background-alt: var(--ll-paper-deep);
   --foreground: var(--ll-ink);
@@ -51,72 +50,9 @@
   --accent-brass: var(--ll-forest);
   --accent-crimson: var(--ll-danger);
   --ring: var(--ll-forest);
-}
 
-:root[data-theme="dark"] {
-  /* "Night garden" — a moonlit garden, not an inversion: deep green-black paper, warm ivory ink,
-   * brighter leaf and gold (design-system.md §2). */
-  --ll-parchment: #1b1f18;
-  --ll-paper: #22271e;
-  --ll-paper-deep: #171a14;
-  --ll-ink: #ece4cf;
-  --ll-ink-soft: #bfb59c;
-  --ll-ink-faint: #7a7362;
-  --ll-rule: #3d4233;
-  --ll-leaf: #9cb97e;
-  --ll-forest: #a9c690;
-  --ll-forest-ink: #16200f;
-  --ll-sage-tint: #2b3424;
-  --ll-sun: #e0b457;
-  --ll-sun-ink: #e6c27a;
-  --ll-sun-tint: #3a3220;
-  --ll-sun-edge: #6b5a33;
-  --ll-danger: #d69086;
-
-  --background: var(--ll-parchment);
-  --background-alt: var(--ll-paper-deep);
-  --foreground: var(--ll-ink);
-  --muted: var(--ll-paper-deep);
-  --muted-foreground: var(--ll-ink-soft);
-  --border: var(--ll-rule);
-  --card: var(--ll-paper);
-  --card-foreground: var(--ll-ink);
-  --accent-brass: var(--ll-forest);
-  --accent-crimson: var(--ll-danger);
-  --ring: var(--ll-forest);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ll-parchment: #1b1f18;
-    --ll-paper: #22271e;
-    --ll-paper-deep: #171a14;
-    --ll-ink: #ece4cf;
-    --ll-ink-soft: #bfb59c;
-    --ll-ink-faint: #7a7362;
-    --ll-rule: #3d4233;
-    --ll-leaf: #9cb97e;
-    --ll-forest: #a9c690;
-    --ll-forest-ink: #16200f;
-    --ll-sage-tint: #2b3424;
-    --ll-sun: #e0b457;
-    --ll-sun-ink: #e6c27a;
-    --ll-sun-tint: #3a3220;
-    --ll-sun-edge: #6b5a33;
-    --ll-danger: #d69086;
-
-    --background: var(--ll-parchment);
-    --background-alt: var(--ll-paper-deep);
-    --foreground: var(--ll-ink);
-    --muted: var(--ll-paper-deep);
-    --muted-foreground: var(--ll-ink-soft);
-    --border: var(--ll-rule);
-    --card: var(--ll-paper);
-    --card-foreground: var(--ll-ink);
-    --accent-brass: var(--ll-forest);
-    --accent-crimson: var(--ll-danger);
-    --ring: var(--ll-forest);
-  }
+  /* Legacy alias: the cw-* rules still name the old body face; removed with them in S9. */
+  --font-crimson: var(--font-eb-garamond);
 }
 
 @theme inline {
@@ -157,7 +93,7 @@
   --shadow-ll-sheet: var(--ll-shadow-sheet);
 
   --font-heading: var(--font-cormorant);
-  --font-body: var(--font-crimson);
+  --font-body: var(--font-eb-garamond);
   --font-label: var(--font-cinzel);
 }
 
@@ -196,6 +132,7 @@ body {
  * selectors (turning-point card, branch ribbon, option cards, primary pill, sheet grabber, tab
  * bar, ornament placement) implement pieces the old mock didn't have.
  * ========================================================================= */
+/* Chronicle-scoped tokens (removed with the chronicle in S9). */
 :root {
   --cw-paper: var(--ll-paper);
   --cw-paper-deep: var(--ll-paper-deep);
@@ -211,23 +148,9 @@ body {
   --cw-dark2: var(--ll-paper);
   --cw-white: var(--ll-forest-ink);
   --cw-shadow: var(--ll-shadow-page);
-  --cw-body-bg: radial-gradient(circle at 20% 0%, rgb(255 255 255 / 0.5), transparent 30%), linear-gradient(180deg, var(--ll-parchment), var(--ll-paper-deep) 60%, var(--ll-parchment));
-  --cw-grain-a: rgb(92 87 70 / 0.13);
-  --cw-grain-b: rgb(92 87 70 / 0.09);
-}
-
-:root[data-theme="dark"] {
   --cw-body-bg: radial-gradient(circle at 20% 0%, rgb(255 255 255 / 0.03), transparent 30%), linear-gradient(180deg, var(--ll-parchment), var(--ll-paper-deep) 60%, var(--ll-parchment));
   --cw-grain-a: rgb(0 0 0 / 0.28);
   --cw-grain-b: rgb(0 0 0 / 0.2);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --cw-body-bg: radial-gradient(circle at 20% 0%, rgb(255 255 255 / 0.03), transparent 30%), linear-gradient(180deg, var(--ll-parchment), var(--ll-paper-deep) 60%, var(--ll-parchment));
-    --cw-grain-a: rgb(0 0 0 / 0.28);
-    --cw-grain-b: rgb(0 0 0 / 0.2);
-  }
 }
 
 .cw-app {

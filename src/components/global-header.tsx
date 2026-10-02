@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { OpenBookIcon, SproutIcon, SunEmblem, VineCorner } from "@/components/ornaments";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/get-dictionary";
@@ -66,9 +65,6 @@ export function GlobalHeader() {
               </Link>
             ))}
           </nav>
-          <div className="absolute top-4 right-12 sm:right-14">
-            <ThemeToggle />
-          </div>
         </div>
       </header>
 
