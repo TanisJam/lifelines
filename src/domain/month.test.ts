@@ -94,6 +94,28 @@ describe("at / eventTimes", () => {
   });
 });
 
+describe("resolveMonths cause ordering", () => {
+  it("resolves a cause listed after its effect first (death listed before the same person's birth)", () => {
+    for (let year = 1330; year < 1400; year++) {
+      const death = event(`d${year}`, "death", year, ["kid"]);
+      const birth = event(`b${year}`, "birth", year, ["kid", "mum", "dad"]);
+      const months = resolveMonths("seed", [death, birth], "p");
+      expect(months.get(death.id)!).toBeGreaterThanOrEqual(months.get(birth.id)!);
+    }
+  });
+
+  it("honours explicit causes listed after their effects", () => {
+    for (let year = 1330; year < 1400; year++) {
+      const move = event(`mv${year}`, "move", year, ["a"], { causes: [`m${year}`] });
+      const marriage = event(`m${year}`, "marriage", year, ["a", "b"], { causes: [`r${year}`] });
+      const romance = event(`r${year}`, "romance", year, ["a", "b"]);
+      const months = resolveMonths("seed", [move, marriage, romance], "p");
+      expect(months.get(marriage.id)!).toBeGreaterThanOrEqual(months.get(romance.id)!);
+      expect(months.get(move.id)!).toBeGreaterThanOrEqual(months.get(marriage.id)!);
+    }
+  });
+});
+
 describe("over a simulated life", () => {
   let result: SimulationResult;
   beforeAll(async () => {

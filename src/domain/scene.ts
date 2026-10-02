@@ -31,6 +31,9 @@ export interface SceneInput {
 
 export const MAX_FRIENDS = 6;
 
+/** Locale-independent id ordering, so a scene is identical on every host. */
+const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 const PLAGUES: readonly { readonly kind: SceneBand["kind"]; readonly years: ReadonlySet<number> }[] = [
   { kind: "black-death", years: BLACK_DEATH_YEARS },
   { kind: "second-pestilence", years: SECOND_PESTILENCE_YEARS },
@@ -82,7 +85,7 @@ export function deriveLifeScene(input: SceneInput): LifeScene {
   }
   for (const id of partnerOf(protagonistId)) add(id, "spouses", "spouse");
   add(protagonist.spouseId, "spouses", "spouse");
-  const children = all.filter((c) => c.motherId === protagonistId || c.fatherId === protagonistId).sort((a, b) => bornOf(a.id) - bornOf(b.id) || a.id.localeCompare(b.id));
+  const children = all.filter((c) => c.motherId === protagonistId || c.fatherId === protagonistId).sort((a, b) => bornOf(a.id) - bornOf(b.id) || byCodeUnit(a.id, b.id));
   for (const child of children) add(child.id, "children", "child");
   for (const e of events) {
     if (e.kind !== "romance" || !e.actors.includes(protagonistId)) continue;
@@ -92,7 +95,8 @@ export function deriveLifeScene(input: SceneInput): LifeScene {
     if (e.kind !== "feud" || !e.actors.includes(protagonistId)) continue;
     add(e.actors.find((a) => a !== protagonistId), "others", "rival");
   }
-  for (const friend of (input.friends ?? []).filter((f) => people[f.id]).slice(0, MAX_FRIENDS)) add(friend.id, "others", "friend");
+  const keptFriends = (input.friends ?? []).filter((f) => people[f.id]).slice(0, MAX_FRIENDS);
+  for (const friend of keptFriends) add(friend.id, "others", "friend");
   for (const child of children) {
     for (const id of partnerOf(child.id)) add(id, "outer", "childSpouse", child.id);
     for (const grandchild of all) {
@@ -105,7 +109,9 @@ export function deriveLifeScene(input: SceneInput): LifeScene {
   const edges: SceneEdge[] = [];
   const pairSeen = new Set<string>();
   const pushEdge = (a: string, b: string, kind: EdgeKind, fromAt: number | null, untilAt?: number): void => {
-    const key = `${kind}:${[a, b].sort().join("|")}`;
+    // Romances and feuds recur: each episode is its own edge, keyed by when it began.
+    const episode = kind === "lover" || kind === "rival" ? `@${fromAt}` : "";
+    const key = `${kind}:${[a, b].sort().join("|")}${episode}`;
     if (!inScene(a) || !inScene(b) || a === b || (kind !== "parent" && pairSeen.has(key))) return;
     pairSeen.add(key);
     edges.push({ a, b, kind, fromAt, ...(untilAt !== undefined ? { untilAt } : {}) });
@@ -142,7 +148,7 @@ export function deriveLifeScene(input: SceneInput): LifeScene {
       pushEdge(protagonistId, other, "rival", from, timeOf(firstBetween("reconciliation", protagonistId, other, from)));
     }
   }
-  for (const friend of input.friends ?? []) pushEdge(protagonistId, friend.id, "friend", friend.fromAt, friend.untilAt);
+  for (const friend of keptFriends) pushEdge(protagonistId, friend.id, "friend", friend.fromAt, friend.untilAt);
 
   // --- People -----------------------------------------------------------------------------------
   const earliestEdge = new Map<string, number>();
@@ -168,7 +174,7 @@ export function deriveLifeScene(input: SceneInput): LifeScene {
         ...(g.anchor ? { anchor: g.anchor } : {}),
       };
     })
-    .sort((a, b) => a.appearsAt - b.appearsAt || a.born - b.born || a.id.localeCompare(b.id));
+    .sort((a, b) => a.appearsAt - b.appearsAt || a.born - b.born || byCodeUnit(a.id, b.id));
 
   // --- Village, bands ---------------------------------------------------------------------------
   const village: VillageSoul[] = all
@@ -178,9 +184,9 @@ export function deriveLifeScene(input: SceneInput): LifeScene {
       return { k: p.id, b: arrivalAt.get(p.id) ?? bornOf(p.id), ...(d !== undefined ? { d } : {}) };
     })
     .filter((s) => s.d === undefined || s.d >= start)
-    .sort((a, b) => a.k.localeCompare(b.k));
+    .sort((a, b) => byCodeUnit(a.k, b.k));
 
-  const horizon = end ?? (input.through ?? Math.max(start, ...events.map((e) => e.year))) + 1;
+  const horizon = end ?? (input.through ?? events.reduce((latest, e) => Math.max(latest, e.year), start)) + 1;
   const bands: SceneBand[] = [];
   for (const plague of PLAGUES) {
     const years = [...plague.years];

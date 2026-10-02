@@ -168,6 +168,46 @@ describe("deriveLifeScene (hand-built life)", () => {
   });
 });
 
+describe("deriveLifeScene (review follow-ups)", () => {
+  it("keeps a second romance and feud episode of the same pair, each with its own bounds", () => {
+    const more: Event[] = [
+      ...events,
+      event("romance-3", "romance", 1370, ["protagonist", "suitor"]),
+      event("breakup-3", "breakup", 1372, ["protagonist", "suitor"], { causes: ["romance-3"] }),
+      event("feud-2", "feud", 1375, ["protagonist", "rival"]),
+    ];
+    const scene = deriveLifeScene({ ...base, events: more });
+    const lovers = scene.edges.filter((e) => e.kind === "lover" && e.b === "suitor");
+    expect(lovers.map((e) => Math.floor(e.fromAt!))).toEqual([1358, 1370]);
+    expect(lovers.map((e) => Math.floor(e.untilAt!))).toEqual([1359, 1372]);
+    const rivals = scene.edges.filter((e) => e.kind === "rival");
+    expect(rivals.map((e) => Math.floor(e.fromAt!))).toEqual([1363, 1375]);
+    expect(rivals[0]!.untilAt).toBeDefined();
+    expect(rivals[1]!.untilAt).toBeUndefined();
+  });
+
+  it("draws friend edges only for the friends kept in the scene", () => {
+    const crowd: Record<string, Person> = { ...people };
+    const friends = Array.from({ length: 9 }, (_, i) => {
+      crowd[`f${i}`] = person(`f${i}`);
+      return { id: `f${i}`, fromAt: null };
+    });
+    const scene = deriveLifeScene({ ...base, people: crowd, friends });
+    expect(scene.edges.filter((e) => e.kind === "friend")).toHaveLength(MAX_FRIENDS);
+  });
+
+  it("orders ids by code unit, independent of locale", () => {
+    const mixed: Record<string, Person> = { ...people, B1: person("B1"), a1: person("a1"), "é1": person("é1") };
+    const scene = deriveLifeScene({ ...base, people: mixed });
+    expect(scene.village.map((s) => s.k).filter((k) => ["B1", "a1", "é1"].includes(k))).toEqual(["B1", "a1", "é1"]);
+  });
+
+  it("copes with a very large number of events", () => {
+    const many = Array.from({ length: 150_000 }, (_, i) => event(`j${i}`, "job", 1350 + (i % 40), ["mum"]));
+    expect(() => deriveLifeScene({ ...base, events: [...events, ...many] })).not.toThrow();
+  });
+});
+
 describe("deriveLifeScene (simulated life)", () => {
   let result: SimulationResult;
   beforeAll(async () => {

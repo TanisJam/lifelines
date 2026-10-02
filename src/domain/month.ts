@@ -56,7 +56,7 @@ export function monthFor(seed: string, event: Event, protagonistId: string): num
  * Months for every event, with causality respected inside a year: a season-locked event keeps its
  * season, and any other event takes a month between its same-year causes and its season-locked
  * same-year effects (when that range is empty, the cause wins). Two passes: an upper bound per
- * event from its effects, then a forward pick in event order (causes precede effects).
+ * event from its effects, then a depth-first pick that resolves causes before their effects.
  */
 export function resolveMonths(seed: string, events: readonly Event[], protagonistId: string): Map<string, number> {
   const byId = new Map(events.map((e) => [e.id, e]));
@@ -90,14 +90,20 @@ export function resolveMonths(seed: string, events: readonly Event[], protagonis
   };
 
   const months = new Map<string, number>();
-  for (const event of events) {
-    const allowed = allowedMonths(seed, event, protagonistId);
+  const visiting = new Set<string>();
+  // Depth-first so a cause is always resolved before its effect, whatever order the events arrive in.
+  const resolve = (event: Event): void => {
+    if (months.has(event.id) || visiting.has(event.id)) return;
+    visiting.add(event.id);
     let lower = 1;
     for (const causeId of causesOf(event)) {
       const cause = byId.get(causeId);
-      const causeMonth = cause && cause.year === event.year ? months.get(causeId) : undefined;
+      if (!cause || cause.year !== event.year) continue;
+      resolve(cause);
+      const causeMonth = months.get(causeId);
       if (causeMonth !== undefined) lower = Math.max(lower, causeMonth);
     }
+    const allowed = allowedMonths(seed, event, protagonistId);
     const ceiling = upperBound(event);
     let candidates = allowed.filter((m) => m >= lower && m <= ceiling);
     if (candidates.length === 0) {
@@ -106,7 +112,9 @@ export function resolveMonths(seed: string, events: readonly Event[], protagonis
       if (candidates.length === 0) candidates = isSeasonLocked(event) ? [Math.max(...allowed)] : [lower];
     }
     months.set(event.id, pick(seed, event, candidates));
-  }
+    visiting.delete(event.id);
+  };
+  for (const event of events) resolve(event);
   return months;
 }
 
