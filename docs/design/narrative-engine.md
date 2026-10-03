@@ -1017,6 +1017,40 @@ mechanical effect directions, full closure, future byte invariance and borrowed-
 ownership in `src/domain/e-favor-templates.test.ts`. This inactive internal module
 adds no production cards, providers, routes, SSE, storage or full E4 completion.
 
+## Internal E3 capsule: one lossless rules-only output
+
+`src/domain/e-capsule.ts` cold-admits **one complete** initial or annual
+`RuntimeOutput`. It is storage-free and inactive; this does not close production E3.
+
+**Quick path:** `createAnnualRuntimeCapsule(output)` →
+`serializeAnnualRuntimeCapsule(capsule)` → `deserializeAnnualRuntimeCapsule(wire)`.
+`admitAnnualRuntimeCapsule(candidate)` validates borrowed in-memory capsules.
+All admitted results are detached and deeply frozen `{ manifest, digest, output }`.
+
+| Review point | Contract |
+|---|---|
+| Compatibility | Closed tuple: schema `annual-runtime-capsule-e3-1`, codec `own-data-tuples-e3-1`, current `ANNUAL_RUNTIME_VERSION`, and all five current `WORLD_ORIGIN_VERSIONS` members in schema/initialization/content/RNG/sex-policy order. Unknown versions or tuple shapes reject; no migration is implied. |
+| Complete payload | Full origin, genesis and resource plan, cumulative journal/plans/evidence, state/Person/Mind and initial-null or annual frontier. No partial Person projection, omitted optional data or sentinel objects. |
+| Lossless own data | Private tagged tuples distinguish undefined/null/string/boolean/number/array/record. Finite numbers use canonical JS `Number.toString()` strings with distinct `-0`; decoding must re-encode exactly. Ordered record entry pairs retain own key order and presence; actual undefined array slots remain slots, never holes/null. |
+| Canonical bytes | Wire fields are exactly `manifest`, `payload`, `digest`, in that order. SHA-256 covers `JSON.stringify([manifest, taggedPayload])`, excluding digest. Decoded tuples must re-encode identically and the complete parsed envelope must serialize to exactly the original string: whitespace, duplicate keys, alternate escapes/numbers/order and impossible integer-key enumeration order reject. |
+| Semantic authority | Creation replays before certification; admission verifies versions/digest then calls existing `replayAnnualRuntime` for complete origin/genesis/journal/state/frontier agreement. Rehashed fabricated derived evidence still rejects. Preserve the admitted payload traversal after comparison rather than replacing it with replay's reordered records. |
+| Safety | Whole borrowed trees pass descriptor-first `requireFavorData(input, true)` before reads, encoding or hashing. Null/plain own-enumerable records and dense standard arrays only; safe own definitions preserve hostile IDs. No getters, toJSON/coercion, custom containers, hidden/symbol fields, cycles or nonfinite numbers. Not a Proxy sandbox. |
+
+The fidelity promise covers admitted own-data keys/order/presence, `Object.is`
+finite leaves and array positions, not prototypes, descriptors or reference identity.
+The runtime's private order-insensitive identity is not this durable wire codec.
+Human response entries are explicitly unsupported; absence of such entries does not
+prove that a callback was never configured. A consistent alternate initialization is
+another valid world, not certified tampering. Digest integrity is not a credential,
+external authorship or historical provenance.
+
+Each retained initial/year checkpoint can be roundtripped separately and the full
+collection passed to `selectHistoricalEvidence`; a single capsule does **not** retain
+that collection or promise older checkpoint selection. Branches, forks, SQLite,
+bindings, retention, production activation, resource/opportunity policy and lifecycle
+migration remain separate units. Review lossless genuine-runtime fixtures, canonical
+wire attacks, replay tampering and ownership in `src/domain/e-capsule.test.ts`.
+
 ## 12. Open decisions, risks, and readiness
 
 | Open decision | Proposed review point |
