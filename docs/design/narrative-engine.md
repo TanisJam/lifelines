@@ -745,6 +745,41 @@ activation of canonical E simulation.
 route, settings, annual-resource policy, storage or narrative activation is introduced. This seam
 alone does not close E1's consuming-production milestone.
 
+### Unit E1-consumer: required-plan server annual execution
+
+`executeAnnual(initialization, resources, plans, options?)` in
+`src/server/annual-execution.ts` consumes the closed E2a runtime without providers, storage or
+production route activation. All three positional inputs are required; `plans` is a readonly
+`AnnualPlan[]`, with actual array presence checked at runtime. An empty array returns the
+admitted initial output, not a generated year or a default resource plan.
+
+**Quick path:** supply original initialization and complete explicit resources → pass ordered
+plans → optionally await `onYear(output)` → receive the full final output. Output types derive
+from `createAnnualRuntime().final()` and remain detached and deeply frozen, including each
+callback's complete origin, genesis, state and journal.
+
+| Review point | Consumer contract |
+|---|---|
+| Domain ownership | Create one E2a runtime, pass each plan untouched to `advance`, then return `final()`. Do not pre-read years, duplicate descriptor admission or infer skipped activity. E1 origin/resource admission precedes any response-authority invocation. |
+| Optional hooks | Borrow the synchronous `authority` capability unchanged. Await each `onYear` in order before the next advance; callbacks receive only committed snapshots. No provider acquisition, automatic retry or human-history replay certification. |
+| Cancellation | Check `signal` before initialization and each advance, after advance before callback, after awaiting callback, and after a real `yieldToEventLoop()` turn, including the final year. Aborted execution rejects with standard `AbortError`, even when the signal has a custom reason; it never returns successful final output after observing cancellation. |
+| Errors | Initialization, resource, declaration, authority and callback failures propagate without wrapping or swallowing into SSE frames. No callback for a failed year and no later plans after failure. Transport error handling stays outside this consumer. |
+| Atomicity | Atomicity is per domain year only. Cancellation cannot interrupt synchronous `advance`, undo a committed in-memory year, interrupt an awaited callback or roll back external callback effects. A cancelled run may have completed years without returning a final result. |
+
+**Verification boundary:** focused tests compare complete direct E2a outputs, quiet/gapped
+frontiers, conserved balances without refill, frozen/detached history, required inputs,
+descriptor admission, ordered awaited callbacks and original error identity. Deterministic
+mock yields cover cancellation boundaries; one local `sseResponse`/Web Streams reader-cancel
+case uses the real event-loop yield and proves later plans stop. No HTTP, provider, network
+or production database is needed.
+
+**Limits:** this is a bounded in-memory consumer, not E1 production closure, autonomous annual
+policy, durable storage, publication, forks, authenticated human provenance, a resource sandbox
+or a scaling claim. No general iterable framework, synthetic years, opportunities, resource
+regeneration, economic/biological defaults or legacy generator are introduced. Access guards,
+SSE, domain admission, storage and routes remain unchanged. Production activation and later
+product policies retain their separate approval boundaries.
+
 ### Unit E2a: explicit-resource annual runtime, not autonomous simulation
 
 `src/domain/e-runtime.ts` consumes verified E1 initialization before admitting resources or
