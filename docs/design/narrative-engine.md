@@ -573,7 +573,7 @@ claim is introduced.
 
 ### Unit D2b core: standalone forks and ordered declarations
 
-**Implemented core only; D2b remains open until its separate capsule/repository unit.**
+**Core contract; the separate canonical capsule/repository boundary follows below.**
 `favor-fork.ts` owns D2b semantic admission, action replay, declaration history, identity mapping
 and current projection. `favor-scheduler.ts` orchestrates seeded annual opportunities over shared
 neutral physics. Frozen C/C2, D1 and D2a contracts are not extended or silently migrated.
@@ -604,12 +604,49 @@ opposite-baseline choices with downstream resource revalidation; suffix referenc
 strict isolation; descriptor zero hooks; atomic rejection and detached outputs.
 
 **Limits and next step:** consistency is not authentication: rewriting all original ground truth
-and actions creates another candidate. Core import has no canonical byte/digest requirement,
-registry-order wire declaration or repository/SQLite adapter. Full-prefix reconstruction is for
+and actions creates another candidate. Core import itself has no canonical byte/digest requirement or registry-order wire declaration;
+the capsule below adds those requirements without changing core admission. SQLite remains deferred. Full-prefix reconstruction is for
 small fixtures, not a scalability claim; Proxy/global-monkeypatch hardening and general runtime
 portability are not proved. Production Person evolution, grant opportunities, storage, UI and
-historical provenance remain separate work. Next add the versioned canonical D capsule and
-serialized-memory repository proof without weakening these core admissions; do not close D2b yet.
+historical provenance remain separate work. The versioned canonical D capsule and serialized-memory
+repository below preserve these core admissions; task closure awaits parent verification and commit.
+
+### Unit D2b cold persistence: canonical D capsule and immutable records
+
+D2b now has its own canonical wire and serialized-memory repository boundary. Frozen D1/C2
+and D2a admission remain unchanged. This completes the standalone cold-persistence behavior,
+not D3 SQLite durability, production integration or authenticated human provenance.
+
+**Quick path:** `createFavorForkCapsule(admittedFork)` → `serializeFavorForkCapsule(capsule)` →
+`deserializeFavorForkCapsule(wire)`. `FavorForkRepository.save(capsule)` returns its digest key;
+`load(key)` returns a detached admitted capsule or `undefined`. Continue `capsule.fork` with the
+existing declaration, annual and nested-fork APIs. `MemoryFavorRecords(sharedMap)` is reused
+unchanged; only canonical serialized strings cross its opaque `FavorRecords` port.
+
+| Review point | D2b cold-persistence contract |
+|---|---|
+| Closed envelope | `capsuleSchema` and `capsuleProjection` are `favor-fork-capsule-d2b`; the remaining manifest fields reproduce the complete D2b core tuple/config, including its core `projection`. Envelope fields are exactly `manifest`, `registryOrder`, `fork`, `digest`. Mixed/unknown versions/config reject, including D1, provenance-less final Person results and D2a histories. |
+| Complete canon | One existing fork projection contains seed, original resources and legacy inputs, C2 root/prefix boundary and quiet/gapped chronology, ordered actions/declarations, lineage, mapping, annual records, events and all derived ledgers. No second Person registry, genesis mirror, compressed output or legacy class remapping is stored. |
+| Descriptor safety | Guard the entire candidate before reading or iterating any field. Copy through null-prototype records and standard ordered arrays, preserving own `__proto__`. Normalize only the exact legacy optional paths listed under D1 above, relative to D2b's root `people`/`legacyEvents`. Undefined elsewhere, executable hooks, hidden/symbol properties, custom prototypes, sparse/extended arrays and cycles reject. |
+| Traversal/encoding | Capture actual `Object.keys(fork.people)` before canonical object-key sorting. Require a complete unique known-ID traversal and restore it before core admission; reject unrepresentable integer-index order. Sorted record keys, ordered arrays and JSON finite-number encoding define UTF-8 bytes. Raw Unicode/lone-surrogate identity is retained without normalization. |
+| Integrity and replay | SHA-256 covers manifest, registryOrder and complete fork, excluding only digest. Require lowercase 64-hex digest and exact canonical wire bytes, rejecting whitespace, duplicate keys, alternate number syntax and escapes. Independently invoke `admitFavorFork` after digest verification: a recomputed digest never authorizes forged effects, history, resources, authority, mappings or frontiers. |
+| Immutable records | Save admits before touching storage. Existing retries decode canonical bytes, verify key/digest and independently replay semantics before byte-equality reuse. Corruption/wrong-key/conflicts reject without replacement. Load always decodes afresh, so caller mutation cannot alter stored canon or other loads. |
+| Adapter/races | The trusted `FavorRecords.insert` capability must atomically accept an absent key or identical bytes and reject differing bytes; failures must publish nothing. Repository pre-read is only a retry optimization, never race protection. Concurrent identical saves may both insert; concurrent conflicts must be rejected by the adapter. The existing Map adapter models this contract synchronously, not real durability. |
+
+**Review checklist:** cold JSON and fresh-instance loads preserve byte identity; annual/human/nested
+continuations equal warm runs; tests retain initial C2 prefix and quiet gaps, superseded/inactive
+history, semantic/physical references and nonlexical/integer/surrogate/own-`__proto__` actor inputs.
+Adversarial tests exercise descriptor zero hooks, exact tuple/config rejection, stale/recomputed
+hash tampering, canonical syntax and adapter failure/conflict/concurrent immutable writes.
+
+**Limits:** digest integrity is not authenticated authorship. Rewriting all initial ground truth
+and authoritative commands creates a different candidate, not certified historical provenance.
+Returned projections are detached working copies, not shared live storage objects; mutating one
+requires fresh admission before saving or continuing. Full replay is a small-fixture consistency
+proof, not a scaling/portability guarantee or Proxy/global-monkeypatch sandbox. No SQLite, actual
+database, production LifeStore, provider, LLM, network, life/branch binding or pointer is added.
+D3 must separately prove real atomic durability and reopen behavior using isolated databases.
+Parent verification/review/local commit remain required before D2b task closure.
 
 ### A-baseline: reproducible local measurements
 
