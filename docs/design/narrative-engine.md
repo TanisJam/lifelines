@@ -648,6 +648,45 @@ database, production LifeStore, provider, LLM, network, life/branch binding or p
 D3 must separately prove real atomic durability and reopen behavior using isolated databases.
 Parent verification/review/local commit remain required before D2b task closure.
 
+### Unit D3: injected SQLite records and disposable restart proof
+
+`SqliteFavorRecords` implements the unchanged opaque `FavorRecords` port with synchronous
+`read(key)` and `insert(key, wire)`. Both `FavorRepository` (D1/C2) and `FavorForkRepository`
+(D2b) consume it directly. This is standalone SQLite storage, **not production integration**.
+
+**Quick path:** the caller opens a `node:sqlite` `DatabaseSync`, passes it to
+`new SqliteFavorRecords(db)`, then passes that adapter to either repository. Construct and insert
+outside caller transactions. The caller alone closes the database; the adapter imports SQLite
+only as types and has no path, environment, singleton or process-owned connection.
+
+| Review point | D3 contract |
+|---|---|
+| Physical version | One additive `main.favor_records_v1` table: `key BLOB NOT NULL PRIMARY KEY`, `wire BLOB NOT NULL`, `STRICT`. Both strings encode as little-endian UTF-16 code units, including empty strings, embedded NUL and unpaired surrogates. No Unicode normalization, parsing, compression or digest restriction exists at this port. |
+| Existing schema | Inspect `main.sqlite_schema` before reuse. Conservatively require the adapter's exact v1 CREATE declaration (ignoring whitespace runs and letter case), no persistent triggers or extra explicit indexes. Similar-looking foreign tables/views/constraints fail closed; nothing is migrated, dropped or rewritten. Other tables and TEMP shadows remain untouched. |
+| Atomic initialization | Own a top-level synchronous `BEGIN IMMEDIATE` before inspecting/creating schema or preparing bound statements. Commit only after initialization succeeds. Repeated initialization preserves all rows; failed initialization rolls back its own changes. |
+| Immutable insertion | Own `BEGIN IMMEDIATE`, execute a bound `INSERT … ON CONFLICT(key) DO NOTHING`, SELECT/decode the stored wire and compare exact JavaScript strings, then COMMIT. Identical retries succeed; differing or malformed stored bytes reject without replacement. Repository pre-read is not race protection. |
+| Nesting/failure | BEGIN occurs outside the rollback-owned try. A nested BEGIN or lock failure never rolls back caller work. No savepoints, provisional outer-commit success or automatic retry. After successfully acquiring a transaction, any insert/decode/comparison/commit error attempts rollback and preserves the original error even if rollback also fails. |
+| Read/admission | Only primitive strings enter SQL; only even-length Uint8Array BLOB values decode. Invalid projection types and odd-length rows throw instead of coercing. Valid opaque but noncanonical strings return unchanged: each repository independently rejects corruption on load and retry. |
+| Locks/lifetime | SQLite serializes two handles through writer locking. Busy/locked, closed and read-only errors propagate; connection settings, PRAGMAs and busy timeouts are not changed. The injected connection is a trusted capability: arbitrary raw SQL owners can mutate the table, so adapter immutability is not database-owner-proof authentication. |
+
+**Observed test boundary:** real files are created only in fresh fixture directories under
+`os.tmpdir()`; other tests use `:memory:`. Every owned handle closes before only fixture-created
+paths are removed. Close/reopen with fresh adapters and both fresh repositories retains exact
+canonical C2/D2b wires, registry traversal, annual continuation and cold nested human forks.
+Two connections to one disposable file exercise stale missing pre-reads, identical convergence,
+conflicts and a genuinely held writer lock followed by explicit retry—not merely synchronous
+`Promise.all`. TEMP triggers fail after attempted insertion, including SQLite-initiated rollback;
+bad actual SQL projections test strict decoding and no partial publication. Sentinels verify
+caller transaction preservation, additive initialization and independent-file isolation.
+
+**Limits:** this proves orderly close/reopen and transactional record publication under the
+caller's SQLite configuration, not crash/power-loss durability under every journal/synchronous
+setting. No settings are imposed, no production database is opened and no live migrations run.
+No scaling, authenticated provenance, life/branch association, resource ownership, latest pointers,
+delete/retention policy, legacy remapping, simulation/provider wiring or production restart proof
+is claimed. Those production/product decisions remain later E/F work; canonical codec versions
+and digest/registry/semantic admission stay entirely in the existing repository/domain layers.
+
 ### A-baseline: reproducible local measurements
 
 **Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,
