@@ -982,8 +982,40 @@ rejection, physical/origin closure, historical identity, future extension, quiet
 semantics and hook/detachment checks. No fixture reconstructs historical inputs from
 final people. Admission is not authenticated provenance or a durable E capsule;
 retained cumulative snapshots/replay do not establish performance or scaling.
-Templates, human-history admission, E persistence/forks, production activation,
+Human-history admission, E persistence/forks, production activation,
 selection scoring/compression and public rendering remain separate follow-ups.
+
+### Internal E4 favor templates: literal recorded mechanics
+
+`src/domain/e-favor-templates.ts` exposes `renderHistoricalFavorTemplates(input,
+locale)` with a **required** `en`/`es` locale and the same unknown selector input.
+It first calls `selectHistoricalEvidence`; only that locally admitted result reaches
+its private, historical-version-checked renderer. Admission establishes rules-history
+semantic consistency, not authenticated external provenance. Frozen objects, version
+strings and TypeScript shapes are not caller credentials; arbitrary projections are
+not accepted.
+
+The detached deeply readonly `historical-rules-e4-templates-1` output retains
+`historicalVersion`, `asOfYear`, subject and the complete locale-independent causal
+evidence. Each beat becomes exactly one entry, in unchanged order, retaining its
+canonical ID, `sourceEvidenceID`, year, position, ordered actors, causes and facts.
+Hidden antecedents remain evidence, not additional prose. Quiet selection stays empty;
+there is no quota, compression, scoring or quiet filler.
+
+| Recorded beat | Plain-text statement |
+|---|---|
+| Grain grant | Creditor transferred 1 unit of grain to debtor; an initially open help obligation was recorded. Later settlement never rewrites that initial fact. |
+| Help response | Debtor → creditor; recorded response help/ayuda, separately recorded fulfilled/cumplida settlement and 1 unit of assistance. |
+| Refusal response | Debtor → creditor; recorded response refuse/rechazo and broken/incumplida settlement, without assistance. Ineligibility produces no response text. |
+
+Every actor mention uses literal `Name [actorID]`, with ID-keyed lookup even for
+identical names or `constructor` IDs. Names containing markup remain literal plain
+strings: this module performs no HTML interpolation, decoding or execution and makes
+no HTML-safety claim. It infers no pronouns, family relationships, sex, motives,
+promises, gratitude or new economic consequences. Review exact EN/ES wording,
+mechanical effect directions, full closure, future byte invariance and borrowed-data
+ownership in `src/domain/e-favor-templates.test.ts`. This inactive internal module
+adds no production cards, providers, routes, SSE, storage or full E4 completion.
 
 ## 12. Open decisions, risks, and readiness
 
