@@ -950,6 +950,41 @@ Review A–C before expanding hidden density. Integrate D–E before treating th
 Optional prose validation and resumable transport need their own later, explicitly scoped work units;
 no dependency changes or UI redesign are prerequisites for proving the favor slice.
 
+## Internal E4 evidence: retained historical facts
+
+`src/domain/e-selection.ts` adds `selectHistoricalEvidence` with the separate
+`historical-rules-e4-evidence-1` projection version. This inactive domain-only seam
+admits facts for later templates; it does not implement prose, public cards or full E4.
+
+### Admission and review path
+
+1. Supply `{ history, subjectActorID, asOfYear }`: the true E runtime initial output,
+   followed by every actual retained `advance` output in execution order.
+2. Each output is semantically reconstructed with `replayAnnualRuntime`. Origin,
+   genesis, increasing frontiers, checkpoint count and accumulated journal prefixes
+   must agree. Human-authority history is explicitly unsupported, including later
+   checkpoints when selecting an earlier year.
+3. Select an **exact retained annual frontier**. The initial output is only an
+   admission root; missing calendar years, years beyond the frontier and fractional
+   years are rejected. Actual executed years may legitimately have gaps.
+
+| Output | Contract |
+|---|---|
+| Subject/actors | Own historical registry membership; ID/name from initial or selected-prefix creation, never final Person/Mind. Duplicate names and hostile valid IDs remain distinct. |
+| Beats | Only committed subject-involving grain grants and help responses, ordered by annual/global journal position with unchanged canonical IDs. Ineligibility is not refusal. Quiet or unrelated history yields no beats. |
+| Facts | Recorded grain/obligation/assistance/settlement effects and rules help/refuse outcome. Enabling creation, residence, death and resource declarations remain available in causal evidence. No inferred motives or biological consequences. |
+| Evidence | Complete transitive declared-cause closure, including hidden requests and eligible origin events. Shared physical legacy/journal identities occur once; missing, forward or cyclic causes fail closed. Origin facts retain only the current generator's closed physical/period payload vocabulary. |
+| Ownership | Descriptor-first borrowed-data guard, lossless internal generated Mind negative zero during admission, detached deeply frozen output, no canonical/source mutation. |
+| Future extension | Adding valid future checkpoints leaves the earlier projection byte/semantically identical; future actors, names, Mind and state are not exported. |
+
+Review `src/domain/e-selection.test.ts` for true initial/advance capture, prefix
+rejection, physical/origin closure, historical identity, future extension, quiet/gap
+semantics and hook/detachment checks. No fixture reconstructs historical inputs from
+final people. Admission is not authenticated provenance or a durable E capsule;
+retained cumulative snapshots/replay do not establish performance or scaling.
+Templates, human-history admission, E persistence/forks, production activation,
+selection scoring/compression and public rendering remain separate follow-ups.
+
 ## 12. Open decisions, risks, and readiness
 
 | Open decision | Proposed review point |
