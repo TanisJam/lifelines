@@ -270,6 +270,25 @@ Keep the contract's `level: 3`/turn agreement; richer multi-turn cards need sepa
 Selectors do not create memories or affect subsequent choices. Themes remain evidence-based,
 optional interpretations, not preassigned arcs or mandatory lessons.
 
+### Public reel links: literal DOM boundary (P1)
+
+**Current:** `draw-reel.ts` writes resolved `entryText` prefixes with text nodes and
+anchors, not HTML serialization. Titles, deciding-party text, names and suffixes retain
+literal UTF-16 code units, including CR, NUL and lone surrogates; markup-looking text
+cannot create elements. Partial names remain clickable as the typewriter advances or scrubs.
+
+Controller-created anchors use `href="#"` and an empty `data-person-link` structural hook.
+A controller-owned WeakMap holds the original person ID; activation checks membership,
+never an attribute value, preserving exact selection identity independently of display names.
+Non-controller legacy anchors retain their raw-dataset fallback; unmapped empty hooks do
+not open a person or seek the row. WeakMap membership can represent an empty internal range
+ID, but this does not authorize empty canonical IDs.
+
+**Limits:** legacy `{{id}}` grammar and unknown-marker removal are unchanged. This is a
+renderer fix, not a new token contract or a promise that the legacy grammar represents every
+canonical string ID. Summary/epitaph rendering remains legacy. Person-sheet URI encoding
+of lone surrogates, structured tokens (P2), and the E historical bridge are separate boundaries.
+
 ## 7. First vertical slice: a favor with a later cost
 
 **Default proposal, illustrative fiction within the repository's fourteenth-century setting:**

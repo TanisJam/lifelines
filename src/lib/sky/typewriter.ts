@@ -70,22 +70,6 @@ export const typeParts = (text: EntryText): TypePart[] => [
   { text: text.prose, rate: TYPE_FAST },
 ];
 
-const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
-const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ESCAPES[c]!);
-
-/** The first `n` characters of `text` as safe HTML; linked names (even half-typed) become anchors carrying their person id. */
-export function typedMarkup(text: string, links: readonly LinkRange[], n: number): string {
-  let html = "";
-  let at = 0;
-  for (const link of links) {
-    if (link.start >= n) break;
-    html += esc(text.slice(at, link.start));
-    html += `<a href="#" data-person-link="${esc(link.personId)}">${esc(text.slice(link.start, Math.min(link.end, n)))}</a>`;
-    at = Math.min(link.end, n);
-  }
-  return html + esc(text.slice(at, n));
-}
-
 /** Sim-years an entry takes to type out completely, after its moment. */
 export const typeDuration = (entry: Pick<ChronicleEntry, "title" | "prose" | "links" | "turn">): number =>
   typeParts(entryText(entry)).reduce((total, part) => total + part.text.length * part.rate, 0);

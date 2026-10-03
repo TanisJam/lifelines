@@ -7,7 +7,7 @@ import { arcPlace, entryLook, inReelZone, leaderCurve, railAngles, reelGeo, reel
 import type { ReelEntry } from "@/lib/sky/reel-model";
 import type { Frame } from "@/lib/sky/scene-model";
 import { entryYs, scrollAt, tapeYs } from "@/lib/sky/tape";
-import { typed, typedKey, typedMarkup, type Typed } from "@/lib/sky/typewriter";
+import { typed, typedKey, type Typed } from "@/lib/sky/typewriter";
 
 export interface ReelInit {
   /** The stage that holds the sky disc, the reel and the rail. */
@@ -46,7 +46,6 @@ interface Leader {
   used: boolean;
 }
 
-const CARET = '<span class="sky-caret"></span>';
 const WIDE = "(min-width: 1000px)";
 /** Years the clock moves per wheel pixel (scrolling down goes deeper into the past). */
 const WHEEL_YEARS = 0.004;
@@ -154,6 +153,8 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
     nowTick.setAttribute("y2", String(ny + Math.sin(na) * 9));
   };
 
+  // Attributes are structural hooks only: HTML parsing cannot preserve arbitrary UTF-16 IDs.
+  const personIds = new WeakMap<HTMLElement, string>();
   const write = (i: number, state: Typed) => {
     const row = rows[i]!;
     const entry = entries[i]!;
@@ -161,7 +162,27 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
     row.texts.forEach((el, j) => {
       const n = state.counts[j]!;
       const text = entry.parts[j]!.text;
-      el.innerHTML = (j === prose ? typedMarkup(text, entry.text.links, n) : typedMarkup(text, [], n)) + (state.caret === j ? CARET : "");
+      el.replaceChildren();
+      let at = 0;
+      if (j === prose) {
+        for (const link of entry.text.links) {
+          if (link.start >= n) break;
+          el.append(document.createTextNode(text.slice(at, link.start)));
+          const anchor = document.createElement("a");
+          anchor.setAttribute("href", "#");
+          anchor.setAttribute("data-person-link", "");
+          anchor.append(document.createTextNode(text.slice(link.start, Math.min(link.end, n))));
+          personIds.set(anchor, link.personId);
+          el.append(anchor);
+          at = Math.min(link.end, n);
+        }
+      }
+      el.append(document.createTextNode(text.slice(at, n)));
+      if (state.caret === j) {
+        const caret = document.createElement("span");
+        caret.setAttribute("class", "sky-caret");
+        el.append(caret);
+      }
       show(el, n > 0 || state.caret === j);
     });
   };
@@ -261,7 +282,13 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
     const link = (ev.target as Element).closest<HTMLElement>("a[data-person-link]");
     if (link) {
       ev.preventDefault();
-      if (openPerson) openPerson(link.dataset.personLink!);
+      if (personIds.has(link)) {
+        openPerson?.(personIds.get(link)!);
+      } else {
+        // Preserve activation of legacy, non-controller anchors with a raw dataset ID.
+        const id = link.dataset.personLink;
+        if (id) openPerson?.(id);
+      }
       return;
     }
     const li = activate(ev);
