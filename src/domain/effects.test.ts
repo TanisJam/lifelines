@@ -28,6 +28,191 @@ const responded = (noise = 0.1) => {
   return respondHelp(input, { request: input.events[1]!.id, year: 1337, noise, appraisals: [] });
 };
 
+describe("D2b preparation physics", () => {
+  it("preserves exact pre-extraction B grant and C grant/request JSON", () => {
+    expect(JSON.stringify({ b: event(), c: requested().events })).toBe(String.raw`{"b":{"version":"favor-b1","id":"[\"favor-b1\",\"grant\",0]","key":"grant","ordinal":0,"kind":"grain-grant","year":1336,"position":0,"actors":["a","b"],"causes":[],"effects":[{"kind":"grain","from":"a","to":"b","amount":1},{"kind":"obligation","id":"[\"favor-b1\",\"grant\",0]/help","debtor":"b","creditor":"a","origin":"[\"favor-b1\",\"grant\",0]","status":"open"},{"kind":"tie","origin":"[\"favor-b1\",\"grant\",0]","counterpart":"a","actor":"b","trust":10,"resentment":3},{"kind":"appraisal","id":"[\"favor-b1\",\"grant\",0]/appraisal/3","origin":"[\"favor-b1\",\"grant\",0]","actor":"b","interpretation":"gratitude","intensity":80},{"kind":"appraisal","id":"[\"favor-b1\",\"grant\",0]/appraisal/4","origin":"[\"favor-b1\",\"grant\",0]","actor":"a","interpretation":"resentment","intensity":20}]},"c":[{"version":"favor-c1","id":"[\"favor-c1\",\"grant\",0]","key":"grant","ordinal":0,"kind":"grain-grant","year":1336,"position":0,"actors":["a","b"],"causes":[],"effects":[{"kind":"grain","from":"a","to":"b","amount":1},{"kind":"obligation","id":"[\"favor-c1\",\"grant\",0]/help","debtor":"b","creditor":"a","origin":"[\"favor-c1\",\"grant\",0]","status":"open"}]},{"version":"favor-c1","id":"[\"favor-c1\",\"request\",0]","key":"request","ordinal":0,"kind":"help-request","year":1337,"position":1,"actors":["a","b"],"causes":["[\"favor-c1\",\"grant\",0]"],"obligation":"[\"favor-c1\",\"grant\",0]/help","evidence":{"factors":{"openDebt":true,"altruism":50,"anxiety":50,"wealthPreference":0,"trust":0,"resentment":0},"options":["help","refuse"],"distribution":[0.6000000000000001,0.3999999999999999],"feasibility":{"assistance":2,"need":2}},"effects":[]}]}`);
+  });
+  const view = (input: ReturnType<typeof helpState>): physics.CurrentHelpView => {
+    const { people, legacyEvents, grain, assistance, need, obligations, ties, appraisals } = input;
+    const events = input.events.map(({ id, kind, year, position, actors, obligation, request }) => ({
+      id, kind, year, position, actors,
+      ...(obligation === undefined ? {} : { obligation }),
+      ...(request === undefined ? {} : { request }),
+    }));
+    return { people, legacyEvents, grain, assistance, need, obligations, ties, appraisals, events };
+  };
+  const grantBatch = (): physics.GrantPhysicalBatch => {
+    const { id, year, position, actors, causes, effects } = event();
+    return { id, year, position, actors, causes, effects };
+  };
+  const requestBatch = (): physics.HelpRequestBatch => {
+    const { id, year, position, actors, causes, effects, obligation } = requested().events[1]!;
+    return { id, year, position, actors, causes, effects, obligation: obligation! };
+  };
+  it.each(["b", "c"])("shares detached grant ledgers with %s wrappers and borrows one registry", (version) => {
+    const input = version === "b" ? state() : helpState();
+    const next = version === "b" ? grantFavor(state(), full()) : grantHelpFavor(helpState(), full());
+    const { people, legacyEvents, grain, obligations, ties, appraisals } = input;
+    const borrowed: physics.CurrentGrantView = { people, legacyEvents, grain, obligations, ties, appraisals, events: [] };
+    const { id, year, position, actors, causes, effects } = next.events[0]!;
+    const batch = { id, year, position, actors, causes, effects };
+    const before = structuredClone({ borrowed, batch });
+    const staged = physics.applyGrantPhysics(borrowed, batch);
+    expect(staged).toEqual({ grain: next.grain, obligations: next.obligations, ties: next.ties, appraisals: next.appraisals });
+    expect(staged.grain.a! + staged.grain.b!).toBe(grain.a! + grain.b!);
+    expect(staged.obligations[0]).toMatchObject({ kind: "HELP", status: "open" });
+    expect(Object.keys(staged)).toEqual(["grain", "obligations", "ties", "appraisals"]);
+    expect(borrowed.people).toBe(input.people);
+    staged.grain.a = 99;
+    staged.obligations[0]!.status = "broken";
+    staged.ties[0]!.trust = 99;
+    staged.appraisals[0]!.intensity = 0;
+    expect({ borrowed, batch }).toEqual(before);
+  });
+  it("validates a request and inspects opportunities on factual history without version claims", () => {
+    const granted = grantHelpFavor(helpState(), command());
+    const input = view(granted);
+    const before = structuredClone(input);
+    const context = physics.validateHelpRequestPhysics(input, requestBatch());
+    expect(context).toEqual({ obligation: granted.obligations[0], evidence: requested().events[1]!.evidence });
+    expect(physics.inspectHelpOpportunities(input, 1337)).toEqual(helpOpportunities(granted, 1337).candidates);
+    context.obligation.status = "broken";
+    context.evidence.feasibility.assistance = 99;
+    expect(input).toEqual(before);
+    expect(input.events[0]).not.toHaveProperty("version");
+    expect(physics.inspectHelpOpportunities(view(requested()), 1337)[0]!.reason).toBe("already-requested");
+    expect(physics.inspectHelpOpportunities(view(responded()), 1338)[0]!.reason).toBe("closed");
+  });
+  it.each(["id", "year", "position", "duplicate", "actors", "unknown", "amount", "obligation", "causes", "late-effect", "overflow", "missing", "empty"])("rejects malformed grant physics atomically: %s", (kind) => {
+    const input = view(helpState());
+    const batch = grantBatch();
+    if (kind === "id") batch.id = "";
+    if (kind === "year") batch.year = 1336.5;
+    if (kind === "position") batch.position++;
+    if (kind === "duplicate") input.events = [{ id: batch.id, kind: "grain-grant", year: 1336, position: 0, actors: ["a", "b"] }];
+    if (kind === "actors") batch.actors = ["a", "a"];
+    if (kind === "unknown") batch.actors[1] = "unknown";
+    if (kind === "amount") Object.assign(batch.effects[0]!, { amount: 2 });
+    if (kind === "obligation") Object.assign(batch.effects[1]!, { origin: "unknown" });
+    if (kind === "causes") batch.causes = [batch.id];
+    if (kind === "late-effect") batch.effects.push({ kind: "appraisal", id: `${batch.id}/appraisal/5`, origin: batch.id, actor: "c", interpretation: "gratitude", intensity: 1 });
+    if (kind === "overflow") input.grain = { a: 1, b: Number.MAX_SAFE_INTEGER };
+    if (kind === "missing") input.grain = { a: 1 };
+    if (kind === "empty") input.grain = { a: 0, b: 0 };
+    const before = structuredClone({ input, batch });
+    expect(() => physics.applyGrantPhysics(input, batch)).toThrow();
+    expect({ input, batch }).toEqual(before);
+  });
+  it.each(["year", "time-reversal", "position", "duplicate", "parties", "cause", "future-cause", "effects", "unknown-debt", "closed", "requested"])("rejects malformed request physics atomically: %s", (kind) => {
+    const input = view(grantHelpFavor(helpState(), command()));
+    const batch = requestBatch();
+    if (kind === "year") batch.year = 1336;
+    if (kind === "time-reversal") input.events[0]!.year = 1338;
+    if (kind === "position") batch.position++;
+    if (kind === "duplicate") batch.id = input.events[0]!.id;
+    if (kind === "parties") batch.actors.reverse();
+    if (kind === "cause") batch.causes = [batch.id];
+    if (kind === "future-cause") input.events[0]!.position = batch.position;
+    if (kind === "effects") batch.effects.push(grantBatch().effects[0]!);
+    if (kind === "unknown-debt") batch.obligation = "unknown";
+    if (kind === "closed") input.obligations = [{ ...input.obligations[0]!, status: "broken" }];
+    if (kind === "requested") { input.events = view(requested()).events; batch.position++; }
+    const before = structuredClone({ input, batch });
+    expect(() => physics.validateHelpRequestPhysics(input, batch)).toThrow();
+    expect({ input, batch }).toEqual(before);
+  });
+  it.each(["unborn", "dead", "absent", "missing-allocation", "missing-assistance", "exhausted-assistance", "missing-need", "no-need", "grant-not-earlier"])("reports current ineligibility without refusal: %s", (reason) => {
+    const input = view(grantHelpFavor(helpState(), command()));
+    if (reason === "unborn") input.people = { ...input.people, b: { ...input.people.b!, birthYear: 1338 } };
+    if (reason === "dead") input.people.b!.deathYear = 1337;
+    if (reason === "absent") input.legacyEvents = [{ id: "move", kind: "move", year: 1337, actors: ["b"], payload: { away: true }, causes: [] }];
+    if (reason === "missing-allocation") input.grain = { a: 2 };
+    if (reason === "missing-assistance") input.assistance = {};
+    if (reason === "exhausted-assistance") input.assistance = { b: 0 };
+    if (reason === "missing-need") input.need = {};
+    if (reason === "no-need") input.need = { a: 0 };
+    if (reason === "grant-not-earlier") input.events[0]!.year = 1337;
+    const before = structuredClone(input);
+    expect(physics.inspectHelpOpportunities(input, 1337)[0]!.reason).toBe(reason);
+    expect(() => physics.validateHelpRequestPhysics(input, requestBatch())).toThrow();
+    expect(input).toEqual(before);
+  });
+  it.each(["reference", "actor", "resources", "factors", "year"])("throws for malformed opportunity data: %s", (kind) => {
+    const input = view(grantHelpFavor(helpState(), command()));
+    if (kind === "reference") input.events = [];
+    if (kind === "actor") input.people = { a: input.people.a! };
+    if (kind === "resources") input.assistance = { b: -1 };
+    if (kind === "factors") input.people.b!.mind.facets.altruism = 101;
+    expect(() => physics.inspectHelpOpportunities(input, kind === "year" ? NaN : 1337)).toThrow();
+  });
+  it.each(["root", "hidden", "prototype", "array-hook", "sparse", "optional", "root-optional"])("guards all borrowed seams before executing hooks: %s", (kind) => {
+    const input = view(grantHelpFavor(helpState(), command()));
+    let calls = 0;
+    const hook = () => { calls++; return []; };
+    if (kind === "root") Object.defineProperty(input, "events", { enumerable: true, get: hook });
+    if (kind === "hidden") Object.defineProperty(input, "hidden", { value: 1 });
+    if (kind === "prototype") Object.setPrototypeOf(input, { get events() { return hook(); } });
+    if (kind === "array-hook") Object.setPrototypeOf(input.events, Object.create(Array.prototype, { [Symbol.iterator]: { value: hook }, map: { value: hook } }));
+    if (kind === "sparse") input.events = new Array(1);
+    if (kind === "optional") input.ties = [{ actor: "b", counterpart: "a", trust: 0, resentment: 0, toJSON: undefined } as never];
+    if (kind === "root-optional") Object.assign(input, { toJSON: undefined });
+    expect(() => physics.applyGrantPhysics(input, grantBatch())).toThrow();
+    expect(() => physics.validateHelpRequestPhysics(input, requestBatch())).toThrow();
+    expect(() => physics.inspectHelpOpportunities(input, 1337)).toThrow();
+    expect(calls).toBe(0);
+  });
+  it("retains legacy optional absence but rejects executable legacy fields", () => {
+    const input = view(grantHelpFavor(helpState(), command()));
+    input.people.b!.deathYear = undefined;
+    expect(physics.validateHelpRequestPhysics(input, requestBatch()).obligation.status).toBe("open");
+    expect(physics.inspectHelpOpportunities(input, 1337)[0]!.reason).toBe(null);
+    let calls = 0;
+    Object.defineProperty(input.people.b, "deathYear", { enumerable: true, get() { calls++; return undefined; } });
+    expect(() => physics.validateHelpRequestPhysics(input, requestBatch())).toThrow();
+    expect(() => physics.inspectHelpOpportunities(input, 1337)).toThrow();
+    expect(calls).toBe(0);
+  });
+  it("uses the current grant frontier and validates all prior causes", () => {
+    const initial = helpState();
+    const first = grantHelpFavor(initial, full());
+    const next = grantHelpFavor(first, { ...command("second"), causes: [first.events[0]!.id] });
+    const { id, year, position, actors, causes, effects } = next.events[1]!;
+    const batch = { id, year, position, actors, causes, effects };
+    const input = view(first);
+    expect(physics.applyGrantPhysics(input, batch).grain).toEqual(next.grain);
+    for (const refs of [[id], [causes[0]!, causes[0]!], ["unknown"]]) {
+      expect(() => physics.applyGrantPhysics(input, { ...batch, causes: refs })).toThrow();
+    }
+    expect(() => physics.applyGrantPhysics(input, { ...batch, year: 1335 })).toThrow();
+    input.people.b!.deathYear = 1336;
+    expect(() => physics.applyGrantPhysics(input, batch)).toThrow();
+    input.people.b!.deathYear = undefined;
+    input.people = { ...input.people, b: { ...input.people.b!, away: true } };
+    expect(() => physics.applyGrantPhysics(input, batch)).toThrow();
+  });
+  it.each(["grant", "request"])("guards physical %s batches before reads", (kind) => {
+    const input = view(grantHelpFavor(helpState(), command()));
+    const batch = kind === "grant" ? grantBatch() : requestBatch();
+    let calls = 0;
+    Object.defineProperty(batch, "actors", { enumerable: true, get() { calls++; return ["a", "b"]; } });
+    expect(() => kind === "grant" ? physics.applyGrantPhysics(input, batch) : physics.validateHelpRequestPhysics(input, batch as physics.HelpRequestBatch)).toThrow();
+    expect(calls).toBe(0);
+  });
+  it("supports own __proto__ actors without aliases or fabricated versions", () => {
+    const registry = { ["__proto__"]: person("__proto__"), b: person("b") };
+    const initial = createHelpFavorState(registry, [], { ["__proto__"]: 2, b: 0 }, { b: 1 }, { ["__proto__"]: 1 });
+    const grant = grantHelpFavor(initial, { ...command(), creditor: "__proto__" });
+    const { id, year, position, actors, causes, effects } = grant.events[0]!;
+    const result = physics.applyGrantPhysics(view(initial), { id, year, position, actors, causes, effects });
+    expect(Object.hasOwn(result.grain, "__proto__")).toBe(true);
+    expect(result.grain["__proto__"]).toBe(1);
+    const req = requestHelp(grant, { key: "r", year: 1337, obligation: grant.obligations[0]!.id });
+    const request = req.events[1]!;
+    expect(physics.validateHelpRequestPhysics(view(grant), { id: request.id, year: request.year, position: request.position, actors: request.actors, causes: request.causes, effects: [], obligation: request.obligation! }).obligation.creditor).toBe("__proto__");
+    expect(physics.inspectHelpOpportunities(view(grant), 1337)[0]!.reason).toBe(null);
+  });
+});
+
 describe("shared help physics (not checkpoint admission)", () => {
   const batch = (noise = 0.1) => {
     const event = responded(noise).events.at(-1)!;

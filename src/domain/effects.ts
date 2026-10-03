@@ -78,16 +78,25 @@ export interface HelpRequestCommand { key: string; year: number; obligation: str
 export interface HelpResponseCommand { request: string; year: number; noise: number; appraisals: AppraisalInput[] }
 /** Current physics inputs, not a versioned checkpoint or replay authority.
  * History is already admitted by the caller; no C event/schema version is implied. */
-export interface CurrentHelpView {
+export interface CurrentGrantView {
   people: Readonly<Record<string, Person>>;
   legacyEvents: readonly Event[];
   grain: Readonly<Record<string, number>>;
-  assistance: Readonly<Record<string, number>>;
-  need: Readonly<Record<string, number>>;
   obligations: readonly HelpObligation[];
   ties: readonly DirectedTie[];
   appraisals: readonly Appraisal[];
   events: readonly HelpHistoryEntry[];
+}
+export interface CurrentHelpView extends CurrentGrantView {
+  assistance: Readonly<Record<string, number>>;
+  need: Readonly<Record<string, number>>;
+}
+export type GrantPhysicalLedger = Pick<FavorState, "grain" | "obligations" | "ties" | "appraisals">;
+export interface GrantPhysicalBatch extends Pick<FavorEvent, "id" | "year" | "position" | "actors" | "causes"> {
+  effects: HelpFavorEffect[];
+}
+export interface HelpRequestBatch extends GrantPhysicalBatch {
+  obligation: string;
 }
 export interface HelpHistoryEntry {
   id: string; kind: string; year: number; position: number; actors: readonly string[];
@@ -174,6 +183,41 @@ function reduce(state: AnyFavorState, event: AnyFavorEvent): AnyFavorState {
   requireInteger(event.year, Number.MIN_SAFE_INTEGER);
   requireInteger(event.position, 0);
   if (event.version !== state.schema || ![FAVOR_VERSION, HELP_FAVOR_VERSION].includes(event.version) || (event.kind !== "grain-grant" && !helpEvent) || event.ordinal !== 0 || event.id !== identity(event.key, state.schema)) throw new Error("Unsupported event identity/version");
+  if (helpEvent) {
+    validatePhysicalCommit(state, event);
+    if (state.schema !== HELP_FAVOR_VERSION || event.version !== HELP_FAVOR_VERSION) throw new Error("Unsupported help boundary");
+    return reduceHelp(state, event);
+  }
+  const { id, year, position, actors, causes, effects } = event;
+  const ledgers = applyGrantPhysics(state, { id, year, position, actors, causes, effects });
+  const next = structuredClone(state);
+  Object.assign(next, ledgers);
+  // Version dispatch above guarantees matching state/event types.
+  (next.events as AnyFavorEvent[]).push(structuredClone(event));
+  return next;
+}
+
+/** Guard the entire borrowed root before reading any registry or history field. */
+function guardCurrentView(state: CurrentGrantView): void {
+  ownData(state, true);
+  record(state);
+  for (const key of Object.keys(state)) {
+    if (key !== "people" && key !== "legacyEvents") ownData(Object.getOwnPropertyDescriptor(state, key)!.value);
+  }
+  record(state.people);
+  array(state.legacyEvents);
+  record(state.grain);
+  array(state.obligations);
+  array(state.ties);
+  array(state.appraisals);
+  array(state.events);
+}
+
+function validatePhysicalCommit(state: CurrentGrantView, event: GrantPhysicalBatch): void {
+  guardCurrentView(state);
+  requireId(event.id);
+  requireInteger(event.year, Number.MIN_SAFE_INTEGER);
+  requireInteger(event.position, 0);
   if (event.position !== state.events.length || state.events.some((prior) => prior.id === event.id)) throw new Error("Repeated or unordered commit");
   array(event.actors);
   array(event.causes);
@@ -196,13 +240,17 @@ function reduce(state: AnyFavorState, event: AnyFavorEvent): AnyFavorState {
     if (!prior || prior.position >= event.position || prior.year > event.year || causes.has(cause)) throw new Error("Cause is not a unique prior commit");
     causes.add(cause);
   }
-  if (helpEvent) {
-    if (state.schema !== HELP_FAVOR_VERSION || event.version !== HELP_FAVOR_VERSION) throw new Error("Unsupported help boundary");
-    return reduceHelp(state, event);
-  }
+}
+
+/** Physical grant only: caller admits history and owns version, identity and log assembly. */
+export function applyGrantPhysics(state: CurrentGrantView, event: GrantPhysicalBatch): GrantPhysicalLedger {
+  ownData(event);
+  record(event);
+  requireFields(event, ["id", "year", "position", "actors", "causes", "effects"]);
+  validatePhysicalCommit(state, event);
   if (event.effects.length < 2) throw new Error("Incomplete grant");
   const [creditor, debtor] = event.actors as [string, string];
-  const next = structuredClone(state);
+  const next: GrantPhysicalLedger = structuredClone({ grain: state.grain, obligations: [...state.obligations], ties: [...state.ties], appraisals: [...state.appraisals] });
   event.effects.forEach((effect, index) => {
     record(effect);
     if (index === 0) {
@@ -223,8 +271,6 @@ function reduce(state: AnyFavorState, event: AnyFavorEvent): AnyFavorState {
     }
     reduceSupplemental(next, event, effect, index);
   });
-  // Version dispatch above guarantees matching state/event types.
-  (next.events as AnyFavorEvent[]).push(structuredClone(event));
   return next;
 }
 
@@ -305,8 +351,11 @@ export function createHelpFavorState(people: Readonly<Record<string, Person>>, l
 }
 
 export function currentHelpContext(state: CurrentHelpView, obligationId: string, year: number): { obligation: HelpObligation; evidence: HelpEvidence } {
-  ownData(state, true);
-  for (const value of [state.grain, state.assistance, state.need, state.obligations, state.ties, state.appraisals, state.events]) ownData(value);
+  guardCurrentView(state);
+  ownData(state.assistance);
+  ownData(state.need);
+  record(state.assistance);
+  record(state.need);
   requireId(obligationId);
   requireInteger(year, Number.MIN_SAFE_INTEGER);
   const obligation = state.obligations.find((entry) => entry.id === obligationId);
@@ -391,15 +440,28 @@ export function applyHelpResponsePhysics(state: CurrentHelpView, batch: HelpResp
   return next;
 }
 
+/** Current request context and causal validation, without checkpoint or version admission. */
+export function validateHelpRequestPhysics(state: CurrentHelpView, batch: HelpRequestBatch): { obligation: HelpObligation; evidence: HelpEvidence } {
+  ownData(batch);
+  record(batch);
+  requireFields(batch, ["id", "year", "position", "actors", "causes", "effects", "obligation"]);
+  validatePhysicalCommit(state, batch);
+  const context = currentHelpContext(state, batch.obligation, batch.year);
+  const { obligation } = context;
+  if (encoding(batch.actors) !== encoding([obligation.creditor, obligation.debtor])) throw new Error("Help parties mismatch");
+  if (state.events.some((entry) => entry.kind === "help-request" && entry.obligation === obligation.id)) throw new Error("Repeated request");
+  if (encoding(batch.causes) !== encoding([obligation.origin]) || batch.effects.length !== 0) throw new Error("Invalid request cause/effects");
+  return context;
+}
+
 function reduceHelp(state: HelpFavorState, event: HelpFavorEvent): HelpFavorState {
-  const { obligation, evidence } = currentHelpContext(state, event.obligation!, event.year);
+  const { id, year, position, actors: eventActors, causes, effects } = event;
+  const { obligation, evidence } = event.kind === "help-request"
+    ? validateHelpRequestPhysics(state, { id, year, position, actors: eventActors, causes, effects, obligation: event.obligation! })
+    : currentHelpContext(state, event.obligation!, event.year);
   const actors = [obligation.creditor, obligation.debtor];
   if (encoding(event.actors) !== encoding(actors)) throw new Error("Help parties mismatch");
-  let expected: HelpFavorEffect[] = [];
-  if (event.kind === "help-request") {
-    if (state.events.some((entry) => entry.kind === "help-request" && entry.obligation === obligation.id)) throw new Error("Repeated request");
-    if (encoding(event.causes) !== encoding([obligation.origin]) || event.effects.length !== 0) throw new Error("Invalid request cause/effects");
-  } else if (event.kind === "help-response") {
+  if (event.kind === "help-response") {
     requireId(event.request);
     const request = state.events.find((entry) => entry.id === event.request);
     if (!request || request.kind !== "help-request" || request.obligation !== obligation.id || request.year > event.year || request.position >= event.position || encoding(request.actors) !== encoding(actors)) throw new Error("Invalid request identity/frontier");
@@ -409,9 +471,9 @@ function reduceHelp(state: HelpFavorState, event: HelpFavorEvent): HelpFavorStat
     const noise = event.evidence.noise!;
     const selected = selectFavorResponse(evidence.factors, noise);
     Object.assign(evidence, { noise, selected });
-    expected = canonicalHelpResponseEffects({ ties: state.ties }, obligation, event.id, selected);
+    const expected = canonicalHelpResponseEffects({ ties: state.ties }, obligation, event.id, selected);
     if (encoding(event.effects.slice(0, expected.length)) !== encoding(expected)) throw new Error("Noncanonical response effects");
-  } else throw new Error("Unsupported help event");
+  } else if (event.kind !== "help-request") throw new Error("Unsupported help event");
   if (encoding(event.evidence) !== encoding(evidence)) throw new Error("Stale or forged consumed evidence");
   const next = structuredClone(state);
   if (event.kind === "help-response") {
@@ -482,8 +544,19 @@ export interface HelpOpportunity { obligation: string; creditor: string; debtor:
 export function helpOpportunities(input: HelpFavorState, year: number): { state: HelpFavorState; candidates: HelpOpportunity[] } {
   requireInteger(year, Number.MIN_SAFE_INTEGER);
   const state = replayHelpFavorEvents(input, []);
+  return { state, candidates: inspectHelpOpportunities(state, year) };
+}
+
+/** Inspect already-admitted current physics; ineligibility is not a refusal. */
+export function inspectHelpOpportunities(state: CurrentHelpView, year: number): HelpOpportunity[] {
+  guardCurrentView(state);
+  ownData(state.assistance);
+  ownData(state.need);
+  record(state.assistance);
+  record(state.need);
+  requireInteger(year, Number.MIN_SAFE_INTEGER);
   const history = state.legacyEvents.filter((entry) => entry.year <= year);
-  const candidates = state.obligations.map((obligation): HelpOpportunity => {
+  return state.obligations.map((obligation): HelpOpportunity => {
     const { id, creditor, debtor } = obligation;
     const candidate = { obligation: id, creditor, debtor };
     if (obligation.status !== "open") return { ...candidate, reason: "closed" };
@@ -506,7 +579,6 @@ export function helpOpportunities(input: HelpFavorState, year: number): { state:
     currentHelpContext(state, id, year);
     return { ...candidate, reason: null };
   });
-  return { state, candidates };
 }
 
 export function applyFavorEvent(state: FavorState, event: FavorEvent): FavorState {

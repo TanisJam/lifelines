@@ -516,6 +516,33 @@ noise-selected consequences; D-shaped authority extensions and mixed versions re
 remain unchanged. Tests preserve pre-extraction C evidence/resource/tie JSON and cover help/refusal,
 bounded deltas, explicit appraisals, last-resource revalidation, atomic rejection and zero hooks.
 
+### D2b preparation: shared grant, request and opportunity physics
+
+`effects.ts` now exposes neutral physical seams for already-admitted current data. B/C wrappers
+still own checkpoint reconstruction, exact schemas, versions, semantic identities and evidence;
+these helpers neither decode checkpoints nor authenticate history. D2a authority is unchanged.
+
+| Helper | Review contract |
+|---|---|
+| `CurrentGrantView` / `CurrentHelpView` | Borrow one admitted Person registry, current ledgers and factual history fields (`id`, `kind`, `year`, `position`, ordered actors, optional obligation/request). No fabricated C version, initial/final registry mirror or historical-person reconstruction. Help adds explicit current assistance/need. |
+| `applyGrantPhysics` | Validate current participants, chronological frontier, unique prior causes, conserved one-grain transfer and one open HELP debt. Apply the existing source/party-checked tie and explicit appraisal reducers; stage detached grain/debt/tie/appraisal ledgers, returning no people or log. Late effect failure publishes nothing. |
+| `validateHelpRequestPhysics` | Recompute current context and policy through `currentHelpContext`; check frontier, ordered parties, earlier grant, open debt, one request per debt, exact grant cause and empty effects. Return detached obligation/evidence without granting event or choice authority. |
+| `inspectHelpOpportunities` | Inspect factual admitted history and current participants/resources; preserve explicit skip reasons and preflight viable policy factors. Malformed references or consumed data throw; dead/absent/resource-ineligible participants do not become refusals. C-only `helpOpportunities` still admits a detached C checkpoint first. |
+
+All borrowed roots and batches receive descriptor-first guards before field reads or iteration.
+Legacy optional undefined remains confined to the existing people/legacy-log boundary; ledgers,
+factual history and physical batches are strict own-data. Null-record and own `__proto__` actor
+keys remain data. Shared implementation is used by B/C grant and C request/opportunity wrappers;
+C/D2a mixed-version, authority and evidence rejection remains at the original public boundaries.
+Tests pin B grant and C grant/request JSON captured before extraction, alongside the existing C
+response fixture; direct neutral-view parity, conservation, current feasibility, atomic late failures,
+input/alias immutability and zero-hook rejection cover these seams.
+
+**Deferred:** no D grant/request admission, declaration chronology, inherited override history,
+fork identity, scheduler/RNG/configuration change, regenerated resources, codec/storage, annual
+simulation or production integration. The caller must admit source history semantically before
+borrowing this view; physical validation is not replay provenance or a general reducer framework.
+
 ### Unit D2a: standalone explicit response authority
 
 `favor-authority.ts` admits an unchanged C prefix followed only by D help responses. It is not a
