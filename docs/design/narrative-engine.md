@@ -721,6 +721,48 @@ cross-runtime portability claim. Helpers in these modules serve normalization/re
 `initializeWorld` is the origin-producing operation. Production consuming/access-only/annual
 integration remains explicitly unimplemented and requires separate authorization.
 
+### Unit E2a: explicit-resource annual runtime, not autonomous simulation
+
+`src/domain/e-runtime.ts` consumes verified E1 initialization before admitting resources or
+response authority. `explicit-resources-e2a-1` owns one evolving Person registry plus supplemental
+resource, HELP debt, directed tie and appraisal ledgers. Frozen origin/initial/year/final snapshots
+are evidence, not independently evolving worlds. Fixed-registry C/D admission is not used to
+certify annual Person evolution; the runtime borrows only their neutral physical helpers.
+
+**Quick path:** `createAnnualRuntime(initialization, completeResourcePlan, optionalAuthority)` →
+retain `runtime.initial` → `runtime.advance(explicitAnnualPlan)` → `runtime.final()`.
+Every initial Person ID, including initially dead actors, requires caller-supplied
+`{ grain, effort, need }`. No numeric allocation defaults, class/wealth inference, replenishment,
+opportunity draws, D slots, activation probabilities or display quotas are introduced.
+
+| Review point | E2a contract |
+|---|---|
+| Annual order | Physical/life changes → explicit resource changes → grants → requests/responses → detached output. Each phase preserves caller array order. Years increase inside E1's configured range; quiet/gapped years infer no omitted activity. All operations stage before one owned-state/journal/frontier publication. |
+| Physical changes | Explicit creation supplies a closed newcomer identity/name/sex/birth year/traits/job/Mind, not a biological selector. Current-year births get a birth event; earlier-born arrivals get a current registration event, never a retroactive birth. Explicit death and legal home/away transitions update the same registry and factual life history. No autonomous demographics, parent selection or discovery. |
+| Resources | Nonnegative safe-integer balances. Creation alone grants no allocation or eligibility. Explicit `allocate` supplies all three resources once; signed `resource-change` deltas require an existing allocation and a safe nonnegative resulting balance. Zero remains a real input. Missing allocation is unknown, not zero. |
+| Grants and debt | Revalidate living/present actors, allocations and grain capacity after every intention. Conserved one-grain transfers open one HELP obligation; blocked attempts record current evidence and a reason without debt or effects. Only an earlier-year grant can enable help; exhausted capacity, no need and closed debt remain ineligible, not refusals. |
+| Rules/authority | Each request supplies explicit uniform noise; there is no new automatic RNG policy. Recompute consumed current factors, options/distribution and baseline using the existing favor policy. Optional synchronous human authority receives a detached frozen question and may select either feasible option. Capture baseline, noise, declared source and effective choice separately. No provider, LLM or inferred consent. |
+| Identity and causes | Capture E1 origin, complete initial resources and a versioned genesis digest. Journal complete plans, phase/declaration index, global position, actor order, prior causal IDs, consumed current inputs, effects and ineligibility reasons. Caller operation IDs must be unique against initial and annual history; response IDs are request ID plus `/response`, debt IDs grant ID plus `/help`. Unknown/forward causes and stale/duplicate identities fail closed. |
+| Isolation and failure | Initial/year/final outputs are detached and deeply frozen. Failed years leave owned state, journal and frontier unchanged; the reentrant guard clears even after authority throws. A callback sees only previously published output, never the staged current year. External callback side effects are outside owned-state atomicity and cannot be rolled back. |
+| Numeric fidelity | Reject numeric input −0 for genesis allocations, years, deltas, noise and integer newcomer dates. Preserve generated internal Mind −0 and finite newcomer Mind −0 losslessly in the in-memory identity encoding. This is not JSON normalization or a wire codec; ordinary +0 stays supported. |
+| Reconstruction | `replayAnnualRuntime(output)` regenerates E1, reapplies the ordered rules-only plans through the same runtime and compares complete origin/genesis/history/state, not hashes alone. Human-authority journals reject rather than rerunning or fabricating callbacks. Descriptor-first guards reject executable own-data hooks before reads. |
+
+**Verification boundary:** the runtime tests exercise two-year help/refusal, competing grants and
+requests, death/absence/current resource changes, newcomer allocation and later help, quiet gaps,
+immutable history, zero-hook rejection, atomic failure/retry, causal identities and reconstruction
+tampering. Newcomer help also covers own `__proto__` and lone-surrogate actor IDs. The established
+18-file deterministic domain/server corpus remains separate from production routes/providers;
+SQLite cases use only their owned disposable fixtures.
+
+**Limits and next decisions:** this is bounded rules-only **in-memory reconstruction**, not durable
+wire/storage, E production activation, forks, authenticated provenance, a resource sandbox or a
+scaling/portability claim. Supplemental appraisals remain empty; no appraisal or Mind-update policy
+is silently chosen. Autonomous grant discovery, newcomer/demographic selection, economic units
+and regeneration, biological hazards, later life-axis/kinship transitions, branch binding/retention
+and read-only selection/transport still need their own resolved scope/policy. Frozen legacy/A/B/C/D,
+worldgen, SQLite, server and routes are unchanged. E1's consuming-production milestone is not
+closed merely by this standalone annual consumer.
+
 ### A-baseline: reproducible local measurements
 
 **Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,
