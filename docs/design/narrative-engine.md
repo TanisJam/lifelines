@@ -931,6 +931,32 @@ causal depth, relationship trajectories, unresolved-thread share, repetition and
 variation. Include negative controls: neutral director, disconnected filler events, invalid favors.
 Do not require a betrayal, reconciliation, theme count, death quota or tidy ending per life.
 
+### Bounded E-runtime measurement (F-prep only)
+
+`scripts/annual-runtime-baseline.ts` emits compact local JSON to stdout; importing it does not
+execute measurements. Its versioned, frozen four-case corpus covers quiet gapped history,
+delayed favor response, competing/blocked intentions and an explicitly allocated newcomer.
+Allocations are test data, not product defaults. Each case constructs two independent E1/E2
+runs and requires identical complete own-data canon, identity and canonical capsule wire.
+
+Counts come from executed journal plans, entries and committed/ineligible outcomes. The
+executed-plan denominator is separate from inclusive first-to-last calendar span: quiet gaps
+are not executed years. Byte accounting reports UTF-8 final wire bytes and the **sum** of retained
+executed-checkpoint wire bytes, excluding the initial checkpoint; this is not peak storage.
+
+Monotonic elapsed timings separate runtime execution (including initialization), capsule
+creation, serialization, cold admission and one cold fork at the first retained executed
+frontier with an explicit suffix. Capsule creation, serialization, admission and fork retain
+existing public-API validation/replay costs; these are not isolated codec costs. Fork outputs
+are compared with fresh initialization plus the same prefix/suffix. Cold admission checks full
+own-data fidelity, including undefined/key presence, array undefined and signed zero. Input,
+retained checkpoints, full final canon and identity must remain unchanged by instrumentation.
+
+The report includes corpus version/count/names, input identity, runtime/capsule compatibility
+tuple and host Node/V8 versions. These limited fixtures do not establish population scaling,
+peak memory, timing budgets, salience/consequence policy or F calibration. Production policies,
+weights, storage, transport and activation remain outside this measurement.
+
 ## 11. Reviewable work units (future authorization required)
 
 Candidate surfaces below are planning boundaries, **not permission to edit them now**. Each unit
