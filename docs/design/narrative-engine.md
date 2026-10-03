@@ -571,6 +571,46 @@ later units. Rewriting complete initial ground truth creates another candidate; 
 nor recorded declared authority certifies provenance. No portability, performance or Proxy sandbox
 claim is introduced.
 
+### Unit D2b core: standalone forks and ordered declarations
+
+**Implemented core only; D2b remains open until its separate capsule/repository unit.**
+`favor-fork.ts` owns D2b semantic admission, action replay, declaration history, identity mapping
+and current projection. `favor-scheduler.ts` orchestrates seeded annual opportunities over shared
+neutral physics. Frozen C/C2, D1 and D2a contracts are not extended or silently migrated.
+
+**Quick path:** create an explicit C2 prefix with `createFavorScheduler`, then
+`createFavorFork(prefix, rootKey)`. For declarations captured from inception, start that prefix
+with empty C events and original resources. Use `declareForkGrant` / `declareForkChoice`, advance
+with `runFavorForkYear`, and branch with `forkFavor(parent, year, branchKey, overrides)`.
+`admitFavorFork` reconstructs a detached core projection after an ordinary JSON roundtrip;
+this is not canonical wire admission, content addressing or repository persistence.
+
+| Review point | D2b core contract |
+|---|---|
+| One world | One fixed initial Person registry and original grain/assistance/need inputs, factual C prefix plus D events, authoritative ordered actions and derived ledgers/history/mapping. No initial/final Person mirrors or fabricated legacy provenance. Standalone favor physics does not evolve people or certify historical production state. |
+| Versions/config | Schema/projection/engine/reducer/rules `favor-fork-d2b`, scheduler `favor-scheduler-d2b`. Explicit baseline namespace `favor-scheduler-c2`, RNG `keyed-mulberry32-c2`, two slots per creditor/year, `.25` activation and semantic UTF-8 first-eligible ordering. Unsupported manifest/config values reject. |
+| Declaration clock | Each declaration captures the completed frontier, ordered position, declaring lineage and complete command separately from execution year. New grants/choices must execute after that frontier. Issued C-prefix grants are fixed admitted facts, not reconstructed declarations. D2a has no declaration chronology and is not a D2b import. |
+| Fork reconstruction | Replay all recorded years strictly before the fork year, including quiet/gapped frontiers; retain those events/IDs/references and annual records verbatim. Inherit declarations made before that year, including already-declared future grants/choices, but exclude later parent declarations. Re-execute the entire fork year and every later recorded parent year; missing years are not secretly simulated. The initial C boundary and ancestor pre-fork years are locked. Admitted C2 annual suffixes can be re-executed as D2b; strictly earlier C records remain unchanged. |
+| Human precedence | Nearest-child same-semantic-target choice replaces inherited effective choice with identical actors/year; ordered history keeps both declarations and labels the earlier one `superseded`. Same-lineage duplicate targets reject. Pending future commands remain `pending`; reached but unreachable commands become explicitly `inactive`. No request is manufactured to apply an override. |
+| Semantic/physical identity | Lift C-prefix identities unchanged. New grant/request/response semantics retain C-compatible logical tuples; debt semantics use the semantic grant identity. New physical suffix IDs qualify lineage, with matching debt/appraisal IDs, origins, causes, request and settlement references. A complete admission-derived bijection retains closed as well as current identities; aliases, duplicates and tampering reject. Branch keys and choices identify lineage, never baseline RNG. |
+| Seeded execution | Preserve C2 UTF-8 ordering and lone-surrogate fallback, key namespaces and exact `keyedDraw(JSON.stringify([seed, key]), "favor-c2", 0, "uniform")` transport. Order/draw using semantic debt identities, not physical child IDs. Preflight and immediately reinspect shared eligibility/policy after each response. Factors/distribution/noise/baseline selection remain separate from eligible human effective choice. |
+| Grants/resources | Explicit root grant commands provide future execution years and semantic prior causes; execute only in recorded matching years, in declaration order. Shared conserved grain, HELP debt, bounded ties and supplied appraisals remain unchanged. No allocation inference or resource regeneration is added; invalid execution rejects atomically. |
+| Admission | Descriptor-check the entire input before reads/iteration. Replay strict C/C2 prefix and authoritative actions, then compare every derived event, annual record, ledger, declaration status/identity/provenance, mapping and lineage. Canonical response targets require matching actors/year/known semantic debt; malformed, stale, prior-prefix or tampered authority rejects. Unsafe undefined rejects outside declared legacy optional paths; own `__proto__` actors remain data. |
+
+**Review checklist:** tests pin seeded C2 key/draw/evidence/ledger parity; no-op and cold/nested
+fork equality; exact quiet/gapped prefix JSON; declaration-before/execution-after inheritance;
+future parent exclusion; ordered nearest-child replacement; inactive unreachable commands;
+opposite-baseline choices with downstream resource revalidation; suffix reference closure;
+strict isolation; descriptor zero hooks; atomic rejection and detached outputs.
+
+**Limits and next step:** consistency is not authentication: rewriting all original ground truth
+and actions creates another candidate. Core import has no canonical byte/digest requirement,
+registry-order wire declaration or repository/SQLite adapter. Full-prefix reconstruction is for
+small fixtures, not a scalability claim; Proxy/global-monkeypatch hardening and general runtime
+portability are not proved. Production Person evolution, grant opportunities, storage, UI and
+historical provenance remain separate work. Next add the versioned canonical D capsule and
+serialized-memory repository proof without weakening these core admissions; do not close D2b yet.
+
 ### A-baseline: reproducible local measurements
 
 **Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,

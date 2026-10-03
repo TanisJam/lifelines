@@ -5,7 +5,7 @@
 - User authorizes implementation through completion and local work-unit commits on `feat/narrative-engine`; no push, PR creation, merge, deployment, installs, network operations or live database changes.
 - One writer per worktree. Parallel read-only mapping and verification are authorized. Preserve pre-existing untracked `.claude/`.
 - English artifacts; Spanish conversation. Applicable behavior uses observed RED → GREEN → refactor, writer checks, applicable independent checks and native review under the user-owned switch.
-- Initial branch point: `d5d9ad5`. Current committed/reviewed boundary: `9254234b25c6229ee8f334a4c75c9560d0725794`.
+- Initial branch point: `d5d9ad5`. Current committed boundary: `7e20569db6f28af279e5fcfe11475e7da91eb39f`; committed-range reviewed boundary: `9254234b25c6229ee8f334a4c75c9560d0725794`.
 - Source of truth: `docs/design/narrative-engine.md`; original handoff: `/home/tanisjam/Downloads/lifelines_narrative_engine_handoff.md`. This complete current task document is mirrored in Engram6902, topic `odd/narrative-engine/tasks`.
 - Deterministic rules own canon. Directors weight opportunities, never eligibility/outcomes. Selection/prose are downstream and cannot mutate canon or leak future evidence. Hidden activity is material, not a displayed-card quota.
 - Preserve frozen A/B/C contracts. New authority/projection/rules require explicit versions. One Person registry with supplemental ledgers; final people/cards cannot reconstruct historical canonical inputs.
@@ -28,8 +28,9 @@ Prospective work-unit ranges, not published PRs:
 | D1 | 9de9631 → e3f0e8e | 547 |
 | D2a-prep | e3f0e8e → a414349 | 307 |
 | D2a | a414349 → 9254234 | 631 |
+| D2b-prep | 9254234 → 7e20569 | 355 |
 
-Running authored count: **4,845** (including design/tracker; no generated/vendor diff). D2a actual source/tests/design: 511 lines; tracker adds 120. Forks/production need per-unit refinement. At PR preparation, make one honest slicing pass, retain tests/docs with behavior and disclose any inseparable overage. No size exception or repository-specific label is authorized. Chaining shape grants no publication, maintenance or review consent.
+Running authored count: **5,200** (including design/tracker; no generated/vendor diff). D2a actual source/tests/design: 511 lines; tracker adds 120. Forks/production need per-unit refinement. At PR preparation, make one honest slicing pass, retain tests/docs with behavior and disclose any inseparable overage. No size exception or repository-specific label is authorized. Chaining shape grants no publication, maintenance or review consent.
 
 ## Closed work units
 
@@ -49,13 +50,13 @@ One D authority resolver/shared physical seam preserves factors/distribution/noi
 
 ## Current work
 
-### D2b-prep — Shared grant/request/opportunity physics
-- [ ] Extract version-neutral physical seams without changing C/B authority.
-In progress; delegated writer route (multi-file trigger). Allowed surfaces: `src/domain/effects.ts`, `src/domain/effects.test.ts`, `docs/design/narrative-engine.md`. Borrow one admitted current registry/view; stage detached grant ledgers, validate request context and inspect opportunities independently of checkpoint decoding. Existing C wrappers retain all versions, identities, evidence, canonical JSON and rejection behavior. No D2b history/scheduler/fork/storage behavior yet. Test-first, focused Node checks, applicable independent verification, native review and local work-unit commit.
+### D2b-prep — Shared grant/request/opportunity physics (closed)
+- [x] Extract version-neutral physical seams without changing C/B authority.
+Commit `7e20569db6f28af279e5fcfe11475e7da91eb39f`; delegated writer `murnkcb9-12-ss3n` (multi-file trigger). Missing grant API RED 1 failed/381 passed → GREEN382 → final434 tests Node26. Independent compatibility/spot `murnvg63-13-1sp3`: 434 PASS Node24 (1.26s),187 effects PASS Node26 (652ms), five hashes unchanged; no inspected descriptor/atomicity defect. Writer type/lint/whitespace PASS; Vite warning only. Shared detached grant staging, neutral request validation/opportunity views; preserved B/C JSON and D2a hashes. No fork/storage/production behavior. Native workspace `review-d8e27505cef1ef2e` approved/exact ACK burned target `59c04fac4c76ef765cdb6e56997c1c90f26d3362dea12a766909fb570507aad4`, revision `f566e2d0ab1ef540e52c55808c4664d322060fb006c0928ab19a2324036d8202`. Postcommit ASSESS medium355/under_budget, committed candidate unconsumed: deferred to delivery slice, not claimed as committed-range receipt. Matching bytes independently verified. Source/tests/design328 authored lines +tracker27. Full suite/build/browser/DB excluded, remain applicable later.
 
 ### D2b — Fork identity and inheritance
 - [ ] Fork from prior-year prefixes with explicit eligible human choice and inherited overrides.
-Pending shared-physics preparation; delegated writer route (multi-file trigger). Map derives `favor-fork.ts`/test, D scheduler and narrow scheduler/capsule/repository extensions. Preserve prefix data/IDs verbatim, including quiet frontier. Keep C2 baseline RNG tuple literals/transport and semantic obligation order; separate semantic grant/obligation/request IDs from physical lineage suffix IDs/references. No future parent choices/outcomes/people leakage.
+In progress after committed shared-physics preparation; delegated writer route (multi-file trigger). Implement coherent fork/scheduler/history core first, then canonical capsule/repository cold persistence as the next work unit; do not close D2b until both are verified. Map derives `favor-fork.ts`/test, D scheduler and narrow scheduler/capsule/repository extensions. Preserve prefix data/IDs verbatim, including quiet frontier. Keep C2 baseline RNG tuple literals/transport and semantic obligation order; separate semantic grant/obligation/request IDs from physical lineage suffix IDs/references. No future parent choices/outcomes/people leakage.
 
 **Human-approved policy** (Engram7019, `child_override_preserve_history`): nearest-child replacement with ordered history, identical target/actors/year, no earlier-prefix replacement and one effective application. Unreachable inherited targets are explicitly inactive, never forced. Parent choices after the branch point are not inherited. Declaration time is separate from execution year: earlier-declared future commands may be inherited. D2a has no declaration chronology, so ambiguous D2a histories fail closed rather than inventing provenance. D2b captures ordered declarations from inception. Fresh map `murneih9-11-1imi` estimates 1,200–1,900 authored lines including tests/docs; advisory only. Stage shared physics, then coherent fork/scheduler/history and canonical cold persistence; derive narrow surfaces per unit. Existing C2 scheduler/capsule remain unchanged; `FavorRecords` opaque port needs no change.
 
@@ -95,4 +96,4 @@ Host Node26.8.1/V8 14.6.202.34-node.28; cached offline Node24.21.0/V8 13.6.233.1
 
 Preserve existing review authorities: obsolete `review-312a51d4f1149abd` e52 TDD snapshot remains correction-required, never reset/abandoned/reused; later exact-target reviews do not erase it. Intermediate079 approval did not close preparation. The complete14da approval and verified a414349 commit close preparation only. No native review substitutes functional checks or authorizes publication.
 
-Sixteen units: eight closed, D2b-prep in progress, seven pending. Source task metadata updates are folded into the next coherent unit; don't review moving/unfinished writer bytes as a completed implementation. Parent owns tracker/mirror/UI and commits. Continue D2b under the selected child-override policy, then resolve actual product decisions when needed.
+Sixteen units: nine closed, D2b in progress, six pending. Source task metadata updates are folded into the next coherent unit; don't review moving/unfinished writer bytes as a completed implementation. Parent owns tracker/mirror/UI and commits. Continue D2b under the selected child-override policy, then resolve actual product decisions when needed.
