@@ -718,8 +718,32 @@ without maintaining another evolving Person schema.
 **Limits:** cold admission regenerates small worlds rather than providing a scaling/resource
 sandbox. No Proxy/global-monkeypatch hardening, authenticated provenance, legacy migration or
 cross-runtime portability claim. Helpers in these modules serve normalization/reconstruction;
-`initializeWorld` is the origin-producing operation. Production consuming/access-only/annual
-integration remains explicitly unimplemented and requires separate authorization.
+`initializeWorld` is the origin-producing operation. Production consuming/annual integration
+remains unimplemented; the access-only server seam below does not activate that integration.
+
+### Unit E1-access: provider-independent server admission
+
+`guardSimulationAccess(request, body)` in `src/server/abuse-guard.ts` returns `{ ok: true }`
+without calling any decision-engine export. It shares admission with the existing
+`guardSimulation(request, body)` wrapper; no production route switches to the new API in this unit.
+
+| Review point | E1-access contract |
+|---|---|
+| Admission order | Resolve the existing client IP, consume exactly one rate-limit attempt, then await existing Turnstile verification. An exhausted bucket skips verification. Configuration remains owned by the existing limiter and Turnstile modules. |
+| Denials | Return the same JSON 429 (`error: "rate_limited"`, `retryAfterSeconds`, matching `Retry-After`, existing 3600-second fallback) or 403 (`error: "verification_failed"`). Denied requests never acquire a provider or query engine source/background. Dependency exceptions propagate unchanged. |
+| Legacy wrapper | After successful admission only, acquire main decision maker → engine source → background decision maker, preserving engine shape, order and failures. It does not consume another rate-limit slot. |
+| Import boundary | Static decision-engine imports remain. Provider construction, cache loading and background construction stay inside existing acquisition functions/constructors, not the access operation. This is not broad module-loading laziness or a bundle-isolation promise. |
+
+**Verification boundary:** guard tests mock every decision-engine export and block or mock outgoing
+fetch. They exercise configured/unconfigured verification, IP fallback, 429 precedence, 403,
+verification/storage exceptions, single consumption, and legacy acquisition order/failures. Actual
+rate-limit cases retain the test setup's owned disposable `DATA_DIR`; no live database is opened.
+Legacy create/rewrite SSE and quiet-stream tests remain separate compatibility harnesses, not
+activation of canonical E simulation.
+
+**Limits:** abuse admission is not authentication or domain/policy authorization. No provider,
+route, settings, annual-resource policy, storage or narrative activation is introduced. This seam
+alone does not close E1's consuming-production milestone.
 
 ### Unit E2a: explicit-resource annual runtime, not autonomous simulation
 
