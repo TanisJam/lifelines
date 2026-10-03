@@ -687,6 +687,40 @@ delete/retention policy, legacy remapping, simulation/provider wiring or product
 is claimed. Those production/product decisions remain later E/F work; canonical codec versions
 and digest/registry/semantic admission stay entirely in the existing repository/domain layers.
 
+### Unit E1 core: initialization and canonical origin only
+
+`initializeWorld(input)` from `src/domain/world-initialization.ts` is an actual domain-only
+initialization entry point: it returns the generated mutable `world` and a detached, deeply frozen
+`origin`. This bounded core **does not integrate production E**, annual simulation, read-only
+sifting/access, providers, storage, routes or transport. A/B/C/D contracts remain unchanged.
+
+**Quick path:** initialize → retain origin before any annual mutation →
+`serializeWorldOrigin(origin)` → `deserializeWorldOrigin(wire)` for cold semantic admission.
+Do not derive origin from final people, cards or historical simulation commits.
+
+| Review point | E1 core contract |
+|---|---|
+| Version tuple | Schema `world-origin-e1`; initialization `worldgen-e1-ec4d6a2`; content `worldgen-content-ec4d6a2`; RNG `fnv1a-utf16-mulberry32-delimited-worldgen-e1`; sex policy `seeded_name_blind-e1`. These identify the frozen existing generator/content and its actual UTF-16 FNV-1a → Mulberry32, delimiter-composed keys; they are not A's manifest or a new annual RNG namespace. Algorithm/content changes require explicit tuple review. |
+| Random sex | At initialization, requested `random` draws `keyedRng(seed, "protagonist", startYear, "sex", 0)()`; `< .5` means female, otherwise male, independent of name. Capture request, resolved sex, key components and actual draw there; pass explicit sex to worldgen. Explicit f/m remains unchanged and has no draw; absent protagonist records null request/resolution. No LLM or legacy `resolveProtagonistSex` call. |
+| Effective inputs | Preserve normalized caller request separately from effective seed, town, years, founder count and resolved protagonist. Existing defaults are 1498/1558 and 62 requested adult founders; actual family-shape minimums remain unchanged, including count zero. Capture the generated town default directly from worldgen, without duplicating its private name table. Explicit default-equivalent calls have equal effective world, but different request identity. |
+| Initial canon | Complete config, Person registry including every mind field, actual registry traversal and ordered complete events. Marriage/birth/death/period backstory and protagonist birth all belong to initial canon, not annual commits. No invented per-field random transcript. Origin is an immutable snapshot, not a second evolving registry. |
+| Cold admission | Descriptor-first whole-frame copy, exact tuple and digest checks, re-generation from requested inputs to verify defaults/sex evidence, then independent reconstruction from effective inputs. Compare complete initial config/people/events/order and complete payload. Unknown fields anywhere, changed state/evidence/order, or unsupported versions reject even after SHA-256 is recomputed. A fully rewritten consistent origin is another candidate; digest is not authenticated authorship. |
+| Encoding | Strict canonical JSON: sorted record keys, ordered standard arrays, finite numbers; wire normalizes negative zero while the captured/reconstructed snapshot retains the generator's numeric state. Preserve all JS string code units, including empty strings, NUL and lone surrogates. Canonical wire bytes required; reject duplicate keys, whitespace and alternative JSON syntax. |
+| Input safety | No coercion, trimming, accessor reads or executable hooks. Accept plain/null records only; reject hidden/symbol fields, nonstandard/sparse/extended arrays, cycles, functions, BigInt and nonfinite values before reading data. Require safe-integer years/counts, nonnegative count, ordered years and safe founder birth-year arithmetic (oldest possible founder: 72). Reject negative zero (`Object.is(value, -0)`) specifically for `startYear`, `endYear` and `founderCount` before generation, including requested/effective origin admission: canonical JSON cannot preserve their signed-zero input identity. Ordinary positive zero remains supported under existing semantics; naturally generated internal mind/event negative zeros remain untouched and are reconstructed. This is an input-domain restriction, not whole-tree normalization. No callback, context, provider or annual-decision options. |
+
+**Permitted omissions:** caller optionals `townName`, `startYear`, `endYear`, `founderCount`,
+`protagonist` may contain own undefined, equivalent to absence. Initial Person/lifeState/mind
+optionals use the same explicitly enumerated paths described in D1 above; initial Event
+`significance` may be absent/undefined. Required fields, sex evidence, array entries and arbitrary
+payload entries cannot omit undefined. Complete generated shape comparison closes nested fields
+without maintaining another evolving Person schema.
+
+**Limits:** cold admission regenerates small worlds rather than providing a scaling/resource
+sandbox. No Proxy/global-monkeypatch hardening, authenticated provenance, legacy migration or
+cross-runtime portability claim. Helpers in these modules serve normalization/reconstruction;
+`initializeWorld` is the origin-producing operation. Production consuming/access-only/annual
+integration remains explicitly unimplemented and requires separate authorization.
+
 ### A-baseline: reproducible local measurements
 
 **Observed:** `pnpm exec tsx scripts/replay-baseline.ts` completed locally on Node **v26.8.1**,
