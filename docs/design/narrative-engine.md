@@ -976,6 +976,25 @@ Review A–C before expanding hidden density. Integrate D–E before treating th
 Optional prose validation and resumable transport need their own later, explicitly scoped work units;
 no dependency changes or UI redesign are prerequisites for proving the favor slice.
 
+## Public scene compatibility: neutral participants
+
+**Implemented compatibility only, not production activation.** `RelCode` now accepts
+`"participant"` for a presentation-only neutral `ScenePerson` in the existing `"others"`
+group. Participation asserts no friendship, kinship, rivalry, romance or acquaintance.
+It does not authorize creating canonical Person/Mind relationships or friend edges.
+
+| Boundary | Behavior |
+|---|---|
+| Public person | Existing required `id`, `name`, `sex`, `relCode`, `group`, `born`, `appearsAt` fields and optional fields are unchanged. No new group or `EdgeKind`. |
+| Labels | Existing `relationLabel` / `describeStar` consumers say **participant** in English and **participante** in Spanish for either sex, without ordinals even with multiple participants. Names and lifespan facts remain unchanged. |
+| Geometry and time | Existing `computeLayout` uses the `others` sector/radius; `frameAt` retains appearance/death and history-independent scrubbing. An edgeless participant can be visibly arrived while still outside the story circle, without increasing its count or creating edges. Participation is not a bond. |
+| Compatibility limit | This is an additive string-union value, not a new version protocol. Older clients may display the raw code fallback; compatibility with every older client is not guaranteed. JSON roundtrip tests are not runtime admission validation. |
+
+Focused pure-helper tests exercise these existing consumers and legacy scene regressions;
+they are not browser proof. No server chronicle/scene adapter, production emitter, UI or
+calendar behavior changes here. The historical bridge is an independent follow-up; no
+canonical world mutation or historical-person reconstruction is introduced by this unit.
+
 ## Internal E4 evidence: retained historical facts
 
 `src/domain/e-selection.ts` adds `selectHistoricalEvidence` with the separate

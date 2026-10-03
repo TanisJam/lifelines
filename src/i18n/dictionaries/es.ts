@@ -18,6 +18,7 @@ const ES_RELATION: Record<RelCode, readonly [string, string]> = {
   lover: ["amor", "amor"],
   rival: ["rival", "rival"],
   friend: ["amiga", "amigo"],
+  participant: ["participante", "participante"],
   childSpouse: ["nuera", "yerno"],
   grandchild: ["nieta", "nieto"],
 };

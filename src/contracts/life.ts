@@ -65,7 +65,8 @@ export interface Turn {
 
 /** Night-sky scene graph (spec: life-scene). Times are fractional years (1350.5 = mid-1350). */
 export type SceneGroup = "self" | "parents" | "siblings" | "spouses" | "children" | "others" | "outer";
-export type RelCode = "self" | "parent" | "sibling" | "spouse" | "child" | "lover" | "rival" | "friend" | "childSpouse" | "grandchild";
+/** `participant` is a presentation-only neutral entry in `others`, not an asserted social bond. */
+export type RelCode = "self" | "parent" | "sibling" | "spouse" | "child" | "lover" | "rival" | "friend" | "childSpouse" | "grandchild" | "participant";
 export type EdgeKind = "parent" | "spouse" | "lover" | "rival" | "friend";
 
 export interface ScenePerson {

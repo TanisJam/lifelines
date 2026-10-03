@@ -23,6 +23,7 @@ const EN_RELATION: Record<RelCode, readonly [string, string]> = {
   lover: ["love", "love"],
   rival: ["rival", "rival"],
   friend: ["friend", "friend"],
+  participant: ["participant", "participant"],
   childSpouse: ["daughter-in-law", "son-in-law"],
   grandchild: ["granddaughter", "grandson"],
 };

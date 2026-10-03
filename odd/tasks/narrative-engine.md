@@ -152,7 +152,7 @@ Scout `musjlkw3-l-iard` complete. Scope e-fork.ts/test+narrowdesign; forkAnnualR
 
 ### E4 — Read-only selection, rendering and SSE
 - [ ] Render selected as-of material without changing canon or requiring a provider.
-Map: narrate/life-chronicle/chronicle-data/life-scene/contracts/lives create/rewrite streams. Deterministic EN/ES favor templates, cause/actor links, contextual historical minds rather than final people. Quiet progress/cancellation/completed-only persistence; hidden causal activity remains journaled, not display quotas. Read installed Next guides before Next mutations.
+E4 placement approved7227; neutral participant approved7232. Scoped contract/labels/tests: `odd/tasks/narrative-public-participant.md`, full mirror7240. Historical scene/links follow; no E UI activation. Preserve quiet/cancellation/completed-only persistence/causal closure; read installed Next guides before code.
 
 ### F-prep — Explicit rules-only annual measurement corpus (complete)
 - [x] Implement, independently verify, review and commit a local stdout-only E measurement harness.
