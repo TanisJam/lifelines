@@ -1051,6 +1051,54 @@ bindings, retention, production activation, resource/opportunity policy and life
 migration remain separate units. Review lossless genuine-runtime fixtures, canonical
 wire attacks, replay tampering and ownership in `src/domain/e-capsule.test.ts`.
 
+## Internal E3 fork: cold rules-only prefix reconstruction
+
+`src/domain/e-fork.ts` exposes `forkAnnualRuntime(parent, frontier, suffix)` as an
+inactive, storage-free operation. Deserialize wire strings first; the parent must be
+an admitted-compatible capsule object. Supply explicit `null` for the initial root,
+or a safe integer (not `-0`) matching an **executed journal year**. Calendar gaps
+are not branch points. The suffix is a required own-data array, including `[]`,
+with no callback, iterator, authority or options API.
+
+**Quick path:** cold-admit the entire parent → regenerate a fresh authority-free
+runtime from `origin.requested` and `genesis.resources` → execute exactly the
+retained recorded plans → compare the complete retained journal → execute only
+caller-supplied suffix plans → certify the final output with the existing capsule.
+Discarded future history is still admitted first: invalid versions, hashes, tampering
+and human response history cannot be hidden by an earlier frontier.
+
+| Result field | Meaning |
+|---|---|
+| `version`, `parentDigest` | `annual-runtime-fork-e3-1` wrapper; source capsule identity metadata, not authenticated lineage or a branch ID. |
+| `frontier`, `prefixLength` | Requested boundary and count of retained executed records, not a relabelled final frontier. |
+| `initial`, `prefix` | Captured fresh initial and chosen-prefix outputs, never seeded from final Person/Mind/ledgers. |
+| `suffix` | Ordered detached annual **outputs**, not borrowed plans. No synthetic years, resource refill or future activity. |
+| `finalCapsule` | Existing certificate of the complete resulting rules history; it does not certify wrapper assertions. |
+
+Prefix proof compares all retained plans, entries, consumed evidence, effects,
+causes, outcomes and authority. It preserves array order/year gaps, record own-key
+sets/undefined presence and `Object.is` leaves including generated `-0`, while
+ignoring record insertion order and prototypes. A semantically reordered admitted
+parent can yield a different final digest; no byte or parent-digest reproduction
+promise is made. Results are deeply readonly, deeply frozen and caller-detached,
+including a cloned final capsule manifest and its nested E1 compatibility tuple:
+no object in the result is shared with the parent or caller-supplied suffix plans.
+
+The fresh runtime knows only origin, retained past and newly executed suffix.
+Discarded future actors/causes must be explicitly introduced again; retained IDs
+still collide. Reusing a discarded future ID is valid if locally unknown, **not** a
+global cross-branch identity policy. Late failure throws without returning a result
+or mutating callers; earlier work remains inside an inaccessible local runtime.
+This is not durable transactionality or reusable-runtime multi-year rollback.
+
+Historical selection still requires every relevant retained checkpoint. The wrapper
+captures one chosen prefix, not all intermediate prefix checkpoints or a retention
+policy. Review independent checkpoint parity, reordered records, full-parent
+admission, hook rejection, local identity and late failure in `e-fork.test.ts`.
+No human override, branch store/binding/publication, production activation,
+provider/rendering, new economy/discovery/lifecycle, scaling or full E3 closure
+is established by this module.
+
 ## 12. Open decisions, risks, and readiness
 
 | Open decision | Proposed review point |
