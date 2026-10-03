@@ -1,85 +1,93 @@
 # Narrative engine — ODD tasks
 
 ## Authority and invariants
-User authorized stepwise implementation and local work-unit commits on `feat/narrative-engine`; no push/PR/merge/deploy. Original main `d5d9ad5`; current boundary `e3f0e8e64ae8decf0a916d6a792b8df43ac92530`. Preserve pre-existing `.claude/`. Single writer; independent read-only agents may run concurrently. English artifacts/Spanish conversation. Applicable behavior uses observed RED → GREEN; independent/native review before commit.
 
-Source contract: `docs/design/narrative-engine.md`; handoff `/home/tanisjam/Downloads/lifelines_narrative_engine_handoff.md`. Deterministic model-free canon, persistent causes, opportunity-only director, read-only selection. Hidden activity is material, not a displayed-card quota. Frozen A-v1 behavior remains unchanged; B/C prototypes are explicit distinct versions. No duplicated people/obligation/tie worlds. Final persisted Person/lifeState is not an as-of projection; use frontier-valid inputs.
+- User authorizes implementation through completion and local work-unit commits on `feat/narrative-engine`; no push, PR creation, merge, deployment, installs, network operations or live database changes.
+- One writer per worktree. Parallel read-only mapping and verification are authorized. Preserve pre-existing untracked `.claude/`.
+- English artifacts; Spanish conversation. Applicable behavior uses observed RED → GREEN → refactor, writer checks, applicable independent checks and native review under the user-owned switch.
+- Initial branch point: `d5d9ad5`. Current committed boundary: `a41434954d214b4efc532ce55e85aec99d7a8ce5`.
+- Source of truth: `docs/design/narrative-engine.md`; original handoff: `/home/tanisjam/Downloads/lifelines_narrative_engine_handoff.md`. This complete current task document is mirrored in Engram6902, topic `odd/narrative-engine/tasks`.
+- Deterministic rules own canon. Directors weight opportunities, never eligibility/outcomes. Selection/prose are downstream and cannot mutate canon or leak future evidence. Hidden activity is material, not a displayed-card quota.
+- Preserve frozen A/B/C contracts. New authority/projection/rules require explicit versions. One Person registry with supplemental ledgers; final people/cards cannot reconstruct historical canonical inputs.
+- About 400 authored lines per task is advisory, not a hard cap or stop trigger. Never delete formatting, omit tests or introduce abstractions merely to fit it. Split only coherent behavior boundaries.
 
-This is the full current task document, mirrored in Engram6902/topic `odd/narrative-engine/tasks`. Detailed closed-unit evidence is retained in commits/design and observations6961–6967, not repeated here. Update document/mirror/UI on transitions. Local delivery remains separately authorized; review does not authorize publishing.
+## Delivery strategy — human selected
+
+`delivery_strategy=ask-on-risk` with the one shape question resolved; `chain_strategy=feature-branch-chain` (Engram7008). Preserve the existing feature assembly branch; plan dependent review slices with a draft/no-merge tracker when publication is separately authorized. No PRs, child refs, history rewrites or tracker PR have been created.
+
+Prospective work-unit ranges, not published PRs:
+
+| Unit | Base → end | Authored additions + deletions |
+|---|---|---:|
+| Design | d5d9ad5 → 0acd452 | 492 |
+| A | 0acd452 → 927c346 | 614 |
+| A-baseline | 927c346 → b683054 | 401 |
+| B | b683054 → 62e73d8 | 603 |
+| C1 | 62e73d8 → 4492d53 | 710 |
+| C2 | 4492d53 → 9de9631 | 540 |
+| D1 | 9de9631 → e3f0e8e | 547 |
+| D2a-prep | e3f0e8e → a414349 | 307 |
+
+Running authored count: **4,214** (including design/tracker; no generated/vendor diff). Remaining D authority is estimated at 500–650 lines; forks/production need per-unit refinement. At PR preparation, make one honest slicing pass, retain tests/docs with behavior and disclose any inseparable overage. No size exception or repository-specific label is authorized. Chaining shape grants no publication, maintenance or review consent.
 
 ## Closed work units
 
-### A — Deterministic replay
-- [x] Implement standalone strict replay.
-Design `0acd452626203f596f71817a13980bb541d25032`; A `927c346094091e0b11b2bd3dd2159b70e004b0b2`. Complete initial people/events/options/registry order, strict canonical SHA256, independent replay; no production/kernel/storage/forks or arbitrary historical overrides. Independent bond/accessor defects:7RED→44GREEN;44PASS Node24/26/type/lint. Earlier simulator120s timeout then77PASS/136.23s. Native `review-27ef7f8639835ce6` approved/acknowledged.
+- [x] **A — Strict replay:** `927c346094091e0b11b2bd3dd2159b70e004b0b2`. 44 tests Node24/26; bond/accessor regressions observed RED. Native approval acknowledged. Frozen A tuple/projection/rules preserved.
+- [x] **A-baseline — Measured corpus:** `b68305478e899b64d788dca6f2ae9992b3b7442f`. 49 tests and four paired cases Node24/26. Compression bytes differ across runtimes; no universal portability/scaling claim.
+- [x] **B — Atomic favor/obligation:** `62e73d803836a552a03eff50d0db2e1beb47ab73`. 101 tests Node24/26; inherited-array hook blocker fixed with RED regressions. Explicit abstract grain, objective HELP debt and supplemental directed ties; no inferred gratitude.
+- [x] **C1 — Causal request/response:** `4492d53d7c9417540d39d50ae602cf8db286a115`. 178 tests Node24/26, 14 adversarial rejections/zero hooks. Explicit effort/need; current feasibility and policy recomputed; ineligibility is not refusal; no resource regeneration.
+- [x] **C2 — Seeded opportunities:** `9de9631970dbdf06df8ed196b1995ec82ba95ca2`. 221 tests Node24/26, 20 adversarial rejections/zero hooks. Two slots/creditor/year, .25 activation, monotonic/quiet frontiers, exact cold continuation and stable semantic draws. C1/C2 are standalone demonstrations, not production integration.
+- [x] **D1 — Canonical capsule/repository:** `e3f0e8e64ae8decf0a916d6a792b8df43ac92530`. 272 tests Node24/26, nine independent rejection probes/zero hooks. Explicit C2 tuple/config/order, descriptor-first optional normalization, canonical SHA256 wire and detached serialized-memory loads/retries. Native `review-61186173d5d4a046` consumed. NOT SQLite durability/authenticated provenance. R3 surrogate-fixture warning is nonblocking later test work.
+- [x] **D2a-prep — Shared physics:** `a41434954d214b4efc532ce55e85aec99d7a8ce5`. Source284 authored lines plus tracker23. Missing API RED2/116pass, root-accessor RED1/118pass → focused GREEN → 302 total. Independent `murhwncq-y-f0q2`:302PASS Node26.8.1 (1.03s)/24.21.0 (1.17s), type/lint/whitespace and 19 additional checks/zero hooks. C JSON/version/identity/evidence/noise checks unchanged. Borrowed current view, detached physical ledgers, no people/log duplication. Native `review-5717a0b75c1f9286` approved/ACK burned target `14da4cba1f1076c828c93b4089f59ecebf251baf7d8704b437169632f881f268`, revision `964ee64ac012def2dad8ca4ab1abbb35f293984cfaffe24f8d502dee9927d1f1`. Post-commit ASSESS over e3f0e8e reports medium307, committed candidate unconsumed/under budget: deferred to its delivery slice, not claimed as committed-range receipt. Matching bytes already independently verified. Runtime harness N/A: pure domain helpers, no new process/UI/storage boundary. Rollback: helpers/tests/design only, retaining existing C wrappers. Detailed evidence: Engram6996 and immutable commits/design.
 
-### A-baseline — Actual corpus
-- [x] Measure reproducible paired runs.
-Commit `b68305478e899b64d788dca6f2ae9992b3b7442f`,357+/44-. Stdout-only CLI: RED→5GREEN, combined49PASS Node24/26/type/lint/whitespace. Four seeds/eight worlds+replays match canonical/raw counts;1327–1362/six founders/Alice-f, initial11people. Reached1327/1351/1328/1349, events1/124/4/94; two early deaths/none cap/no hazard fallback. Largest snapshots Node26:5,661,675raw/686,099gzip6/55,182Brotli5; Node24gzip686,079. Incorrect gzip-equality verifier assumption corrected without code change. No general portability/p95/peak heap/scaling claim. Native `review-8465a3307a368533` consumed.
-
-### B — Atomic grant and obligation
-- [x] Implement conserved grant/effect replay.
-Commit `62e73d803836a552a03eff50d0db2e1beb47ab73`,577+/26-. `favor-b1`, explicit safe-integer grain1 grant/open HELP debt, directed bounded supplemental ties, separate source-linked appraisals; no inferred wealth/gratitude/repayment. Immutable batch/prefix reconstruction/strict causal and own-data admission. Array-hook defect independently reproduced despite92green; correction8RED/44PASS→52GREEN,9regressions. Independent101PASS Node24/26/type/lint/whitespace; zero hooks, B JSON compatibility. Native `review-685fd5bf5a7048de` approved/acknowledged. No legacy schema, authenticated provenance, scaling or Proxy/global-monkeypatch guarantee.
-
-### C1 — Atomic causal response
-- [x] Implement grant → request → response with meaningful debt influence.
-Commit `4492d53d7c9417540d39d50ae602cf8db286a115`,631+/79-. `favor-c1`, no implicit B upgrade. Explicit assistance/need; later request after earlier-year grant, response-current factors recomputed. Help consumes1effort/need and fulfills; feasible refusal breaks without consumption. Ineligibility is not refusal; policy debtor→creditor, bounded actual consequence creditor→debtor (trust±5/refusal resentment+5). No automatic appraisals/typed fear. Calibrated-later probability defaults .10–.90; neutral open-debt salience .60 versus masked .40, wealth preference is mind.values.wealth. Explicit validated uniform noise, semantic identity excludes noise/prefix count.
-Writer28RED/52PASS+missing-policy→97GREEN→118focused; independent178PASS Node24/26/type/lint/whitespace,14adversarial rejects/zero hooks, exact B JSON retained. Parent hashes matched. Native `review-f755280e7732c6e1` medium710/reliability approved+acknowledged; targetae962ef41a9e0236ae6ab5ce88c67148ef71e69ee8dc719856ff72021c6e2af4/revision51bc75414f0f073c2427d3efed5ddf1a3cbaf5b062635b7608b43ef55f50f690 burned. C1 alone does not close C.
-
-## Closed causal demonstration
-
-### C2 — Seeded multiple opportunities
-- [x] Verify/review/commit standalone scheduler; close causal demonstration.
-Commit `9de9631970dbdf06df8ed196b1995ec82ba95ca2`,495+/45- across6exact-reviewed files. Mapper `murdn1lt-k-06hp`, writer `murdx74s-l-rqk2`, independent `muree7wi-m-y2g6` complete, no material findings. ASSESS unassessable undeclared-untracked scope required independent verification. Native `review-afaf6f98fd78e68b` medium540/reliability approved and acknowledged; target066caf4f05cefc1bcce15e0017f6bfe0ca69ecc61428999d2266614a1f2e1dc9/revision31477293fdb9b0e321a9899866119ec5191f4e1f5542c0cc5c22ef955c8ccd32 burned. Parent hashes matched; postcommit onlypreexisting.claude/untracked. C1+C2 close standalone demonstration, not production integration.
-
-Allowed surfaces: scheduler.ts/test, additive C-only opportunity/admission helper in effects.ts/test, concise design. All domain files under src/domain. Existing C1/B/A command/replay/version behavior, obligations/policy/RNG/production/types/mind/life-state/storage/UI/deps read-only.
-
-Contract: versioned envelope has one C world, seed, initial/completed-year frontier, original-prefix index and annual attempt evidence. Quiet years persist frontier; same-year/backwards/behind-event execution rejects. Monotonic gaps explicitly allowed, absent years not simulated. Metadata admission reconstructs initial prefix transiently and reproduces annual evidence/effects; forged metadata/suffix rejects, no authenticated authorship claim.
-
-Exactly2slots PER creditor/year, canonical UTF8 creditor/debt ordering with deterministic raw-string fallback for lone-surrogate byte collisions. First currently eligible debt per slot; independent .25 activation, quiet/no-target consumes no draw; inactive records activation only. Immediate C1 request/response with appraisals[], revalidate between slots/creditors; no duplicate settlement, resampling, regeneration or annual-hazard/provider invocation. All viable factors validated before activation, including quiet outcomes. Explicit eligibility reasons; malformed checkpoints/references/resources/factors throw, never catchall skip.
-
-Canonical scheduler/RNG-version/rule/ordered-actors/year/slot/debt/purpose keys; seed+key transported as one canonical variable RNG argument to avoid delimiter ambiguity. No prefix/draw/transport identity in semantic keys. Unrelated-creditor keys/draws/IDs stable; same-creditor competition may change target, log positions may shift. Single state registry, no world mirror.
-
-Writer evidence:455+/1- (456changed), five files, stayed within scope. Missing scheduler/API RED1failed/119PASS+suitefailure→153GREEN→161focused. Combined221PASS C2/C1/B/A/RNG Node26.8.1/type/lint/tracked+untracked whitespace. Seeds c2-1/c2-2/c2-11 demonstrate two requests/zero/refusal; tests cover shared last effort/need, pending/dead/away/too-early, JSON restoration/quiet frontier/forged suffix, Unicode order, identity isolation/zero-hook/dependency traps. Historical RED writer evidence only.
-
-Hashes: scheduler172be6bc692ee9fbf9ebc5481321ddb9a8331a0cfcf16fc28a1d8be797c838be/teste9ad0e708931ca058ddbcbb11fc49c4c58db1d257f4b6ed16c45f8b9bd6a3b75; effects58e6e477c239e75d72b5597a82764ac5c0fb12337f6839822e28b2def82c5b1e/test04944056fabe3581299903c691975e914380c667e19aeef85b97db29d22efb67; design73fe706f62b9f3b881457be64fa4cd50fc31b4965c3d7b794436c8c739f04143. Independent221PASS on Node26.8.1 (1.15s) and Node24.21.0 (929ms), type/lint/whitespace PASS, source/design hashes unchanged.20adversarial cases rejected (frontier/prefix/noise/outcomes/IDs/records/events/quiet-year repetition/inactive malformed factors/hooks), zero hooks/unexpected admissions; quiet JSON restoration+next year equals uninterrupted execution. Native approval/acknowledgement and local commit observed. Isolation is not production integration or scaling evidence.
-
-## Current and pending work units
-
-### D1 — Provenance capsule and repository
-- [x] Admit/serialize/save/cold-load standalone canonical records.
-Commit `e3f0e8e64ae8decf0a916d6a792b8df43ac92530`,537+/10- across six files. Writer `murfaim0-o-ypcs`: missing-module RED → 51 focused GREEN, 272 total. Independent `murfr3s7-r-a1cl`:272PASS Node26.8.1/24.21.0 (1.22s/1.32s), type/lint/whitespace and five hashes matched; frozen C sources unchanged. Nine independent rehashed/config/order/accessor/undefined/boxed-wire cases rejected with zero hooks; c2-11/cold continuation/concurrent immutable insert/retry/detachment preserved. Native `review-61186173d5d4a046` medium547/reliability approved and exactly acknowledged, authority burned for target0a93c4920f07490c191115166df1159497c08b1ad4ea5306c1ca00fd2b1272a2/revisionc5ebeb45fb8df7a618a78079fc6d49e1b3195f04e0ca2a3e64ce3c6de9f0a677. Nonblocking R3-surrogate-fixture warning at capsule.test.ts:181 is later test work, not a correction. Postcommit only pre-existing .claude/untracked.
-User selected `d_include_sqlite`: full D includes real SQLite adapter tested only temporary/disposable DBs. No liveDBDDL/deploy/network. D1 proves serialized-memory cold loading, not production durability; D1 does not close D.
-
-Allowed D1 surfaces: new src/domain/favor-capsule.ts/test, new src/server/favor-repository.ts/test, concise design; tracker parent-owned. Capsule explicit schema/projection/engine/reducer/scheduler/RNG/config tuple, seed/frontiers/prefix/order metadata, complete Cstate/events/effects/attempts, one registry. Existing C2 admission remains authority; no A orchestration import/hash/projection refactor or B/C runtime change. Strict descriptor-first wire admission/hash, normalize only explicitly declared optional legacy undefined fields; unknown undefined rejects. Preserve declared registry traversal order across canonical serialization, no provenance from legacy cards. Repository stores strings, fresh decoder/instance cold-loads; no live-object alias or duplicate retry effects. Unsupported legacy canonical import failclosed; old view compatibility untouched.
-
-Acceptance: deterministic canonical payload/hash and versions/order/options/resources/events/attempts; tamper/hash disagreement/unsupported schemas/hooks reject before reads; detached save/load, fresh-instance cold-load equality, quiet-year restoration+next-year equality, no replay duplication. Tests first, retain221C/B/A/RNG regression baseline, independent Node24/26/type/lint/whitespace/native/localcommit per unit. Effective scheduler config is fixed2slots/.25activation, not caller-customized. Static frontier-valid Person inputs, not production as-of reconstruction.
-
-### D2a-prep — C-preserving shared physics
-- [ ] Extract a truthful current-view context and atomic response-physics seam.
-In progress. Writer `murg6ma0-u-hi95` inspected full D2a, estimated500–650 changed lines, and stopped before writes/tests. Parent selected a smaller preparation unit: effects.ts/test and concise design only; no D state/authority behavior yet. Preserve strict C constructors/imports/version dispatch and exact canonical C data. Separate noise-authoritative admission from feasibility/context/effect application without casting D logs into C checkpoints; one Person registry. Missing shared API tests provide meaningful RED, then existing272 regressions/type/lint/Node24/26/native/localcommit. Do not claim prep completes D2a or D2.
+## Current work
 
 ### D2a — Explicit response authority
-- [ ] Implement a versioned D response/reducer seam without weakening C admission.
-Pending preparation; mapper `murfmhar-q-bgay` split D2 to protect review focus. Allowed surfaces: new src/domain/favor-authority.ts/test, narrow shared primitives in effects.ts/test, concise design. Preserve factors/distribution/noise/seeded baseline; record separate eligible human target/option (help|refuse), never fabricate noise or feasibility. Constructors/imported D events use one authority resolver and canonical effect primitives, settle once. Reject malformed/forged authority, wrong target/actors/year, invalid request/debt/resources and duplicated response/effects. Existing C/A contracts still reject D authority/mixed logs; no scheduler/fork/capsule/repository/production changes in D2a. Distinct explicit D engine/reducer/projection admission for C prefix + D responses, no full engine copy or duplicate Person world. Test-first, independent Node24/26 and native review/local commit required.
+- [ ] Implement versioned D response/reducer admission without weakening C.
+In progress; route delegated writer (multi-file trigger). Allowed surfaces: new `src/domain/favor-authority.ts`/test, narrow `src/domain/effects.ts`/test extensions only if necessary, concise design.
+
+Preserve factors/distribution/noise and seeded baseline choice. Record separate eligible human help/refuse authority, never forged noise/feasibility. One authority resolver and physical seam for generated/imported D responses. Explicit D projection admits unchanged C prefix plus D suffix; no full engine copy or D-log cast into a C checkpoint. Reject malformed authority/target/actors/year/request/debt/resources, tampered evidence/effects and duplicates. C constructors/imports and D1 C2 capsule still reject D/mixed projection. No fork/scheduler/capsule/repository/production change yet. Test-first, Node24/26 checks and local work-unit commit; version isolated from frozen C.
+
+## Pending work
 
 ### D2b — Fork identity and inheritance
-- [ ] Branch from an earlier-year prefix with eligible human choice and inherited overrides.
-Pending D2a. Derived favor-fork.ts/test plus D scheduler and narrow shared scheduler/capsule/repository extensions mapped before writer. Preserve pre-fork-year prefix/IDs verbatim; never replay prefix under a new D identity version. Explicit D manifest declares C2-baseline RNG namespace compatibility. RNG keys and target ordering include obligation identity, so validated semantic grant/obligation/request IDs must stay separate from lineage-qualified physical suffix IDs; rewrite all suffix references consistently, not only event IDs. Seeded baseline draws/distribution unchanged, ordered inherited/new authority. Same-target replacement is a real decision before D2b: mapper recommends nearest-child choice precedence with preserved history, identical target/actors/year, eligibility, no earlier-prefix replacement and one effective application; unreachable inherited targets need explicit handling. No future parent outcomes/choices or finalPerson/legacycards leak; static people are not production as-of reconstruction. D1+D2 alone not fullD.
+- [ ] Fork from prior-year prefixes with explicit eligible human choice and inherited overrides.
+Map derives `favor-fork.ts`/test, D scheduler and narrow scheduler/capsule/repository extensions after D2a. Preserve prefix data/IDs verbatim, including quiet frontier. Keep C2 baseline RNG tuple literals/transport and semantic obligation order; separate semantic grant/obligation/request IDs from physical lineage suffix IDs/references. No future parent choices/outcomes/people leakage.
 
-### D3 — Real SQLite attachment
-- [ ] Implement/test durable SQLite canonical attachment without rewriting legacy rows.
-Pending D2; read-only mapper `murfr3s7-s-v31u` complete. Actual storage node:sqlite in db/life-store; default opens on getDb, explicit openDb paths support isolated files. User authorizes adapter scope and temporary/disposable DB tests only; production DATA_DIR/lifelines.db untouched, no live migration/deploy. Smallest derived surfaces: new src/server/sqlite-favor-records.ts/test implementing opaque serialized-string FavorRecords with injected DatabaseSync/additive immutable table. Existing db/life-store need not change unless actual association requires it. Verify close/reopen exact bytes/capsule, two-connection identical/conflict races and rollback; adapter enforces atomic immutable insert independently of repository pre-read. Canonical admission bypasses legacy class remap/SimulationResult. Branch/life association and delete/retention are explicit decisions before affected surfaces; old rewrite retains branches and a new latest branch must remain canonical-absent without explicit capture. New production Ccanon/inputcapture/kernelintegration remains E. No fabricated provenance for old rows.
+**Product decision before behavior:** nearest-child replacement versus rejection for inherited same-target choices. Recommendation: nearest-child precedence with ordered history, identical target/actors/year, no earlier-prefix replacement and one effective application; record unreachable inherited targets explicitly inactive rather than forcing them. Not yet human-approved.
 
-### E — Selection and production
-- [ ] Integrate live/final selection, model-free canon and annual SSE.
-Depends C/D. No hindsight leakage, causal context, canonical model removal including initialization, quiet progress/cancel/completed persistence; compression/editability/time gate first.
+### D3 — Real SQLite records
+- [ ] Durable adapter and restart proof using temporary/disposable databases only.
+Map: new `src/server/sqlite-favor-records.ts`/test, injected `DatabaseSync`, additive immutable records table over serialized-string repository port. Existing db/life-store need not change for standalone storage. Atomic immutable insert must enforce races independently of repository pre-read. Test exact bytes/capsule across close/reopen, conflicts, rollback and corruption. Never open production DATA_DIR/lifelines.db or run live migrations.
+
+Life/branch association and deletion/retention are product decisions before affected code, not silently chosen here. Canonical capsules bypass legacy class remapping. New legacy rewrite branches remain canonical-absent unless explicitly captured; do not fabricate old provenance.
+
+### E1 — Production capture and deterministic policy
+- [ ] Capture true initial inputs and remove LLM authority, including initialization.
+Map: worldgen/simulate/decisions/decision-engine/abuse-guard and versioned canonical capture. Resolve/capture random sex deterministically before world mutation. Preserve A/legacy behavior; explicit E policy shared by batched/nonbatched/daily paths, not callback-shape/budget-dependent occurrence.
+
+### E2 — Annual causal integration
+- [ ] Integrate one evolving Person registry with real favor/resource ledgers.
+Map: simulate/types/shared D physics and canonical journal. Record actor introductions and resource/state transitions; static C2 admission cannot certify annual Person evolution. Remove E's forced annual display-vignette guarantee from physics, not frozen legacy/A.
+
+**Product decisions before affected code:** grant opportunity origin/participants/surplus/need/frequency; units/bounds/initial and newcomer allocations/regeneration; supplemental ties versus existing Mind relationships; annual phase/newcomer eligibility. Recommend explicit versioned/journaled abstract policy, not wealth-preference/class/final-mind inference. No defaults silently approved.
+
+### E3 — Production forks and persistence
+- [ ] Atomically bind completed branches to capsules and restore full inherited canon.
+Map: fork/life-store/rewrite SSE, D repository/SQLite adapter. Preserve prefix decisions/snapshots/ledgers/history, cold nested equality and immutable branch→digest bindings; do not reuse old single-override/empty-decisions behavior. Canonical-absent legacy remains viewable; canonical rewrite fails closed. Binding lifecycle policy needs approval before implementation.
+
+### E4 — Read-only selection, rendering and SSE
+- [ ] Render selected as-of material without changing canon or requiring a provider.
+Map: narrate/life-chronicle/chronicle-data/life-scene/contracts/lives create/rewrite streams. Deterministic EN/ES favor templates, cause/actor links, contextual historical minds rather than final people. Quiet progress/cancellation/completed-only persistence; hidden causal activity remains journaled, not display quotas. Read installed Next guides before Next mutations.
 
 ### F — Director and calibration
-- [ ] Add bounded deterministic opportunity weights and measured corpus comparisons.
-Depends C/E. Clamp/cooldown/no-op; no outcome/eligibility authority/drama quotas; runtime/storage/consequence/variation budgets first.
+- [ ] Fix reproducible corpus/budgets, then calibrate bounded opportunity weights.
+Clamp/cooldown/no-op and unchanged eligibility/outcomes. Measure runtime distribution, memory, journal/snapshot/storage bytes, cold fork equality and consequence/density measures before tuning. No unsupported global performance claims.
 
-## Verification and next action
-Host Node26.8.1/V8 14.6.202.34-node.28; cached read-only/network-free Node24.21.0/V8 13.6.233.17-node.53. Vitest ephemeral token cache required; host token predates work. Known Vite warning. Full suite/build/browser/corpus CLI not rerun for standalone C1/C2; integration/performance pending. Prior passive tracker reviews cover no new code. Preserve .claude/ in untracked scope selection/staging. Completion metadata remains uncommitted until next coherent unit.
+## Checks and continuity
 
-D1 closed/committed; D2 split into shared-physics preparation, D2a authority and D2b forks, for twelve work units total. User permits parallel subagents; keep one writer, parallel read-only mapping/verification. Resume bounded writer for C-preserving preparation only; full D2a stopped before any writes/tests. D3 remains SQLite temporary-DB checks only. Earlier tracker-only START failed pre-native-execution transition validation (none mutation), not binary/version corruption; exact branch unavailable. Fresh normalized D1 START succeeded through host-owned consent; no repair/reset/sync performed. No production DB operations or unmapped source edits. Optional LLM prose/resumability later scope.
+Host Node26.8.1/V8 14.6.202.34-node.28; cached offline Node24.21.0/V8 13.6.233.17-node.53. Existing Vite warning persists. Writer RED is observed writer evidence, not independently rerun RED. Full suite/build/browser/corpus/real SQLite excluded from standalone units; applicable production checks remain required at E/F closure with mocked providers/blocked network and disposable databases. Avoid remote determinism and storage-writing richness/mortality scripts.
+
+Preserve existing review authorities: obsolete `review-312a51d4f1149abd` e52 TDD snapshot remains correction-required, never reset/abandoned/reused; later exact-target reviews do not erase it. Intermediate079 approval did not close preparation. The complete14da approval and verified a414349 commit close preparation only. No native review substitutes functional checks or authorizes publication.
+
+Fifteen units: seven closed, D2a in progress, seven pending. Source task metadata updates are folded into the next coherent unit; don't review moving/unfinished writer bytes as a completed implementation. Parent owns tracker/mirror/UI and commits. Continue D2a, then resolve actual product decisions when needed.

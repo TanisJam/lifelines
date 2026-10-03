@@ -499,7 +499,8 @@ portability/scaling claim, SQLite/storage integration or production canonical-in
 ### D2a preparation: shared help physics, C admission unchanged
 
 `effects.ts` separates current help physics from C's versioned response admission. This is a
-preparation seam only: **no D authority record, D projection, fork or storage admission exists yet**.
+preparation seam: D2a below adds explicit standalone authority admission, while fork and D storage
+admission remain deferred.
 
 | Helper | Responsibility and boundary |
 |---|---|
@@ -514,6 +515,34 @@ C constructors/imports still enforce `favor-c1`, exact command/event/checkpoint 
 noise-selected consequences; D-shaped authority extensions and mixed versions reject. C2 and D1
 remain unchanged. Tests preserve pre-extraction C evidence/resource/tie JSON and cover help/refusal,
 bounded deltas, explicit appraisals, last-resource revalidation, atomic rejection and zero hooks.
+
+### Unit D2a: standalone explicit response authority
+
+`favor-authority.ts` admits an unchanged C prefix followed only by D help responses. It is not a
+fork engine, authenticated human identity, production historical projection or D1 storage upgrade.
+
+**Quick path:** `createAuthorityFavorState(admittedC)` → `helpResponseTarget(state, request, year)` →
+`respondWithAuthority(state, command)`. Omit authority for an explicit seeded record, or supply
+`{ version, source: "human", target, actors, year, choice: "help" | "refuse" }`. Both choices require
+current eligibility; an impossible help opportunity cannot be converted into a feasible refusal.
+
+| Review point | D2a contract |
+|---|---|
+| Closed versions | Manifest schema/projection/engine/reducer/rules are exactly `favor-authority-d2a`; D response IDs use that distinct version. Public C admission and D1's C2 capsule tuple remain unchanged and reject D or mixed projections. |
+| One world | Persist one registry, original initial allocations/effort/need, one mixed log and derived ledgers. `prefixLength` divides C from D. Admission transiently reconstructs the C prefix using C replay, then D responses, and rejects checkpoint disagreement. No D checkpoint is cast into C and no initial/final Person mirror is stored. |
+| Baseline versus authority | Recompute current factors/options/distribution and baseline from recorded uniform noise. Evidence records `baselineSelection`, `effectiveChoice` and validated authority separately. Human authority may select the opposite eligible option without changing noise or policy; declared source is not authentication or inferred machine consent. Seeded authority has the same target metadata but no choice field. |
+| Target and causes | Semantic target uses canonical C request key/year, ordered creditor/debtor and response year, excluding noise, log position, transport and authority choice. Physical D IDs and effect origins remain separate from request/grant causes. Fork lineage and suffix reference rewriting are not implemented. |
+| Current preconditions | Require a fresh current-year C request, open debt, earlier grant, current living/present parties, positive explicit capacity/need and a non-reversing log frontier. Revalidate each response, settle exactly once and stage canonical effects atomically through shared physics. |
+| Import/replay | `applyAuthorityFavorEvent`, `replayAuthorityFavorEvents` and `admitAuthorityFavorState` use the same authority resolver as commands. Strict own-data guards precede reads; exact fields, metadata, evidence, effects and references reject tampering. Existing C legacy optional absence remains supported without blanket undefined pruning. JSON cold replay preserves registry traversal and prefix data/IDs. |
+
+Appraisals are empty unless explicitly supplied and source-validated; trust ±5, refusal resentment
++5 and actual bounded deltas retain C physics. Fixtures demonstrate both opposite-baseline human
+choices, seeded C consequence parity, current-policy recomputation and last-resource conflicts.
+Only C pending requests are accepted: D requests, grants, scheduling, inherited-choice precedence,
+unreachable inherited targets, forks, D capsules/repositories and production integration remain
+later units. Rewriting complete initial ground truth creates another candidate; neither admission
+nor recorded declared authority certifies provenance. No portability, performance or Proxy sandbox
+claim is introduced.
 
 ### A-baseline: reproducible local measurements
 
