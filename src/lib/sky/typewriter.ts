@@ -1,5 +1,5 @@
 import type { ChronicleEntry } from "@/contracts/life";
-import { parseProseMarkers } from "@/lib/prose-markers";
+import { resolveEntryProse } from "@/lib/prose-markers";
 
 /** Sim-years per character: the title is inked slowly, the rest faster. The typewriter runs on the life's own clock, so it pauses and scrubs with it. */
 export const TYPE_TITLE = 0.016;
@@ -48,16 +48,16 @@ export interface EntryText {
   readonly title: string;
   /** The deciding party of a turn ("Her choice"). */
   readonly by?: string;
-  /** Prose with `{{id}}` markers resolved to names. */
+  /** Literal token plaintext, or legacy `{{id}}` markers resolved to names. */
   readonly prose: string;
   /** Where each linked name sits inside `prose`. */
   readonly links: readonly LinkRange[];
 }
 
-export function entryText(entry: Pick<ChronicleEntry, "title" | "prose" | "links" | "turn">): EntryText {
+export function entryText(entry: Pick<ChronicleEntry, "title" | "prose" | "links" | "proseTokens" | "turn">): EntryText {
   let prose = "";
   const links: LinkRange[] = [];
-  for (const part of parseProseMarkers(entry.prose, entry.links)) {
+  for (const part of resolveEntryProse(entry)) {
     if (part.kind === "link") links.push({ start: prose.length, end: prose.length + part.name.length, personId: part.personId });
     prose += part.kind === "link" ? part.name : part.text;
   }
@@ -71,9 +71,9 @@ export const typeParts = (text: EntryText): TypePart[] => [
 ];
 
 /** Sim-years an entry takes to type out completely, after its moment. */
-export const typeDuration = (entry: Pick<ChronicleEntry, "title" | "prose" | "links" | "turn">): number =>
+export const typeDuration = (entry: Pick<ChronicleEntry, "title" | "prose" | "links" | "proseTokens" | "turn">): number =>
   typeParts(entryText(entry)).reduce((total, part) => total + part.text.length * part.rate, 0);
 
 /** The moment the last entry finishes typing; `-Infinity` for none. */
-export const typingEnd = (entries: readonly Pick<ChronicleEntry, "at" | "title" | "prose" | "links" | "turn">[]): number =>
+export const typingEnd = (entries: readonly Pick<ChronicleEntry, "at" | "title" | "prose" | "links" | "proseTokens" | "turn">[]): number =>
   entries.reduce((end, entry) => Math.max(end, entry.at + typeDuration(entry)), -Infinity);

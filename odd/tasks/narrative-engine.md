@@ -6,7 +6,7 @@
 - One writer per worktree. Parallel read-only mapping and verification are authorized. Preserve pre-existing untracked `.claude/`.
 - Human requests autonomous advancement and iteration through all remaining phases using parallel subagents wherever safe. Continue engineering work without routine approval round trips; unresolved product choices and native human consent remain human-owned. No parallel write isolation or publication authorization is implied.
 - English artifacts; Spanish conversation. Applicable behavior uses observed RED → GREEN → refactor, writer checks, applicable independent checks and native review under the user-owned switch.
-- Initial branch point: `d5d9ad5`. Current reviewed implementation boundary: `0d55bdd674aecfb56a2aa3c756b01dd92c6beee2`; later passive closure bookkeeping is separate.
+- Initial branch point: `d5d9ad5`. Current reviewed implementation boundary: `2420bad6d8bce97133a5e16765f44345f1f79a6d`; later passive closure bookkeeping is separate.
 - Source of truth: `docs/design/narrative-engine.md`; original handoff: `/home/tanisjam/Downloads/lifelines_narrative_engine_handoff.md`. This complete current task document is mirrored in Engram6902, topic `odd/narrative-engine/tasks`.
 - Deterministic rules own canon. Directors weight opportunities, never eligibility/outcomes. Selection/prose are downstream and cannot mutate canon or leak future evidence. Hidden activity is material, not a displayed-card quota.
 - Preserve frozen A/B/C contracts. New authority/projection/rules require explicit versions. One Person registry with supplemental ledgers; final people/cards cannot reconstruct historical canonical inputs.
@@ -45,7 +45,7 @@ Prospective work-unit ranges, not published PRs:
 | E4-participant | 205a20c → 0d55bdd | 165 |
 | P1-literal-reel | 97a9df5 → c235b89 | 357 |
 
-Running authored count: **11,860** through P1 `c235b89` =11,490 through reviewed `0d55bdd` +13 prior passive closure +357 P1 (301 additions/56 deletions; 298 source/test/design +59 new tracker). F-prep + participant slice486 net vs494 authored reflects overlapping metadata. Latest reviewed committed-range boundary remains `0d55bdd`; P1 workspace ACK is distinct, not range approval. Parent's next committed-range ASSESS starts at that base after passive closure (13+357 before this closure metadata); later closure authored count is pending/deferred to the P2 slice (including design/tracker; no generated/vendor diff). D2a actual source/tests/design: 511 lines; tracker adds 120. Forks/production need per-unit refinement. At PR preparation, make one honest slicing pass, retain tests/docs with behavior and disclose any inseparable overage. No size exception or repository-specific label is authorized. Chaining shape grants no publication, maintenance or review consent.
+Running authored count: **11,922** through reviewed `2420bad` =11,860 through P1 `c235b89` +62 passive closure (33 additions/29 deletions). P1 remains357 authored (298 source/test/design +59 tracker). Reviewed range `0d55bdd`→`2420bad` is410 net vs432 separately authored (13+357+62), reflecting overlapping bookkeeping. Exact approved/burned committed-range receipt: Engram7287; workspace approval remains distinct. New closure metadata is deferred to the next slice (including design/tracker; no generated/vendor diff). F-prep + participant slice486 net vs494 authored also reflects overlapping metadata. D2a actual source/tests/design: 511 lines; tracker adds 120. Forks/production need per-unit refinement. At PR preparation, make one honest slicing pass, retain tests/docs with behavior and disclose any inseparable overage. No size exception or repository-specific label is authorized. Chaining shape grants no publication, maintenance or review consent.
 
 ## Closed work units
 
@@ -155,7 +155,7 @@ Scout `musjlkw3-l-iard` complete. Scope e-fork.ts/test+narrowdesign; forkAnnualR
 
 ### E4 — Read-only selection, rendering and SSE
 - [ ] Render selected as-of material without changing canon or requiring a provider.
-E4 placement approved7227; neutral participant approved7232. Contract/labels/tests closed `0d55bdd`: `odd/tasks/narrative-public-participant.md`, full mirror7240. Public prose tracker: `odd/tasks/narrative-prose-links.md`, full mirror7267; P1 literal rendering/exact selection closed `c235b89cd69a2995f8560f5adc2e123c6eccd4d5` (verified workspace ACK, not committed-range approval), P2 structured tokens pending/not started. Historical scene/links follow; no E UI activation. Preserve quiet/cancellation/completed-only persistence/causal closure; read installed Next guides before code.
+E4 placement approved7227; neutral participant approved7232. Contract/labels/tests closed `0d55bdd`: `odd/tasks/narrative-public-participant.md`, full mirror7240. Public prose tracker: `odd/tasks/narrative-prose-links.md`, full mirror7267; P1 literal rendering/exact selection closed `c235b89cd69a2995f8560f5adc2e123c6eccd4d5` (workspace and committed-range ACKs; Engram7287), P2 structured tokens pending/not started. Historical scene/links follow; no E UI activation. Preserve quiet/cancellation/completed-only persistence/causal closure; read installed Next guides before code.
 
 ### F-prep — Explicit rules-only annual measurement corpus (complete)
 - [x] Implement, independently verify, review and commit a local stdout-only E measurement harness.

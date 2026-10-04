@@ -37,6 +37,11 @@ export interface PersonLink {
   readonly name: string;
 }
 
+/** Opt-in literal prose: link tokens resolve exact canonical IDs through `links`. */
+export type ProseToken =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "link"; readonly personId: string };
+
 /** 1 = ordinary, 2 = significant, 3 = turn (editable). ui-ux-handoff.md §7. */
 export type EntryLevel = 1 | 2 | 3;
 
@@ -122,9 +127,11 @@ export interface ChronicleEntry {
   readonly level: EntryLevel;
   readonly kind: "birth" | "death" | "period" | string;
   readonly title: string;
-  /** May contain `{{personId}}` markers resolved through `links`. */
+  /** Legacy markers when tokens are absent; otherwise exact resolved token plaintext. */
   readonly prose: string;
   readonly links: readonly PersonLink[];
+  /** Optional opt-in; absent/undefined retains legacy parsing. Invalid tokens throw TypeError. */
+  readonly proseTokens?: readonly ProseToken[];
   /** At most one: "Follows her courtship with Greta Ravensworth (1506)". */
   readonly cause?: { readonly entryId?: string; readonly phrase: string; readonly year: number };
   readonly turn?: Turn;
