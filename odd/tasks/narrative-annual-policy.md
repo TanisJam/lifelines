@@ -1,6 +1,6 @@
 # Annual favor policy — ODD tasks
 
-**AP1: IN PROGRESS — inactive planner writer and independent verification finished; native review and local commit pending.** Human approval Engram7490, option 3 **including the common base**, accepts the numeric annual allowance and offer policy below. It does not activate autonomous production. This tracker is fully mirrored in project `lifelines`, topic `odd/narrative-annual-policy/tasks`, with repository-relative locator `odd/tasks/narrative-annual-policy.md`.
+**AP1: DONE — inactive planner verified, native review approved and parent-owned local work-unit commit completed.** Human approval Engram7490, option 3 **including the common base**, accepts the numeric annual allowance and offer policy below. It does not activate autonomous production. This tracker is fully mirrored in project `lifelines`, topic `odd/narrative-annual-policy/tasks`, with repository-relative locator `odd/tasks/narrative-annual-policy.md`.
 
 ## Approved annual policy
 
@@ -26,17 +26,17 @@ Human selected two policy choices and rejected the open-life release premise. Th
 - **Requests:** adopt two HELP request opportunities per creditor per executed year, seeded activation 25%, for eligible earlier-year debt. Keep the evolving dynamic registry separate from the frozen fixed-registry C2 certificate; do not claim C2 certifies annual evolution. Preserve current-world revalidation and the physical → resources → grants → earlier-debt requests/responses phase order.
 - **Retention:** block explicit life deletion while canonical bindings or history exist; no automatic garbage collection. E3 still requires atomic completed-branch publication, immutable branch→digest bindings and full inherited prefix/history restoration; this approval does not implement them.
 
-## AP1 — Inactive deterministic versioned planner (IN PROGRESS)
+## AP1 — Inactive deterministic versioned planner (DONE)
 
-- [ ] Implement `buildAnnualFavorPlan(input: unknown /* RuntimeOutput */, year: number): AnnualPlan` as one coherent source-and-tests unit.
-- [ ] Admit RuntimeOutput through `replayAnnualRuntime`, reusing the verified guard rather than creating weaker parallel admission.
-- [ ] Require a strictly future year relative to the admitted frontier; never generate allocations or offers for unexecuted intervening years.
-- [ ] Emit resources and grants only: no physical operations or requests. Stage new budget balances locally before evaluating grants; never mutate the admitted input.
-- [ ] Apply the approved eligibility, reset, feasibility, open-pair and per-person limits above with deterministic conflict resolution.
-- [ ] Version the policy and JSON RNG tuples explicitly: policy version, world seed, actor, year and purpose must all participate. Separate purposes must not alias draws.
-- [ ] Use stable UTF-8 ordering with a raw-string tie-breaker for arbitrary IDs, including UTF-8 encoding ties; no locale-dependent ordering or ID restrictions.
-- [ ] Return detached output with canonical positive zero in emitted numeric values; preserve legitimate internal RuntimeOutput values through existing admission.
-- [ ] Cover runtime execution/capsule replay compatibility without claiming that replay certifies annual-policy provenance.
+- [x] Implement `buildAnnualFavorPlan(input: unknown /* RuntimeOutput */, year: number): AnnualPlan` as one coherent source-and-tests unit.
+- [x] Admit RuntimeOutput through `replayAnnualRuntime`, reusing the verified guard rather than creating weaker parallel admission.
+- [x] Require a strictly future year relative to the admitted frontier; never generate allocations or offers for unexecuted intervening years.
+- [x] Emit resources and grants only: no physical operations or requests. Stage new budget balances locally before evaluating grants; never mutate the admitted input.
+- [x] Apply the approved eligibility, reset, feasibility, open-pair and per-person limits above with deterministic conflict resolution.
+- [x] Version the policy and JSON RNG tuples explicitly: policy version, world seed, actor, year and purpose must all participate. Separate purposes must not alias draws.
+- [x] Use stable UTF-8 ordering with a raw-string tie-breaker for arbitrary IDs, including UTF-8 encoding ties; no locale-dependent ordering or ID restrictions.
+- [x] Return detached output with canonical positive zero in emitted numeric values; preserve legitimate internal RuntimeOutput values through existing admission.
+- [x] Cover runtime execution/capsule replay compatibility without claiming that replay certifies annual-policy provenance.
 
 ### Execution boundary
 
@@ -57,7 +57,7 @@ Actual parent-reported authored count: **496 lines** — source 93, tests 403 �
 
 ## Acceptance and verification plan
 
-The source writer has finished; parent-provided evidence is recorded below, not independently reproduced by this document-only transaction. Independent verification has completed on frozen candidate bytes; all AP1 closure boxes remain unchecked until native review and the parent-owned local commit complete.
+All AP1 acceptance checks are DONE on parent-observed closure evidence below. Independent verification, native review and the parent-owned local commit completed; this document-only transaction does not reproduce source tests or review.
 
 | Coverage | Required evidence |
 |---|---|
@@ -68,14 +68,14 @@ The source writer has finished; parent-provided evidence is recorded below, not 
 | Offers | 25% activation and 50% allowance draws under explicit tuples; transfer 1; staged balances; creditor/recipient thresholds; max one offer and receipt per person/year; open HELP protection in both directions; unchanged debts. |
 | Compatibility | Explicit runtime advance and capsule cold replay, quiet plans/gaps, unchanged input and frozen contracts; no policy-provenance or same-year physical-validity inference. |
 
-Next sequence: **freeze this documentation write → native high-risk review under parent-owned consent → local parent-owned work-unit commit → future isolated parallel worktrees from the committed base**. User Engram7496 prioritizes parallel isolated checks and the earliest release within scope; it does not waive gates. Independent receipts below are parent-provided, not rerun here. Future physical/persistence/UI maps must follow Engram7500 above. The parent owns launches; no native review, commit, worktree creation or release is claimed here.
+Next sequence: **freeze and passively commit this documentation base under parent ownership → isolated parallel worktrees → parent integration/review gates**. Continue through [the release execution tracker](narrative-release-execution.md). Engram7496 approves parallel isolation; Engram7500 governs full-death release. These approvals do not waive gates. No source work, review, commit, worktree creation or release is performed by this tracker-only writer.
 
 ### Parent-provided independent verification receipts
 
 - Node24.20.0: **458 tests / 7 files PASS in 7.32s**; types, lint and whitespace PASS.
 - Node26 spot check: **33 tests PASS in 2.60s**; source review found no deterministic defect.
 - Four verification hashes remained stable per parent receipt. The two frozen source/test hashes below and unchanged HEAD are locally checked in this tracker-only transaction; do not invent the other hash values or exact test commands.
-- AP1 remains **IN PROGRESS**, pending native review and local commit. These checks do not establish autonomous production, physical termination or E3/UI implementation.
+- AP1 is **DONE**, with native review and commit evidence below. These checks do not establish autonomous production, physical termination or E3/UI implementation.
 
 ### Parent-provided writer evidence — not independent verification
 
@@ -84,18 +84,28 @@ Next sequence: **freeze this documentation write → native high-risk review und
 - Final focused coverage: **33 passing tests**, including actual-target draw ties, UTF-8/raw-string ties, signed zero, debt preservation, missing allocations, adult eligibility and explicit caller bypass.
 - Full writer suite: **7 files, 458 tests passing**. Node26 types, lint and whitespace checks passed after correcting intermediate TypeScript narrowing/deep-instantiation issues. These intermediate corrections are not outstanding failures.
 - Exact writer command strings were not supplied in this reconciliation; these are parent-reported results, not newly executed validation.
-- Automated ASSESS was **unavailable because the untracked candidate was undeclared**, not because tests failed. Assessment is conservatively **high risk**; independent verification has since completed as recorded above, while native review remains pending.
+- Automated ASSESS was **unavailable because the untracked candidate was undeclared**, not because tests failed. Assessment is conservatively **high risk**; independent verification has since completed as recorded above, and native review subsequently approved the unit.
 - Frozen source SHA-256: `8998aeb439e0ae9f72fedf786a352580d635e516315357d13881fcedc9bc86d7`.
 - Frozen test SHA-256: `c94f5bccc0eac891b1f2564026d88694c5592e980e3b8289adffc7232884b149`.
-- HEAD remains `c3154ef78b9270b62b6b5a9bc56f2e84aacfa8f6`; candidate is uncommitted. AP1 remains **IN PROGRESS**, not released. Runtime/capsule compatibility does not establish post-physical validity or annual-policy provenance.
+- Parent-observed committed source HEAD: `507f9b9eee15eee7b3055a093c61fedd57616cd0`; AP1 is **DONE**, not a full product release. Runtime/capsule compatibility does not establish post-physical validity or annual-policy provenance.
+
+### Parent-observed closure receipt
+
+- COMMITTED boundary: `c3154ef78b9270b62b6b5a9bc56f2e84aacfa8f6` → `507f9b9eee15eee7b3055a093c61fedd57616cd0`.
+- Native review `review-7f5f0feb5f97e8ec`: **approved**, assessed **medium**, **609 authored lines**. ACK **BURNED**.
+- Target: `974f9ab02677d35fca95e2d803862d1ad83b682b8e6bf613504ecb01e698d76a`.
+- Consumed: `ca7cd2ff6dcabd4de612351583d5e986f79ba65c6f102a6c2e32ce32e465de87`.
+- Candidate: `34d2e669d964d94db56c375f833aab35b0b4fca1` (candidate identity, never a STATUS).
+- Accounting: source/tests **496** + tracker **111** + main tracker **2** = **609**; running authored count **14,467 → 15,076**.
+- Closure is parent-observed; this transaction verifies unchanged HEAD/source hashes and full tracker/mirror readback only.
 
 ## Delivery and continuity
 
 - Preserve human-selected Engram7008: `delivery_strategy=ask-on-risk`, resolved shape, `chain_strategy=feature-branch-chain`. Mainline17 remains resolved; do not re-ask routine delivery shape.
-- Starting HEAD: `c3154ef78b9270b62b6b5a9bc56f2e84aacfa8f6`; parent-provided prior running authored count: **14,467**. This is continuation context, not a rewrite of closed main-tracker counts or review receipts.
+- Tracker-only starting HEAD: `507f9b9eee15eee7b3055a093c61fedd57616cd0`; parent-provided running authored count: **15,076**. Preserve closed main-tracker counts and review receipts.
 - No PR, push, child-ref creation or history rewriting. The parent owns review and local commit actions; this document-only writer performs none.
 - Preserve pre-existing untracked `.claude/` and every unrelated closed unit/file/memory. The accepted-policy link already exists in [the main tracker](narrative-engine.md); preserve it. Do not update main mirror Engram6902, dedicated L17483, bridge7341 or repo7467 in this reconciliation.
-- Current transaction edits only `odd/tasks/narrative-annual-policy.md` and its full mirror Engram7492 with repository-relative locator. No source writes, Git-native review, network/install/provider/database/child-agent operations.
+- Current transaction edits only `odd/tasks/narrative-annual-policy.md`, `odd/tasks/narrative-release-execution.md` and their full mirrors with repository-relative locators. No source writes, Git-native review, network/install/provider/database/child-agent operations.
 
 ## Pending beyond AP1
 
