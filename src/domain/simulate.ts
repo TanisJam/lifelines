@@ -1,82 +1,42 @@
 import { ageInYear, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
-import { beginLegacyYear, resolveLegacyVitalDecision, type LegacyYearContext } from "./legacy-year";
-import { commitId, mintId, pushEvent, resolveCourtshipOnDeath, resolveWidowhood } from "./legacy-year-mechanics";
+import { beginLegacyYear, emitLegacyYearShocks, presentLegacyLeyrwite, resolveLegacyBiology, type LegacyYearContext } from "./legacy-year";
+import { commitId, mintId, overrideFor, pickAwayDestination, pushEvent, resolveCourtshipOnDeath, resolveWidowhood, spawnChild } from "./legacy-year-mechanics";
 import { mapWithConcurrency } from "./concurrency";
-import { candidateMatchesSubject, decisionSubject, type MintedId } from "./decision-id";
+import type { MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, pairKey, recentUnresolvedBreakup } from "./events";
 import { biologyDistribution } from "./life-course-rules";
 import { applyLifeTransition, ensureLifeState, markMarriageable } from "./life-state";
 import { article } from "./narrate";
-import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
+import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
 import { storyCircle } from "./story-circle";
-import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import {
-  ARRANGED_GENTRY_MATCH_PROBABILITY,
   CONCEPTION_PROBABILITY_BANDS,
   FERTILITY_DAMPING_FLOOR,
-  IMMIGRATION_ANNUAL_PROBABILITY,
-  IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE,
   IMMIGRATION_POPULATION_CAP_RATIO,
-  IMMIGRATION_POST_PLAGUE_END_YEAR,
-  IMMIGRATION_POST_PLAGUE_YEAR,
   MARRIAGE_FLOORS,
   RETURN_HOME_MIN_AWAY_YEARS,
-  RETURN_HOME_PROBABILITY,
   VILLAGE_CARRYING_CAPACITY_RATIO,
 } from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import {
   BLACK_DEATH_YEARS,
-  datedNationalEventTypesForYear,
-  isHundredYearsWarLevyYear,
   SECOND_PESTILENCE_YEARS,
 } from "./period/events";
-import { isLeyrwiteEligible, isUnfree, manorialFinePayload, shouldPresentLeyrwite } from "./period/markers";
+import { isUnfree, manorialFinePayload } from "./period/markers";
 import { minEligibleAge } from "./hazards";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
-import { TRAIT_POOL, type Event, type EventKind, type JsonValue, type Job, type Override, type Person, type Sex, type SimulationResult, type SocialClass, type Trait, type WorldConfig, type YearSnapshot } from "./types";
+import type { Event, EventKind, JsonValue, Job, Override, Person, Sex, SimulationResult, SocialClass, WorldConfig, YearSnapshot } from "./types";
 import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
-import { isLiterate, pickCommonClass, pickJobForClass, pickTraits } from "./worldgen";
+import { pickJobForClass } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
 
 /** Round 11 (decision 044): how many people's person-year batches to request in parallel within a single simulated year. Distinct from `DEFAULT_CONCURRENCY_LIMIT` (biology/legacy per-candidate calls) — this is the fan-out width across people, throttled further by the adapter's own rate limiter. */
 const DEFAULT_YEAR_BATCH_CONCURRENCY = 64;
-
-/**
- * A decision gets persisted into the log if it produced a real outcome, OR
- * if the road not taken had at least this much probability mass — i.e. it
- * was a genuine crossroads, not a coin so weighted it could only ever land
- * one way. Below this, a "did nothing happen" record for every person,
- * every year, would dwarf the actually-interesting decisions (see decision
- * 007). Applies to biology decisions (illness, death, immigration); social
- * decisions are always recorded once asked, since (round 12, decision 045)
- * eligibility is now the only code-side filter — Jev's per-person-year
- * event-selection Choice, not a code-level probability gate, decides which
- * eligible candidate (if any) actually happens.
- */
-const RECORD_THRESHOLD = 0.05;
-
-/** The kind of settlement a protagonist who leaves home might settle in (decision 040). */
-const SETTLEMENT_KINDS = ["market town", "port town", "city"] as const;
-
-/**
- * Deterministically names the place a protagonist settles after leaving home (decision 040) —
- * keyed by seed + the year they left, reusing the `SURNAMES` pool (already town-name-shaped) so
- * no new name list is needed. `full` is the one-time introduction ("Millbrook, a market town");
- * `name` alone is used for every later reference.
- */
-function pickAwayDestination(seed: string, year: number): { name: string; kind: string; full: string } {
-  const nameIdx = Math.floor(keyedDraw(seed, "away-destination", year, "name") * SURNAMES.length);
-  const kindIdx = Math.floor(keyedDraw(seed, "away-destination", year, "kind") * SETTLEMENT_KINDS.length);
-  const name = SURNAMES[nameIdx]!;
-  const kind = SETTLEMENT_KINDS[kindIdx]!;
-  return { name, kind, full: `${name}, a ${kind}` };
-}
 
 export interface SimulateOptions {
   readonly decisionMaker: DecisionMaker;
@@ -645,54 +605,6 @@ function townEventMortalityMultiplier(townEvent: TownEventType | undefined, age:
   if (!townEvent) return 1;
   if (HARDSHIP_TOWN_EVENTS.has(townEvent)) return 1.6;
   return 1;
-}
-
-/**
- * Decision 058 (keys renamed 1:1 by decision 063): who actually bore feudal/tax dues (research.md,
- * Economy §"Taxes, housing, diet" — tithe of 10%, rent and entry fines) — a DESIGN ASSUMPTION (no
- * sourced per-class ratio exists), same disclosed-assumption pattern as `CLASS_MORTALITY_MULTIPLIER`
- * (decision 050). Cottars/villeins paid the most relative to their means; gentry/clergy bore feudal
- * dues far more lightly, when at all. PR5 spikes this during the Hundred Years' War levy years
- * (1337-47, `isHundredYearsWarLevyYear`) instead of decision 058's Tudor-era Lay Subsidy years.
- */
-const LEVY_CLASS_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
-  cottar: 1.3,
-  villein: 1.15,
-  freeholder: 1.0,
-  artisan: 0.9,
-  merchant: 0.8,
-  clergy: 0.5,
-  gentry: 0.4,
-};
-
-/** Defensive `?? FALLBACK_CLASS` — same rationale as `minMarriageAge` above (decision 063 follow-up). */
-function levyClassMultiplier(socialClass: SocialClass): number {
-  return LEVY_CLASS_MULTIPLIER[socialClass] ?? LEVY_CLASS_MULTIPLIER[FALLBACK_CLASS];
-}
-
-/**
- * Matches by `(kind, subject)`, not exact id string (decision-identity capability): `subject` here
- * is always the candidate's own `personId` — the SAME identity `mintId`/`commitId` below mint
- * against — not its internal within-year bookkeeping key (which, for a paired candidate like `Y1`,
- * embeds a `pairKey`, not a bare personId, and would never match a minted id's subject). `overrides`
- * come from the caller and may carry either a legacy year-embedded id or a new ordinal one;
- * `decisionSubject` parses both the same way, so only the override side needs parsing at all.
- *
- * `isOverrideYear` gates this to the run's own start year (a fork/rewrite's `fromYear`, always the
- * target decision's own year — see `fork.ts`): dropping the year from the matched id would
- * otherwise force this SAME (kind, subject) at every later year of the re-simulation too, not just
- * the one the override actually targets.
- *
- * `partnerId`, when the candidate has one, lets a LEGACY pairKey-shaped override id (a paired social
- * kind like `Y1`, minted before ordinal ids existed) still match (fixed after review, R3-001) — see
- * `decision-id.ts#candidateMatchesSubject`.
- */
-function overrideFor(overrides: readonly Override[], kind: string, subject: string, isOverrideYear: boolean, partnerId?: string): Override | undefined {
-  if (!isOverrideYear) return undefined;
-  return overrides.find((o) => {
-    const parsed = decisionSubject(o.decisionId);
-    return parsed.kind === kind && candidateMatchesSubject(parsed.subject, subject, partnerId);
-  });
 }
 
 /** Years a person is "immune" from another illness roll after falling ill, so illness doesn't spam a handful of bad-luck years. */
@@ -2194,6 +2106,7 @@ export async function* simulateYears(
     const yearContext: LegacyYearContext<CandidateDescriptor, MarriageFunnelCollector> = {
       config, people, events, decisions, originalOverrideYear: startYear, protagonistId, counters,
       debug: marriageFunnelDebug,
+      get optionsProtagonistId() { return options.protagonistId; },
       captureCandidates: (debug) => gatherCandidatesForYear(
         year, people, events, seed, options.protagonistId,
         debug ? { collector: debug, startYear: config.startYear } : undefined,
@@ -2214,197 +2127,11 @@ export async function* simulateYears(
     // `townEventForYear` is the exact same pure function `gatherCandidatesForYear` used to decide
     // whether to offer every adult an A5 decision this year, so the two can never disagree.
     const townEvent = townEventForYear(seed, year);
-    let townEventId: string | undefined;
-    if (townEvent) {
-      const event = pushEvent(events, year, "town", [], { eventType: townEvent }, []);
-      townEventId = event.id;
-    }
-
-    // Engine life course PR5: dated national events (the Hundred Years' War's opening, the
-    // Ordinance and Statute of Labourers) — pushed unconditionally, independent of
-    // `townEventForYear`'s single random/dated-shock slot above (see `period/events.ts`'s
-    // `DATED_NATIONAL_EVENTS` doc comment for why these don't compete for that slot).
-    for (const periodType of datedNationalEventTypesForYear(year)) {
-      pushEvent(events, year, "town", [], { eventType: periodType, period: true }, []);
-    }
-    // --- Biology: synchronous, no AI calls ----------------------------------
-    // Illness is processed before death for the same person (in `gatherCandidatesForYear`'s
-    // sort order, "death" < "illness" alphabetically would be wrong — we sort by kind name,
-    // so re-sort biology explicitly: illness first, so a same-year illness can raise the death odds).
-    biologyCandidates.sort((a, b) => {
-      if (a.personId !== b.personId) return a.kind === "immigration" ? 1 : b.kind === "immigration" ? -1 : a.personId.localeCompare(b.personId);
-      return a.kind === "illness" ? -1 : b.kind === "illness" ? 1 : 0;
-    });
-
-    const illnessResultByPerson = new Map<string, Event | undefined>();
+    const townEventId = emitLegacyYearShocks(yearContext, year, townEvent);
+    const leftVillageThisYear = resolveLegacyBiology(yearContext, year, biologyCandidates, overrides, townEvent, townEventId);
+    presentLegacyLeyrwite(yearContext, year);
 
     const isOverrideYear = year === yearContext.originalOverrideYear;
-    // Decision 083: daughters who marry out of the village this year (resolved in this biology loop),
-    // so their social candidates, gathered before they left, are dropped below like a same-year death.
-    const leftVillageThisYear = new Set<string>();
-    for (const descriptor of biologyCandidates) {
-      const forced = overrideFor(overrides, descriptor.kind, descriptor.personId, isOverrideYear);
-      const minted = mintId(people, descriptor.kind, descriptor.personId, year);
-      let record: DecisionRecord;
-
-      if (descriptor.kind === "illness" || descriptor.kind === "death") {
-        resolveLegacyVitalDecision(yearContext, descriptor, year, forced, minted, illnessResultByPerson, townEventId, townEvent);
-      } else if (descriptor.kind === "levy") {
-        // Decision 058: a class-specific multiplier (research.md, Economy §"Taxes, housing, diet" —
-        // tithe, rent and the levy fell on tenants and labourers; gentry/clergy bore feudal dues far
-        // more lightly, when at all) — a DESIGN ASSUMPTION, no sourced per-class ratio exists, same
-        // disclosed-assumption pattern as decision 050's `CLASS_MORTALITY_MULTIPLIER`. Engine life
-        // course PR5 spikes this during the Hundred Years' War's own levy/taxation years (1337-47,
-        // research.md's event list) instead of decision 058's Tudor-era Lay Subsidy years — the levy
-        // candidate is protagonist-only (see the `SimulateOptions` doc comment), so this never
-        // touches the general village.
-        const levySocialClass: SocialClass = people[descriptor.personId]!.socialClass ?? "cottar";
-        const hywLevyYear = isHundredYearsWarLevyYear(year);
-        const p = Math.min(0.9, 0.045 * (townEvent === "famine" ? 1.4 : 1) * levyClassMultiplier(levySocialClass) * (hywLevyYear ? 1.8 : 1));
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "impose") {
-          const event = pushEvent(events, year, "levy", [descriptor.personId], {}, []);
-          resultingEventIds.push(event.id);
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "impose" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      } else if (descriptor.kind === "away-arrival") {
-        // A lightweight newcomer joining the away cast (decision 040) — code-rolled, exactly like
-        // immigration, and resolved here (before social `buildQuestion` runs) so a real Person
-        // already exists for the SAME year's Y1/Y5 candidates to reference by id.
-        const p = 0.4;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "arrive") {
-          const newPerson = spawnAwayPerson(seed, year, people);
-          people[newPerson.id] = newPerson;
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      } else if (descriptor.kind === "return") {
-        // Returning home (decision 040; generalized to the whole village by PR10/decision 071 — see
-        // `RETURN_HOME_PROBABILITY`'s own doc comment) — a small yearly chance, not a considered
-        // choice, so it's code-rolled like immigration/levy rather than sent to a DecisionMaker.
-        const p = RETURN_HOME_PROBABILITY;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "return") {
-          const returning = people[descriptor.personId]!;
-          returning.lifeState = applyLifeTransition(ensureLifeState(returning, events), { axis: "residence", to: "home" }, year);
-          const event = pushEvent(events, year, "move", [descriptor.personId], { away: false, returned: true, destination: config.town.name }, []);
-          resultingEventIds.push(event.id);
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "return" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      } else if (descriptor.kind === "arranged-match") {
-        // Decision 083: fires straight to a marriage — no courtship phase at all, unlike every other
-        // Y1/A1-driven marriage. An arranged match IS the decision (made by her family, off-screen),
-        // not a suitor she spends years courting.
-        const p = ARRANGED_GENTRY_MATCH_PROBABILITY;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "arrange") {
-          const daughter = people[descriptor.personId]!;
-          // Decision 083: a villager's daughter marries OUT — her suitor stays an off-screen `away`
-          // prop and she moves to his manor, so the village never gains a new gentry household
-          // (letting suitors move in multiplied the class: literacy 12.9%, adult gentry -9 years).
-          // Only the protagonist stays home, so the match never writes her out of her own story.
-          const marriesOut = descriptor.personId !== options.protagonistId;
-          const suitor = spawnGentrySuitor(seed, year, daughter.id, people, marriesOut);
-          people[suitor.id] = suitor;
-          // Read each lifeState BEFORE setting spouseId below (same ordering reason as A1's own
-          // "propose" case above — `ensureLifeState` derives a missing state from `spouseId`).
-          const daughterState = ensureLifeState(daughter, events);
-          const suitorState = ensureLifeState(suitor, events);
-          daughter.spouseId = suitor.id;
-          suitor.spouseId = daughter.id;
-          daughter.lifeState = applyLifeTransition(daughterState, { axis: "marital", to: "married", partnerId: suitor.id }, year);
-          suitor.lifeState = applyLifeTransition(suitorState, { axis: "marital", to: "married", partnerId: daughter.id }, year);
-          // Both spouses are gentry by construction (`spawnGentrySuitor` always mints gentry) — no
-          // merchet (decision 080's `classesAtMarriage` mechanism), since merchet is an unfree-tenant
-          // due, and gentry are free (`isUnfree` is always false for this class).
-          const classesAtMarriage: Record<string, SocialClass> = { [daughter.id]: "gentry", [suitor.id]: "gentry" };
-          const event = pushEvent(events, year, "marriage", [daughter.id, suitor.id], { classesAtMarriage, arranged: true }, []);
-          resultingEventIds.push(event.id);
-          if (marriesOut) {
-            const dest = pickAwayDestination(seed, year);
-            daughter.lifeState = applyLifeTransition(ensureLifeState(daughter, events), { axis: "residence", to: "away", place: dest.full }, year);
-            const move = pushEvent(events, year, "move", [daughter.id], { away: true, destination: dest.full, arranged: true }, [event.id]);
-            resultingEventIds.push(move.id);
-            leftVillageThisYear.add(daughter.id);
-          }
-          for (const [self, other] of [[daughter, suitor] as const, [suitor, daughter] as const]) {
-            pushThought(self.mind, "joy", `marrying ${other.name}`, 70, 6, year, "lovePropensity", other.id);
-            const core = addMemory(seed, self.id, year, self.mind, `married ${other.name} in ${year}`, "joy", other.id);
-            if (core) applyCoreMemoryShift(seed, self.id, year, self.mind, "trust", 1);
-            updateRelationship(self.mind, other.id, other.mind.values, 40, "spouse");
-          }
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "arrange" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      } else {
-        // PR9 (partner-scarcity fix, engram #6142/#6311): named/documented in params/demography.ts
-        // -- was a hardcoded, undocumented `0.05` literal. See that constant's own doc comment for
-        // the measured before/after and the tradeoff this raise carries.
-        // Decision 079 (Follett-plausible population growth): the rate rises for the bounded
-        // [IMMIGRATION_POST_PLAGUE_YEAR, IMMIGRATION_POST_PLAGUE_END_YEAR) recovery window only, then
-        // reverts -- own doc comment on `IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE` has the full
-        // reasoning, including why this is bounded rather than left on for the rest of the run.
-        const isPostPlagueWindow = year >= IMMIGRATION_POST_PLAGUE_YEAR && year < IMMIGRATION_POST_PLAGUE_END_YEAR;
-        const p = isPostPlagueWindow ? IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE : IMMIGRATION_ANNUAL_PROBABILITY;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, config.town.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "arrive") {
-          const newPerson = spawnImmigrant(seed, year, people);
-          people[newPerson.id] = newPerson;
-          const event = pushEvent(events, year, "move", [newPerson.id], { away: false, arrived: true }, []);
-          resultingEventIds.push(event.id);
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      }
-
-      // Piggyback the (deterministic, no-alternative) school event on the
-      // once-per-living-person "death" pass rather than giving it its own
-      // decision — starting school at 6 has no real alternative outcome.
-      if (descriptor.kind === "death" && !hasMovedAway(events, descriptor.personId)) school(events, people, descriptor.personId, year);
-    }
-
-    // PR5's leyrwite presentment (design's markers table): a keyed side draw, evaluated once per
-    // calendar year for every living, unfree, currently-courting woman — OUTSIDE the categorical
-    // event-pick below, on its own dedicated key, so it never perturbs any other person-year draw.
-    // PR6: now reads `lifeState.marital.status === "courting"` directly (design's own literal
-    // wording), since PR6 wires the Y1 "encourage" outcome into that transition — PR5 fell back to
-    // `activeRomancePair` because PR3 never fired it (see the Y1 case's own comment above).
-    for (const person of Object.values(people)) {
-      if (person.deathYear !== undefined || person.away || hasMovedAway(events, person.id)) continue;
-      const isCourting = ensureLifeState(person, events).marital.status === "courting";
-      if (!isLeyrwiteEligible(person, isCourting)) continue;
-      if (shouldPresentLeyrwite(seed, person.id, year)) {
-        pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("leyrwite", person.id), []);
-      }
-    }
 
     // Round 12 (decision 045): `socialCandidates` was gathered BEFORE biology ran this year, so it
     // can still name someone (as `personId` or `partnerId`) who biology just killed above — with the
@@ -3447,132 +3174,6 @@ function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p
     causes: [],
     resultingEventIds: [],
   };
-}
-
-/**
- * Decision 057: replaces the old universal age-6 `school` event. `literate` is decided once, at
- * birth (`worldgen.ts#isLiterate`, keyed by class and sex per research.md's literacy table) — this
- * only decides WHEN the (already-determined) literate ones are taught, at age 7, and only pushes an
- * event for them. Everyone else simply never gets a `school` event, which is the period-faithful
- * default (research.md: labourers ~5-10% literate, ~90% of women illiterate overall).
- */
-function school(events: Event[], people: Record<string, Person>, personId: string, year: number): void {
-  const person = people[personId];
-  if (!person) return;
-  if (ageInYear(person.birthYear, year) === 7 && person.literate) {
-    pushEvent(events, year, "school", [personId], { socialClass: person.socialClass ?? "cottar" }, []);
-  }
-}
-
-/** Picks a first name not already in use by any of `existingNames` with this exact full name — see decision 019 (duplicate names). Falls back to an epithet if the whole pool for this sex is exhausted (small towns won't hit this, a very large one might). */
-function uniqueFirstName(existingNames: ReadonlySet<string>, sex: Sex, preferredIndex: number, surname: string): string {
-  const pool = sex === "f" ? FEMALE_NAMES : MALE_NAMES;
-  for (let offset = 0; offset < pool.length; offset++) {
-    const first = pool[(preferredIndex + offset) % pool.length]!;
-    if (!existingNames.has(`${first} ${surname}`)) return first;
-  }
-  return `${pool[preferredIndex % pool.length]} the Younger`;
-}
-
-function spawnImmigrant(seed: string, year: number, people: Readonly<Record<string, Person>>): Person {
-  const newId = `immigrant-${year}`;
-  const sex: Sex = keyedRng(seed, newId, year, "sex")() < 0.5 ? "f" : "m";
-  const age = 18 + Math.floor(keyedRng(seed, newId, year, "age")() * 14); // 18-31
-  const birthYear = year - age;
-  const nameIndex = Math.floor(keyedRng(seed, newId, year, "name")() * 20);
-  const surnameIndex = Math.floor(keyedRng(seed, newId, year, "surname")() * 20);
-  const surname = pickName(sex, 0, surnameIndex).split(" ")[1]!;
-  const existingNames = new Set(Object.values(people).map((p) => p.name));
-  const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
-  const name = `${first} ${surname}`;
-  const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
-  // Decision 049: an immigrant is assigned one of the five "common" classes (not clergy/gentry,
-  // which are structural, one-per-village roles decided at worldgen — see `worldgen.ts`); no
-  // sourced figure exists for immigrant class distribution specifically, so this reuses the same
-  // founder-class weights as a documented, reasonable default.
-  const socialClass = pickCommonClass(keyedRng(seed, newId, year, "social-class"));
-  const job = pickJobForClass(socialClass, keyedRng(seed, newId, year, "job"));
-  const literate = isLiterate(seed, newId, birthYear, sex, socialClass);
-  const mind = createMind(seed, newId, birthYear, []);
-  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, socialClass, literate };
-}
-
-/**
- * An off-screen gentry suitor arriving via an arranged marriage (decision 083) — same shape as
- * `spawnImmigrant`, but ALWAYS gentry: this is the one deliberate, narrow exception to decision 049's
- * "an immigrant never produces gentry" (that decision's own reasoning was about the GENERAL
- * immigration pool having no sourced gentry-share figure, not about this specific, rare, plot-driven
- * arranged-match mechanism — see decision 083's own doc comment). Content-derived id
- * (`gentry-suitor-<brideId>-<year>`, unique per arranged match).
- * Age band (20s, per research.md's 14th c. gentry-men-marry-later anchor already cited by
- * `MARRIAGE_FLOORS`'s own doc comment) is narrower than a common immigrant's 18-31, since an arranged
- * match specifically seeks an established heir, not a young laborer looking for work.
- */
-function spawnGentrySuitor(seed: string, year: number, brideId: string, people: Readonly<Record<string, Person>>, offScreen: boolean): Person {
-  // Keyed by the bride as well as the year, so two arranged matches in one year never share an id.
-  const newId = `gentry-suitor-${brideId}-${year}`;
-  const sex: Sex = "m";
-  const age = 20 + Math.floor(keyedRng(seed, newId, year, "age")() * 8); // 20-27
-  const birthYear = year - age;
-  const nameIndex = Math.floor(keyedRng(seed, newId, year, "name")() * 20);
-  const surnameIndex = Math.floor(keyedRng(seed, newId, year, "surname")() * 20);
-  const surname = pickName(sex, 0, surnameIndex).split(" ")[1]!;
-  const existingNames = new Set(Object.values(people).map((p) => p.name));
-  const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
-  const name = `${first} ${surname}`;
-  const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
-  const socialClass: SocialClass = "gentry";
-  const job = pickJobForClass(socialClass, keyedRng(seed, newId, year, "job"));
-  const literate = isLiterate(seed, newId, birthYear, sex, socialClass);
-  const mind = createMind(seed, newId, birthYear, []);
-  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, socialClass, literate, ...(offScreen ? { away: true } : {}) };
-}
-
-/** A lightweight newcomer met in the protagonist's away catalog (decision 040) — deterministic and content-derived (`away-<year>`), same shape as `spawnImmigrant`, tagged `away: true` so it never joins the home village's own pools. */
-function spawnAwayPerson(seed: string, year: number, people: Readonly<Record<string, Person>>): Person {
-  const newId = `away-${year}`;
-  const sex: Sex = keyedRng(seed, newId, year, "sex")() < 0.5 ? "f" : "m";
-  const age = 16 + Math.floor(keyedRng(seed, newId, year, "age")() * 20); // 16-35
-  const birthYear = year - age;
-  const nameIndex = Math.floor(keyedRng(seed, newId, year, "name")() * 20);
-  const surnameIndex = Math.floor(keyedRng(seed, newId, year, "surname")() * 20);
-  const surname = pickName(sex, 0, surnameIndex).split(" ")[1]!;
-  const existingNames = new Set(Object.values(people).map((p) => p.name));
-  const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
-  const name = `${first} ${surname}`;
-  const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
-  const socialClass = pickCommonClass(keyedRng(seed, newId, year, "social-class"));
-  const job = pickJobForClass(socialClass, keyedRng(seed, newId, year, "job"));
-  const literate = isLiterate(seed, newId, birthYear, sex, socialClass);
-  const mind = createMind(seed, newId, birthYear, []);
-  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, away: true, socialClass, literate };
-}
-
-function spawnChild(seed: string, year: number, mother: Person, father: Person, people: Readonly<Record<string, Person>>): Person {
-  // Content-derived id: a mother has at most one child per year, by construction of the have-child gate.
-  const childId = `child-${mother.id}-${year}`;
-  const sex: Sex = keyedRng(seed, childId, year, "child-sex")() < 0.5 ? "f" : "m";
-  const traitRng = keyedRng(seed, childId, year, "child-traits");
-  const traits: Trait[] = [];
-  const pool = [...TRAIT_POOL];
-  for (let t = 0; t < 3 && pool.length > 0; t++) {
-    const idx = Math.floor(traitRng() * pool.length);
-    traits.push(pool.splice(idx, 1)[0]!);
-  }
-  const nameIdxRng = keyedRng(seed, childId, year, "child-name");
-  const surnameSource = mother.name.split(" ").slice(1).join(" ");
-  const surnameIndex = Math.floor(nameIdxRng() * 20);
-  const surname = surnameSource || pickName(sex, 0, surnameIndex).split(" ")[1]!;
-  const existingNames = new Set(Object.values(people).map((p) => p.name));
-  const first = uniqueFirstName(existingNames, sex, Math.floor(nameIdxRng() * 20), surname);
-  const name = `${first} ${surname}`;
-  const mind = createMind(seed, childId, year, [mother.mind, father.mind]);
-  // Decision 056: inherits the father's class (mother's, if the father's is somehow unknown — a
-  // hand-built `Person` fixture without `socialClass` set, since a real simulated father always has
-  // one). Literacy (decision 057) is then drawn fresh for the child, at birth, by their own class/sex.
-  const socialClass = father.socialClass ?? mother.socialClass ?? "cottar";
-  const literate = isLiterate(seed, childId, year, sex, socialClass);
-  return { id: childId, name, sex, birthYear: year, traits, job: "none", motherId: mother.id, fatherId: father.id, founder: false, mind, socialClass, literate };
 }
 
 export { dreamGoalSatisfiedBy, eligibleForAnotherChild, feudPairHistory, gatherCandidatesForYear, resolveCourtshipOnDeath, townEventMortalityMultiplier };
