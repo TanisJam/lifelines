@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { beginLegacyYear, resolveLegacyVitalDecision } from "./legacy-year";
+import { beginLegacyYear, resolveLegacyVitalDecision, type LegacySocialBatchContext } from "./legacy-year";
+import type { DecisionMaker, PersonYearBatch } from "./decisions";
+import { getVignette } from "./vignettes";
 import { mintId, overrideFor, spawnChild } from "./legacy-year-mechanics";
 import * as mechanics from "./legacy-year-mechanics";
 import { applyLifeTransition, ensureLifeState } from "./life-state";
@@ -83,6 +85,30 @@ async function phaseContext(people: Record<string, Person>, protagonistId?: stri
   }
 }
 
+type SocialContext = LegacySocialBatchContext<CandidateDescriptor, NonNullable<CandidateDescriptor["townEventType"]>>;
+
+// Borrow the live catalog ports, then exercise the kernel directly on those SAME references.
+async function socialContext(people: Record<string, Person>, options: Partial<SimulateOptions> = {}) {
+  let borrowed: SocialContext | undefined;
+  const original = legacyYear.resolveLegacySocialBatch;
+  const phase = vi.spyOn(legacyYear, "resolveLegacySocialBatch").mockImplementation(async (...args) => {
+    borrowed = args[0] as SocialContext;
+    return original(...args);
+  });
+  try {
+    await observe({ seed: "social-contract", startYear: 1530, endYear: 1530, town: { name: "Testville" } }, people, [], {
+      ...options, overrides: [...Object.keys(people).map((id) => force("death", id, "survive")), ...(options.overrides ?? [])],
+    });
+    const context = borrowed!;
+    context.events.length = 0;
+    context.decisions.length = 0;
+    context.counters.decisionCalls = 0;
+    return context;
+  } finally {
+    phase.mockRestore();
+  }
+}
+
 const seeded = [
   ["maternal-check-37", 24],
   ["artisan-widow-trade-dec083-1", 30],
@@ -99,6 +125,261 @@ const pins: Record<string, { years: string; final: string }> = {
   "away-birth": { years: "116ec4b7f951de66d3825c4bdfb8d08b3036fd3c444b1f151cd6e7e9b043b7dc", final: "44ebbb70ceb17ed4b68db7ec90ec3f56fbb6a8bc30d33ac6a3c3c9066cbd8341" },
   "return": { years: "9d1a96c5315c13d3eff73c10204d93ebc475c8eb725942a4e4daab8be636887d", final: "ba368c8ca4210551b14b797ac854360d7a34424f5e16523bc51549a49b1e5a7b" },
 };
+
+describe("live legacy social batch phase", () => {
+  it("exports the actual preparation/resolution API", () => {
+    expect(legacyYear).toHaveProperty("resolveLegacySocialBatch", expect.any(Function));
+  });
+
+  it("delegates after biology and leyrwite with the one owned registry and logs", async () => {
+    const phase = vi.spyOn(legacyYear, "resolveLegacySocialBatch");
+    const biology = vi.spyOn(legacyYear, "resolveLegacyBiology");
+    const leyrwite = vi.spyOn(legacyYear, "presentLegacyLeyrwite");
+    try {
+      await observe({ seed: "social-delegation", startYear: 1530, endYear: 1530, town: { name: "Testville" } },
+        { subject: person("social-delegation", "subject", "m") }, [],
+        { overrides: [force("death", "subject", "survive")] });
+      expect(phase).toHaveBeenCalledTimes(1);
+      const context = phase.mock.calls[0]![0];
+      expect(context.people).toBe(biology.mock.calls[0]![0].people);
+      expect(context.events).toBe(biology.mock.calls[0]![0].events);
+      expect(context.decisions).toBe(biology.mock.calls[0]![0].decisions);
+      expect(context.counters).toBe(biology.mock.calls[0]![0].counters);
+      expect(phase.mock.invocationCallOrder[0]).toBeGreaterThan(leyrwite.mock.invocationCallOrder[0]!);
+      expect(leyrwite.mock.invocationCallOrder[0]).toBeGreaterThan(biology.mock.invocationCallOrder[0]!);
+    } finally {
+      phase.mockRestore();
+      biology.mockRestore();
+      leyrwite.mockRestore();
+    }
+  });
+});
+
+describe("social batch alternate contracts", () => {
+  it("keeps an empty batch silent and forced flags aligned without calls or slot commits", async () => {
+    const context = await socialContext({ subject: person("social-contract", "subject", "m") });
+    const decideYear = vi.fn(async () => ({ selection: {}, response: {} }));
+    const instrumented = { ...context, options: { ...context.options, decisionMaker: { decide: vi.fn(), decideYear } } };
+    const before = canonical({ people: context.people, events: context.events, decisions: context.decisions });
+    const empty = await legacyYear.resolveLegacySocialBatch(instrumented, 1530, [], [], new Set(), undefined);
+    expect(empty).toMatchObject({ year: 1530, batchable: true, socialCandidates: [], questions: [], resolved: [], d1Candidates: [] });
+    const c = candidate("Y3", "subject", ["learn", "ignore"]);
+    const forced = force("Y3", "subject", "learn");
+    const output = await legacyYear.resolveLegacySocialBatch(instrumented, 1530, [c], [forced], new Set(), undefined);
+    expect(output.socialCandidates[0]).toBe(c);
+    expect(output.forcedFlags).toEqual([forced]);
+    expect(output.fallbackFlags).toEqual([false]);
+    expect(output.resolved).toEqual([undefined]);
+    expect(output.questions[0]!.options).toBe(c.options);
+    expect(context.counters.decisionCalls).toBe(0);
+    expect(decideYear).not.toHaveBeenCalled();
+    expect(canonical({ people: context.people, events: context.events, decisions: context.decisions })).toBe(before);
+  });
+
+  it("awaits the legacy per-question port in candidate order and anchors overrides to fromYear", async () => {
+    const context = await socialContext({ subject: person("social-contract", "subject", "m") });
+    const distribution = { learn: 1 };
+    const calls: string[] = [];
+    const resolveSocialDecision: SocialContext["resolveSocialDecision"] = vi.fn(async (q, maker, source) => {
+      expect(maker).toBe(options.decisionMaker);
+      expect(source).toBe("jev");
+      await Promise.resolve();
+      calls.push(q.id);
+      return { jevRaw: distribution, final: distribution, source: "jev" as const };
+    });
+    const options = { ...context.options, engineSource: "jev" as const, decisionMaker: { decide: vi.fn() } };
+    const a = candidate("Y3", "subject", ["learn", "ignore"]);
+    const b = candidate("A3", "subject", ["accept", "decline"]);
+    const output = await legacyYear.resolveLegacySocialBatch({ ...context, options, resolveSocialDecision, concurrencyLimit: 1 },
+      1531, [a, b], [force("Y3", "subject", "ignore")], new Set(), undefined);
+    expect(output.batchable).toBe(false);
+    expect(output.forcedFlags).toEqual([undefined, undefined]);
+    expect(output.fallbackFlags).toEqual([false, false]);
+    expect(calls).toEqual(output.questions.map((q) => q.id));
+    expect(output.questions.map((q) => q.year)).toEqual([1531, 1531]);
+    expect(context.counters.decisionCalls).toBe(2);
+    expect(output.resolved[0]!.final).toBe(distribution);
+    expect(output.resolved[1]!.final).toBe(distribution);
+    expect(output.resultByDecisionId.size).toBe(0);
+  });
+
+  it("preserves the budget fast path but never throttles decisions about the protagonist or forced ones", async () => {
+    const context = await socialContext({ subject: person("social-contract", "subject", "m"),
+      npc: person("social-contract", "npc", "f") }, { protagonistId: "subject" });
+    const decideYear = vi.fn(async (batch: PersonYearBatch) => {
+      await Promise.resolve();
+      return { selection: { nothing: 1 }, response: Object.fromEntries(Object.keys(batch.situations).map((id) => [id, { decline: 1 }])) };
+    });
+    context.counters.decisionCalls = context.decisionBudget;
+    const options = { ...context.options, decisionMaker: { decide: vi.fn(), decideYear } };
+    const ordinary = candidate("Y3", "npc", ["learn", "ignore"]);
+    const about = { ...candidate("Y1", "npc", ["encourage", "decline", "wait"]), partnerId: "subject" };
+    const forced = candidate("A3", "npc", ["accept", "decline"]);
+    const output = await legacyYear.resolveLegacySocialBatch({ ...context, options }, 1530,
+      [ordinary, about, forced], [force("D1", "subject", "none"), force("A3", "npc", "decline")], new Set(), undefined);
+    expect(output.fallbackFlags).toEqual([true, false, false]);
+    expect(output.resolved[0]!.source).toBe("rules");
+    expect(output.resolved[0]!.final).toBe(output.resolved[0]!.prior);
+    expect(output.resolved[2]).toBeUndefined();
+    expect(decideYear).toHaveBeenCalledTimes(1);
+    expect(Object.keys(decideYear.mock.calls[0]![0].situations)).toEqual([about.decisionId]);
+    expect(context.counters.decisionCalls).toBe(context.decisionBudget + 1);
+  });
+
+  it.each([undefined, "subject"])("retains background routing and empty-circle behavior (protagonist %s)", async (protagonistId) => {
+    const context = await socialContext({ subject: person("social-contract", "subject", "m"),
+      distant: person("social-contract", "distant", "m") }, { protagonistId });
+    const mainRaw = { learn: 1 };
+    const backgroundRaw = { ignore: 1 };
+    const decider = (raw: Record<string, number>): DecisionMaker => ({ decide: vi.fn(), decideYear: vi.fn(async (batch) => {
+      await Promise.resolve();
+      return { selection: { nothing: 1 }, response: Object.fromEntries(Object.keys(batch.situations).map((id) => [id, raw])) };
+    }) });
+    const main = decider(mainRaw);
+    const background = decider(backgroundRaw);
+    const output = await legacyYear.resolveLegacySocialBatch({ ...context, options: { ...context.options,
+      decisionMaker: main, backgroundDecisionMaker: background, engineSource: "jev" } }, 1530,
+    [candidate("Y3", "distant", ["learn", "ignore"])], [force("D1", "subject", "none")], new Set(), undefined);
+    expect(context.counters.decisionCalls).toBe(1);
+    if (protagonistId) {
+      expect(background.decideYear).toHaveBeenCalledTimes(1);
+      expect(main.decideYear).not.toHaveBeenCalled();
+      expect(output.resolved[0]).toMatchObject({ source: "rules", occurrenceProbability: undefined });
+      expect(output.resolved[0]!.prior).toBe(backgroundRaw);
+    } else {
+      expect(main.decideYear).toHaveBeenCalledTimes(1);
+      expect(background.decideYear).not.toHaveBeenCalled();
+      expect(output.resolved[0]!.jevRaw).toBe(mainRaw);
+      expect(output.resolved[0]!.source).toBe("jev");
+    }
+  });
+
+  it("filters same-year deaths/departures, retains historical C2 and tallies the live debug object", async () => {
+    const context = await socialContext({ subject: person("social-contract", "subject", "m", { birthYear: 1520 }),
+      earlier: person("social-contract", "earlier", "f", { deathYear: 1529 }),
+      current: person("social-contract", "current", "f", { deathYear: 1530 }),
+      departed: person("social-contract", "departed", "f") });
+    // The fixture biology may have emitted school/life-state; the social phase must not do so.
+    context.people.current!.deathYear = 1530;
+    const debug = createMarriageFunnelCollector();
+    const historical = { ...candidate("C2", "subject", ["mourn", "carry-on"]), partnerId: "earlier" };
+    const died = { ...candidate("Y1", "subject", ["encourage", "decline", "wait"]), partnerId: "current" };
+    const left = { ...died, partnerId: "departed" };
+    const output = await legacyYear.resolveLegacySocialBatch({ ...context, marriageFunnelDebug: debug }, 1530,
+      [died, historical, left], [force("C2", "subject", "mourn")], new Set(["departed"]), undefined);
+    expect(output.socialCandidates).toEqual([historical]);
+    expect(output.socialCandidates[0]).toBe(historical);
+    expect(debug.y1LosesTo).toEqual({ "died-same-year": 1, "left-village-same-year": 1 });
+  });
+
+  it("preserves candidate order across opposite asynchronous batch completion and exact response aliases", async () => {
+    const context = await socialContext({ a: person("social-contract", "a", "m"), b: person("social-contract", "b", "f") });
+    const responses = { a: { learn: 1 }, b: { ignore: 1 } };
+    const finish: Record<string, () => void> = {};
+    const completion: string[] = [];
+    const decideYear = vi.fn(async (batch: PersonYearBatch) => {
+      await new Promise<void>((resolve) => { finish[batch.personId] = resolve; });
+      completion.push(batch.personId);
+      const id = Object.keys(batch.situations)[0]!;
+      return { selection: { [id]: 1 }, response: { [id]: responses[batch.personId as "a" | "b"] } };
+    });
+    const candidates = [candidate("Y3", "a", ["learn", "ignore"]), candidate("Y3", "b", ["learn", "ignore"])];
+    const pending = legacyYear.resolveLegacySocialBatch({ ...context, yearBatchConcurrency: 2,
+      options: { ...context.options, engineSource: "jev", decisionMaker: { decide: vi.fn(), decideYear } } },
+    1530, candidates, [], new Set(), undefined);
+    expect(context.counters.decisionCalls).toBe(2);
+    expect(decideYear.mock.calls.map(([batch]) => batch.personId)).toEqual(["a", "b"]);
+    finish.b!();
+    await Promise.resolve();
+    finish.a!();
+    const output = await pending;
+    expect(completion).toEqual(["b", "a"]);
+    expect(output.socialCandidates).toEqual(candidates);
+    expect(output.resolved[0]!.final).toBe(responses.a);
+    expect(output.resolved[1]!.final).toBe(responses.b);
+    expect(output.resolved.map((r) => r!.occurrenceProbability)).toEqual([1, 1]);
+    expect([...output.resultByDecisionId.keys()]).toEqual([candidates[1]!.decisionId, candidates[0]!.decisionId]);
+    expect(context.events).toEqual([]);
+    expect(context.decisions).toEqual([]);
+  });
+
+  it("builds newcomer questions from the actual post-biology person and current Mind", async () => {
+    const seed = "phase-contract";
+    const subject = person(seed, "protagonist", "m");
+    const originalBegin = legacyYear.beginLegacyYear;
+    const begin = vi.spyOn(legacyYear, "beginLegacyYear").mockImplementation((context) => [
+      ...originalBegin(context), { ...candidate("Y5", subject.id, ["open-up", "keep-distance"]), partnerId: "away-1530" },
+    ]);
+    const originalPhase = legacyYear.resolveLegacySocialBatch;
+    let observedNewcomer = false;
+    const phase = vi.spyOn(legacyYear, "resolveLegacySocialBatch").mockImplementation(async (context, ...args) => {
+      const newcomer = context.people["away-1530"]!;
+      expect(newcomer).toBeDefined();
+      const mind = newcomer.mind;
+      const people = context.people;
+      return originalPhase({ ...context, buildQuestion: (descriptor, year, config, registry) => {
+        expect(registry).toBe(people);
+        expect(registry["away-1530"]).toBe(newcomer);
+        expect(registry["away-1530"]!.mind).toBe(mind);
+        if (descriptor.kind === "Y5" && descriptor.partnerId === newcomer.id) observedNewcomer = true;
+        return context.buildQuestion(descriptor, year, config, registry);
+      } }, ...args);
+    });
+    try {
+      await observe({ seed, startYear: 1530, endYear: 1530, town: { name: "Testville" } }, { protagonist: subject }, [
+        { id: "away-move", year: 1525, kind: "move", actors: [subject.id], payload: { away: true }, causes: [] },
+      ], { protagonistId: subject.id, overrides: [force("death", subject.id, "survive"),
+        force("away-arrival", subject.id, "arrive"), force("Y5", subject.id, "open-up"), force("return", subject.id, "stay")] });
+      expect(observedNewcomer).toBe(true);
+    } finally {
+      phase.mockRestore();
+      begin.mockRestore();
+    }
+  });
+
+  it("returns the exact D1 question, response and nested prefetch without applying quiet-year effects", async () => {
+    const context = await socialContext({ subject: person("social-contract", "subject", "m") }, { protagonistId: "subject" });
+    const descriptor = candidate("D1", "subject", ["rest"]);
+    const actualPool = context.buildDailyLifeVignetteCandidates(context.people.subject!, 1530, context.config.seed,
+      context.people, context.events, undefined);
+    const vignette = actualPool[0]!.vignette;
+    expect(getVignette(vignette.id)).toBe(vignette);
+    const raw = { rest: 1 };
+    const decideYear = vi.fn(async (batch: PersonYearBatch) => {
+      await Promise.resolve();
+      expect(batch.personId).toBe("subject");
+      expect(batch.year).toBe(1530);
+      expect(batch.isProtagonist).toBe(true);
+      expect(batch.situations[descriptor.decisionId]!.kind).toBe("D1");
+      return { selection: { everyday: 1 }, vignetteSelection: { [descriptor.decisionId]: 1 }, response: { [descriptor.decisionId]: raw } };
+    });
+    const buildDailyLifeVignetteCandidates: SocialContext["buildDailyLifeVignetteCandidates"] = vi.fn((p, year, seed, people, events, townEvent) => {
+      expect(p).toBe(context.people.subject);
+      expect(p.mind).toBe(context.people.subject!.mind);
+      expect(people).toBe(context.people);
+      expect(events).toBe(context.events);
+      expect([year, seed, townEvent]).toEqual([1530, "social-contract", undefined]);
+      return [{ descriptor, vignette, deciderId: "subject" }];
+    });
+    const before = canonical({ people: context.people, events: context.events, decisions: context.decisions });
+    const output = await legacyYear.resolveLegacySocialBatch({ ...context, buildDailyLifeVignetteCandidates,
+      options: { ...context.options, engineSource: "jev", decisionMaker: { decide: vi.fn(), decideYear } } },
+    1530, [], [], new Set(), undefined);
+    expect(output.finalVignetteWinner).toBe(descriptor.decisionId);
+    expect(output.d1Candidates[0]!.descriptor).toBe(descriptor);
+    expect(output.d1Candidates[0]!.vignette).toBe(vignette);
+    expect(output.d1Candidates[0]!.question).toBe(decideYear.mock.calls[0]![0].situations[descriptor.decisionId]!.question);
+    expect(output.d1Candidates[0]!.question.kind).toBe("D1");
+    expect(output.resultByDecisionId.get(descriptor.decisionId)).toEqual({ jevRaw: raw, final: raw, source: "jev", occurrenceProbability: 1 });
+    expect(output.resultByDecisionId.get(descriptor.decisionId)!.final).toBe(raw);
+    expect(context.counters.decisionCalls).toBe(1);
+    expect(canonical({ people: context.people, events: context.events, decisions: context.decisions })).toBe(before);
+    const forced = await legacyYear.resolveLegacySocialBatch({ ...context, buildDailyLifeVignetteCandidates }, 1530,
+      [], [force("D1", "subject", "rest")], new Set(), undefined);
+    expect(forced.d1Candidates).toEqual([]);
+    expect(buildDailyLifeVignetteCandidates).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("complete legacy pre-social phase", () => {
   it("emits the town slot before independent national shocks, including a missing town slot", async () => {

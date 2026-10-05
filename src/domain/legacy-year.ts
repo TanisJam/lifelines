@@ -1,6 +1,11 @@
 import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge } from "./actuarial";
 import type { MintedId } from "./decision-id";
-import type { DecisionRecord } from "./decisions";
+import type { DecisionMaker, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
+import { mapWithConcurrency } from "./concurrency";
+import { normalizeDistribution, sampleGumbelMax } from "./rng";
+import { ruleDistribution } from "./rule-heuristics";
+import { storyCircle } from "./story-circle";
+import type { Vignette } from "./vignettes";
 import { activeFeudPair, hasMovedAway } from "./events";
 import { commitId, levyClassMultiplier, mintId, overrideFor, pickAwayDestination, pushEvent, resolveCourtshipOnDeath, resolveWidowhood, school, spawnAwayPerson, spawnGentrySuitor, spawnImmigrant } from "./legacy-year-mechanics";
 import { applyLifeTransition, ensureLifeState } from "./life-state";
@@ -24,6 +29,205 @@ import type { Event, JsonValue, Override, Person, Sex, SocialClass, WorldConfig 
  * eligible candidate (if any) actually happens.
  */
 const RECORD_THRESHOLD = 0.05;
+
+export interface ResolvedDecision {
+  readonly jevRaw?: Distribution;
+  readonly prior?: Distribution;
+  readonly final: Distribution;
+  readonly source: DecisionSource;
+  /** Absent for forced and legacy per-candidate answers. */
+  readonly occurrenceProbability?: number;
+}
+
+interface SocialCandidate extends VitalCandidate {
+  readonly decisionId: string;
+  readonly partnerId?: string;
+}
+
+export interface LegacyDailyLifeCandidate<C> {
+  readonly descriptor: C;
+  readonly vignette: Vignette;
+  readonly deciderId: string;
+}
+
+/** Borrowed live references, never a second people registry or a snapshot projection.
+ * Catalog ports construct language/questions only; this phase owns filtering, batching,
+ * call accounting, asynchronous resolution and both ordered selection samples.
+ */
+export interface LegacySocialBatchContext<C extends SocialCandidate, TownEvent extends string = string> {
+  readonly config: WorldConfig;
+  readonly people: Record<string, Person>;
+  readonly events: Event[];
+  readonly decisions: DecisionRecord[];
+  readonly counters: { decisionCalls: number };
+  readonly originalOverrideYear: number;
+  readonly options: {
+    readonly protagonistId?: string;
+    readonly decisionMaker: DecisionMaker;
+    readonly backgroundDecisionMaker?: DecisionMaker;
+    readonly engineSource: "jev" | "rules";
+  };
+  readonly marriageFunnelDebug: { readonly y1LosesTo: Record<string, number> } | undefined;
+  readonly inMarriageFunnelCohort: (person: Person, startYear: number) => boolean;
+  readonly buildQuestion: (descriptor: C, year: number, config: WorldConfig, people: Record<string, Person>) => DecisionQuestion;
+  readonly buildDailyLifeVignetteCandidates: (person: Person, year: number, seed: string, people: Record<string, Person>, events: Event[], townEvent: TownEvent | undefined) => readonly LegacyDailyLifeCandidate<C>[];
+  readonly personSummary: (person: Person, year: number, people: Record<string, Person>) => Record<string, JsonValue>;
+  readonly resolveSocialDecision: (question: DecisionQuestion, maker: DecisionMaker, source: "jev" | "rules") => Promise<ResolvedDecision>;
+  readonly decisionBudget: number;
+  readonly concurrencyLimit: number;
+  readonly yearBatchConcurrency: number;
+}
+
+/** Aligned arrays are consumed by the old ordered apply loop. D1 stays speculative:
+ * the later quiet-year guard consumes the exact prefetched winner/result from this phase.
+ * No slot commits, births, Mind outcomes, snapshots or D1 application happen here.
+ */
+export interface LegacySocialBatchOutput<C> {
+  readonly year: number;
+  readonly batchable: boolean;
+  readonly socialCandidates: C[];
+  readonly questions: DecisionQuestion[];
+  readonly forcedFlags: (Override | undefined)[];
+  readonly fallbackFlags: boolean[];
+  readonly resolved: (ResolvedDecision | undefined)[];
+  readonly d1Candidates: readonly (LegacyDailyLifeCandidate<C> & { readonly question: DecisionQuestion })[];
+  readonly resultByDecisionId: Map<string, ResolvedDecision>;
+  readonly finalVignetteWinner: string | undefined;
+}
+
+export async function resolveLegacySocialBatch<C extends SocialCandidate, TownEvent extends string = string>(
+  context: LegacySocialBatchContext<C, TownEvent>,
+  year: number,
+  candidates: C[],
+  overrides: readonly Override[],
+  leftVillageThisYear: ReadonlySet<string>,
+  townEvent: TownEvent | undefined,
+): Promise<LegacySocialBatchOutput<C>> {
+  const { config, people, events, counters, options, marriageFunnelDebug,
+    inMarriageFunnelCohort, buildQuestion, buildDailyLifeVignetteCandidates,
+    personSummary, resolveSocialDecision, concurrencyLimit, yearBatchConcurrency } = context;
+  const seed = config.seed;
+  const isOverrideYear = year === context.originalOverrideYear;
+  // Only SAME-year deaths drop a partner: C2 requires a parent dead in an earlier year.
+  const goneThisYear = (id: string): boolean => people[id]?.deathYear === year || leftVillageThisYear.has(id);
+  if (marriageFunnelDebug !== undefined) {
+    for (const c of candidates) {
+      if (c.kind !== "Y1") continue;
+      const person = people[c.personId];
+      if (!person || !inMarriageFunnelCohort(person, config.startYear)) continue;
+      const died = people[c.personId]?.deathYear === year || (c.partnerId !== undefined && people[c.partnerId]?.deathYear === year);
+      const left = leftVillageThisYear.has(c.personId) || (c.partnerId !== undefined && leftVillageThisYear.has(c.partnerId));
+      const reason = died ? "died-same-year" : left ? "left-village-same-year" : undefined;
+      if (reason) marriageFunnelDebug.y1LosesTo[reason] = (marriageFunnelDebug.y1LosesTo[reason] ?? 0) + 1;
+    }
+  }
+  const socialCandidates = candidates.filter((c) => !goneThisYear(c.personId) && (!c.partnerId || !goneThisYear(c.partnerId)));
+  // Questions read CURRENT people after biology and leyrwite, in original candidate order.
+  const questions = socialCandidates.map((c) => buildQuestion(c, year, config, people));
+  const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.kind, c.personId, isOverrideYear, c.partnerId));
+  const fallbackFlags = socialCandidates.map((c, i) => {
+    if (forcedFlags[i] || !options.protagonistId) return false;
+    const aboutProtagonist = c.personId === options.protagonistId || c.partnerId === options.protagonistId;
+    return !aboutProtagonist && counters.decisionCalls >= context.decisionBudget;
+  });
+
+  // The entire eligible D1 pool rides along speculatively, possibly across parent batches.
+  let d1Candidates: LegacySocialBatchOutput<C>["d1Candidates"] = [];
+  if (options.protagonistId && !overrideFor(overrides, "D1", options.protagonistId, isOverrideYear)) {
+    const protagonist = people[options.protagonistId];
+    if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
+      d1Candidates = buildDailyLifeVignetteCandidates(protagonist, year, seed, people, events, townEvent).map((c) => ({ ...c, question: buildQuestion(c.descriptor, year, config, people) }));
+    }
+  }
+
+  const batchable = typeof options.decisionMaker.decideYear === "function";
+  const resultByDecisionId = new Map<string, ResolvedDecision>();
+  const vignetteSelectionRaw: Record<string, number> = {};
+  const everydayShareByPerson = new Map<string, number>();
+  let finalVignetteWinner: string | undefined;
+  if (batchable) {
+    const batchesByPerson = new Map<string, Record<string, PersonYearSituation>>();
+    for (let i = 0; i < socialCandidates.length; i++) {
+      if (forcedFlags[i] || fallbackFlags[i]) continue;
+      const c = socialCandidates[i]!;
+      const situations = batchesByPerson.get(c.personId) ?? {};
+      situations[c.decisionId] = { kind: c.kind as DecisionQuestion["kind"], question: questions[i]! };
+      batchesByPerson.set(c.personId, situations);
+    }
+    for (const c of d1Candidates) {
+      const situations = batchesByPerson.get(c.descriptor.personId) ?? {};
+      situations[c.descriptor.decisionId] = { kind: "D1", question: c.question };
+      batchesByPerson.set(c.descriptor.personId, situations);
+    }
+    counters.decisionCalls += batchesByPerson.size;
+    const personIds = Array.from(batchesByPerson.keys());
+    // Preserve the empty-circle fast path: without a protagonist, use the main decider.
+    const circle = options.backgroundDecisionMaker ? storyCircle(options.protagonistId, people, events) : new Set<string>();
+    await mapWithConcurrency(personIds, yearBatchConcurrency, async (personId) => {
+      const situations = batchesByPerson.get(personId)!;
+      const situationIds = Object.keys(situations);
+      const self: Record<string, JsonValue> = personSummary(people[personId]!, year, people);
+      const isProtagonist = personId === options.protagonistId;
+      const inBackground = circle.size > 0 && !circle.has(personId);
+      const decider = inBackground ? options.backgroundDecisionMaker! : options.decisionMaker;
+      const deciderSource = inBackground ? "rules" : options.engineSource;
+      const result = await decider.decideYear!({ personId, year, self, situations, isProtagonist });
+      if (result.vignetteSelection && Object.keys(result.vignetteSelection).length > 0) {
+        Object.assign(vignetteSelectionRaw, result.vignetteSelection);
+      }
+      // Deciders judge; the engine samples exactly once with the original event-pick tuple.
+      let selectedId: string | undefined;
+      let normalizedSelection: Record<string, number> | undefined;
+      if (situationIds.length > 0 && Object.keys(result.selection).length > 0) {
+        normalizedSelection = normalizeDistribution(result.selection as Record<string, number>);
+        const sample = sampleGumbelMax(normalizedSelection, seed, personId, year, "event-pick");
+        if (sample.chosen === "everyday") {
+          everydayShareByPerson.set(personId, normalizedSelection.everyday!);
+        } else if (sample.chosen !== "nothing") {
+          selectedId = sample.chosen;
+        }
+        if (marriageFunnelDebug !== undefined) {
+          const y1Id = situationIds.find((id) => situations[id]!.kind === "Y1");
+          if (y1Id !== undefined && inMarriageFunnelCohort(people[personId]!, config.startYear) && sample.chosen !== y1Id) {
+            const winnerKind = sample.chosen === "nothing" || sample.chosen === "everyday" ? sample.chosen : situations[sample.chosen]!.kind;
+            marriageFunnelDebug.y1LosesTo[winnerKind] = (marriageFunnelDebug.y1LosesTo[winnerKind] ?? 0) + 1;
+          }
+        }
+      }
+      for (const id of situationIds) {
+        const jevRaw = result.response[id];
+        if (!jevRaw) continue;
+        const occurrenceProbability = id === selectedId ? normalizedSelection![id] : undefined;
+        resultByDecisionId.set(id,
+          deciderSource === "jev" ? { jevRaw, final: jevRaw, source: "jev", occurrenceProbability } : { prior: jevRaw, final: jevRaw, source: "rules", occurrenceProbability });
+      }
+    });
+    // Cross-batch vignette selection retains original union/completion order and RNG tuple.
+    if (Object.keys(vignetteSelectionRaw).length > 0) {
+      const normalizedVignetteSelection = normalizeDistribution(vignetteSelectionRaw);
+      finalVignetteWinner = sampleGumbelMax(normalizedVignetteSelection, seed, options.protagonistId ?? "world", year, "vignette-pick").chosen;
+      const winnerCandidate = d1Candidates.find((c) => c.descriptor.decisionId === finalVignetteWinner);
+      const everydayShare = winnerCandidate ? everydayShareByPerson.get(winnerCandidate.descriptor.personId) : undefined;
+      if (winnerCandidate && everydayShare !== undefined) {
+        const existing = resultByDecisionId.get(finalVignetteWinner!);
+        if (existing) resultByDecisionId.set(finalVignetteWinner!, { ...existing, occurrenceProbability: everydayShare * normalizedVignetteSelection[finalVignetteWinner!]! });
+      }
+    }
+  } else {
+    counters.decisionCalls += questions.filter((_, i) => !forcedFlags[i] && !fallbackFlags[i]).length;
+  }
+  const resolved = await mapWithConcurrency(questions, concurrencyLimit, async (q, i) => {
+    if (forcedFlags[i]) return undefined;
+    if (fallbackFlags[i]) {
+      const prior = normalizeDistribution(ruleDistribution(q) as Record<string, number>);
+      return { prior, final: prior, source: "rules" as DecisionSource };
+    }
+    if (batchable) return resultByDecisionId.get(q.id);
+    return resolveSocialDecision(q, options.decisionMaker, options.engineSource);
+  });
+  return { year, batchable, socialCandidates, questions, forcedFlags, fallbackFlags, resolved,
+    d1Candidates, resultByDecisionId, finalVignetteWinner };
+}
 
 interface VitalCandidate {
   readonly kind: string;

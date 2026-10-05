@@ -1,6 +1,6 @@
 # Narrative lifecycle kernel — release work units
 
-RL1a1 and RL1a2 are DONE as work units. RL1a2 has native approval, a committed source boundary, parent integration, and observed combined verification. RL1a3 is IN PROGRESS as the next bounded extraction task; no new source implementation has started in this documentation-only transaction. This update changes only this task document and its full Engram mirror, not release readiness.
+RL1a1 and RL1a2 are DONE as work units. RL1a2 has native approval, a committed source boundary, parent integration, and observed combined verification. RL1a3 is IN PROGRESS with a FROZEN source boundary: focused and independent five-file validation, final types/lint, and independent semantic review are observed complete. Native review, commit, integration, and combined verification remain pending. This documentation sync does not write source or declare RL1a3 DONE. This update changes only this task document and its full Engram mirror, not release readiness.
 
 ## Authority and current boundary
 
@@ -9,7 +9,8 @@ RL1a1 and RL1a2 are DONE as work units. RL1a2 has native approval, a committed s
 | Project | `lifelines` |
 | Local task | `odd/tasks/narrative-lifecycle-kernel.md` |
 | Full mirror topic | `odd/narrative-lifecycle-kernel/tasks` |
-| Isolated child root HEAD | `5819af7a56645bd38127138130cf0b6999d8f0d9` (`5819af7`); clean before this documentation-only update |
+| Isolated child root HEAD | `0a010442b2edf29c0be397c4af7fa5f8a7985c65`; three pre-existing RL1a3 source modifications preserved |
+| Main boundary | `0e35e275`; source unchanged by this recovery (parent-provided) |
 | RL1a1 | DONE as a work unit, not completion of all lifecycle phases |
 | Parent integration | RL1a1: `835f30f`; RL1a2: `7ff46c88f0e76f49c00558911ca90b14653ba1e5`; parent reports exact integrated source hashes |
 | Parent verifier | Main RL1a2 post-integration: 722/722 across 18 files in 215.39s, Node 26 serial `--maxWorkers=1`; types and lint PASS, six hashes stable (parent-reported). Historical RL1a1 main `835f30f`: 713/713 in 211.09s |
@@ -105,24 +106,24 @@ No forced-death changes, provider changes, live database access, network install
 
 ## Active unit: RL1a3 — extract live social-batch preparation and resolution
 
-RL1a3 is IN PROGRESS at task level only. Move the actual orchestration and asynchronous year-decider body from the original `simulate.ts` lines 2170–2330 into the kernel, not a callback wrapping the whole body. Keep question creation after biology and leyrwite; preserve read references, the background/non-protagonist fast path, counters, forced/fallback flags, mint/selection metadata, and the exact D1-prefetched result.
+RL1a3 is IN PROGRESS with FROZEN implementation and completed source gates, not native approval or integration. The kernel now owns the actual social filter, question construction, batching, asynchronous resolution, and resolution metadata formerly in `simulate.ts` lines 2170–2330, not a callback wrapping the whole body. The observed extraction preserves question creation after biology and leyrwite, read references, the background/non-protagonist fast path, counters, forced/fallback flags, mint/selection metadata, and the exact D1-prefetched result.
 
-Typed phase output must carry pending/resolved question, year turn, and D1 prefetch needed by the old ordered application. The actual ordered application at original `simulate.ts` lines 2342–3045 stays in `simulate` for now. Preserve newborn/current-parent Mind handling and the later maternal-death outcome alive guard. Old private language-catalog ports may remain until a future catalog lift; never introduce a kernel → `simulate` import or a circular dependency. Snapshots and D1 extraction belong to future units.
+Typed phase output carries pending/resolved question, year turn, and D1 prefetch needed by the old ordered application. The actual ordered application at original `simulate.ts` lines 2342–3045 stays in `simulate` for now. Preserve newborn/current-parent Mind handling and the later maternal-death outcome alive guard. Old private language-catalog ports may remain until a future catalog lift; never introduce a kernel → `simulate` import or a circular dependency. Snapshots and D1 extraction belong to future units.
 
 ### Exact bounded source surface and eight task gates
 
-Future source work is limited to `src/domain/simulate.ts`, `src/domain/legacy-year.ts`, `src/domain/legacy-year-mechanics.ts`, and `src/domain/legacy-year.test.ts`. These paths remain frozen in this documentation transaction.
+The authorized four-path source surface remains `src/domain/simulate.ts`, `src/domain/legacy-year.ts`, `src/domain/legacy-year-mechanics.ts`, and `src/domain/legacy-year.test.ts`. Actual modifications are the first, second, and fourth paths only; mechanics is unchanged. All four are read-only during this recovery.
 
-- [ ] Capture the existing 21-test pre-source baseline.
-- [ ] Add the new phase API behavior test and observe intended RED before implementation.
-- [ ] Extract actual live preparation and asynchronous resolution bodies, preserving question timing and all listed metadata/reference contracts.
-- [ ] Return typed pending/resolved question, year-turn, and D1-prefetch output; leave ordered application and later guards in place.
-- [ ] Observe focused GREEN and alternate/negative cases; retain all existing pins without expected-hash updates.
-- [ ] Run the exact previously approved Node 26 five-file validation and independent Node 24 serial validation; then types and lint on the four explicit paths, preserving exact commands from the source-validation handoff.
-- [ ] Freeze hashes and complete independent semantic review; stop on unexpected edit surfaces, without widening writer scope.
+- [x] Capture the existing 21-test pre-source baseline: 21 passed before writes.
+- [x] Add the new phase API behavior test and observe intended RED: two missing-export/delegation failures; original 21 passed.
+- [x] Extract actual live preparation and asynchronous resolution bodies, preserving question timing and all listed metadata/reference contracts (writer evidence and independent semantic review complete).
+- [x] Return typed pending/resolved question, year-turn, and D1-prefetch output; leave ordered application and later guards in place.
+- [x] Observe focused GREEN: 23 passed, then final focused alternate/negative coverage 32/32 in 18.02s; all eight pins and the invalid smith fixture unchanged.
+- [x] Complete independent Node 26 five-file validation: 320/320 in 177.27s, nonincremental types/lint clean; Node 24 focused spot: 32/32 in 17.79s. Independent full Node 24.20.0 five-file validation: 320/320 in 167.32s, types/lint PASS. Exact commands remain in the source-validation handoff.
+- [x] Freeze hashes and complete independent three-source full-diff/baseline `0a010442` semantic review: no new defect. Four source hashes and the document hash stayed stable before/after both full validation runs; no scope widening.
 - [ ] Parent obtains native review, commits, integrates, and verifies the complete unit.
 
-Forecast: 500–1000 authored lines including moves and tests; a review heuristic, not a cap or measured scope. Actual scope is unknown until extraction. Do not compress coverage or broaden ownership to meet it. Parent owns commit/native review/integration. No new product question is required: genuine unforced death and minimal economy remain approved directions.
+Forecast: 500–1000 authored lines including moves and tests; a review heuristic, not a cap. Actual frozen source diff: 499 additions / 210 deletions, 709 authored lines across three paths; mechanics unchanged. Do not compress coverage or broaden ownership to meet it. Parent owns commit/native review/integration. No new product question is required: genuine unforced death and minimal economy remain approved directions.
 
 ### Runtime and future continuation invariants
 
@@ -132,13 +133,13 @@ Forecast: 500–1000 authored lines including moves and tests; a review heuristi
 
 ## Still pending — not release-ready
 
-RL1a3 preparation/resolution is not completion of old phase 3. Ordered social application, interleaved birth/maternal death, vignette work, snapshots/D1, remaining lifecycle phases, the new E-version journal/continuation, genuine unforced death, RI1, and RA1 remain incomplete. Neither closed RL1a2 nor task-level RL1a3 progress declares the full release ready. Preserve `.claude/perf`; no push, PR, deployment, installs, network/provider work, live database access, or destructive actions.
+RL1a3 preparation/resolution is not completion of old phase 3. Ordered social application, interleaved birth/maternal death, vignette work, snapshots/D1, remaining lifecycle phases, the new E-version journal/continuation, genuine unforced death, RI1, and RA1 remain incomplete. Neither closed RL1a2 nor source-verified RL1a3 implementation declares the full release ready. Preserve `.claude/perf`; no push, PR, deployment, installs, network/provider work, live database access, or destructive actions.
 
 ## Documentation-only transaction and evidence
 
 Allowed edit surface: `odd/tasks/narrative-lifecycle-kernel.md` only. No source writes, parent-root writes, Git mutation, native review, source tests, provider/network/install actions, or children are permitted. Update the FULL existing mirror `7536` for expected project `lifelines`, topic `odd/narrative-lifecycle-kernel/tasks`, and read it back fully; keep `7504` untouched.
 
-This transaction observed a clean tree at HEAD `5819af7a56645bd38127138130cf0b6999d8f0d9`. The initial document transaction observed a clean tree at HEAD `93b56e33faa2c99074b6facdd2a31002e16e3393`. Its historical pre-extraction source baseline is retained below, not asserted as today's frozen source:
+The prior RL1a2 documentation transaction observed a clean tree at HEAD `5819af7a56645bd38127138130cf0b6999d8f0d9`; this is historical, not the recovery baseline. The initial document transaction observed a clean tree at HEAD `93b56e33faa2c99074b6facdd2a31002e16e3393`. Its historical pre-extraction source baseline is retained below, not asserted as today's frozen source:
 
 | Path | SHA-256 |
 |---|---|
@@ -147,7 +148,7 @@ This transaction observed a clean tree at HEAD `5819af7a56645bd38127138130cf0b69
 | `src/domain/legacy-year-mechanics.ts` | `c1b75d257d9278934482ea40aa6375efc4a193d65d17911942c9f41fbb96199d` |
 | `src/domain/legacy-year.test.ts` | `6d74c274b4f70ce181ba717f1bdf776fedb870f3d65a4cb885b92961f8a2cfbe` |
 
-Current frozen RL1a2 source SHA-256, observed before this documentation update:
+Historical frozen RL1a2 source SHA-256, observed before the prior documentation update:
 
 | Path | SHA-256 |
 |---|---|
@@ -172,6 +173,32 @@ sha256sum src/domain/simulate.ts src/domain/legacy-year.ts src/domain/legacy-yea
 
 Report mirror `7536`, full-readback line/byte counts and hash equality, unchanged frozen source hashes and HEAD, and documentation-only status. Documentation-only RED/GREEN exception: prose synchronization has no meaningful executable pre-implementation behavior test. Source BASELINE/RED/GREEN evidence above belongs to the implementation transaction, not this update.
 
+### Recovery evidence — 2026-10-05
+
+Failed writer `muvs09lp-2m-0581` ended with the external message “assistant reported an error”; cause UNKNOWN. A read-only recovery continuation established the implementation evidence below without edits or tests. This documentation recovery also runs no source tests; it preserves the original RL1a3 unit, not a replacement unit or approval.
+
+- Implementation sequence: BASELINE 21 before writes → RED two missing-export/delegation failures plus original 21 PASS → GREEN 23 → final focused 32/32 in 18.02s. Original eight pins and invalid smith fixture unchanged.
+- Earlier static errors (missing batchable/fallback fields and town-event type) were fixed; invalid D1 `none` fixtures and literal widening were fixed. Final TypeScript PASS was NOT OBSERVED. An unused lint warning was corrected with NO final rerun. The five-file suite was NOT RUN; no broad PASS is claimed.
+- Partial FROZEN boundary: HEAD `0a010442b2edf29c0be397c4af7fa5f8a7985c65`, with three source modifications, 499 additions / 210 deletions (709 authored lines). Main `0e35e275` remains source-unchanged (parent-provided). Hash capture does not complete the independent-review/hash-freeze gate or confer native approval; no RL1a3 status/ACK was burned.
+
+| Recovery source path | SHA-256 |
+|---|---|
+| `src/domain/simulate.ts` | `b0a590d37712d3c25e15f024342171ebe2519a56ed3ae0b2c5552d288511832a` |
+| `src/domain/legacy-year.ts` | `df75dc9053e747aa73c328f000dcd79a697485932d3153beb4e93de6214daa1d` |
+| `src/domain/legacy-year-mechanics.ts` | `56a76709976b1b9174800d3006b83087bf5a2d2419604b18cf23035f6998ed13` |
+| `src/domain/legacy-year.test.ts` | `71da75a422e53d753b21406fd0164c6f91ca049bd88e853d515aa4c273f05ff7` |
+
+These hashes and HEAD were observed at recovery entry; source and HEAD must remain unchanged through documentation validation. At that historical recovery point, independent semantic review, completed validation/hash freeze, native review, commit, integration, and post-integration verification were pending. The source gates have since closed as recorded below; native/delivery gates remain pending. Ordered application, birth/maternal-death handling, and snapshots/D1 extraction remain future work; typed D1 output above does not claim that later extraction.
+
+### Source-gate closure and final documentation checks — 2026-10-05
+
+Parent-provided subsequent evidence closes RL1a3 gates 6 and 7, without erasing recovery history:
+
+- Independent Node 26: five files, 320/320 in 177.27s; nonincremental TypeScript and lint clean. Independent Node 24 spot: 32/32 in 17.79s. Independent full Node 24.20.0: five files, 320/320 in 167.32s; types/lint PASS. Earlier type, fixture, and unused-lint issues were fixed; the historical absence of final writer validation above is not a current failure.
+- Independent semantic review of all three modified source files, full diff and baseline `0a010442`, found no new defect. The kernel owns actual post-biology filtering/questions/batching, asynchronous selection/resolution, counters, raw identities, live options, response aliases, background handling, and D1 prefetch; no whole-body callback shell or cycle. Ordered application, birth/maternal guard, Mind, and later D1/snapshot extraction remain unchanged future work. Original eight pins, invalid smith fixture, `undefined` and `-0` aliases remain untouched.
+- All four source hashes and the document hash were stable before/after both full runs. Current source boundary remains HEAD `0a010442b2edf29c0be397c4af7fa5f8a7985c65`, three modified source files, 499 additions / 210 deletions (709 authored lines), mechanics unchanged. Pre-sync document SHA-256: `0c5ca454d73bb535cce16d8c25d0b7b34b67477d0fc9abf309c470d0e2dfe19f`.
+- Final documentation checks: full file and mirror `7536` readbacks/equality with byte counts and SHA-256; `git diff --check`, HEAD/status, and unchanged four source hashes. These checks are documentation-only, not repeated source validation. Failed-writer cause remains UNKNOWN, not proven to be model or tooling.
+
 ## Next step
 
-Parent synchronizes stale release record `7504` next, then starts the separately authorized bounded RL1a3 source transaction with the 21-test baseline and new-API RED. RL1a2 is DONE with observed 722-test post-integration verification; RL1a3 is IN PROGRESS only as a task declaration. No RL1a3 source implementation was started here. Keep later lifecycle phases and release gates explicitly pending.
+Parent prepares the original RL1a3 unit's native candidate as a unit commit against `0a010442` after this document/mirror sync, then obtains native approval, commits, cherry-picks into main, and observes combined verification. The anticipated combined count is 733 (prior 722 plus 11 new tests: 32 versus 21), NOT an observed result. Native gate 8 remains unchecked; no RL1a3 acknowledgment is burned or reused. Parent separately synchronizes stale release record `7504`; this sync leaves it and main untouched. RL1a2 remains DONE with historical observed 722-test verification; RL1a3 remains IN PROGRESS with source gates complete, not DONE. Start no new unit; all approved product choices and later lifecycle/release gates remain unchanged and pending.

@@ -1,16 +1,14 @@
 import { ageInYear, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
-import { beginLegacyYear, emitLegacyYearShocks, presentLegacyLeyrwite, resolveLegacyBiology, type LegacyYearContext } from "./legacy-year";
+import { beginLegacyYear, emitLegacyYearShocks, presentLegacyLeyrwite, resolveLegacyBiology, resolveLegacySocialBatch, type LegacyYearContext, type ResolvedDecision } from "./legacy-year";
 import { commitId, mintId, overrideFor, pickAwayDestination, pushEvent, resolveCourtshipOnDeath, resolveWidowhood, spawnChild } from "./legacy-year-mechanics";
-import { mapWithConcurrency } from "./concurrency";
 import type { MintedId } from "./decision-id";
-import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
+import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, pairKey, recentUnresolvedBreakup } from "./events";
 import { biologyDistribution } from "./life-course-rules";
 import { applyLifeTransition, ensureLifeState, markMarriageable } from "./life-state";
 import { article } from "./narrate";
 import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
-import { storyCircle } from "./story-circle";
 import {
   CONCEPTION_PROBABILITY_BANDS,
   FERTILITY_DAMPING_FLOOR,
@@ -1762,15 +1760,6 @@ function buildQuestion(descriptor: CandidateDescriptor, year: number, config: Wo
   };
 }
 
-interface ResolvedDecision {
-  readonly jevRaw?: Distribution;
-  readonly prior?: Distribution;
-  readonly final: Distribution;
-  readonly source: DecisionSource;
-  /** Round 11 (decision 044): how likely `decideYear`'s batch said this situation was to happen this year. Absent for the legacy per-candidate `decide()` path, which asks no occurrence question. */
-  readonly occurrenceProbability?: number;
-}
-
 /**
  * Resolves the distribution a decision samples from. Per decision 016
  * (superseding 013): when the engine is Jev, `final` IS `jevRaw` — no
@@ -2121,7 +2110,7 @@ export async function* simulateYears(
     // D1 is excluded here even though it's in `SOCIAL_KINDS` (used for `validate-override.ts`'s
     // reconstruction, round 10 decision 043) — it has its own dedicated call site below
     // (`resolveDailyLifeVignette`, gated on "no event yet this year"), never the generic per-kind loop.
-    let socialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind) && c.kind !== "D1");
+    const pendingSocialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind) && c.kind !== "D1");
 
     // Town event (decision 025): pushed once here, at most once per year, deterministically —
     // `townEventForYear` is the exact same pure function `gatherCandidatesForYear` used to decide
@@ -2131,201 +2120,16 @@ export async function* simulateYears(
     const leftVillageThisYear = resolveLegacyBiology(yearContext, year, biologyCandidates, overrides, townEvent, townEventId);
     presentLegacyLeyrwite(yearContext, year);
 
+    const phaseOutput = await resolveLegacySocialBatch<CandidateDescriptor, TownEventType>({
+      config, people, events, decisions, counters, options,
+      originalOverrideYear: yearContext.originalOverrideYear,
+      marriageFunnelDebug, inMarriageFunnelCohort, buildQuestion,
+      buildDailyLifeVignetteCandidates, personSummary, resolveSocialDecision,
+      decisionBudget: LIFE_DECISION_BUDGET, concurrencyLimit, yearBatchConcurrency,
+    }, year, pendingSocialCandidates, overrides, leftVillageThisYear, townEvent);
+    const { socialCandidates, forcedFlags, fallbackFlags, batchable, resolved,
+      d1Candidates, resultByDecisionId, finalVignetteWinner } = phaseOutput;
     const isOverrideYear = year === yearContext.originalOverrideYear;
-
-    // Round 12 (decision 045): `socialCandidates` was gathered BEFORE biology ran this year, so it
-    // can still name someone (as `personId` or `partnerId`) who biology just killed above — with the
-    // old code-side probability gates, that coincidence was rare enough to never surface; with
-    // eligibility now unconditional, it happened routinely (a person "confronting a rival" or
-    // "dividing their inheritance" the same year they died — see the `life-chronicle.test.ts`
-    // "death is always the LAST entry" contract this broke). A decision about someone who is no
-    // longer alive by the time it would be applied is dropped here rather than asked at all.
-    // PR6 fix: `deathYear === year` (not merely "any deathYear set") — a partner who died in an
-    // EARLIER year is exactly C2's own premise ("fires the year after a parent's death"); the old
-    // unconditional check silently dropped every C2 candidate ever built, since by the time C2 fires
-    // its dead parent's `deathYear` is always already set from a prior year. Caught by task 6.5's own
-    // one-decision-per-(kind,person)-per-year test, which needs C2 to actually reach resolution.
-    const goneThisYear = (id: string): boolean => people[id]?.deathYear === year || leftVillageThisYear.has(id);
-    if (marriageFunnelDebug !== undefined) {
-      // PR12 (STEP 1 diagnostic): a Y1 candidate offered earlier this year (before biology ran) can
-      // be dropped right here when the seeker or the partner died this same year — it never reaches
-      // `situationIds`/the "event-pick" sample below, so it's neither a win nor an observable loss to
-      // another kind. Tallied explicitly so `y1LosesTo`'s sum still equals
-      // `partnerFoundPersonYears - y1WonDraw` exactly, instead of silently under-counting.
-      for (const c of socialCandidates) {
-        if (c.kind !== "Y1") continue;
-        const person = people[c.personId];
-        if (!person || !inMarriageFunnelCohort(person, config.startYear)) continue;
-        const died = people[c.personId]?.deathYear === year || (c.partnerId !== undefined && people[c.partnerId]?.deathYear === year);
-        const left = leftVillageThisYear.has(c.personId) || (c.partnerId !== undefined && leftVillageThisYear.has(c.partnerId));
-        const reason = died ? "died-same-year" : left ? "left-village-same-year" : undefined;
-        if (reason) marriageFunnelDebug.y1LosesTo[reason] = (marriageFunnelDebug.y1LosesTo[reason] ?? 0) + 1;
-      }
-    }
-    socialCandidates = socialCandidates.filter((c) => !goneThisYear(c.personId) && (!c.partnerId || !goneThisYear(c.partnerId)));
-
-    // --- Social decisions: batch per person-year, then apply -----------------------------------
-    // Round 11 (decision 044): one Jev request per person per year, not one per candidate. Every
-    // candidate a person faces this year (their `socialCandidates`, plus their `D1` daily-life
-    // candidate if they're the protagonist — see below) is bundled into a single `PersonYearBatch`
-    // and answered with a single `decideYear` call, so the mind/portrait state is paid for once.
-    const questions = socialCandidates.map((c) => buildQuestion(c, year, config, people));
-    const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.kind, c.personId, isOverrideYear, c.partnerId));
-    // Budget priority (round 9, decision 037): once the running total of REAL DecisionMaker calls
-    // hits LIFE_DECISION_BUDGET, any further social decision NOT about the protagonist is answered
-    // with the deterministic rule heuristic instead — the protagonist's own decisions, and
-    // decisions ABOUT them (like AP1), are never throttled. No-op (always false) with no
-    // `protagonistId`, so the general village simulation is unaffected.
-    const fallbackFlags = socialCandidates.map((c, i) => {
-      if (forcedFlags[i] || !options.protagonistId) return false;
-      const aboutProtagonist = c.personId === options.protagonistId || c.partnerId === options.protagonistId;
-      return !aboutProtagonist && counters.decisionCalls >= LIFE_DECISION_BUDGET;
-    });
-
-    // The protagonist's `D1` daily-life candidate (round 10, decisions 042/043) rides along in the
-    // SAME per-person batch as their other social candidates this year — speculative fan-out
-    // (docs.typesafe.ai/patterns/fan-out.md): asked every year regardless of whether it turns out
-    // to be needed, consumed only if the year is otherwise quiet (see the guarantee block below).
-    // Kept out of `socialCandidates` itself (unchanged from decision 043) so it's never
-    // double-resolved through the generic per-kind loop below.
-    // Round 12 continuation (decision 046): the WHOLE eligible-vignette pool, one candidate per
-    // vignette — not one RNG-picked winner (see `buildDailyLifeVignetteCandidates`). Can span two
-    // deciders (the protagonist, and a living parent for the `decidedByParent` pool), so it's a flat
-    // array rather than a single `{descriptor, question}` like decision 044's `d1`.
-    let d1Candidates: readonly { readonly descriptor: CandidateDescriptor; readonly question: DecisionQuestion; readonly vignette: Vignette; readonly deciderId: string }[] = [];
-    if (options.protagonistId && !overrideFor(overrides, "D1", options.protagonistId, isOverrideYear)) {
-      const protagonist = people[options.protagonistId];
-      if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
-        d1Candidates = buildDailyLifeVignetteCandidates(protagonist, year, seed, people, events, townEvent).map((c) => ({ ...c, question: buildQuestion(c.descriptor, year, config, people) }));
-      }
-    }
-
-    const batchable = typeof options.decisionMaker.decideYear === "function";
-    const resultByDecisionId = new Map<string, ResolvedDecision>();
-    // Round 12 continuation (decision 046): every batch's raw `vignetteSelection` weights, merged
-    // (decision ids are globally unique, so this is a safe union) into ONE pool for the single,
-    // canonical "which vignette actually happens" sample below — and each batch's own normalized
-    // `"everyday"` share, keyed by that batch's `personId`, for the winner's `occurrenceProbability`.
-    const vignetteSelectionRaw: Record<string, number> = {};
-    const everydayShareByPerson = new Map<string, number>();
-    let finalVignetteWinner: string | undefined;
-
-    if (batchable) {
-      const batchesByPerson = new Map<string, Record<string, PersonYearSituation>>();
-      for (let i = 0; i < socialCandidates.length; i++) {
-        if (forcedFlags[i] || fallbackFlags[i]) continue;
-        const c = socialCandidates[i]!;
-        const situations = batchesByPerson.get(c.personId) ?? {};
-        situations[c.decisionId] = { kind: c.kind as DecisionQuestion["kind"], question: questions[i]! };
-        batchesByPerson.set(c.personId, situations);
-      }
-      for (const c of d1Candidates) {
-        const situations = batchesByPerson.get(c.descriptor.personId) ?? {};
-        situations[c.descriptor.decisionId] = { kind: "D1", question: c.question };
-        batchesByPerson.set(c.descriptor.personId, situations);
-      }
-
-      // One real request per person-year batch (not per situation) — this replaces the old
-      // per-candidate accounting below, which counted every social candidate as its own call.
-      counters.decisionCalls += batchesByPerson.size;
-
-      const personIds = Array.from(batchesByPerson.keys());
-      // Decision 084: only the protagonist's story circle goes to `decisionMaker`; everyone else goes
-      // to `backgroundDecisionMaker` when one is given. No protagonist means an empty circle.
-      const circle = options.backgroundDecisionMaker ? storyCircle(options.protagonistId, people, events) : new Set<string>();
-      await mapWithConcurrency(personIds, yearBatchConcurrency, async (personId) => {
-        const situations = batchesByPerson.get(personId)!;
-        const situationIds = Object.keys(situations);
-        const self: Record<string, JsonValue> = personSummary(people[personId]!, year, people);
-        const isProtagonist = personId === options.protagonistId;
-        const inBackground = circle.size > 0 && !circle.has(personId);
-        const decider = inBackground ? options.backgroundDecisionMaker! : options.decisionMaker;
-        const deciderSource = inBackground ? "rules" : options.engineSource;
-        const result = await decider.decideYear!({ personId, year, self, situations, isProtagonist });
-
-        if (result.vignetteSelection && Object.keys(result.vignetteSelection).length > 0) {
-          Object.assign(vignetteSelectionRaw, result.vignetteSelection);
-        }
-
-        // Jev (or RuleDecisionMaker's offline equivalent) only JUDGES the joint event-selection
-        // distribution — the domain engine samples it itself with Gumbel-max, exactly like every
-        // other decision (a DecisionMaker never rolls dice), keyed `(seed, personId, year,
-        // "event-pick")` so it's deterministic and reproducible across identical-seed runs/forks.
-        // Round 12 continuation (decision 046): `"everyday"` stands in for every `D1` vignette
-        // candidate this batch had — WHICH one actually wins is a second, nested sample (below,
-        // after every batch has reported in), not decided here.
-        let selectedId: string | undefined;
-        let normalizedSelection: Record<string, number> | undefined;
-        if (situationIds.length > 0 && Object.keys(result.selection).length > 0) {
-          normalizedSelection = normalizeDistribution(result.selection as Record<string, number>);
-          const sample = sampleGumbelMax(normalizedSelection, seed, personId, year, "event-pick");
-          if (sample.chosen === "everyday") {
-            everydayShareByPerson.set(personId, normalizedSelection.everyday!);
-          } else if (sample.chosen !== "nothing") {
-            selectedId = sample.chosen;
-          }
-
-          // PR12 (STEP 1 diagnostic, `sdd/engine-life-course/state`): of a person-year that offered a
-          // Y1 candidate but did NOT let it win this exact `"event-pick"` draw, tally what won
-          // instead — the other kind's name, `"nothing"` (the residual), or `"everyday"` (a D1
-          // vignette). This is the SAME draw `y1WonDraw` already counts a win from (below, at the Y1
-          // occurrence site) — reusing `sample.chosen` here rather than re-deriving it keeps both
-          // counters reading the identical, single Gumbel-max sample for this person-year.
-          if (marriageFunnelDebug !== undefined) {
-            const y1Id = situationIds.find((id) => situations[id]!.kind === "Y1");
-            if (y1Id !== undefined && inMarriageFunnelCohort(people[personId]!, config.startYear) && sample.chosen !== y1Id) {
-              const winnerKind = sample.chosen === "nothing" || sample.chosen === "everyday" ? sample.chosen : situations[sample.chosen]!.kind;
-              marriageFunnelDebug.y1LosesTo[winnerKind] = (marriageFunnelDebug.y1LosesTo[winnerKind] ?? 0) + 1;
-            }
-          }
-        }
-
-        for (const id of situationIds) {
-          const jevRaw = result.response[id];
-          if (!jevRaw) continue;
-          // Round 12 (decision 045): only the SELECTED situation carries an `occurrenceProbability`
-          // (its normalized share of the selection distribution) — every other candidate this
-          // person-year stays undefined, same as a forced decision or the legacy fallback below. A
-          // vignette candidate's `occurrenceProbability` is finalized just below instead (round 12
-          // continuation, decision 046 — it depends on the cross-batch vignette-pick winner).
-          const occurrenceProbability = id === selectedId ? normalizedSelection![id] : undefined;
-          resultByDecisionId.set(
-            id,
-            deciderSource === "jev" ? { jevRaw, final: jevRaw, source: "jev", occurrenceProbability } : { prior: jevRaw, final: jevRaw, source: "rules", occurrenceProbability },
-          );
-        }
-      });
-
-      // Round 12 continuation (decision 046): the SECOND, nested sample — "of every eligible
-      // vignette across every batch that offered one, which actually happens?" — keyed
-      // `(seed, protagonistId, year, "vignette-pick")`, exactly like `"event-pick"` above. Only the
-      // winning candidate's `occurrenceProbability` is set, and only when the batch that owns it
-      // (its `deciderId`) actually landed on `"everyday"` — P(everyday) x P(this vignette | everyday).
-      if (Object.keys(vignetteSelectionRaw).length > 0) {
-        const normalizedVignetteSelection = normalizeDistribution(vignetteSelectionRaw);
-        finalVignetteWinner = sampleGumbelMax(normalizedVignetteSelection, seed, options.protagonistId ?? "world", year, "vignette-pick").chosen;
-        const winnerCandidate = d1Candidates.find((c) => c.descriptor.decisionId === finalVignetteWinner);
-        const everydayShare = winnerCandidate ? everydayShareByPerson.get(winnerCandidate.descriptor.personId) : undefined;
-        if (winnerCandidate && everydayShare !== undefined) {
-          const existing = resultByDecisionId.get(finalVignetteWinner!);
-          if (existing) resultByDecisionId.set(finalVignetteWinner!, { ...existing, occurrenceProbability: everydayShare * normalizedVignetteSelection[finalVignetteWinner!]! });
-        }
-      }
-    } else {
-      // Legacy fallback: an adapter that doesn't implement `decideYear` (e.g. a minimal test
-      // double) still gets one `decide()` call per candidate, exactly as before decision 044.
-      counters.decisionCalls += questions.filter((_, i) => !forcedFlags[i] && !fallbackFlags[i]).length;
-    }
-
-    const resolved = await mapWithConcurrency(questions, concurrencyLimit, async (q, i) => {
-      if (forcedFlags[i]) return undefined; // forced: never ask the DecisionMaker
-      if (fallbackFlags[i]) {
-        const prior = normalizeDistribution(ruleDistribution(q) as Record<string, number>);
-        return { prior, final: prior, source: "rules" as DecisionSource };
-      }
-      if (batchable) return resultByDecisionId.get(q.id);
-      return resolveSocialDecision(q, options.decisionMaker, options.engineSource);
-    });
 
     // PR6 (design Open Questions, task 6.5/6.6): "(kind, subject) uniqueness per year must be
     // asserted" — the competing-risk categorical draw picks at most ONE situation id per person-year
