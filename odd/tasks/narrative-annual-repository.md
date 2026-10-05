@@ -2,7 +2,7 @@
 
 ## Status and parent boundary
 
-**R1: IN PROGRESS — independently checked, not closed.** The bounded implementation writer and three independent checks are complete. The verification freeze has ended; source bytes remain unchanged. The parent local commit and native COMMITTED review boundary remain pending. R1 is not DONE; this document does not close all of E3.
+**R1: DONE — inactive repository unit only.** The bounded implementation, three independent checks, observed parent local commit and parent-reported native COMMITTED approval/consumed ACK close R1. Source bytes remain unchanged. This does not activate production storage or close all of E3.
 
 Parent: [Narrative engine — E3 production forks and persistence](narrative-engine.md#e3--production-forks-and-persistence). Leave the parent file and its Engram6902/7341 observations unchanged.
 
@@ -13,14 +13,14 @@ Full-file mirror topic: `odd/narrative-annual-repository/tasks`.
 
 ## R1 — Content-addressed AnnualRuntimeRepository
 
-- [ ] **IN PROGRESS:** Implement, test, independently verify, review and locally commit an inactive `AnnualRuntimeRepository` over the existing injected `FavorRecords` port.
+- [x] **DONE:** Implement, test, independently verify, review and locally commit an inactive `AnnualRuntimeRepository` over the existing injected `FavorRecords` port.
 
 One coherent task; no separate adapter or production-activation task is included. The completed implementation writer was bounded to:
 
 - `src/server/e-repository.ts`
 - `src/server/e-repository.test.ts`
 
-This bookkeeping writer changes only this tracker; the parent owns its full-file mirror update/readback, integration, human interaction, native review and terminal Git actions. This tracker-writing transaction starts no children and performs no source writes, tests, Git mutation or native review.
+This bookkeeping writer changes only this tracker and its explicitly authorized full-file mirror at observation **7467**, project `lifelines`, topic `odd/narrative-annual-repository/tasks`. The parent owns integration, human interaction, native review and terminal Git actions. This tracker-writing transaction starts no children and performs no source writes, tests, Git mutation or native review.
 
 ### Contract
 
@@ -84,10 +84,13 @@ All three independent checks completed before the verification freeze ended. The
 
 Three before/after hash sets preserved opening HEAD `9a86855008f6077415b5143aa4e7d8d70acdf27c` and both recorded source hashes. The two source files and their 250 authored lines are unchanged. Initial Engram summaries were ambiguous internal/nontechnical failures, not functional test failures; no successful mirror update is inferred from them.
 
-### Remaining delivery gates
+### Observed local closure and parent native receipt
 
-1. Parent makes the local commit of the three-path unit: `src/server/e-repository.ts`, `src/server/e-repository.test.ts` and this tracker. No commit is claimed here.
-2. Parent then **ASSESS**es the native unit/range from opening HEAD `9a86855008f6077415b5143aa4e7d8d70acdf27c` and satisfies the **COMMITTED** boundary before checking R1 done. No native review is claimed here; preserve the reviewed source bytes.
-3. Measure tracker bookkeeping and final authored totals before factual closure. Parent owns the explicitly memory-authorized full-document mirror update/readback at observation **7467**, topic `odd/narrative-annual-repository/tasks`, retaining repository locator `/home/tanisjam/Projects/Personal/lifelines`; leave parent observations **6902/7341** untouched. This tracker writer does not claim mirror readback.
+- Observed local HEAD: `4fd0bbe1245c0e47f2a80b119d1412be5082e92b`; exact committed tree: `eff843482d98d4133339d710436826c62d739a74`.
+- Committed unit: three paths, **343 additions** = source/tests **250** + tracker **93**. Observed medium slice is under the 400-line advisory budget; slice closure was performed (parent receipt).
+- Feature authored total through `4fd0bbe`: **13,891 + 343 = 14,234**. The parent's later passive closure commit is excluded from this total.
+- Parent-reported native **COMMITTED** boundary: `9a86855` → `4fd0bbe`, review `review-598174870f7960a9`, approved; ACK **BURNED**. Target `16fd8318a32550b57e6a9b637c7040dd6a6d9176466482ff4a576b369ebf3529`; consumed `d7663786405cb286239c3c0cf877ef72bd2c7c4ff8bbd83848261e93eacae476`. This is the supplied approval/consumption receipt, not a STATUS inference or a fresh native call.
+- Closure inspection preserved both recorded source SHA-256 values and HEAD `4fd0bbe`. All three independent functional receipts above remain distinct; Node24/Node26 SQLite `:memory:` checks establish neither on-disk durability nor production activation.
+- Full-document mirror replacement/readback is authorized only for observation **7467** and this tracker topic/locator; parent observations **6902/7341** remain untouched.
 
-Next action: parent local commit of the three paths, then native ASSESS of the committed unit/range from `9a86855`, before marking R1 done. Source hashes and opening HEAD are unchanged at this bookkeeping boundary. R1 remains IN PROGRESS; completion of this repository unit alone leaves production E3 integration and inherited-canon binding pending.
+Next: genuine **E2b policy approval** before autonomous E1 production work. There is no source authority beyond closed R1. Whole-E3 branch bindings, retention, UI/open-life policy and F-quality decisions remain human-owned later work. H1–H4 are already closed elsewhere; do not reopen them. Production E3 integration and inherited-canon binding remain pending.
