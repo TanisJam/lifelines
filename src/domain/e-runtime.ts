@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { planAnnualFavorDraft, stableAnnualIdOrder } from "./e-annual-policy";
+import { planAnnualHelpSlot } from "./e-annual-composition";
 import { initializeWorld, copyInitializationData } from "./world-initialization";
 import type { WorldOrigin } from "./world-origin";
 import { applyGrantPhysics, applyHelpResponsePhysics, canonicalHelpResponseEffects, currentHelpContext, inspectHelpOpportunities, requireFavorData, validateHelpRequestPhysics, type CurrentHelpView, type HelpEvidence, type HelpFavorEffect, type HelpHistoryEntry } from "./effects";
@@ -197,11 +199,26 @@ export function createAnnualRuntime(initialization: unknown, resources: unknown,
     return detached({ version: ANNUAL_RUNTIME_VERSION, origin, genesis, frontier, state, journal });
   }
   const initial = snapshot();
+  /** Built-in composition accepts only year and existing physical vocabulary.
+   * No caller policy/callback receives the private staged registry. The resolved
+   * journal remains an explicit plan so immutable old-version replay is unchanged.
+   */
+  function advanceWithAnnualPolicy(input: unknown): Immutable<RuntimeOutput> {
+    return execute(input, true);
+  }
   function advance(input: unknown): Immutable<RuntimeOutput> {
+    return execute(input, false);
+  }
+  function execute(input: unknown, annualPolicy: boolean): Immutable<RuntimeOutput> {
     if (advancing) throw new Error("Reentrant annual operation");
     advancing = true;
     try {
-      const plan = admitPlan(input);
+      let plan: AnnualPlan;
+      if (annualPolicy) {
+        requireFavorData(input);
+        shape(input, ["year", "physical"]);
+        plan = admitPlan({ year: input.year, physical: input.physical, resources: [], grants: [], requests: [] });
+      } else plan = admitPlan(input);
       const year = plan.year;
       if (year < world.config.startYear || year > world.config.endYear || (frontier !== null && year <= frontier)) throw new Error("Invalid year frontier");
       const next = structuredClone(state);
@@ -255,6 +272,13 @@ export function createAnnualRuntime(initialization: unknown, resources: unknown,
         }
         append({ id: op.id, kind: op.kind, phase: "physical", declarationIndex, actors, causes: op.causes, consumed, effects: [structuredClone(effect)], outcome: "committed" });
       });
+      if (annualPolicy) {
+        // This is the REAL private post-physical state, never a fabricated output,
+        // provisional checkpoint or second annual execution.
+        const allowances = planAnnualFavorDraft(next, world.config.seed, year);
+        plan.resources = allowances.resources;
+        plan.grants = allowances.grants;
+      }
       plan.resources.forEach((op, declarationIndex) => {
         prior(op.id, op.causes); living(op.actor);
         const consumed = evidence([op.actor]);
@@ -296,7 +320,7 @@ export function createAnnualRuntime(initialization: unknown, resources: unknown,
         Object.assign(next, applyGrantPhysics(next, { id: op.id, year, position: next.events.length, actors, causes: physicsCauses, effects }));
         append({ id: op.id, kind: "grain-grant", phase: "grants", declarationIndex, actors, causes: op.causes, consumed, effects, outcome: "committed" });
       });
-      plan.requests.forEach((op, declarationIndex) => {
+      function executeRequest(op: RequestIntention, declarationIndex: number) {
         prior(op.id, []); prior(`${op.id}/response`, []);
         const obligation = next.obligations.find(o => o.id === op.obligation);
         if (!obligation) throw new Error("Unknown obligation");
@@ -325,7 +349,19 @@ export function createAnnualRuntime(initialization: unknown, resources: unknown,
         const response = { id, year, position: next.events.length, actors, causes: [obligation.origin, op.id], obligation: op.obligation, request: op.id, effects };
         Object.assign(next, applyHelpResponsePhysics(next, response, selected));
         append({ id, kind: "help-response", phase: "help", declarationIndex, actors, causes: response.causes, consumed: { current: responseConsumed, evidence: policy }, effects, outcome: "committed", authority: { source, selected, baseline, noise: op.noise } }, { obligation: op.obligation, request: op.id });
-      });
+      }
+      if (annualPolicy) {
+        const creditors = [...new Set(inspectHelpOpportunities(next, year)
+          .filter(candidate => candidate.reason === null).map(candidate => candidate.creditor))].sort(stableAnnualIdOrder);
+        for (const creditor of creditors) {
+          for (const slot of [0, 1] as const) {
+            const request = planAnnualHelpSlot(next, world.config.seed, year, creditor, slot);
+            if (!request) continue;
+            plan.requests.push(request);
+            executeRequest(request, plan.requests.length - 1);
+          }
+        }
+      } else plan.requests.forEach(executeRequest);
       // No owned publication occurs until all operations and authority results pass.
       const nextJournal = [...journal, { plan, entries }];
       const output = detached({ version: ANNUAL_RUNTIME_VERSION, origin, genesis, frontier: year, state: next, journal: nextJournal });
@@ -333,7 +369,7 @@ export function createAnnualRuntime(initialization: unknown, resources: unknown,
       return output;
     } finally { advancing = false; }
   }
-  return Object.freeze({ initial, advance, final: snapshot });
+  return Object.freeze({ initial, advance, advanceWithAnnualPolicy, final: snapshot });
 }
 
 /** Cold, in-memory reconstruction from the owned rules-only journal. Re-run E1 and

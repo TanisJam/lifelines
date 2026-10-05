@@ -3,12 +3,14 @@ import { ageInYear, isAdult } from "./actuarial";
 import { replayAnnualRuntime, type AnnualPlan, type ResourceAllocation, type RuntimeOutput } from "./e-runtime";
 import { ensureLifeState } from "./life-state";
 import { keyedDraw } from "./rng";
+import { inspectHelpOpportunities, requireFavorData, type CurrentHelpView } from "./effects";
+import { requireFields } from "./obligations";
 
 /** Inactive, explicit allowance/offer policy; not a runtime or provenance version. */
 export const ANNUAL_FAVOR_POLICY_VERSION = "annual-favor-policy-ap1-1" as const;
 type Purpose = "grain" | "offer" | "target";
 
-function stableIdOrder(a: string, b: string): number {
+export function stableAnnualIdOrder(a: string, b: string): number {
   // Lone surrogates share UTF-8 replacement bytes. Preserve their raw identity.
   return Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"))
     || (a < b ? -1 : a > b ? 1 : 0);
@@ -23,7 +25,7 @@ function operationId(purpose: "allocate" | "reset" | "grant", year: number, ...p
   return JSON.stringify([purpose, ANNUAL_FAVOR_POLICY_VERSION, year, ...parts]);
 }
 function pairId(a: string, b: string): string {
-  return JSON.stringify([a, b].sort(stableIdOrder));
+  return JSON.stringify([a, b].sort(stableAnnualIdOrder));
 }
 
 /** Plan only the requested future year from the admitted CURRENT view.
@@ -43,10 +45,29 @@ export function buildAnnualFavorPlan(input: unknown, year: number): AnnualPlan {
   }
   // Replay owns/freeze-detaches the tree. Clone for the existing Person helper's
   // mutable type, not to modify physics; only local budgets evolve below.
-  const state = structuredClone(admitted.state as unknown) as RuntimeOutput["state"];
+  return planAnnualFavorDraft(admitted.state, seed, year);
+}
+
+/** Descriptor/own-field admission for the separate planning view, not replay. */
+export function requireAnnualPolicyView(view: unknown): asserts view is CurrentHelpView {
+  requireFavorData(view, true);
+  if (view === null || typeof view !== "object" || Array.isArray(view)) throw new Error("Invalid annual planning view");
+  requireFields(view, ["people", "legacyEvents", "events", "grain", "assistance", "need", "obligations", "ties", "appraisals"]);
+}
+
+/** Shared current-view kernel, not RuntimeOutput admission or a checkpoint.
+ * Runtime invokes this only on its owned post-physical draft. Public AP1 above
+ * still requires full replay. This data-only helper grants no runtime authority.
+ */
+export function planAnnualFavorDraft(view: unknown, seed: string, year: number): AnnualPlan {
+  requireAnnualPolicyView(view);
+  if (typeof seed !== "string" || !Number.isSafeInteger(year) || Object.is(year, -0)) throw new Error("Invalid annual policy context");
+  // Reuse current-world guards rather than accepting inherited ledgers/actors.
+  inspectHelpOpportunities(view, year);
+  const state = structuredClone(view as unknown) as RuntimeOutput["state"];
   const plan: AnnualPlan = { year, physical: [], resources: [], grants: [], requests: [] };
   const history = state.legacyEvents.filter(event => event.year <= year);
-  const actors = Object.keys(state.people).sort(stableIdOrder).filter(id => {
+  const actors = Object.keys(state.people).sort(stableAnnualIdOrder).filter(id => {
     const person = state.people[id];
     return person.birthYear <= year && (person.deathYear === undefined || person.deathYear > year)
       && !person.away && ensureLifeState(person, history).residence.status === "home"
@@ -80,7 +101,7 @@ export function buildAnnualFavorPlan(input: unknown, year: number): AnnualPlan {
     // Seed each target independently; ties use the same total ID order as reset
     // and creditor traversal. No registry/locale order can resolve a conflict.
     candidates.sort((a, b) => draw(seed, year, "target", creditor, a)
-      - draw(seed, year, "target", creditor, b) || stableIdOrder(a, b));
+      - draw(seed, year, "target", creditor, b) || stableAnnualIdOrder(a, b));
     const debtor = candidates[0];
     if (debtor === undefined) continue;
     plan.grants.push({ id: operationId("grant", year, creditor, debtor), creditor, debtor, causes: [] });
