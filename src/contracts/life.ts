@@ -112,6 +112,8 @@ export interface SceneBand {
 }
 
 export interface LifeScene {
+  /** Explicit historical eligibility; absent preserves the legacy animated timeline. */
+  readonly timeBasis?: "journal-ordered";
   readonly people: readonly ScenePerson[];
   readonly edges: readonly SceneEdge[];
   readonly village: readonly VillageSoul[];

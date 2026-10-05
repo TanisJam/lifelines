@@ -80,6 +80,66 @@ describe("neutral participant scene consumers", () => {
   });
 });
 
+describe("journal-ordered frames", () => {
+  const journal: LifeScene = { ...withParticipants, timeBasis: "journal-ordered", span: { start: 1490, end: 1530 },
+    edges: [...scene.edges, { a: "self", b: "visitor-f", kind: "spouse", fromAt: null }] };
+  const homes = computeLayout(journal);
+
+  it("shares instantaneous presence, circle eligibility and exclusive death truth without predictive fades", () => {
+    const before = frameAt(journal, homes, 1499.999);
+    expect(before.people.find(p => p.id === "visitor-f")).toBeUndefined();
+    for (const t of [1500, 1501.9, 1502]) {
+      const frame = frameAt(journal, homes, t);
+      const visitor = frame.people.find(p => p.id === "visitor-f")!;
+      expect(visitor).toMatchObject({ presence: 1, alive: t < 1502, inCircle: false, coreOpacity: 1 });
+      expect(visitor.pos).toEqual(homes.homes.get("visitor-f"));
+      expect(frame.circle).toBe(frame.people.filter(p => p.id !== "self" && p.alive && p.inCircle && p.presence === 1).length);
+    }
+    expect(frameAt(journal, homes, 1499.999).people.find(p => p.id === "mum")!.coreOpacity).toBe(1);
+    expect(frameAt(journal, homes, 1500).people.find(p => p.id === "mum")!.alive).toBe(false);
+    expect(frameAt(journal, homes, 1529.999).people.find(p => p.id === "self")!.coreOpacity).toBe(1);
+  });
+
+  it("omits people and dependent edges outside the window and converges on backward scrubs", () => {
+    const times = [1489.9, 1490, 1499.9, 1500, 1502, 1530, 1530.001, NaN, Infinity];
+    const forward = times.map(t => frameAt(journal, homes, t));
+    expect([...times].reverse().map(t => frameAt(journal, homes, t)).reverse()).toEqual(forward);
+    for (const index of [0, 6, 7, 8]) {
+      expect(forward[index].people).toEqual([]);
+      expect(forward[index].edges).toEqual([]);
+      expect(forward[index].circle).toBe(0);
+    }
+  });
+
+  it("has finite dead-point frames at zero and historical opening, and no resurrection before birth", () => {
+    for (const year of [0, 1313]) {
+      const point: LifeScene = { timeBasis: "journal-ordered", people: [person("self", {
+        relCode: "self", group: "self", born: year, appearsAt: year, diedAt: year,
+      })], edges: [], village: [], bands: [], span: { start: year, end: year } };
+      const frame = frameAt(point, computeLayout(point), year);
+      expect(frame.people).toHaveLength(1);
+      expect(frame.people[0]).toMatchObject({ alive: false, presence: 1, coreOpacity: 1 });
+      expect(frame.people[0].pos.every(Number.isFinite)).toBe(true);
+      expect(frame.circle).toBe(0);
+    }
+    const future: LifeScene = { ...journal, people: [...journal.people, person("unborn", { born: 1505, appearsAt: 1490 }),
+      person("future-arrival", { born: 1450, appearsAt: 1531 }), person("dead-before", { diedAt: 1489 })] };
+    expect(frameAt(future, computeLayout(future), 1500).people.map(p => p.id)).not.toEqual(expect.arrayContaining(["unborn", "future-arrival", "dead-before"]));
+    for (const id of ["unborn", "future-arrival", "dead-before"]) {
+      expect(frameAt(future, computeLayout(future), 1500).people.find(p => p.id === id)).toBeUndefined();
+    }
+  });
+
+  it("preserves absent-mode frames byte for byte, including legacy anticipatory arrival and core fade", () => {
+    for (const t of [1499.9, 1500, 1501.9, 1502, 1529.9, 1531]) {
+      expect(JSON.stringify(frameAt({ ...withParticipants, timeBasis: undefined }, participantLayout, t)))
+        .toBe(JSON.stringify(frameAt(withParticipants, participantLayout, t)));
+    }
+    expect(frameAt(withParticipants, participantLayout, 1499.9).people.find(p => p.id === "visitor-f")!.presence).toBeGreaterThan(0);
+    expect(frameAt(withParticipants, participantLayout, 1501.9).people.find(p => p.id === "visitor-f")!.coreOpacity).toBeLessThan(1);
+  });
+});
+
 describe("frameAt edges", () => {
   it("dims a parent bond to half once both the parent and the child are dead, and not before", () => {
     expect(opacityOf(1505, "parent", "mum")).toBe(1);

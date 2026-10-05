@@ -2,7 +2,7 @@ import type { LifeScene } from "@/contracts/life";
 import { plagueIntensity } from "./dial";
 import { edgeKey, positionAt, type Layout } from "./layout";
 import { clamp01, type Vec } from "./motion";
-import { alive, circleCount, edgeActive, formerOpacity, growth, inCircle, presence, soulsAlive } from "./presence";
+import { alive, circleCount, edgeActive, formerOpacity, growth, inCircle, scenePresence, soulsAlive } from "./presence";
 
 export { timeline } from "./dial";
 
@@ -39,15 +39,15 @@ export interface Frame {
  * layers (sparks, floating, flicker) are drawn on top and are not part of it.
  */
 export function frameAt(scene: LifeScene, layout: Layout, t: number): Frame {
-  const start = scene.span.start;
+  const journalOrdered = scene.timeBasis === "journal-ordered";
   const people: PersonFrame[] = [];
   for (const p of scene.people) {
-    const pres = presence(p, t, start);
+    const pres = scenePresence(scene, p, t);
     const pos = positionAt(layout, p.id, pres);
     if (!pos || pres <= 0) continue;
     const living = alive(p, t);
     let coreOpacity = 1;
-    if (p.diedAt !== undefined && living) {
+    if (!journalOrdered && p.diedAt !== undefined && living) {
       const window = Math.min(0.55, p.diedAt - p.appearsAt);
       coreOpacity = 1 - 0.55 * clamp01((t - (p.diedAt - window)) / window);
     }

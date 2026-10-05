@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { SceneEdge, ScenePerson } from "@/contracts/life";
+import type { LifeScene, SceneEdge, ScenePerson } from "@/contracts/life";
 import { elinScene } from "./fixture-scene";
-import { alive, circleCount, edgeActive, formerOpacity, growth, inCircle, presence, soulsAlive } from "./presence";
+import { alive, circleCount, edgeActive, formerOpacity, growth, inCircle, presence, scenePresence, soulsAlive } from "./presence";
 
 const scene = elinScene();
 const byId = Object.fromEntries(scene.people.map((p) => [p.id, p]));
@@ -16,6 +16,67 @@ describe("presence", () => {
     expect(mid).toBeGreaterThan(0);
     expect(mid).toBeLessThan(1);
     expect(presence(wren, wren.appearsAt + 2, START)).toBe(1);
+  });
+});
+
+describe("journal-ordered eligibility", () => {
+  const journal: LifeScene = { ...scene, timeBasis: "journal-ordered", span: { start: 1327, end: 1335 } };
+  const p: ScenePerson = { id: "arrival", name: "Arrival", sex: "f", relCode: "participant", group: "others", born: 1300, appearsAt: 1328.25 };
+
+  it("is instantaneous at introduction and bounded on forward and backward scrubs", () => {
+    const times = [1326, 1327, 1328.249, 1328.25, 1335, 1335.001, NaN, Infinity, -Infinity];
+    const expected = [0, 0, 0, 1, 1, 0, 0, 0, 0];
+    expect(times.map(t => scenePresence(journal, p, t))).toEqual(expected);
+    expect([...times].reverse().map(t => scenePresence(journal, p, t)).reverse()).toEqual(expected);
+  });
+
+  it("requires birth and introduction, rejects future introductions and nonfinite endpoints", () => {
+    expect(scenePresence(journal, { ...p, born: 1329 }, 1328.5)).toBe(0);
+    expect(scenePresence(journal, { ...p, born: 1329 }, 1329)).toBe(1);
+    expect(scenePresence(journal, { ...p, appearsAt: 1336 }, 1335)).toBe(0);
+    for (const end of [null, NaN, Infinity, -Infinity]) {
+      expect(scenePresence({ ...journal, span: { start: 1327, end } }, p, 1330)).toBe(0);
+    }
+  });
+
+  it("excludes death before opening but retains exact-opening death and finite zero-length spans", () => {
+    const origin = { ...p, born: 1313, appearsAt: 1313 };
+    expect(scenePresence(journal, { ...origin, diedAt: 1313 }, 1327)).toBe(0);
+    const dead = { ...origin, diedAt: 1327 };
+    expect(scenePresence(journal, dead, 1327)).toBe(1);
+    expect(alive(dead, 1327)).toBe(false);
+    for (const year of [0, 1313]) {
+      const point: LifeScene = { ...journal, span: { start: year, end: year } };
+      const subject = { ...origin, born: year, appearsAt: year, diedAt: year };
+      expect(scenePresence(point, subject, year)).toBe(1);
+      expect(scenePresence(point, subject, year - 0.01)).toBe(0);
+      expect(scenePresence(point, subject, year + 0.01)).toBe(0);
+    }
+  });
+
+  it("never badges neutral participants even with an accidental qualifying edge; counts eligible living family only", () => {
+    const self = { ...p, id: "self", group: "self", relCode: "self", born: 1327, appearsAt: 1327 } as const;
+    const family = { ...p, id: "family", group: "parents", relCode: "parent", diedAt: 1330 } as const;
+    const counted: LifeScene = { ...journal, people: [self, p, family],
+      edges: [{ a: "self", b: p.id, kind: "spouse", fromAt: null }] };
+    expect(inCircle(counted, p, 1329)).toBe(false);
+    expect(circleCount(counted, 1328.249)).toBe(0);
+    expect(circleCount(counted, 1328.25)).toBe(1);
+    expect(circleCount(counted, 1330)).toBe(0);
+    expect(circleCount(counted, 1336)).toBe(0);
+  });
+
+  it("leaves every absent-mode legacy value and edge membership unchanged", () => {
+    for (const person of scene.people) {
+      for (const t of [START - 10, START, person.appearsAt - 0.2, person.appearsAt, 9999, NaN]) {
+        expect(scenePresence(scene, person, t)).toBe(presence(person, t, START));
+      }
+    }
+    const legacy: LifeScene = { ...journal, timeBasis: undefined, people: [
+      { ...p, id: "self", group: "self", relCode: "self" }, p,
+    ], edges: [{ a: "self", b: p.id, kind: "spouse", fromAt: null }] };
+    expect(inCircle(legacy, p, 1329)).toBe(true);
+    expect(circleCount(legacy, 1329)).toBe(1);
   });
 });
 
