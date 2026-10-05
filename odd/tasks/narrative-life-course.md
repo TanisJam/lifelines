@@ -2,18 +2,18 @@
 
 ## Current boundary
 
-**L1 — IN PROGRESS:** the three-file implementation writer has completed the behavior-preserving extraction. Writer validation and both independent compatibility/parity checks passed. The verification freeze has ended; parent local work-unit commit, native COMMITTED assessment and unit-close review remain pending. **Not DONE.**
+**L1 — DONE:** unchanged extraction, independent verification, local commit and native COMMITTED closure are complete. This closes only L1, not whole physical migration or economy policy.
 
 - Authority: user direction **7481**; preserve seeded life-course behavior and minimal-favor scope.
 - Parent: [Narrative engine](narrative-engine.md). Its task document and main mirror **6902** remain unchanged.
-- Baseline/current HEAD: `68036f77330ea72039e5e7d09a97d926284796a7` (read-only confirmation during tracker integration).
-- Latest source commit: `4fd0bbe1245c0e47f2a80b119d1412be5082e92b` (`feat(storage): persist admitted annual capsules through immutable records`).
+- Review base: `68036f77330ea72039e5e7d09a97d926284796a7`.
+- Latest reviewed source boundary / HEAD: `8e4abc5694fced7b52a3903275e7893007ea0613`; exact tree `c8d30940527d35cd40db2cfe4750bd6d03782a82`.
 - H1, H2, H3, H4 and R1 remain closed; do not reopen them.
 - Dedicated full-document mirror: observation **7483**, project `lifelines`, topic `odd/narrative-life-course/tasks`. Update the complete mirror and read it back during tracker integration. Do not replace observations **6902**, **7341** or **7467**.
 
 ## One task
 
-- [ ] **L1 — Extract `biologyDistribution` unchanged and prove seeded parity.** Status: **IN PROGRESS — writer and independent verification complete; parent commit/native closure pending**. One implementation writer; parent owns orchestration, independent verification, native review and local work-unit commit.
+- [x] **L1 — Extract `biologyDistribution` unchanged and prove seeded parity.** Status: **DONE — committed and reviewed**. Parent supplied closure evidence below.
 
 This distribution-only seam is potentially usable by E2b. It does not implement, approve or certify whole life-course/physical migration, autonomous annual execution or resource policy.
 
@@ -72,11 +72,11 @@ Both independent checks completed under the candidate-write freeze; that freeze 
 - No technical blocker remains. An ambiguous internal child Engram summary is bookkeeping context, not a validation failure.
 - No whole-output golden, full-suite, build or browser validation is claimed. These checks prove the bounded extraction and seeded sampling parity, not whole-feature certification or a policy change.
 
-## Remaining delivery gates
+## Completed delivery gates
 
-1. Complete this tracker-only update and update/read back the complete **7483** mirror at topic `odd/narrative-life-course/tasks`; confirm whitespace, baseline HEAD and the three source fingerprints remain unchanged.
-2. Parent makes the local **four-path work-unit commit**: this tracker plus the three implementation surfaces above. No source edit is authorized by this tracker update.
-3. Parent obtains native **ASSESS COMMITTED** assessment against base `68036f7`, then performs unit-close review before marking L1 **DONE**. This closes only L1, not the whole narrative feature. No commit, native assessment or closure is claimed here.
+- Local `8e4abc5`: 4 paths, 174 additions / 16 deletions, 190 authored lines (95 source/test + 95 tracker). Running reviewed total: 14,253 + 190 = **14,443** through `8e4abc5`; this post-review passive update is excluded.
+- Native **COMMITTED**, `68036f7` → `8e4abc5`: review `review-884219e835a10774` approved; **ACK BURNED**. Target `3435fd5fcc0bcaa641339d0f912738d468fc75ff92af9c7d6e02048280916ca3`; consumed `69abd4de2c367ee9baa31ef657f5328b4d5f530475561e411e76be67d249b043`. Not a STATUS assessment.
+- Tracker-only closure and full **7483** mirror replacement/readback are authorized; source fingerprints and HEAD must remain unchanged.
 
 If a later gate requires a corrective source write, reopen the bounded integration and refreeze before repeating affected independent verification. Keep meaningful tests; the 400-line guidance is advisory and this coherent source diff is 95 authored lines.
 
@@ -85,11 +85,11 @@ If a later gate requires a corrective source write, reopen the bounded integrati
 E2b resource/replenishment policy remains unresolved. Ask only at the actual next affected boundary; do not auto-approve or implement any option:
 
 - **A — finite resources** (scout option A).
-- **B — conserved grain with renewable HELP** (scout option B).
-- **C — annual abstract budgets** (scout option C).
+- **B — conserved grain with annual HELP** (scout option B).
+- **C — annual abstract resource allowance** (scout option C).
 
-Proposed question at that boundary: “Which E2b resource/replenishment policy should govern the next implementation: A, B or C?” L1 does not depend on silently selecting an answer.
+Parent will present one consequential A/B/C balance-policy bundle before affected E2b source; no choice yet. HELP demand must come from creditors, not hunger. E3 binding retention, UI and F remain pending.
 
 ## Key learnings
 
-Factual closing distinguishes writer completion, completed independent verification and still-pending committed closure. The seam owns only ordered biological outcome probabilities; seeded sampling and physical life-course orchestration remain with existing callers. An unchanged extraction and sample-parity tests do not authorize whole life-course migration or economy policy. Preserve the historical timeout without misreporting it as a current failure, and keep source fingerprints and baseline HEAD fixed through tracker integration.
+Factual closing distinguishes writer completion, independent verification and completed COMMITTED closure. The seam owns only ordered biological outcome probabilities; seeded sampling and physical life-course orchestration remain with existing callers. An unchanged extraction and sample-parity tests do not authorize whole life-course migration or economy policy. Preserve the historical timeout without misreporting it as a current failure, and keep source fingerprints and baseline HEAD fixed through tracker integration.
