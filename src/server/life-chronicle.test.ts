@@ -1,4 +1,10 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// The authoritative narrator must never select a configured network provider in these tests.
+vi.mock("@/server/decision-engine", async () => {
+  const { RuleDecisionMaker } = await import("@/adapters/decision/rule-decision-maker");
+  return { getDecisionMaker: () => new RuleDecisionMaker() };
+});
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import { createMind } from "@/domain/mind";
 import { simulate } from "@/domain/simulate";
@@ -7,8 +13,13 @@ import type { Event, Person, SimulationResult } from "@/domain/types";
 import { deriveLifeScene } from "@/domain/scene";
 import { generateWorld } from "@/domain/worldgen";
 import type { ChronicleEntry } from "@/contracts/life";
-import { buildEpilogue, buildLifeChronicle, buildProvisionalTickEntries, finishAtDeath } from "./life-chronicle";
-import { deleteLife, registerLife } from "./life-store";
+import { buildCandidateLifeChronicle, buildEpilogue, buildLifeChronicle, buildProvisionalTickEntries, finishAtDeath } from "./life-chronicle";
+import { deleteLife, getLifeBranch, registerLife, registerLifeBranch, type LifeBranchRecord } from "./life-store";
+
+beforeAll(() => {
+  vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Network is forbidden in chronicle tests"); }));
+});
+afterAll(() => vi.unstubAllGlobals());
 
 async function buildRealChronicle(seed: string) {
   const { config, people, events } = generateWorld({ seed, startYear: 1500, endYear: 1600, founderCount: 10, protagonist: { name: "Testa", sex: "random" } });
@@ -286,6 +297,56 @@ describe("buildLifeChronicle — end of life invariants", () => {
     const death = entries.find((x) => x.kind === "death" && x.who.includes("protagonist") && x.level === 3);
     expect(death).toBeDefined();
     expect(entries[entries.length - 1]).toBe(death);
+  });
+});
+
+describe("unpublished candidate chronicle", () => {
+  it("constructs the same authoritative chronicle without first registering the candidate", async () => {
+    const result = fixtureResult();
+    const candidate: LifeBranchRecord = { id: "unpublished", lifeId: "candidate-life", label: "Original life", result, snapshots: fixtureSnapshots(result), createdAt: 0 };
+    expect(getLifeBranch(candidate.lifeId, candidate.id)).toBeUndefined();
+    const preview = await buildCandidateLifeChronicle(candidate, [candidate], "es");
+    expect(preview.data).toBeDefined();
+    expect(getLifeBranch(candidate.lifeId, candidate.id)).toBeUndefined();
+    const life = registerLife(candidate.lifeId, candidate.id, result.config, "Elin Ashwell", "f", result, candidate.snapshots);
+    try {
+      expect(preview).toEqual(await buildLifeChronicle(life.id, candidate.id, "es"));
+    } finally {
+      deleteLife(life.id);
+    }
+  });
+
+  it("preserves parent-chain scenes and branch metadata for an unpublished rewrite", async () => {
+    const fixture = fixtureResult();
+    const result: SimulationResult = {
+      ...fixture,
+      people: { ...fixture.people, friend: { ...fixture.people.mom!, id: "friend", name: "Old friend" } },
+    };
+    result.people.protagonist!.mind.relationships.push({ personId: "friend", bond: "friend", strength: 50 });
+    const parentSnapshots = fixtureSnapshots(result);
+    for (const [year, snapshot] of parentSnapshots) {
+      if (year < 1501) {
+        const protagonist = structuredClone(result.people.protagonist!);
+        protagonist.mind.relationships = [];
+        parentSnapshots.set(year, { ...snapshot, people: { ...result.people, protagonist } });
+      }
+    }
+    const life = registerLife("candidate-parent", "parent", result.config, "Elin Ashwell", "f", result, parentSnapshots);
+    const parent = getLifeBranch(life.id, "parent")!;
+    const candidate: LifeBranchRecord = { id: "rewrite", lifeId: life.id, parentBranchId: "parent", forkYear: 1510, label: "Changed in 1510", result, snapshots: new Map([...fixtureSnapshots(result)].filter(([year]) => year >= 1509)), createdAt: 0 };
+    try {
+      const preview = await buildCandidateLifeChronicle(candidate, [parent, candidate]);
+      expect(preview.data!.scene.edges.find((edge) => edge.kind === "friend")).toMatchObject({ fromAt: 1501 });
+      expect(preview.data!.branches).toEqual([
+        { branchId: "parent", label: "Original life", parentBranchId: null, forkYear: null },
+        { branchId: "rewrite", label: "Changed in 1510", parentBranchId: "parent", forkYear: 1510 },
+      ]);
+      expect(getLifeBranch(life.id, candidate.id)).toBeUndefined();
+      registerLifeBranch(life.id, candidate.id, "parent", 1510, { id: "override", decisionId: "decision", optionId: "option" }, result, candidate.snapshots, candidate.label);
+      expect(preview).toEqual(await buildLifeChronicle(life.id, candidate.id));
+    } finally {
+      deleteLife(life.id);
+    }
   });
 });
 

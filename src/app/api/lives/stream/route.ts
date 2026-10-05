@@ -4,16 +4,17 @@ import { drainSimulation, SimulationAbortedError, simulateYears } from "@/domain
 import { generateWorld, resolveProtagonistSex } from "@/domain/worldgen";
 import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
-import { buildLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
+import { assertCompletedLife } from "@/server/completed-life";
+import { buildCandidateLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
 import { createSceneTracker } from "@/server/life-scene";
-import { newLifeBranchId, newLifeId, registerLife } from "@/server/life-store";
+import { newLifeBranchId, newLifeId, registerLife, type LifeBranchRecord } from "@/server/life-store";
 import { sseResponse, yieldToEventLoop } from "@/server/sse";
 
 export const runtime = "nodejs";
 
 /** Period-setting capability: the run begins at the start of the 1327–1361 period this engine models. */
 const START_YEAR = 1327;
-/** A generous safety cap (see mortality.ts): the sim always stops earlier, at the protagonist's death, but the actuarial curve alone never guarantees that before some fixed year. */
+/** Legacy bounded horizon, NOT completion: survivors must fail admission. Autonomous continuation is pending. */
 const MAX_LIFESPAN_YEARS = 100;
 
 function randomSeed(): string {
@@ -120,9 +121,14 @@ export async function POST(request: Request): Promise<Response> {
       throw error;
     }
 
-    registerLife(lifeId, branchId, config, protagonist.name, protagonistSex, report.result, report.snapshots);
-
-    const chronicleResult = await buildLifeChronicle(lifeId, branchId, locale);
+    if (signal.aborted) return;
+    assertCompletedLife(report.result, report.snapshots);
+    const candidate: LifeBranchRecord = {
+      id: branchId, lifeId, label: "Original life", result: report.result,
+      snapshots: report.snapshots, createdAt: Date.now(),
+    };
+    const chronicleResult = await buildCandidateLifeChronicle(candidate, [candidate], locale);
+    if (signal.aborted) return;
     if (!chronicleResult.data) {
       send("error", { type: "error", message: chronicleResult.error ?? "Failed to build the chronicle." });
       return;
@@ -137,6 +143,9 @@ export async function POST(request: Request): Promise<Response> {
       chronicle,
       stats: { jevCalls: report.decisionCalls, cacheHits: runStats.cacheHits, wallTimeMs: report.wallTimeMs, jevRequests: runStats.jevRequests, jevQuestions: runStats.jevQuestions, inputTokens: runStats.inputTokens, estimatedUsd: runStats.estimatedUsd },
     };
+    // No await between the final cancellation check and synchronous visible publication.
+    if (signal.aborted) return;
+    registerLife(lifeId, branchId, config, protagonist.name, protagonistSex, report.result, report.snapshots);
     send("done", done);
   });
 }

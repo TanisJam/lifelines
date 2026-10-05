@@ -11,7 +11,7 @@ import type { Event, Person } from "@/domain/types";
 import { causeNounPhrase } from "@/server/chronicle-data";
 import { getDecisionMaker } from "@/server/decision-engine";
 import { sceneForBranch } from "@/server/life-scene";
-import { getLatestBranch, getLifeBranch, listLifeBranches } from "@/server/life-store";
+import { getLatestBranch, getLifeBranch, listLifeBranches, type LifeBranchRecord } from "@/server/life-store";
 
 const PROTAGONIST_ID = "protagonist";
 
@@ -227,7 +227,20 @@ export interface ChronicleResult {
 export async function buildLifeChronicle(lifeId: string, branchIdParam?: string, locale: Locale = DEFAULT_LOCALE): Promise<ChronicleResult> {
   const branch = branchIdParam ? getLifeBranch(lifeId, branchIdParam) : getLatestBranch(lifeId);
   if (!branch) return { error: "Life not found.", status: 404 };
+  return buildCandidateLifeChronicle(branch, listLifeBranches(lifeId), locale);
+}
 
+/**
+ * Reuses authoritative assembly for an in-memory candidate, without publishing it. Callers own
+ * admission and cancellation before registration. Parent scene history remains read-only.
+ * Persisted readers retain buildLifeChronicle's identifier-based API.
+ */
+export async function buildCandidateLifeChronicle(
+  branch: LifeBranchRecord,
+  branchRecords: readonly LifeBranchRecord[],
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<ChronicleResult> {
+  const lifeId = branch.lifeId;
   const people = branch.result.people;
   const protagonist = people[PROTAGONIST_ID];
   if (!protagonist) return { error: "Protagonist not found in this life.", status: 500 };
@@ -270,7 +283,7 @@ export async function buildLifeChronicle(lifeId: string, branchIdParam?: string,
     causeOfDeath,
   };
 
-  const branches: BranchInfo[] = listLifeBranches(lifeId).map((b) => ({
+  const branches: BranchInfo[] = branchRecords.map((b) => ({
     branchId: b.id,
     label: b.label,
     parentBranchId: b.parentBranchId ?? null,
