@@ -1,14 +1,15 @@
-import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
+import { ageInYear, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
+import { beginLegacyYear, resolveLegacyVitalDecision, type LegacyYearContext } from "./legacy-year";
+import { commitId, mintId, pushEvent, resolveCourtshipOnDeath, resolveWidowhood } from "./legacy-year-mechanics";
 import { mapWithConcurrency } from "./concurrency";
-import { candidateMatchesSubject, decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
+import { candidateMatchesSubject, decisionSubject, type MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
-import { activeFeudPair, activeRomancePair, activeRomancePairs, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
+import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, pairKey, recentUnresolvedBreakup } from "./events";
 import { biologyDistribution } from "./life-course-rules";
-import { advanceSlot, applyLifeTransition, EMPTY_SLOTS, ensureLifeState, markMarriageable } from "./life-state";
+import { applyLifeTransition, ensureLifeState, markMarriageable } from "./life-state";
 import { article } from "./narrate";
-import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
+import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
 import type { Locale } from "./locale";
-import { determineDeathCause, type MortalityContext } from "./mortality";
 import { storyCircle } from "./story-circle";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import {
@@ -28,11 +29,9 @@ import {
 import { FALLBACK_CLASS } from "./period/classes";
 import {
   BLACK_DEATH_YEARS,
-  blackDeathMortalityForYear,
   datedNationalEventTypesForYear,
   isHundredYearsWarLevyYear,
   SECOND_PESTILENCE_YEARS,
-  secondPestilenceMortalityForYear,
 } from "./period/events";
 import { isLeyrwiteEligible, isUnfree, manorialFinePayload, shouldPresentLeyrwite } from "./period/markers";
 import { minEligibleAge } from "./hazards";
@@ -351,12 +350,6 @@ export async function drainSimulation(
   }
 }
 
-function pushEvent(events: Event[], year: number, kind: EventKind, actors: readonly string[], payload: Record<string, JsonValue>, causes: readonly string[]): Event {
-  const event: Event = { id: makeEventId(events, year, kind, actors), year, kind, actors, payload, causes };
-  events.push(event);
-  return event;
-}
-
 function isRelated(a: Person, b: Person): boolean {
   if (a.id === b.id) return true;
   if (a.motherId === b.id || a.fatherId === b.id || b.motherId === a.id || b.fatherId === a.id) return true;
@@ -472,82 +465,6 @@ function mourningOver(person: Person, events: readonly Event[], year: number): b
   const last = widowedEvents[widowedEvents.length - 1];
   if (!last) return true;
   return year - last.year >= MOURNING_YEARS[person.sex];
-}
-
-/**
- * Decision 054's widowhood handling, extracted (fixed after review, R3-001) so BOTH death paths
- * that can end a marriage — the general biology death-resolution block AND decision 051's
- * maternal-death-in-childbirth roll, which previously skipped it entirely, leaving a widower's
- * `spouseId` set forever and no `widowed` event for him — share one source of truth. Clears
- * `spouseId` on both sides, records a `widowed` event causally linked to the death, and lets an
- * artisan's widow keep the shop (only when SHE doesn't already have a trade of her own) exactly as
- * decision 054 specified. No-ops (returns no event ids) when `deceased` has no living spouse.
- */
-function resolveWidowhood(
-  seed: string,
-  events: Event[],
-  people: Record<string, Person>,
-  deceased: Person,
-  deceasedSocialClass: SocialClass,
-  year: number,
-  deathEventId: string,
-): readonly string[] {
-  if (!deceased.spouseId) return [];
-  const survivor = people[deceased.spouseId];
-  if (!survivor || survivor.deathYear !== undefined) return [];
-  // Read BEFORE clearing spouseId below — see the marriage-side note in the `A1` case for why.
-  const survivorState = ensureLifeState(survivor, events);
-  survivor.spouseId = undefined;
-  deceased.spouseId = undefined;
-  survivor.lifeState = applyLifeTransition(survivorState, { axis: "marital", to: "widowed" }, year);
-  const keepsTrade = deceasedSocialClass === "artisan" && deceased.job !== "none" && survivor.sex === "f" && survivor.job === "none";
-  if (keepsTrade) {
-    survivor.job = deceased.job;
-    survivor.socialClass = "artisan";
-  }
-  const widowedEvent = pushEvent(events, year, "widowed", [survivor.id, deceased.id], keepsTrade ? { keptTrade: true } : {}, [deathEventId]);
-  pushThought(survivor.mind, "grief", `losing ${deceased.name}`, 75, 8, year, "lovePropensity", deceased.id);
-  addMemory(seed, survivor.id, year, survivor.mind, `was widowed when ${deceased.name} died in ${year}`, "grief", deceased.id);
-  return [widowedEvent.id];
-}
-
-/**
- * PR6 corrective (validator finding, engram #6280 "the dead-suitor lockout"): `activeRomancePair`
- * (events.ts) only treats a romance as resolved once a `breakup` or `marriage` event exists for that
- * exact pair — a partner's DEATH never resolved it, so the survivor stayed permanently barred from
- * Y1 (`!person.spouseId && activeRomancePair(...) === undefined`) and from A1 (which needs a living
- * partner). Measured: 26 of 53 romances ended this way, 18 of 91 unmarried adults locked out ~12.9
- * years on average. Called for EVERY death (general biology and decision 051's maternal-death path
- * both), regardless of the deceased's own marital status — a still-unresolved romance can persist
- * even for someone who separately married someone else (the pre-existing multi-suitor property; see
- * decision 065's "Real pre-existing bugs" note), so this always attempts to close it. No-ops when
- * the deceased had no unresolved romance, or its partner is dead or already resolved otherwise.
- *
- * Decision 079: resolves EVERY simultaneous unresolved romance the deceased had (`activeRomancePairs`),
- * not just one — found via a real 60-seed run (`lockout-check-12`) where a person had two SAME-YEAR
- * romances; the original single-partner version (`activeRomancePair`) only ever closed the first one
- * found, leaving the OTHER suitor permanently locked out — the exact "dead-suitor lockout" bug this
- * function exists to fix, just for the second (and later) simultaneous suitor instead of the first.
- * Higher population/marriage activity from decision 079's own population-growth tuning made this
- * pre-existing multi-suitor gap common enough to trip the curated invariant test below for the first
- * time (see that test's own doc comment for the exact reproduction).
- */
-function resolveCourtshipOnDeath(events: Event[], people: Record<string, Person>, deceased: Person, year: number, deathEventId: string): readonly string[] {
-  const resultingIds: string[] = [];
-  for (const partnerId of activeRomancePairs(events, deceased.id)) {
-    const partner = people[partnerId];
-    if (!partner || partner.deathYear !== undefined) continue;
-    const partnerState = ensureLifeState(partner, events);
-    // Only reset the marital AXIS if this romance was actually the survivor's current relationship
-    // (`"courting"`) — a stale, never-resolved thread from years ago shouldn't overwrite a partner who
-    // has since gone on to marry someone else; the `breakup` event alone is enough to unblock them.
-    if (partnerState.marital.status === "courting") {
-      partner.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "single" }, year);
-    }
-    const breakupEvent = pushEvent(events, year, "breakup", [deceased.id, partnerId], { causeOfDeath: true }, [deathEventId]);
-    resultingIds.push(breakupEvent.id);
-  }
-  return resultingIds;
 }
 
 /**
@@ -778,33 +695,6 @@ function overrideFor(overrides: readonly Override[], kind: string, subject: stri
   });
 }
 
-/**
- * Peeks the next id for `(kind, subject)` without mutating anything — safe to call before deciding
- * whether the resulting decision will actually be recorded (biology's `RECORD_THRESHOLD` gate runs
- * AFTER this). `subject === "world"` (immigration) needs no `people` lookup at all (see
- * `mintDecisionId`).
- */
-function mintId(people: Readonly<Record<string, Person>>, kind: string, subject: string, year: number): MintedId {
-  const slots = subject === "world" ? EMPTY_SLOTS : (people[subject]?.lifeState?.slots ?? EMPTY_SLOTS);
-  return mintDecisionId(kind, subject, year, slots);
-}
-
-/**
- * Commits a minted id's slot advance onto its subject's `lifeState.slots` (see
- * `life-state.ts#advanceSlot`) — call exactly once per minted id, with `occurred` reflecting
- * whether the decision it belongs to was actually recorded. A `world` subject needs no commit (its
- * ordinal is the year itself, never persisted state). Reads through `ensureLifeState` first so a
- * subject's very first commit this run bootstraps the rest of `lifeState` from their real history
- * (see `life-state.ts`) instead of overwriting it with a slots-only fragment.
- */
-function commitId(people: Record<string, Person>, events: readonly Event[], subject: string, minted: MintedId, occurred: boolean): void {
-  if (subject === "world") return;
-  const person = people[subject];
-  if (!person) return;
-  const state = ensureLifeState(person, events);
-  person.lifeState = { ...state, slots: advanceSlot(state.slots, minted.key, occurred) };
-}
-
 /** Years a person is "immune" from another illness roll after falling ill, so illness doesn't spam a handful of bad-luck years. */
 const ILLNESS_COOLDOWN_YEARS = 3;
 
@@ -889,13 +779,6 @@ function feudPairHistory(events: readonly Event[], personId: string): Set<string
     }
   }
   return partners;
-}
-
-function baseIllnessChance(age: number): number {
-  if (age < 5) return 0.012;
-  if (age < 50) return 0.007;
-  if (age < 70) return 0.02;
-  return 0.05;
 }
 
 /**
@@ -2293,7 +2176,7 @@ export async function* simulateYears(
   const yearBatchConcurrency = options.yearBatchConcurrency ?? DEFAULT_YEAR_BATCH_CONCURRENCY;
   const seed = config.seed;
   const snapshots = new Map<number, YearSnapshot>();
-  let decisionCalls = 0;
+  const counters = { decisionCalls: 0 };
   // Decision 047: captured once, outside the per-candidate loop below, because that loop shadows
   // `options` with a local `DecisionOption[]` of the same name (its `decisions.push({ options, ... })`
   // shorthand) — referencing `options.protagonistId` inside that loop would hit the TDZ instead of
@@ -2308,24 +2191,17 @@ export async function* simulateYears(
   snapshots.set(startYear - 1, { year: startYear - 1, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) });
 
   for (let year = startYear; year <= config.endYear; year++) {
-    // Yearly mind decay (spec step 2): every living person's thoughts lose a
-    // year and expire at 0; stress drains ~20%/year (slower for the
-    // anxious), rising first with the last year's negative mood. Done
-    // before this year's situations are gathered, so an A11 breakdown
-    // trigger or an A8 dream check reflects the decayed value for THIS
-    // year, not a stale one.
-    for (const person of Object.values(people)) {
-      if (person.deathYear === undefined) decayMindForYear(person.mind);
-    }
-
-    const candidates = gatherCandidatesForYear(
-      year,
-      people,
-      events,
-      seed,
-      options.protagonistId,
-      marriageFunnelDebug ? { collector: marriageFunnelDebug, startYear: config.startYear } : undefined,
-    );
+    const yearContext: LegacyYearContext<CandidateDescriptor, MarriageFunnelCollector> = {
+      config, people, events, decisions, originalOverrideYear: startYear, protagonistId, counters,
+      debug: marriageFunnelDebug,
+      captureCandidates: (debug) => gatherCandidatesForYear(
+        year, people, events, seed, options.protagonistId,
+        debug ? { collector: debug, startYear: config.startYear } : undefined,
+      ),
+      resolveBiologyDecision,
+      mortalityMultiplier: (age, sex, socialClass) => townEventMortalityMultiplier(townEvent, age, sex, socialClass),
+    };
+    const candidates = beginLegacyYear(yearContext);
     const biologyCandidates = candidates.filter(
       (c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy" || c.kind === "away-arrival" || c.kind === "return" || c.kind === "arranged-match",
     );
@@ -2362,7 +2238,7 @@ export async function* simulateYears(
 
     const illnessResultByPerson = new Map<string, Event | undefined>();
 
-    const isOverrideYear = year === startYear;
+    const isOverrideYear = year === yearContext.originalOverrideYear;
     // Decision 083: daughters who marry out of the village this year (resolved in this biology loop),
     // so their social candidates, gathered before they left, are dropped below like a same-year death.
     const leftVillageThisYear = new Set<string>();
@@ -2371,87 +2247,8 @@ export async function* simulateYears(
       const minted = mintId(people, descriptor.kind, descriptor.personId, year);
       let record: DecisionRecord;
 
-      if (descriptor.kind === "illness") {
-        const age = ageInYear(people[descriptor.personId]!.birthYear, year);
-        const p = baseIllnessChance(age);
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        let illnessEvent: Event | undefined;
-        if (record.chosen === "illness") {
-          illnessEvent = pushEvent(events, year, "illness", [descriptor.personId], { age }, []);
-        }
-        illnessResultByPerson.set(descriptor.personId, illnessEvent);
-        record = { ...record, resultingEventIds: illnessEvent ? [illnessEvent.id] : [] };
-        // Recording threshold (decision 007): always record if it actually
-        // happened, or if the road not taken (illness) had a real chance.
-        const pushed = record.chosen === "illness" || p >= RECORD_THRESHOLD || record.source === "forced";
-        if (pushed) decisions.push(record);
-        commitId(people, events, descriptor.personId, minted, pushed);
-      } else if (descriptor.kind === "death") {
-        const person = people[descriptor.personId]!;
-        const age = ageInYear(person.birthYear, year);
-        const illnessEvent = illnessResultByPerson.get(descriptor.personId);
-        const socialClass: SocialClass = person.socialClass ?? "cottar";
-        // Decision 050: the protagonist-only mortality bonus (mortality.ts's old
-        // `protagonistMortalityBonus`) is REMOVED — the protagonist now faces the exact same,
-        // recalibrated actuarial curve, class multiplier and town-event multiplier as any NPC. What
-        // decision 035 was protecting (a 15-20% pre-15 protagonist death share) is now a property of
-        // the general population's own recalibrated curve (see `actuarial.ts#deathProbabilityAtAge`
-        // and docs/decisions.md 050's measured figures), not a per-protagonist patch.
-        const shockMultiplier = townEventMortalityMultiplier(townEvent, age, person.sex, socialClass);
-        const illnessMultiplier = illnessEvent ? 3 : 1;
-        // Engine life course PR5: the Black Death/second pestilence are combined as an ABSOLUTE
-        // per-year probability (competing risk with the base rate above), not a multiplier — see
-        // `townEventMortalityMultiplier`'s own doc comment for why a flat multiplier can't reliably
-        // hit their documented scale across every age band.
-        const pandemicMortality = blackDeathMortalityForYear(year) ?? secondPestilenceMortalityForYear(year, age);
-        const basePandemic = Math.min(0.9, deathProbabilityAtAge(age) * classMortalityMultiplier(socialClass) * shockMultiplier * illnessMultiplier);
-        const p = pandemicMortality === undefined ? basePandemic : Math.min(0.9, 1 - (1 - basePandemic) * (1 - pandemicMortality));
-        // Decision 050: `hasActiveFeud` (and therefore the "feud-violence" cause) is now computed for
-        // EVERY person, not just the protagonist — `activeFeudPair` already reads the general event
-        // log by personId, so this was never protagonist-specific machinery, only protagonist-gated.
-        const hasActiveFeud = activeFeudPair(events, person.id) !== undefined;
-        const mortalityContext: MortalityContext = { age, sex: person.sex, hadIllness: !!illnessEvent, townEventType: townEvent, hasActiveFeud };
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, person.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "die") {
-          person.deathYear = year;
-          // Decision 050: every death now carries a `cause` (not just the protagonist's) —
-          // `determineDeathCause` was already a pure function of context available for anyone.
-          const cause = determineDeathCause(mortalityContext);
-          const deathEvent = pushEvent(
-            events,
-            year,
-            "death",
-            [descriptor.personId],
-            { age, awayFromTown: hasMovedAway(events, descriptor.personId), cause },
-            illnessEvent ? [illnessEvent.id] : [],
-          );
-          resultingEventIds.push(deathEvent.id);
-          // Decision 054: widowhood — `spouseId` was previously NEVER cleared on death (the bug the
-          // decision fixes), which made remarriage impossible for anyone whose spouse died. Handled
-          // by the shared `resolveWidowhood` helper (fixed after review, R3-001) so this general
-          // death path and decision 051's maternal-death path below can never disagree.
-          resultingEventIds.push(...resolveWidowhood(seed, events, people, person, socialClass, year, deathEvent.id));
-          // PR6 corrective: close any unresolved romance the deceased leaves behind (the
-          // dead-suitor lockout fix — see `resolveCourtshipOnDeath`'s own doc comment).
-          resultingEventIds.push(...resolveCourtshipOnDeath(events, people, person, year, deathEvent.id));
-          // PR5's heriot marker (design's markers table: "villein/cottar tenant death") — the
-          // deceased's best beast, owed to the lord, on the death of an unfree tenant. Excluded for
-          // the protagonist specifically: their own death is a pre-existing, load-bearing contract
-          // ("the LAST entry is ALWAYS the protagonist's death, level 3" — `life-chronicle.test.ts`)
-          // that a same-year, causally-later event would break by sorting after it.
-          if (isUnfree(socialClass) && person.id !== protagonistId) {
-            const heriotEvent = pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("heriot", person.id), [deathEvent.id]);
-            resultingEventIds.push(heriotEvent.id);
-          }
-        } else if (illnessEvent) {
-          (illnessEvent.payload as Record<string, JsonValue>).recovered = true;
-        }
-        const deathCauses = [...(illnessEvent ? [illnessEvent.id] : []), ...((shockMultiplier > 1 || pandemicMortality !== undefined) && townEventId ? [townEventId] : [])];
-        record = { ...record, causes: deathCauses, resultingEventIds };
-        const pushed = record.chosen === "die" || p >= RECORD_THRESHOLD || record.source === "forced";
-        if (pushed) decisions.push(record);
-        commitId(people, events, descriptor.personId, minted, pushed);
+      if (descriptor.kind === "illness" || descriptor.kind === "death") {
+        resolveLegacyVitalDecision(yearContext, descriptor, year, forced, minted, illnessResultByPerson, townEventId, townEvent);
       } else if (descriptor.kind === "levy") {
         // Decision 058: a class-specific multiplier (research.md, Economy §"Taxes, housing, diet" —
         // tithe, rent and the levy fell on tenants and labourers; gentry/clergy bore feudal dues far
@@ -2655,7 +2452,7 @@ export async function* simulateYears(
     const fallbackFlags = socialCandidates.map((c, i) => {
       if (forcedFlags[i] || !options.protagonistId) return false;
       const aboutProtagonist = c.personId === options.protagonistId || c.partnerId === options.protagonistId;
-      return !aboutProtagonist && decisionCalls >= LIFE_DECISION_BUDGET;
+      return !aboutProtagonist && counters.decisionCalls >= LIFE_DECISION_BUDGET;
     });
 
     // The protagonist's `D1` daily-life candidate (round 10, decisions 042/043) rides along in the
@@ -2703,7 +2500,7 @@ export async function* simulateYears(
 
       // One real request per person-year batch (not per situation) — this replaces the old
       // per-candidate accounting below, which counted every social candidate as its own call.
-      decisionCalls += batchesByPerson.size;
+      counters.decisionCalls += batchesByPerson.size;
 
       const personIds = Array.from(batchesByPerson.keys());
       // Decision 084: only the protagonist's story circle goes to `decisionMaker`; everyone else goes
@@ -2790,7 +2587,7 @@ export async function* simulateYears(
     } else {
       // Legacy fallback: an adapter that doesn't implement `decideYear` (e.g. a minimal test
       // double) still gets one `decide()` call per candidate, exactly as before decision 044.
-      decisionCalls += questions.filter((_, i) => !forcedFlags[i] && !fallbackFlags[i]).length;
+      counters.decisionCalls += questions.filter((_, i) => !forcedFlags[i] && !fallbackFlags[i]).length;
     }
 
     const resolved = await mapWithConcurrency(questions, concurrencyLimit, async (q, i) => {
@@ -3569,7 +3366,7 @@ export async function* simulateYears(
             isOverrideYear,
           );
           decisions.push(d1Decision);
-          if (wasRealCall) decisionCalls += 1;
+          if (wasRealCall) counters.decisionCalls += 1;
         }
       }
     }
@@ -3589,7 +3386,7 @@ export async function* simulateYears(
     result: { config, people, events, decisions },
     snapshots,
     wallTimeMs: Date.now() - started,
-    decisionCalls,
+    decisionCalls: counters.decisionCalls,
     hazardFallbacks: options.decisionMaker.getStats?.().hazardFallbacks ?? {},
   };
 }
