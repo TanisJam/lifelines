@@ -74,6 +74,23 @@ function createSchema(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS idx_life_branches_life_id ON life_branches(life_id);
 
+    -- External branch-qualified lineage; immutable even when two branches reuse event IDs.
+    -- Capsules remain in favor_records_v1, owned exclusively by SqliteFavorRecords.
+    CREATE TABLE IF NOT EXISTS canonical_branch_bindings (
+      life_id TEXT NOT NULL REFERENCES lives(id),
+      branch_id TEXT NOT NULL REFERENCES life_branches(id),
+      binding_json TEXT NOT NULL,
+      PRIMARY KEY (life_id, branch_id)
+    );
+    CREATE TRIGGER IF NOT EXISTS canonical_binding_no_update
+      BEFORE UPDATE ON canonical_branch_bindings BEGIN
+        SELECT RAISE(ABORT, 'Immutable canonical binding');
+      END;
+    CREATE TRIGGER IF NOT EXISTS canonical_binding_no_delete
+      BEFORE DELETE ON canonical_branch_bindings BEGIN
+        SELECT RAISE(ABORT, 'Canonical history cannot be deleted');
+      END;
+
     -- Abuse protection (per-IP rate limiting on simulation-triggering endpoints): one row per
     -- allowed attempt, so a sliding window can be computed by counting/pruning rows younger than
     -- the window instead of maintaining separate hour/day counters that could drift out of sync.
