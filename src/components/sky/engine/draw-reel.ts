@@ -1,4 +1,5 @@
 import { A_NOW, R_COMPASS, R_PROGRESS } from "@/lib/sky/constants";
+import { domCoordinate } from "@/lib/sky/dom-coordinate";
 import { dialAngle, type Timeline } from "@/lib/sky/dial";
 import { paramAt, polar, quad, travel } from "@/lib/sky/motion";
 import { prefersReducedMotion, subscribeReducedMotion } from "@/lib/sky/motion-pref";
@@ -78,7 +79,7 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
       node: q(".node")!,
       body: q(".body")!,
       texts: [q(".t")!, ...(e.text.by === undefined ? [] : [q(".by")!]), q(".p")!],
-      bead: area.querySelector(`[data-bead="${CSS.escape(e.id)}"]`),
+      bead: area.querySelector(`[data-bead="${domCoordinate(e.id)}"]`),
       key: "",
     };
   });

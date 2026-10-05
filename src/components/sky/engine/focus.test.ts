@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { elinScene } from "@/lib/sky/fixture-scene";
 import { computeLayout } from "@/lib/sky/layout";
+import { domCoordinate } from "@/lib/sky/dom-coordinate";
 import { createPlayerStore } from "@/lib/sky/player-store";
 import { frameAt } from "@/lib/sky/scene-model";
 import { createFocus } from "./focus";
@@ -18,7 +19,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function setup(activate = () => false) {
+function setup(activate = () => false, focusScene = scene) {
   const svg = new FakeEl("svg");
   const tipParent = new FakeEl("div");
   tipParent.rect = { left: 0, top: 0, width: 800, height: 800, right: 800, bottom: 800 };
@@ -26,12 +27,28 @@ function setup(activate = () => false) {
   tip.hidden = true;
   const store = createPlayerStore();
   const describe = vi.fn((p: { name: string }) => ({ rel: "relation", name: p.name, sub: "details" }));
-  const focus = createFocus({ svg: svg as unknown as SVGSVGElement, tip: tip as unknown as HTMLElement, scene, store, describe, activate });
-  const star = (id: string) => svg.querySelector(`[data-person="${id}"]`);
+  const focus = createFocus({ svg: svg as unknown as SVGSVGElement, tip: tip as unknown as HTMLElement, scene: focusScene, store, describe, activate });
+  // Selector-contract fake only; actual CSS/HTML behavior lives in the Chromium regression.
+  const star = (id: string) => svg.querySelector(`[data-person="${domCoordinate(id)}"]`);
   return { svg, tip, store, focus, star, describe };
 }
 
 describe("createFocus", () => {
+  it("uses coordinates for selectors but retains exact hostile IDs in focus and activation", () => {
+    const id = "nul\0\ud800\"\\";
+    const focusScene = { ...scene, people: [{ ...a!, id }], edges: [] };
+    const activate = vi.fn(() => true);
+    const { focus, star } = setup(activate, focusScene);
+    focus.setEntry([id]);
+    focus.setNamed(new Set([id]));
+    expect(star(id).classes.has("hl")).toBe(true);
+    expect(star(id).classes.has("named")).toBe(true);
+    star(id).fire("click");
+    star(id).fire("keydown", { key: "Enter", preventDefault() {} });
+    expect(activate.mock.calls).toEqual([[id], [id]]);
+    focus.destroy();
+  });
+
   it("a click pins the star and its tooltip, and a second click unpins", () => {
     const { tip, star, svg } = setup();
     star(a!.id).fire("click");

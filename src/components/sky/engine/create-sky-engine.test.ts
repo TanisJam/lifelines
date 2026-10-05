@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { timeline } from "@/lib/sky/dial";
+import { domCoordinate } from "@/lib/sky/dom-coordinate";
+import { edgeKey } from "@/lib/sky/layout";
 import { elinScene } from "@/lib/sky/fixture-scene";
 import { createPlayerStore } from "@/lib/sky/player-store";
 import { createSkyEngine } from "./create-sky-engine";
@@ -61,6 +63,26 @@ function setup() {
 }
 
 describe("createSkyEngine controls", () => {
+  it("binds coordinate selectors while frames retain canonical IDs across updates", () => {
+    // This fake observes selector contracts, not browser CSS parsing.
+    const svg = fakeSvg();
+    const query = vi.spyOn(svg, "querySelector");
+    const id = "nul\0\ud800\"\\";
+    const other = `${id}/other`;
+    const people = [{ ...scene.people[0]!, id }, { ...scene.people[1]!, id: other }];
+    const edge = { a: id, b: other, kind: "spouse" as const, fromAt: line.start };
+    const grown = { ...scene, people, edges: [edge] };
+    const store = createPlayerStore();
+    const frames: string[][] = [];
+    store.onFrame((frame) => frames.push(frame.people.map((p) => p.id)));
+    const engine = createSkyEngine({ svg, scene: grown, timeline: line, store });
+    engine.update({ scene: grown, timeline: line });
+    for (const kind of ["person", "trail"]) expect(query).toHaveBeenCalledWith(`[data-${kind}="${domCoordinate(id)}"]`);
+    for (const kind of ["edge", "head"]) expect(query).toHaveBeenCalledWith(`[data-${kind}="${domCoordinate(edgeKey(edge))}"]`);
+    expect(frames.at(-1)).toContain(id);
+    engine.destroy();
+  });
+
   it("restarts from the start when toggled at the end, and pauses when toggled while playing", () => {
     const { store, engine, seen, tick } = setup();
     engine.seek(line.end);

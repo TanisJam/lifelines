@@ -3,6 +3,7 @@ import type { LifeScene, ScenePerson } from "@/contracts/life";
 import { R2, R_COMPASS, R_DIAL, R_PROGRESS, SPARK } from "@/lib/sky/constants";
 import { arcPath, dialAngle, type Timeline } from "@/lib/sky/dial";
 import { edgeKey } from "@/lib/sky/layout";
+import { domCoordinate } from "@/lib/sky/dom-coordinate";
 import { polar } from "@/lib/sky/motion";
 import type { ReelEntry } from "@/lib/sky/reel-model";
 import { villagePos } from "@/lib/sky/village";
@@ -104,9 +105,9 @@ export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLab
           // Each event leaves a bead on the progress ring at its moment; turns are small diamonds.
           const [x, y] = polar(dialAngle(e.at, line.dialStart, line.dialSpan), R_PROGRESS);
           return e.turn ? (
-            <rect key={e.id} data-bead={e.id} data-after={after(e.at)} className="sky-bead" x={-2.3} y={-2.3} width={4.6} height={4.6} transform={`translate(${f1(x)},${f1(y)}) rotate(45)`} />
+            <rect key={e.id} data-bead={domCoordinate(e.id)} data-after={after(e.at)} className="sky-bead" x={-2.3} y={-2.3} width={4.6} height={4.6} transform={`translate(${f1(x)},${f1(y)}) rotate(45)`} />
           ) : (
-            <circle key={e.id} data-bead={e.id} data-after={after(e.at)} className="sky-bead" cx={f1(x)} cy={f1(y)} r={1.9} />
+            <circle key={e.id} data-bead={domCoordinate(e.id)} data-after={after(e.at)} className="sky-bead" cx={f1(x)} cy={f1(y)} r={1.9} />
           );
         })}
         <g data-marker>
@@ -117,7 +118,7 @@ export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLab
       </g>
       <g>
         {scene.people.map((p) => (
-          <path key={p.id} data-trail={p.id} className="sky-trail" style={{ opacity: 0 }} />
+          <path key={p.id} data-trail={domCoordinate(p.id)} className="sky-trail" style={{ opacity: 0 }} />
         ))}
       </g>
       <g>
@@ -125,8 +126,8 @@ export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLab
           const key = edgeKey(e);
           return (
             <g key={key}>
-              <path data-edge={key} className={`sky-edge ${e.kind}`} style={{ display: "none" }} />
-              <circle data-head={key} className="sky-head" r={2.4} fill={SPARK[e.kind]} style={{ opacity: 0 }} />
+              <path data-edge={domCoordinate(key)} className={`sky-edge ${e.kind}`} style={{ display: "none" }} />
+              <circle data-head={domCoordinate(key)} className="sky-head" r={2.4} fill={SPARK[e.kind]} style={{ opacity: 0 }} />
             </g>
           );
         })}
@@ -136,7 +137,7 @@ export function SkySvg({ scene, timeline: line, label, svgRef, relation, bandLab
         {scene.people.map((p) => {
           const self = p.group === "self";
           return (
-            <g key={p.id} data-person={p.id} data-after={after(p.appearsAt)} className={`sky-node${self ? " self" : ""}`} role="button" tabIndex={0} aria-label={`${p.name}, ${relation(p)}`} style={{ display: "none" }}>
+            <g key={p.id} data-person={domCoordinate(p.id)} data-after={after(p.appearsAt)} className={`sky-node${self ? " self" : ""}`} role="button" tabIndex={0} aria-label={`${p.name}, ${relation(p)}`} style={{ display: "none" }}>
               <circle className="sky-halo" r={self ? 18 : p.group === "outer" ? 7 : 9} />
               <circle className="sky-ping" r={self ? 15 : 10} />
               {self && (

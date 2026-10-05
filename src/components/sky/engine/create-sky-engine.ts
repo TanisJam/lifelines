@@ -8,6 +8,7 @@ import { computeLayout, edgeKey } from "@/lib/sky/layout";
 import { scrubTo, stepClock } from "@/lib/sky/clock";
 import { frameAt } from "@/lib/sky/scene-model";
 import { createAmbient, floatOffset, type LiveBond } from "./ambient";
+import { domCoordinate } from "@/lib/sky/dom-coordinate";
 
 export interface SkyEngineInit {
   readonly svg: SVGSVGElement;
@@ -64,13 +65,13 @@ export function createSkyEngine({ svg, scene: initialScene, timeline: initialLin
   const bind = () => {
     personEls = new Map();
     scene.people.forEach((p) => {
-      const g = one<SVGGElement>(svg, `[data-person="${CSS.escape(p.id)}"]`);
-      personEls.set(p.id, { g, core: one(g, ".sky-core"), trail: one(svg, `[data-trail="${CSS.escape(p.id)}"]`) });
+      const g = one<SVGGElement>(svg, `[data-person="${domCoordinate(p.id)}"]`);
+      personEls.set(p.id, { g, core: one(g, ".sky-core"), trail: one(svg, `[data-trail="${domCoordinate(p.id)}"]`) });
     });
     edgeEls = new Map();
     scene.edges.forEach((e) => {
       const key = edgeKey(e);
-      edgeEls.set(key, { path: one(svg, `[data-edge="${CSS.escape(key)}"]`), head: one(svg, `[data-head="${CSS.escape(key)}"]`) });
+      edgeEls.set(key, { path: one(svg, `[data-edge="${domCoordinate(key)}"]`), head: one(svg, `[data-head="${domCoordinate(key)}"]`) });
     });
     edgeByKey = new Map(scene.edges.map((e) => [edgeKey(e), e]));
     villageEls = [...svg.querySelectorAll<SVGElement>("[data-village]")];
