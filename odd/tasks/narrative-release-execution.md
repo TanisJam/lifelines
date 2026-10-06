@@ -1,5 +1,11 @@
 # Narrative release execution — ODD tasks
 
+## CURRENT — RL1b1 DONE (bounded trusted source seam only)
+
+Main/source FROZEN at `b0963b02d065678e4eaed3cf7272b0d32cc43140`. Closure evidence: lifecycle book CURRENT section. Integrated SOURCE22,349+447=22,796, excluding passive prose. RL1b/RL1/full RG1/RI1/RA1 remain incomplete; NOT release-ready. NEXT: map explicit NEW lifecycle runtime genesis/admission/full replay, no source now or old E1 migration. Full mirrors7536/7504: `lifelines`; `.claude/` preserved. Parent owns passive commit.
+
+## History — status/head/next/count below superseded
+
 **CURRENT RL1b1 IN PROGRESS — source FROZEN after bounded implementation and final Node 26 validation.** Native review, Node 24 compatibility, exact-unit commit and integration remain parent-owned/pending. No DONE or release-ready authority. Isolated HEAD `d235002f23c11f3982df640d0e1cfb3662e82e68` unchanged; only the five authorized paths changed. Full existing mirrors7536/7504 synchronized, expected project `lifelines`; no new task/mirror. Historical resumed checkpoint lead follows, superseded for current source activity only.
 
 **ACTIVE — user “seguimos” resumes the authorized release after pause7581; no new product choices.** RL1a1–5 are DONE bounded/integrated: reusable legacy annual kernel only. Main/source frozen at `4309dcc3972de967c861890c3d2f090453514bc0`; entry tracked-clean, only unrelated untracked `.claude/`. Parent checked lifecycle HEAD/status clean. NEXT RL1b1 trusted rules-year source PENDING; no code or source tests here. RL1/RL1b/full RG1 genuine death/RI1/RA1 remain pending or incomplete; NOT release-ready. Pause7581 requested save/stop but no passive commit occurred; user now resumed. Parent owns source launches, reviews, commits and integration. Existing full mirrors7536/7504 only, expected project `lifelines`; all prior constraints remain.

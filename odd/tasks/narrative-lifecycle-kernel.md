@@ -1,5 +1,15 @@
 # Narrative lifecycle kernel — release work units
 
+## CURRENT — RL1b1 DONE (bounded trusted source seam only)
+
+Parent closure AFTER integrated checks: source `7764403b69b189522f59dace84d235e48cbe91f0` (base `d235002`) → main `b0963b02d065678e4eaed3cf7272b0d32cc43140`, identical three source + two book hashes. FROZEN; status/NEXT: release book CURRENT.
+
+Native exact unit: medium563 all-path authored lines (447 source +116 passive books); `review-9c2ce93c6ee3a80e` APPROVED, ACK BURNED. Target `f57ef5463947b0828a0c3113415e71baff02629a8f8b4cd4dc51b4ee0e1b7fe2`; consumed `ad16cb72656be1610c6b5b868afe372102e470b80f4c39de7815e2f9f978e7ca`. Receipts NEVER STATUS/reusable approval.
+
+Independent integrated expanded20-file gate:620/620,208.68s, Node26; types/lint/whitespace PASS, no retry. Different scope from historical18/758, NOT regression/full suite. Verifier omitted hashes after parent-request timeout; parent after-gate bash confirmed all three source + two books match before, legacy three match HEAD, same main HEAD/status (only unrelated `.claude/`), child clean. No claim `.claude` contents hashed. Existing Vite warning only. No rerun here.
+
+## History — status/head/next below superseded
+
 **CURRENT RL1b1 IN PROGRESS — source FROZEN after bounded implementation and final Node 26 validation.** Native review, Node 24 compatibility, exact-unit commit and integration remain parent-owned/pending. No DONE or release-ready authority. Isolated HEAD `d235002f23c11f3982df640d0e1cfb3662e82e68` unchanged; only the five authorized paths changed. Full existing mirrors7536/7504 synchronized, expected project `lifelines`; no new task/mirror. Historical resumed checkpoint lead follows, superseded for current source activity only.
 
 **ACTIVE — user “seguimos” resumes the authorized release after pause7581. RL1a1–5 are DONE as bounded integrated units: reusable legacy annual kernel only.** RL1/RL1b/full RG1 genuine death continuation/RI1/RA1 remain pending or incomplete; NOT release-ready. Source/tests remain FROZEN at main `4309dcc3972de967c861890c3d2f090453514bc0`. NEXT: RL1b1 trusted rules-year source PENDING; no source writes in this checkpoint. Parent owns source launches, reviews, commits and integration.
