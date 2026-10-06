@@ -1822,6 +1822,58 @@ function buildDailyLifeVignetteCandidates(
   });
 }
 
+export interface LegacyOwnedRunState {
+  readonly people: Record<string, Person>;
+  readonly events: Event[];
+  readonly decisions: DecisionRecord[];
+  readonly counters: { decisionCalls: number };
+}
+
+export type LegacySimulationRunContext = LegacyRunContext<CandidateDescriptor, MarriageFunnelCollector>;
+
+interface LegacyRunBindings {
+  readonly seed: string;
+  readonly originalOverrideYear: number;
+  readonly protagonistId: string | undefined;
+  readonly debug: MarriageFunnelCollector | undefined;
+  readonly overrides: readonly Override[];
+  readonly concurrencyLimit: number;
+  readonly yearBatchConcurrency: number;
+}
+
+/** Borrow owned state and LIVE options; catalog ports retain the original implementations. */
+export function createLegacyRunContext(
+  config: WorldConfig,
+  owned: LegacyOwnedRunState,
+  options: SimulateOptions,
+  bindings: LegacyRunBindings = {
+    seed: config.seed,
+    originalOverrideYear: options.fromYear ?? config.startYear,
+    protagonistId: options.protagonistId,
+    debug: options.marriageFunnelDebug,
+    overrides: options.overrides ?? [],
+    concurrencyLimit: options.concurrencyLimit ?? DEFAULT_CONCURRENCY_LIMIT,
+    yearBatchConcurrency: options.yearBatchConcurrency ?? DEFAULT_YEAR_BATCH_CONCURRENCY,
+  },
+): LegacySimulationRunContext {
+  const { people, events, decisions, counters } = owned;
+  const { seed, originalOverrideYear, protagonistId, debug: marriageFunnelDebug, overrides, concurrencyLimit, yearBatchConcurrency } = bindings;
+  return {
+    config, people, events, decisions, originalOverrideYear, protagonistId, counters,
+    debug: marriageFunnelDebug, marriageFunnelDebug, options, overrides,
+    captureCandidates: (capturedYear, debug) => gatherCandidatesForYear(
+      capturedYear, people, events, seed, options.protagonistId,
+      debug ? { collector: debug, startYear: config.startYear } : undefined,
+    ),
+    resolveBiologyDecision, mortalityMultiplier: townEventMortalityMultiplier, townEventForYear,
+    isSocialKind: (kind) => SOCIAL_KINDS.has(kind),
+    inMarriageFunnelCohort, buildQuestion, optionLabel, questionText,
+    buildDailyLifeVignetteCandidates, buildDailyLifeVignetteDescriptor, getVignetteForOption,
+    personSummary, resolveSocialDecision,
+    decisionBudget: LIFE_DECISION_BUDGET, concurrencyLimit, yearBatchConcurrency,
+  };
+}
+
 /**
  * Runs the deterministic yearly simulation from `fromYear` (or the config's
  * start year) through `config.endYear`. Every probabilistic choice — social
@@ -1861,20 +1913,10 @@ export async function* simulateYears(
   snapshots.set(startYear - 1, captureLegacyYear({ people, events, decisions }, startYear - 1));
 
   for (let year = startYear; year <= config.endYear; year++) {
-    const context: LegacyRunContext<CandidateDescriptor, MarriageFunnelCollector> = {
-      config, people, events, decisions, originalOverrideYear: startYear, protagonistId, counters,
-      debug: marriageFunnelDebug, marriageFunnelDebug, options, overrides,
-      captureCandidates: (capturedYear, debug) => gatherCandidatesForYear(
-        capturedYear, people, events, seed, options.protagonistId,
-        debug ? { collector: debug, startYear: config.startYear } : undefined,
-      ),
-      resolveBiologyDecision, mortalityMultiplier: townEventMortalityMultiplier, townEventForYear,
-      isSocialKind: (kind) => SOCIAL_KINDS.has(kind),
-      inMarriageFunnelCohort, buildQuestion, optionLabel, questionText,
-      buildDailyLifeVignetteCandidates, buildDailyLifeVignetteDescriptor, getVignetteForOption,
-      personSummary, resolveSocialDecision,
-      decisionBudget: LIFE_DECISION_BUDGET, concurrencyLimit, yearBatchConcurrency,
-    };
+    const context = createLegacyRunContext(config, { people, events, decisions, counters }, options, {
+      seed, originalOverrideYear: startYear, protagonistId, debug: marriageFunnelDebug,
+      overrides, concurrencyLimit, yearBatchConcurrency,
+    });
     const snapshot = await runLegacyYear(context, year);
 
     snapshots.set(year, snapshot);

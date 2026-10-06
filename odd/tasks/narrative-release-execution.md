@@ -1,5 +1,7 @@
 # Narrative release execution — ODD tasks
 
+**CURRENT RL1b1 IN PROGRESS — source FROZEN after bounded implementation and final Node 26 validation.** Native review, Node 24 compatibility, exact-unit commit and integration remain parent-owned/pending. No DONE or release-ready authority. Isolated HEAD `d235002f23c11f3982df640d0e1cfb3662e82e68` unchanged; only the five authorized paths changed. Full existing mirrors7536/7504 synchronized, expected project `lifelines`; no new task/mirror. Historical resumed checkpoint lead follows, superseded for current source activity only.
+
 **ACTIVE — user “seguimos” resumes the authorized release after pause7581; no new product choices.** RL1a1–5 are DONE bounded/integrated: reusable legacy annual kernel only. Main/source frozen at `4309dcc3972de967c861890c3d2f090453514bc0`; entry tracked-clean, only unrelated untracked `.claude/`. Parent checked lifecycle HEAD/status clean. NEXT RL1b1 trusted rules-year source PENDING; no code or source tests here. RL1/RL1b/full RG1 genuine death/RI1/RA1 remain pending or incomplete; NOT release-ready. Pause7581 requested save/stop but no passive commit occurred; user now resumed. Parent owns source launches, reviews, commits and integration. Existing full mirrors7536/7504 only, expected project `lifelines`; all prior constraints remain.
 
 Historical ACTIVE lead (superseded, retained):
@@ -197,7 +199,9 @@ Same four source paths, no new file; advisory 600–850 lines. Extract actual D1
 | `src/domain/legacy-year-mechanics.ts` | `e3614dd3aec571625e802678d1ac88c20a7fa9a7daf8220f7aefd2be8b392cf4` |
 | `src/domain/legacy-year.test.ts` | `f7f773eae19b7bf3455e689744fd561eacaf6862eee10c7e0af94c474ed3c8af` |
 
-### NEXT RL1b1 — trusted rules-year source (PENDING)
+### NEXT RL1b1 — trusted rules-year source (IN PROGRESS)
+
+Current delegated implementation route: three nontrivial source/test files (`simulate.ts`, `e-year-source.ts`, `e-year-source.test.ts`) under resumed authorization at isolated HEAD `d235002f23c11f3982df640d0e1cfb3662e82e68`, clean at entry. Parent main `171cfa5`, source `4309dcc`, unchanged (parent-provided). Strict test-first baseline/RED/GREEN and serial Node 26 validation required. Native review, commit and integration pending; no DONE authority. This current source authorization supersedes historical tracker-only restrictions, not release gates.
 
 Prospective exact source map: export `createLegacyRunContext` from `src/domain/simulate.ts`; new `src/domain/e-year-source.ts` and `src/domain/e-year-source.test.ts` for `native-rules/person-year-batched/v1`. Fresh private `new RuleDecisionMaker()` from existing `src/adapters/decision/rule-decision-maker.ts` uses `decideYear`; reference only, not an edit here. No caller callbacks/overrides/core choices or server/environment factory. Favor ledgers separate from `Person.mind`; no new product-policy choice, implicit E1 migration or historical Mind backfill. Existing E1 replay/wire/human rejection unchanged.
 
@@ -214,3 +218,57 @@ Main mirror Engram6902 remains capacity-pending and unchanged: prior exact repla
 Historical count before the pause-document delta: 15,076 + passive documentation at `a33282b` (126) = 15,202; + RC1 (374) = 15,576. Historical resumed count was 15,622 + RB1 (714) = 16,336. Prior integrated SOURCE-authored count: 15,622 + integrated RB1 (714) + RG1 (625) + RL1a1 (720) = 17,681. Historical unit-2 integrated SOURCE-authored count: 17,681 + RL1a2 (1,120) = 18,801. Historical unit-3 SOURCE count: 18,801 + RL1a3 (709) = 19,510. Current SOURCE count: 19,510 + RL1a4 (1,887) = 21,397, exclusive of passive bookkeeping. Unit-2 passive task documentation (140) and later bookkeeping-commit lines are separate; its native all-path review volume is 1,260, not 1,120. Unit-3 native all-path volume is 770, not 709. This bookkeeping delta is separate and not yet counted.
 
 This transaction changes only `odd/tasks/narrative-release-execution.md` and its full Engram7504 mirror (same locator/topic). AP1/Engram7492, main/Engram6902 and delivery/Engram7008 remain unchanged. Documentation-only prose has no meaningful pre-implementation behavior RED; this is an applicability exception, not an activation-toggle claim. Required passive checks: full-file/FULL7504 mirror readback including locator/project/topic, `git diff --check`, `git rev-parse HEAD` and `git status --short`. HEAD/source bytes and unrelated untracked `.claude/` must remain unchanged. No source implementation, tests, native operations, new task file, network/provider/live database work, child or background launches occur in this worker. Parent-owned launches described above remain authorized.
+
+### RL1b1 frozen implementation evidence — IN PROGRESS, not DONE
+
+Before source writes: full books read, both marked IN PROGRESS with delegated three-file route, existing full mirrors7536/7504 updated (expected_project lifelines) and read back, local changed paragraphs read back. No new task/mirror. API `createLegacyRunContext(config, owned, options, bindings?)` borrows full owned state/options, preserves captured seed/protagonist/debug/anchor/defaults; public facade actually calls it without changing clone/publication/yield-before-death/cancellation. API `createRulesYearSource(declaration, origin, owned, protagonistId?, originalOverrideYear?)` returns frozen closed declaration + execute(year), privately owns fresh native RuleDecisionMaker with actual decideYear and fixed8/64 concurrency/rules source. Immutable origin config, same owned Person/Mind/logs/counters, detached existing YearSnapshot. No SimulateOptions/caller resolver/callback/background/override/core-choice/debug/environment/annual-config input. No kernel reverse import or new registry.
+
+SOURCE447 authored =433 additions/14 deletions: simulate56+/14−, new source59 lines, readable tests318 lines. Fits advisory300–600 without compression. Tests protect complete independent public native parity and independent state/Mind/log/counter reexecution, reference identity, real birth/maternal death/widow, quiet D1, anchor/resume, captured seed/live options, immutable origin, detached publication, own-data declaration/accessor/unknown/version rejection without getters, fresh private native resolver identity/reachable batching. Original eight pins/invalid smith/legacy test bytes frozen unchanged. Only trusted source seam; not untrusted registry admission, NEW E replay/version, capsule/durable proof, atomic economy, genesis/frontier/replay, death continuation or release completion. Favor ledgers separate, no Mind projection.
+
+Exact commands (foreground serial, every shell timeout600, existing test timeouts unchanged):
+
+```text
+/home/linuxbrew/.linuxbrew/bin/node node_modules/vitest/vitest.mjs run src/domain/legacy-year.test.ts --maxWorkers=1
+BASELINE57/57 PASS,15.63s before source writes.
+/home/linuxbrew/.linuxbrew/bin/node node_modules/vitest/vitest.mjs run src/domain/e-year-source.test.ts --maxWorkers=1
+RED2 missing factory/module FAIL,442ms,exit1; GREEN2/2 PASS,428ms.
+Triangulation22 PASS/2 FAIL,6.70s,exit1,partial reported before retry: new chosenOptionId/override assertion used wrong fields (chosen/forced), and genesis birth year need not publish speculative D1. Corrected new assertions/quiet infant fixture only, production unchanged.
+Corrected24/24 PASS,6.57s; first freeze24/24 PASS,6.73s; FINAL24/24 PASS,6.87s after preserving captured seed.
+/home/linuxbrew/.linuxbrew/bin/node node_modules/vitest/vitest.mjs run src/domain/e-year-source.test.ts src/domain/legacy-year.test.ts src/domain/simulate.test.ts src/domain/simulate-decide-year.test.ts src/domain/replay.test.ts src/domain/fork.test.ts --maxWorkers=1
+First218/218 PASS,166.95s (before diff review retained pre-loop seed explicitly); FINAL218/218 PASS,6 files,168.48s after seed binding/test.
+/home/linuxbrew/.linuxbrew/bin/node node_modules/typescript/bin/tsc --noEmit --incremental false
+Initial and FINAL exit0/no output.
+/home/linuxbrew/.linuxbrew/bin/node node_modules/eslint/bin/eslint.js src/domain/simulate.ts src/domain/e-year-source.ts src/domain/e-year-source.test.ts
+Initial and FINAL exit0/no output.
+git diff --check
+Pre-final/final source exit0; final documentation check recorded at handoff.
+```
+
+All test runs emitted existing non-failing Vite CommonJS/ESM configLoader warning. No timeout here; historical timeout causes UNKNOWN. Read offsets328/256 exceeded books; corrected310/199 succeeded, no source effect. Existing CodeGraph explored before source reads/edits, no admin actions. Exact inspection commands (exit0):
+
+```text
+git rev-parse --show-toplevel; git rev-parse HEAD; git status --short; test -d .codegraph && printf 'codegraph present\n'; sha256sum src/domain/simulate.ts src/domain/legacy-year.ts src/domain/legacy-year-mechanics.ts src/domain/legacy-year.test.ts
+Expected root/HEAD,clean entry,index present,four a5 entry hashes match.
+sha256sum src/domain/simulate.ts src/domain/e-year-source.ts src/domain/e-year-source.test.ts src/domain/legacy-year.ts src/domain/legacy-year-mechanics.ts src/domain/legacy-year.test.ts; git diff --numstat; wc -l src/domain/e-year-source.ts src/domain/e-year-source.test.ts; git rev-parse HEAD; git status --short
+First freeze9390694/821f92e/8d6044f,new373 lines,unchanged HEAD/five paths.
+sha256sum src/domain/simulate.ts src/domain/e-year-source.ts src/domain/e-year-source.test.ts src/domain/legacy-year.ts src/domain/legacy-year-mechanics.ts src/domain/legacy-year.test.ts; git diff --check; git diff --stat; git rev-parse HEAD; git status --short
+First hashes stable,whitespace PASS,tracked61+/17− (untracked excluded),unchanged HEAD/five paths.
+git diff -- src/domain/simulate.ts
+Reviewed70-line factory/call diff; preserved pre-loop captured seed explicitly afterward.
+sha256sum src/domain/simulate.ts src/domain/e-year-source.ts src/domain/e-year-source.test.ts src/domain/legacy-year.ts src/domain/legacy-year-mechanics.ts src/domain/legacy-year.test.ts; git diff --numstat; wc -l src/domain/e-year-source.ts src/domain/e-year-source.test.ts
+Final prevalidation hashes below,simulate56+/14−,new377 lines.
+sha256sum src/domain/simulate.ts src/domain/e-year-source.ts src/domain/e-year-source.test.ts src/domain/legacy-year.ts src/domain/legacy-year-mechanics.ts src/domain/legacy-year.test.ts; git diff --check; git rev-parse HEAD; git status --short; git diff --numstat
+Final postvalidation identical six hashes,whitespace PASS,unchanged HEAD,only five allowed paths.
+```
+
+| FINAL source | SHA-256 before/after final validation (identical) |
+|---|---|
+| src/domain/simulate.ts | f69d7de9a819f20748324e6ff80fa20e73d3c2b262e00a2528d1a1ca06cea270 |
+| src/domain/e-year-source.ts | 821f92e79325dd5390e221b25f48e5ed0e1e1a4a9d6b60ae8d30ec82d658d862 |
+| src/domain/e-year-source.test.ts | 11a9a4486e63efd839fb611a5828fcf6c894cdfd71a7b145f6eacb3654522f06 |
+
+Other three frozen kernel hashes match the a5 table above. Source FROZEN; RL1b1 IN PROGRESS: parent owns Node24 compatibility/native review/commit/integration. No integrated source-count increment yet. HEAD unchanged; parent main171cfa5/source4309dcc unchanged (parent-provided); unrelated .claude preserved, no Git mutation/children/network/provider/install/live DB/UI work. Full existing mirrors7536/7504 updated/read back, historical records retained. Final book byte/hash snapshots reported externally to avoid self-referential hashes.
+
+### RL1b1 independent verification
+
+Full parent evidence: lifecycle book, “RL1b1 independent verification”; Node24 compatibility now verified, superseding pending wording above. Source FROZEN; IN PROGRESS: native review/commit/integration pending. No lineage or release claim.
