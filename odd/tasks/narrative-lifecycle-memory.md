@@ -1,6 +1,6 @@
 # Lifecycle memory — measured, lossless performance units
 
-CURRENT: LP1a DONE bounded; LP1b IN PROGRESS (new mapped full-tree pair comparison, NOT the rejected chunk encoder); LP1c conditional / LP1d PENDING. MAIN HEAD `c3abaca`; scoped owned production restored to that HEAD, unchanged; new canonical tests62 retained in the child. Failed encoder attempt discarded, not integrated or committed. Human7678 permits local verified release commits/integration branches ONLY: no push, PR, main/default merge or deploy. LC1 remains BLOCKED/pending; isolated LC1 WIP `9b7af0b` is NOT integrated. FULL mirror target: existing observation7658, `odd/narrative-lifecycle-memory/tasks`, project `lifelines`. No observation7604 mirror update needed: same LP1b-active pointer. Parent must copy this complete MAIN book to the isolated tree before writer/source candidate work. Historical checkpoints below are superseded by CURRENT and the latest LP1b contract.
+CURRENT: LP1a / LP1b DONE bounded; **LP1e IN PROGRESS, mapped before first source write**; LP1c conditional / LP1d PENDING. MAIN integration HEAD `c066234c4a9ef19dcedfb9f71ce950e7cbd81291`; LP1b source `5e13cf7`, after passive `f537e3f`. Human7678 permits local verified release commits/integration branches ONLY: no push, PR, main/default merge or deploy. Continue automatically until release; no capacity/release closure inferred. LC1 BLOCKED/pending; isolated WIP `9b7af0b` NOT integrated; ≥60-year proof, RI1 and RA1 unfinished. FULL mirror targets: existing7658, `odd/narrative-lifecycle-memory/tasks`, project `lifelines`, and runtime7604's LP1e-active pointer. Parent prepares a new isolated worktree after the doc commit and copies this FULL MAIN book before writer/source work. Historical checkpoints below are superseded by CURRENT and the LP1e contract.
 
 ## Decision and proof boundary
 
@@ -8,15 +8,16 @@ User RAM guidance “nose, uno o dos” establishes a conservative **1 GB PROVIS
 
 LC1's fixed five-member cohort genuinely completed in 2–4 years; full cold canonical replay, aliases and traversal PASS, ≥60-year coverage FAIL. Sampled 3.09 GB process RSS was cumulative across members, NOT peak or exclusive per-member usage. Do not force ages/death, search survivors, change seeds, cap completion or change coverage to manufacture proof. Fixed worst member v1/4 already ran four genuine years: default62 founders, Alice/f age0, origin1498/1558, resources grain2/effort3/need1, budget128.
 
-Native approvals remain bounded LR1a/LR1b/LR2a/LR2b only. FE1 is explicitly unreviewed for that candidate only; user RDD unchanged. No new receipt or approved LC1. Preserve old E1 wire and human-authority rules. Delivery remains ask-on-risk / feature-branch-chain, local only; no push/deploy. Doc-only: no source/test/native/child/network execution.
+Native approvals remain bounded LR1a/LR1b/LR2a/LR2b and LP1a/LP1b only. FE1 is explicitly unreviewed for that candidate only; user RDD unchanged. No LP1e receipt or approved LC1. Preserve old E1 wire and human-authority rules. Delivery remains ask-on-risk / feature-branch-chain, local only; no push/deploy. Doc-only: no source/test/native/child/network execution.
 
 ## Automatic task chain
 
 | Unit | State | Deliverable / gate |
 |---|---|---|
 | LP1a | DONE bounded | Immutable annual-journal prefix reuse verified, native APPROVED / exact ACK BURNED, locally integrated at main0d3858d. Capacity/LC1 remain open. |
-| LP1b | IN PROGRESS, newly mapped | Full-tree canonical pair equality; exact four genesis/replay source/test surfaces below. Chunk encoder rejected; production restored, tests62 retained. |
-| LP1c | PENDING, conditional | If needed, map explicitly versioned graph-sharing wire preserving full semantic replay. Never silently change old capsule bytes. No unmapped implementation authorized. |
+| LP1b | DONE bounded | Full-tree canonical pair equality integrated at main `c066234`; native APPROVED / exact ACK BURNED. Mixed modest benefit, not capacity proof. Chunk encoder remains rejected. |
+| LP1e | IN PROGRESS, mapped | Remove redundant outer capsule capture only; exact two capsule source/test surfaces below. Lower-level ownership capture and full semantic replay remain mandatory. |
+| LP1c | PENDING, conditional | Separately map digest/string framing or explicitly versioned graph-sharing wire only if needed; no unnecessary versions or silent old-byte change. No unmapped implementation authorized. |
 | LP1d | PENDING | Independently measure capacity: total high-water RSS and baseline delta for fixed workload against provisional target. Connect evidence to LC1 long-coverage gate; never automatically close LC1. |
 
 ## LP1a mapped scope and invariants
@@ -60,7 +61,7 @@ Foreground serial, shell timeout600. N26=`/home/linuxbrew/.linuxbrew/bin/node`; 
 
 Reusable eleven-file suite, BOTH node prefixes: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-runtime.test.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts src/domain/e-annual-policy.test.ts src/domain/e-annual-composition.test.ts src/domain/e-runtime.test.ts src/domain/e-capsule.test.ts src/domain/annual-runtime-baseline.test.ts --maxWorkers=1`. New memory test separately, fresh on both nodes for baseline/candidate claims.
 
-Historical LP1a prospective commands are superseded by its checkpoint/closure and CURRENT LP1b proof plan. Parent owns validation/review/Git; native candidate excludes accumulated feature history. No capacity or long-LIFE closure. See [runtime gate/history](narrative-lifecycle-runtime.md).
+Historical LP1a prospective commands are superseded by its checkpoint/closure and CURRENT LP1e proof plan. Parent owns validation/review/Git; native candidate excludes accumulated feature history. No capacity or long-LIFE closure. See [runtime gate/history](narrative-lifecycle-runtime.md).
 
 ## LP1a checkpoint (supersedes recovered unknowns; preserves history)
 
@@ -80,35 +81,43 @@ Superseded mapping: private append traversal with a 32 Ki UTF16 coalescing chunk
 
 Parent-reported attempt: all572/11 PASS; cold canonical/wire pins stable. RSS improved only5.6%/1.4% on N26/N24, while elapsed increased63.9%/40.5%. Parent7684 rejected it: no integration, native review or commit. Scoped owned production restored to MAIN HEAD `c3abaca`; new canonical tests62 retained. These measurements are rejected-attempt evidence, NOT proof for the new pair comparator. The old chunk-writer plan is NOT a live instruction.
 
-### LP1b CURRENT contract — full-tree canonical pair equality
+### LP1b completed contract / proof — historical, not rerun here
 
-Exact four future source/test surfaces ONLY:
-- `src/domain/e-lifecycle-genesis.ts`
-- `src/domain/e-lifecycle-genesis.test.ts`
-- `src/domain/e-lifecycle-replay.ts`
-- `src/domain/e-lifecycle-replay.test.ts`
+Four surfaces: genesis.ts / genesis.test.ts / replay.ts / replay.test.ts under `src/domain/e-lifecycle-`. Internal `canonicalLifecycleDataEqual(left,right)` preflights BOTH WHOLE arguments via `requireFavorData(..., true)` before any early false/same-argument shortcut; malformed late data must reject with zero hooks. Full tree equality matches unchanged canonical strings: finite `Object.is` numbers (+/-0), exact UTF16, ordered array kind/length/values, own record count/keys/values; record insertion order/null prototype ignored, hostile keys safe, own undefined ≠ absence, repeated references unfolded. No cache/hash/projection or alias certificate. Only replay's annual/final string comparisons changed; closed-envelope capture before await, full regeneration/admission, old encoder/digest/version/grammar/wire preserved. Tests cover tags, null prototypes, repeated references, hostile keys, surrogates/order, both malformed sides and replay forgeries/delegation.
 
-Add explicit internal-module export `canonicalLifecycleDataEqual(left, right): boolean`. Before ANY early false or same-argument `Object.is`, preflight BOTH WHOLE arguments with `requireFavorData(left, true)` and `requireFavorData(right, true)`. Unknown malformed data on either side must reject even when an earlier field mismatches; late getters/cycles must not evade admission, and hooks remain ZERO. Preserve existing descriptor guards against sparse/extended arrays, symbol keys and nonfinite numbers.
+Parent supplied: source `5e13cf7`, MAIN integration `c066234c4a9ef19dcedfb9f71ce950e7cbd81291` after passive `f537e3f`; four source/test paths 228+/4− including retained62 fixture tests. Missing-pair-helper RED → full593/11 GREEN on BOTH (85.11/94.94s). Fresh baseline/candidate memory BOTH PASS: full cold canonical/aliases/traversal, four genuine years, death1501, wire56561271, same canonical/wire pins above. Types/lint/diff-check and four hashes PASS. ASSESS medium294/5; large writer, independentVerifier=false, self-verification stands (do not invent independent verification).
 
-After preflight, compare the FULL trees, exactly matching the unchanged old canonical string equality:
-- Finite numbers use `Object.is`, preserving signed zero; strings compare exact UTF16 code units.
-- Arrays require the same kind and length, ordered recursive values.
-- Records require the same own-key count, `hasOwn` for each left name, and recursive values. Ignore insertion order and ordinary-versus-null prototype, as old canonical encoding does. Hostile keys are data, not prototype lookup.
-- Own undefined and absence remain distinct via key counts/own-key presence. Repeated references unfold to the same canonical values, not identity-based equality. No WeakMap cache, hashes or projection.
+| Fresh LP1b run | Baseline max RSS bytes | Candidate max RSS bytes | Baseline elapsed ms | Candidate elapsed ms |
+|---|---:|---:|---:|---:|
+| N26 | 2055032832 | 1998364672 | 53241.859 | 54914.201 |
+| N24 | 2046025728 | 1888108544 | 49326.177 | 48807.571 |
 
-Public original `canonicalLifecycleData` string encoder, digest, byte format and version remain UNCHANGED. The tiny helper is not a trusted callback, new product API, external-unknown authority or cache. Runtime aliases must still be checked separately on independently regenerated returned output: tree comparison is not an alias certificate.
+Small mixed benefit; NO no-regression claim. Total process RSS includes Vitest; delta is not exclusive usage. 1GB NOT met; LP1b DONE bounded, NOT capacity/release approval.
 
-Replace ONLY replay's two string-comparison sites (annual record and final output) with this helper. Preserve FULL regeneration, closed-envelope cloning BEFORE await, all unknown-data checks and admission-frontier checks. No bypass of regeneration; no capsule/controller/runtime edits or design-document permission. Advisory150–350 authored lines, not a cap: two production files plus two tests, without minification.
+Native `review-47deeed972f5d125`, medium294/5 reliability APPROVED; exact ACK BURNED target `f424e54410dadc47b123a9ad4db9f532b0b5958dc95754514b024ef777746394`, consumed `0a902a27c435b257c7628fdbc8ff5a318ac3b547e90398df7d7484e193197973`. NEVER STATUS again. Main spot313/3, types/lint/diff-check PASS, four hashes match, HEAD unchanged, only unrelated `.claude/`. Approval is bounded to this candidate, not LP1e or LC1.
 
-### LP1b CURRENT proof plan — pending, not executed here
+## LP1e ACTIVE contract — capsule outer-copy removal
 
-Strict behavior-level RED: the named helper is missing. Then GREEN: pair truth agrees with the UNCHANGED OLD canonical strings on bounded fixtures covering all tags/keys, +/-0, null prototypes, repeated references, hostile keys, surrogates and insertion order. Exercise all malformed/closed-data cases with zero hooks, both sides including early mismatch/late invalid data, and existing replay forgeries across all fields. Tests must assert actual replay uses the pair helper while the byte-encoding helper is NOT called for comparison, without bypassing full regeneration.
+Mapped IN PROGRESS BEFORE first source write. Exact derived edit surfaces ONLY:
+- `src/domain/e-lifecycle-capsule.ts`
+- `src/domain/e-lifecycle-capsule.test.ts`
 
-Foreground serial, timeout600; existing timeouts unchanged. Use the N26/N24 prefixes above; no heap/GC/timeout/seed/mortality changes:
-1. BEFORE production edits: focused N26 `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts --maxWorkers=1`; then fresh memory baseline on BOTH nodes using `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-memory.test.ts --maxWorkers=1 --pool=threads`. Production must be unchanged for these baselines. Fixed default v1/4:85 initial people, four genuine years, death1501, wire56561271; retain old canonical/wire pins above.
-2. Capture meaningful missing-helper RED, implement minimum pair walk/replay replacement, then focused GREEN and negative/alternate triangulation. Retained tests62 do not replace new behavior evidence.
-3. Final BOTH: exact eleven-file suite listed above plus SAME fresh memory workload separately on BOTH. Compare maxRSS, baseline delta, phase heap/elapsed/wire and full cold canonical/aliases/traversal. Baseline/candidate must each be fresh processes; delta is not exclusive memory.
-4. N26 `node_modules/typescript/bin/tsc --noEmit --incremental false`; N26 `node_modules/eslint/bin/eslint.js src/domain/e-lifecycle-genesis.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.ts src/domain/e-lifecycle-replay.test.ts`; `git diff --check`; four scoped source/test diff checks and hashes before/after validation.
+Remove ONLY redundant outer `structuredClone(input)` in create/admit capture. Rename validation to reflect a borrowed record: run WHOLE original `requireFavorData` BEFORE ANY field reads, then exact root-field checks. Keep synchronous manifest and digest verification before delegation unchanged.
 
-Goal: eliminate paired full-string materializations, NOT promise1GB; other capsule/wire peak capture costs persist. Capacity and LC1 remain open. Parent owns copying this FULL MAIN book to the isolated tree before writer/source candidate, independent verification, native review and permitted terminal Git. This documentation update performs no source/tests, commands, children, native calls, network delivery or commits. See [runtime CURRENT and LC1 reference](narrative-lifecycle-runtime.md).
+Ownership proof: immediately call regeneration with NO await between guard and lower-level capture. `admitLifecycleGenesis` synchronously returns independently regenerated, frozen, cloned genesis. Then `replayLifecycleRuntime({genesis, output: candidate.output})` synchronously performs WHOLE preflight/clone BEFORE its first await (`runtime.advance`). After await NEVER read/return caller record: return only frozen module manifest + detached genesis + regenerated output. Preserve FULL semantic replay; no callbacks, tokens, owned flags or trusted-public bypass. Essential replay capture stays; no replay/genesis/runtime/source edits outside these two files.
+
+Deserialize already avoids this outer clone: parsed graph is not caller-exposed. Leave strict inverse/whole-data/digest/exact wire unchanged. Serialize still FULL-admits before encoding. Preserve grammar/property order (`manifest,digest,genesis,output`), manifest/payload/digest bytes, old compatibility and ALL pins. Other digest/string framing or graph-shared versioned wire belongs to separately mapped conditional LP1c; defer unnecessary versions.
+
+### LP1e test-first proof / future validation
+
+Strict allocation RED: call-through `structuredClone` spy classifies complete evidence/capsule envelopes and distinguishes redundant outer capture from essential replay capture. No brittle total-clone count or data-altering mock. Existing mutable-during-await behavior is baseline GREEN, NOT false behavior RED. Extend root, manifest, digest and genesis mutation proof: returned regenerated frozen graph stays isolated. Anti-hook/no-clone-before-rejection, rehashed forgery, aliases/order, exact tagged grammar/wire and all old pins mandatory.
+
+BEFORE production edits: fresh baseline BOTH N24/N26, fixed v1/4 SAME harness; after edits fresh candidate BOTH. Use nodes above, foreground serial timeout600, unchanged existing test timeouts; no seed search, forced death, heap/GC flags. Report total process maxRSS including Vitest, pre-genesis RSS and their nonexclusive difference, elapsed/phase/wire/cold canonical/aliases/traversal. Do not assume 1GB PASS.
+
+1. Focused test-first N26: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-capsule.test.ts --maxWorkers=1`.
+2. Baseline/candidate fresh memory separately on BOTH: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-memory.test.ts --maxWorkers=1 --pool=threads`. Fixed default v1/4:85 initial people, four genuine years, death1501, wire56561271, same pins above.
+3. Candidate related suite on BOTH: exact eleven-file suite above (`--maxWorkers=1`): lifecycle capsule/genesis/runtime/replay, year-source, favor-executor, annual-policy/composition, E1 runtime/capsule, annual baseline.
+4. N26 `node_modules/typescript/bin/tsc --noEmit --incremental false`; N26 `node_modules/eslint/bin/eslint.js src/domain/e-lifecycle-capsule.ts src/domain/e-lifecycle-capsule.test.ts`; `git diff --check`; two scoped source/test diffs and stable hashes before/after validation.
+
+Advisory ≤250 changed lines, not cap; no minification. If additional areas are needed, STOP for mapper. Parent owns isolated worktree after doc commit, FULL books/mirrors, writer, review and permitted local Git. LP1c/d pending; LC1 BLOCKED, ≥60-year proof pending; RI1/RA1 unfinished. This documentation update executes no source/tests, commands, native review, children, network or commits. See [runtime active pointer/history](narrative-lifecycle-runtime.md).
 
