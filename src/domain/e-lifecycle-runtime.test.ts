@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { canonicalLifecycleData } from "./e-lifecycle-genesis";
+import { createLifecycleCapsule, serializeLifecycleCapsule } from "./e-lifecycle-capsule";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import { createLifecycleGenesis } from "./e-lifecycle-genesis";
 import { initializeWorld } from "./world-origin";
@@ -145,6 +148,100 @@ async function publicParity(options: GenerateWorldOptions, throughYear: number, 
 afterEach(() => vi.restoreAllMocks());
 
 describe("native lifecycle annual transaction", () => {
+  it("pins complete annual canonical content and old capsule wire", async () => {
+    const admitted = genesis();
+    const runtime = createLifecycleRuntime(admitted);
+    const output = await runtime.advance(1327);
+    const reference = await publicParity(defaults, 1327);
+    fidelity(output, reference.outputs[0]);
+    const canonical = canonicalLifecycleData({ genesis: admitted, output });
+    const wire = await serializeLifecycleCapsule(await createLifecycleCapsule({ genesis: admitted, output }));
+    const digest = (text: string) => createHash("sha256").update(text).digest("hex");
+    expect(digest(canonical)).toBe("3d96dc6a6739de54d345476c18cce1f553c69722702c13755ee513ccd8422ca4");
+    expect(digest(wire)).toBe("c1991e489978205547a392343e74798c9a387cefb523f5c317b6574423981675");
+    expect(Buffer.byteLength(wire)).toBe(522524);
+  });
+
+  it("shares only the privately committed immutable annual prefix across publications", async () => {
+    const runtime = createLifecycleRuntime(genesis({ ...defaults, seed: "baseline-1327-1" }));
+    const first = await runtime.advance(1327);
+    const retained = ownData(first);
+    const second = await runtime.advance(1328);
+    // Identity is the behavior: equal-but-recloned graphs still duplicate the prefix.
+    expect(second.journal[0] === first.journal[0]).toBe(true);
+    expect(second.journal).not.toBe(first.journal);
+    expect(ownData(first)).toBe(retained);
+    fullyFrozen(first);
+    fullyFrozen(second);
+  });
+
+  it("does not revisit any committed record while cloning or freezing later publications", async () => {
+    const runtime = createLifecycleRuntime(genesis({ ...defaults, seed: "baseline-1327-1" }));
+    const first = await runtime.advance(1327);
+    const prefix = new Set<object>();
+    function collect(value: unknown): void {
+      if (!value || typeof value !== "object" || prefix.has(value)) return;
+      prefix.add(value);
+      Object.values(value).forEach(collect);
+    }
+    collect(first.journal[0]);
+    // The version tuple is also privately owned and must not be revisited.
+    const values = Object.values;
+    vi.spyOn(Object, "values").mockImplementation(value => {
+      if (prefix.has(value)) throw new Error("Visited committed prefix");
+      return values(value);
+    });
+    const clone = globalThis.structuredClone;
+    vi.spyOn(globalThis, "structuredClone").mockImplementation((value, options) => {
+      if (value && typeof value === "object" && "journal" in value) throw new Error("Cloned journal publication");
+      return clone(value, options);
+    });
+    const next = await runtime.advance(1328);
+    expect(next.journal[0] === first.journal[0]).toBe(true);
+    expect(next.versions).toBe(next.journal[0].versions);
+    expect(next.versions).toBe(next.journal[1].versions);
+  });
+
+  it.each(["record-clone", "record-freeze", "journal-freeze", "publication-freeze"] as const)(
+    "keeps the published prefix/frontier after %s failure and retry", async phase => {
+      const input = genesis({ ...defaults, seed: "baseline-1327-1" });
+      const runtime = createLifecycleRuntime(input);
+      const first = await runtime.advance(1327);
+      const retained = ownData(first);
+      const initial = ownData(runtime.initial);
+      const failure = new Error(phase);
+      const clone = globalThis.structuredClone;
+      const freeze = Object.freeze;
+      let armed = true;
+      vi.spyOn(globalThis, "structuredClone").mockImplementation((value, options) => {
+        const result = clone(value, options);
+        if (armed && phase === "record-clone" && value && typeof value === "object" && "physicalSnapshot" in value) throw failure;
+        return result;
+      });
+      vi.spyOn(Object, "freeze").mockImplementation(value => {
+        const result = freeze(value);
+        if (armed && value && typeof value === "object") {
+          if (phase === "record-freeze" && "physicalSnapshot" in value) throw failure;
+          if (phase === "journal-freeze" && Array.isArray(value) && value.length === 2 && value[0] === first.journal[0]) throw failure;
+          if (phase === "publication-freeze" && "journal" in value && "genesisDigest" in value) throw failure;
+        }
+        return result;
+      });
+      await expect(runtime.advance(1328)).rejects.toBe(failure);
+      expect(runtime.snapshot()).toBe(first);
+      expect(ownData(first)).toBe(retained);
+      fullyFrozen(first);
+      armed = false;
+      const retried = await runtime.advance(1328);
+      expect(retried.journal[0] === first.journal[0]).toBe(true);
+      const reference = createLifecycleRuntime(input);
+      await reference.advance(1327);
+      fidelity(retried, await reference.advance(1328));
+      expect(ownData(first)).toBe(retained);
+      expect(ownData(runtime.initial)).toBe(initial);
+      fullyFrozen(retried);
+    });
+
   it("admits genesis and commits a complete native year with separate economic evidence", async () => {
     const input = genesis();
     const before = ownData(input);

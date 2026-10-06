@@ -1325,3 +1325,20 @@ provenance. No Proxy/global-monkeypatch hardening, resource sandbox, LIFE-scale
 performance or general cross-runtime portability claim is made. Long death
 continuation, branch-version extension, repository/LifeStore/rewrite migration,
 RI1 and RA1 remain separate gates; old capsule wire pins remain unchanged.
+
+## Lifecycle LP1a: privately owned immutable annual prefixes
+
+LP1a IN PROGRESS: reuse identical committed records via private provenance, not caller freezing. Detach/freeze each new record once; shallow-freeze the journal. Preserve owned/favor registry aliases, prepare before atomic swap, and leave the frontier unchanged on failure. Old wire remains unchanged.
+
+Corrected fixed v1/4 omits E1 dates (defaults): Alice/f, 85 people, origin1498/1558, resources2/3/1, budget128; four genuine years, death1501. Fresh child Vitest runtime/capsule checks full cold canon, traversal, aliases and freezing PASS. The superseded explicit-dates fixture added74 wire bytes.
+
+| Node/run | Pre-genesis RSS | Max RSS | Delta | Elapsed ms |
+|---|---:|---:|---:|---:|
+| 26/base | 332046336 | 2594684928 | 2262638592 | 51679.553 |
+| 26/candidate | 342724608 | 2341330944 | 1998606336 | 51409.777 |
+| 24/base | 358608896 | 2467655680 | 2109046784 | 49828.308 |
+| 24/candidate | 339611648 | 2108043264 | 1768431616 | 47891.789 |
+
+RSS bytes: child maxRSS includes Vitest (KiB converted); delta is NOT exclusive generation memory. Annual4 heap: N26 198485080→115860992; N24 193776000→111092680. All four: wire56561271 bytes; canon SHA256 `2f83c72b46391454fbc44e2288be27f09ef161ebf7d5c794a610bc072e881451`; wire SHA256 `1ef4498df18f17cf3b17df4cfee86749450485bfdc29623a0e358ea830e709e8`.
+
+Both exceed provisional1GB: no capacity/≥60-year/release closure. Final validation, native review and integration pending; later LP1b/c/d need mapping.

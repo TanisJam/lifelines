@@ -64,9 +64,6 @@ function freeze<T>(value: T, seen = new Set<object>()): Immutable<T> {
   }
   return value as Immutable<T>;
 }
-function detached<T>(value: T): Immutable<T> {
-  return freeze(structuredClone(value));
-}
 function requireYear(year: number): void {
   if (!Number.isSafeInteger(year) || Object.is(year, -0)) throw new Error("Invalid lifecycle year frontier");
 }
@@ -81,19 +78,30 @@ export function createLifecycleRuntime(input: unknown) {
   requireYear(initialFrontier);
   let advancing = false;
 
-  function publish(state: LifecycleState, frontier: number, journal: LifecycleYearRecord[]): Immutable<LifecycleOutput> {
+  // Provenance is lexical ownership, not Object.isFrozen on caller data. The only
+  // records entering this prefix are detached/frozen below, before commit.
+  type Journal = readonly Immutable<LifecycleYearRecord>[];
+  function publish(state: LifecycleState, frontier: number, journal: Journal,
+    publishedVersions?: Immutable<LifecycleGenesis["versions"]>): Immutable<LifecycleOutput> {
     const deathYear = state.owned.people[protagonistId].deathYear;
-    return detached({
+    // Clone native state and its snapshot together to retain their native aliases.
+    // Deliberately exclude the journal: neither clone nor freeze walks its prefix.
+    const frame = structuredClone({
       versions: genesis.versions, genesisDigest: genesis.digest, protagonistId, frontier,
-      status: deathYear !== undefined && deathYear <= frontier ? "complete" : "incomplete",
-      ...state, canonicalYearSnapshot: captureLegacyYear(state.owned, frontier), journal,
+      status: deathYear !== undefined && deathYear <= frontier ? "complete" as const : "incomplete" as const,
+      ...state, canonicalYearSnapshot: captureLegacyYear(state.owned, frontier),
     });
+    if (publishedVersions) frame.versions = publishedVersions;
+    const frozenFrame = freeze(frame, new Set<object>(publishedVersions ? [publishedVersions] : []));
+    return Object.freeze({ ...frozenFrame, journal });
   }
 
   // One pointer owns the entire committed frontier/state/journal/publication boundary.
   const state = { owned, favors };
-  const initial = publish(state, initialFrontier, []);
-  let committed = { state, frontier: initialFrontier, journal: [] as LifecycleYearRecord[], output: initial };
+  const emptyJournal: Journal = Object.freeze([]);
+  const initial = publish(state, initialFrontier, emptyJournal);
+  const publishedVersions = initial.versions;
+  let committed = { state, frontier: initialFrontier, journal: emptyJournal, output: initial };
 
   async function advance(year: number): Promise<Immutable<LifecycleOutput>> {
     if (advancing) throw new Error("Overlapping lifecycle advance");
@@ -141,9 +149,14 @@ export function createLifecycleRuntime(input: unknown) {
         },
         final: structuredClone(draft),
       };
-      const journal = [...committed.journal, record];
+      // Detach only the NEW annual record. Reuse the privately frozen version
+      // tuple to preserve its aliases across annual evidence/publication frames.
+      const newRecord = structuredClone(record);
+      newRecord.versions = publishedVersions;
+      const frozenRecord = freeze(newRecord, new Set<object>([publishedVersions]));
+      const journal: Journal = Object.freeze([...committed.journal, frozenRecord]);
       // ALL potentially failing work, including complete detachment/deep freezing, precedes swap.
-      const output = publish(draft, year, journal);
+      const output = publish(draft, year, journal, publishedVersions);
       committed = { state: draft, frontier: year, journal, output };
       return output;
     } finally {
