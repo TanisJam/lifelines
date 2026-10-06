@@ -1,6 +1,6 @@
 # Lifecycle runtime — reviewable ODD units
 
-FE1 source is verified and committed on isolated `feat/lifecycle-favors` at `ae01652`; native review and parent integration are BLOCKED/PENDING. No review lineage exists. Not release-ready.
+FE1 DONE bounded: source `ae01652` and passive checkpoint `46565a3` fast-forward integrated, main Node26 413/7 tests plus types/lint PASS. Human explicitly left FE1 unreviewed (Engram7625); no native approval/lineage claimed. ACTIVE LR1a closed lifecycle genesis/admission is next; not release-ready.
 
 ## Intent and recovery
 
@@ -10,8 +10,9 @@ Locator `odd/tasks/narrative-lifecycle-runtime.md`; FULL Engram7604 topic `odd/n
 
 ## Tasks
 
-- [ ] **FE1 — IN PROGRESS/BLOCKED:** live reusable typed favor executor implemented, independently verified, local commit `ae01652`; native review and parent integration pending. Delegated writer (four nontrivial source/test files), independent verifier after initially unassessable assessment. No DONE authority.
-- [ ] **LR1 — PENDING:** map explicit new lifecycle runtime genesis/frontier/admission using trusted rules-year source; derive surfaces after FE1, no writer yet.
+- [x] **FE1 — DONE (bounded extraction):** source `ae01652`, fast-forward main `46565a3`, integrated413/7 PASS plus types/lint, four hashes unchanged. Explicit human unreviewed7625; RDD stays on, no native approval. Writer plus independent verifier and main gate observed.
+- [ ] **LR1a — IN PROGRESS:** closed lifecycle genesis creation/cold admission/private instantiation; delegated writer, two new source/test files plus narrow design docs. First prerequisite only, not full runtime.
+- [ ] **LR1b — PENDING:** map annual execution/frontier using trusted rules-year source and FE1; no writer yet.
 - [ ] **LR2 — PENDING:** map full actual-state ordered journal/replay certification preserving old capsules; no writer yet.
 - [ ] **LC1 — PENDING:** genuine seeded unforced death continuation, incomplete/aborted handling and RG1 integration; split later units if necessary.
 
@@ -49,4 +50,10 @@ Initial ASSESS unassessable: untracked scope undeclared; independent verificatio
 
 INSPECT before START found clean workspace needing committed base. Two exact ordinary START attempts used full base23f2163 plus committedOnly:true and fresh keys. Host-mediated consent returned `consent-binding-expired` both times, lineage_created=false, mutation_performed=false, native_invocation_attempted=false. First provider continuation offered restart for fresh consent; one retry also expired. Old bindings must NOT be answered/replayed. No approved review, acknowledgement, correction, reset or recovery. No source defect inferred from expiration; STOP further retries in this turn.
 
-Next human turn: freshly inspect/START exact committed FE1 range only if user wants to retry consent; preserve existing candidate and source hashes. Alternatively explicit candidate-scoped unreviewed decision follows ordinary policy with already-observed independent checks; do not disable RDD automatically. No parent integration or later writer yet. Native authority never authorizes delivery. Full-suite/build/browser/death continuation/RI1/RA1 remain pending.
+Historical blocker above is superseded: user “bueno, segui hasta completar el release” resumed; third fresh START expired before native invocation, no lineage. User selected FE1 explicitly unreviewed7625. Committed ASSESS explicit declined medium563/5, consumed=false; ordinary checks stand, RDD unchanged. Parent preserved untracked full taskbook bytes, fast-forwarded exact46565a3, removed only its own identical backup. Main gate Node26413/7 PASS47.37s, types/scopedlint/diffcheckPASS; fourhashes unchanged, HEAD stable only unrelated.claude. Verifier first hash snapshot followed suite/tsc: do not claim pre-suite hashes there. Next LR1a; native review remains required under user switch for new candidates. Full-suite/build/browser/death continuation/RI1/RA1 remain pending.
+
+## LR1a mapped scope and checks
+
+New src/domain/e-lifecycle-genesis.ts and src/domain/e-lifecycle-genesis.test.ts; narrow docs/design/narrative-engine.md contract section. Taskbook parent-owned. Complete creation, cold admission and private reconstruction APIs; explicit new lifecycle tuple, E1 origin + trusted rules-year declaration + protagonist own identity + complete initial resources + canonical digest. Preserve old E1/C2/capsule codecs unchanged. Descriptor-first closed data before reads/hash/cloning: reject getters/symbols/hidden/executable/nonplain/cyclic/sparse/extended/nonfinite data; permitted legacy own undefined and signed zero lossless. Regenerate full actual Person/Mind/events/config through existing E1 origin; compare COMPLETE canonical genesis, not digest alone. No arbitrary imported world, demographic policy, hydration/history backfill, quotas or callbacks. One fresh private actual registry; separate favor ledgers; config endYear origin metadata not execution ceiling. Do not build unused checkpoint framework or advance stub. Future runtime/replay must consume this reconstruction.
+
+Advisory550–850 authored lines including tests/docs, not cap. RED missing module/API then getter/unknown tuple/forged-rehashed/caller alias/signedzero/undefined/resources negatives; true origin semantic parity and two independent instantiations. Exact foreground timeout600 commands: Node26 and Node24 prefixes above, node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-genesis.test.ts --maxWorkers=1; final related run includes src/domain/e-lifecycle-genesis.test.ts src/domain/world-initialization.test.ts src/domain/world-origin.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts src/domain/e-runtime.test.ts src/domain/e-capsule.test.ts src/domain/e-annual-policy.test.ts src/domain/e-annual-composition.test.ts src/domain/annual-runtime-baseline.test.ts --maxWorkers=1. Node26 tsc --noEmit --incremental false, scoped ESLint two new source paths, diffcheck. No Next guides apply domain-only. Parent owns new isolated worktree/commit/native/integration; no LR1a source writes yet.
