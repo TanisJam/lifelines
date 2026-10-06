@@ -1,4 +1,4 @@
-import { canonicalLifecycleData } from "./e-lifecycle-genesis";
+import { canonicalLifecycleDataEqual } from "./e-lifecycle-genesis";
 import { createLifecycleRuntime } from "./e-lifecycle-runtime";
 import { requireFavorData } from "./effects";
 import { requireFields } from "./obligations";
@@ -35,7 +35,7 @@ export async function replayLifecycleRuntime(input: unknown) {
   for (const entry of candidate.output.journal) {
     // advance rejects after genuine death and has no origin.endYear ceiling.
     const regenerated = await runtime.advance(entry.year as number);
-    if (canonicalLifecycleData(entry) !== canonicalLifecycleData(regenerated.journal.at(-1))) {
+    if (!canonicalLifecycleDataEqual(entry, regenerated.journal.at(-1))) {
       throw new Error("Lifecycle annual record disagreement");
     }
   }
@@ -43,7 +43,7 @@ export async function replayLifecycleRuntime(input: unknown) {
   // Includes versions, digest, frontier/status, every final native/economic
   // ledger and canonical snapshot; no duplicate Person/Mind schema or projection.
   // Human-authority evidence cannot equal the authority-free regenerated output.
-  if (canonicalLifecycleData(candidate.output) !== canonicalLifecycleData(regenerated)) {
+  if (!canonicalLifecycleDataEqual(candidate.output, regenerated)) {
     throw new Error("Lifecycle final output disagreement");
   }
   return regenerated;

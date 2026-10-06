@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { initializeWorld, WORLD_ORIGIN_VERSIONS } from "./world-origin";
-import { createLifecycleGenesis, admitLifecycleGenesis, instantiateLifecycleGenesis, canonicalLifecycleData, LIFECYCLE_GENESIS_VERSIONS, type LifecycleGenesis } from "./e-lifecycle-genesis";
+import { createLifecycleGenesis, admitLifecycleGenesis, instantiateLifecycleGenesis, canonicalLifecycleData, canonicalLifecycleDataEqual, LIFECYCLE_GENESIS_VERSIONS, type LifecycleGenesis } from "./e-lifecycle-genesis";
 import { createRulesYearSource, RULES_YEAR_SOURCE_VERSION } from "./e-year-source";
 import { createFavorExecutor } from "./e-favor-executor";
 import { initializationJson } from "./world-initialization";
@@ -356,6 +356,68 @@ describe("explicit complete resources and creation shape", () => {
 });
 
 describe("descriptor-checked canonical comparison export", () => {
+  it.each([
+    [undefined, '["undefined"]'],
+    [null, '["null"]'],
+    [true, '["boolean",true]'],
+    [false, '["boolean",false]'],
+    [0, '["number","0"]'],
+    [-0, '["number","-0"]'],
+    [1.25, '["number","1.25"]'],
+    [-42, '["number","-42"]'],
+    [1e21, '["number","1e+21"]'],
+    [5e-324, '["number","5e-324"]'],
+    ["\u0000\b\t\n\f\r\u001f\"\\", '["string","\\u0000\\b\\t\\n\\f\\r\\u001f\\"\\\\"]'],
+    ["😀\ud800X\udfff", '["string","😀\\ud800X\\udfff"]'],
+    [{}, '["record",[]]'],
+    [{ a: undefined }, '["record",[["a",["undefined"]]]]'],
+    [[], '["array",[]]'],
+    [[undefined, null, -0, 0], '["array",[["undefined"],["null"],["number","-0"],["number","0"]]]'],
+    [{ z: [{ b: false, a: "x" }, []], a: { z: null } },
+      '["record",[["a",["record",[["z",["null"]]]]],["z",["array",[["record",[["a",["string","x"]],["b",["boolean",false]]]],["array",[]]]]]]]'],
+  ] as const)("pins literal canonical bytes %#", (input, expected) => {
+    expect(canonicalLifecycleData(input)).toBe(expected);
+  });
+
+  it("sorts hostile own keys on ordinary and null-prototype records", () => {
+    for (const input of [{}, Object.create(null)]) {
+      define(input, "constructor", undefined);
+      define(input, "__proto__", -0);
+      define(input, "a", [2, 1]);
+      expect(canonicalLifecycleData(input)).toBe(
+        '["record",[["__proto__",["number","-0"]],["a",["array",[["number","2"],["number","1"]]]],["constructor",["undefined"]]]]');
+    }
+  });
+
+  it("retains exact bytes across coalescing boundaries and oversized JSON tokens", () => {
+    for (const length of [16383, 16384, 32746, 32747, 32767, 32768, 65536, 100003]) {
+      const text = "x".repeat(length) + "😀\ud800\n";
+      const leaf = '["string","' + "x".repeat(length) + '😀\\ud800\\n"]';
+      expect(canonicalLifecycleData([text, { b: text, a: undefined }])).toBe(
+        '["array",[' + leaf + ',["record",[["a",["undefined"]],["b",' + leaf + ']]]]]');
+    }
+    const leaves = Array.from({ length: 10000 }, () => true);
+    expect(canonicalLifecycleData(leaves)).toBe('["array",[' +
+      '["boolean",true],'.repeat(9999) + '["boolean",true]]]');
+  });
+
+  it("guards the whole tree before any primitive JSON encoding", () => {
+    let hooks = 0;
+    const input = { a: "encode me first", z: [{}] };
+    Object.defineProperty(input.z[0], "late", { enumerable: true, get() { hooks++; return 1; } });
+    const original = JSON.stringify;
+    JSON.stringify = ((...args: Parameters<typeof JSON.stringify>) => {
+      hooks++;
+      return original(...args);
+    }) as typeof JSON.stringify;
+    try {
+      expect(() => canonicalLifecycleData(input)).toThrow(/own enumerable data/);
+      expect(hooks).toBe(0);
+    } finally {
+      JSON.stringify = original;
+    }
+  });
+
   it("reuses the existing digest bytes without claiming semantic admission", () => {
     const candidate = frame();
     const { digest, ...payload } = candidate;
@@ -378,6 +440,92 @@ describe("descriptor-checked canonical comparison export", () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     expect(() => canonicalLifecycleData(cyclic)).toThrow();
+  });
+});
+
+describe("full-tree canonical pair equality", () => {
+  it("exposes the named pair helper including identical undefined", () => {
+    expect(typeof canonicalLifecycleDataEqual).toBe("function");
+    expect(canonicalLifecycleDataEqual(undefined, undefined)).toBe(true);
+  });
+
+  it("agrees with the old string grammar across all tags and numerical formats", () => {
+    const leaves = [undefined, null, false, true, 0, -0, 1.25, -42, 1e21, 1e-7,
+      Number.MAX_VALUE, Number.MIN_VALUE, "", "0", "undefined", "null",
+      "\u0000\n\"\\", "😀", "\ud800", "\ud801", "é", "e\u0301"];
+    const values = [...leaves, {}, [], { a: undefined }, { a: null }, [undefined],
+      [null], [0, -0], [-0, 0], { "0": undefined }, { a: [true, { b: -0 }] }];
+    for (const left of values) for (const right of values) {
+      expect(canonicalLifecycleDataEqual(left, right)).toBe(
+        canonicalLifecycleData(left) === canonicalLifecycleData(right));
+    }
+  });
+
+  it("unfolds repeated references and ignores record insertion order and plain prototype", () => {
+    const shared = { value: [undefined, -0, "\ud800X\udfff"] };
+    const left = { z: shared, a: shared };
+    const right = Object.create(null);
+    define(right, "a", structuredClone(shared));
+    define(right, "z", structuredClone(shared));
+    expect(left.a).toBe(left.z);
+    expect(right.a).not.toBe(right.z);
+    expect(canonicalLifecycleDataEqual(left, right)).toBe(true);
+    expect(canonicalLifecycleData(left)).toBe(canonicalLifecycleData(right));
+    right.z.value[2] = "\ud800X\udffe";
+    expect(canonicalLifecycleDataEqual(left, right)).toBe(false);
+    expect(canonicalLifecycleData(left)).not.toBe(canonicalLifecycleData(right));
+  });
+
+  it("treats hostile own keys as data rather than inherited membership", () => {
+    const left = {};
+    const right = Object.create(null);
+    for (const [key, value] of [["__proto__", -0], ["constructor", undefined], ["toString", [1, 2]]] as const) {
+      define(left, key, value);
+    }
+    for (const key of Object.keys(left).reverse()) define(right, key, (left as Record<string, unknown>)[key]);
+    expect(canonicalLifecycleDataEqual(left, right)).toBe(true);
+    expect(canonicalLifecycleData(left)).toBe(canonicalLifecycleData(right));
+    expect(canonicalLifecycleDataEqual({ constructor: undefined }, { other: undefined })).toBe(false);
+    expect(canonicalLifecycleDataEqual({ __proto__: null }, {})).toBe(true);
+    define(right, "__proto__", 0);
+    expect(canonicalLifecycleDataEqual(left, right)).toBe(false);
+  });
+
+  const invalidKinds = ["getter", "toJSON", "iterator", "hidden", "symbol", "nonplain", "cycle",
+    "sparse", "extended-array", "array-prototype", "function", "bigint", "nan", "infinity", "negative-infinity"];
+  it.each(invalidKinds)("preflights both complete trees before mismatches or identity: %s", kind => {
+    let hooks = 0;
+    const hook = () => { hooks++; throw new Error("Executed hook"); };
+    const invalid = { a: "mismatch", z: [{}] };
+    const target = invalid.z[0];
+    if (kind === "getter") Object.defineProperty(target, "bad", { enumerable: true, get: hook });
+    if (kind === "toJSON") define(target, "toJSON", hook);
+    if (kind === "iterator") define(target, Symbol.iterator, hook);
+    if (kind === "hidden") Object.defineProperty(target, "bad", { value: 1 });
+    if (kind === "symbol") define(target, Symbol("bad"), 1);
+    if (kind === "nonplain") define(target, "bad", new Date(0));
+    if (kind === "cycle") define(target, "bad", invalid);
+    if (kind === "sparse") define(target, "bad", new Array(2));
+    if (kind === "extended-array") { const list = [1]; define(list, "extra", 2); define(target, "bad", list); }
+    if (kind === "array-prototype") { const list = [1]; Object.setPrototypeOf(list, null); define(target, "bad", list); }
+    if (kind === "function") define(target, "bad", hook);
+    if (kind === "bigint") define(target, "bad", BigInt(1));
+    if (kind === "nan") define(target, "bad", NaN);
+    if (kind === "infinity") define(target, "bad", Infinity);
+    if (kind === "negative-infinity") define(target, "bad", -Infinity);
+    const valid = { a: "different", z: [{}] };
+    for (const [left, right] of [[invalid, valid], [valid, invalid], [invalid, invalid],
+      [undefined, invalid], [invalid, null]]) {
+      expect(() => canonicalLifecycleDataEqual(left, right)).toThrow();
+    }
+    expect(hooks).toBe(0);
+  });
+
+  it("validates the right tree even when the left is the same primitive", () => {
+    let hooks = 0;
+    const right = Object.defineProperty({ a: 1 }, "z", { enumerable: true, get() { hooks++; return 0; } });
+    expect(() => canonicalLifecycleDataEqual(1, right)).toThrow(/own enumerable data/);
+    expect(hooks).toBe(0);
   });
 });
 

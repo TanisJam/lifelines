@@ -75,6 +75,38 @@ export function canonicalLifecycleData(input: unknown): string {
   return canonical(input);
 }
 
+/** Internal full-tree equality, equivalent to canonical string equality but
+ * without materializing either string. Admission is mandatory on BOTH complete
+ * inputs before comparison can return early. This is not semantic certification
+ * or an alias certificate: repeated references are compared as unfolded values. */
+export function canonicalLifecycleDataEqual(left: unknown, right: unknown): boolean {
+  requireFavorData(left, true);
+  requireFavorData(right, true);
+  return equalData(left, right);
+}
+
+/** Only called after whole-tree descriptor admission; no identity/cache shortcut. */
+function equalData(left: unknown, right: unknown): boolean {
+  if (left === null || typeof left !== "object") return Object.is(left, right);
+  if (right === null || typeof right !== "object") return false;
+  if (Array.isArray(left)) {
+    if (!Array.isArray(right) || left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index++) {
+      if (!equalData(left[index], right[index])) return false;
+    }
+    return true;
+  }
+  if (Array.isArray(right)) return false;
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const keys = Object.keys(leftRecord);
+  if (keys.length !== Object.keys(rightRecord).length) return false;
+  for (const key of keys) {
+    if (!Object.hasOwn(rightRecord, key) || !equalData(leftRecord[key], rightRecord[key])) return false;
+  }
+  return true;
+}
+
 function digest(payload: unknown): string {
   return createHash("sha256").update(canonical(payload), "utf8").digest("hex");
 }

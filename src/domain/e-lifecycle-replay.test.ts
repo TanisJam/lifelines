@@ -4,6 +4,7 @@ import { canonicalLifecycleData, createLifecycleGenesis } from "./e-lifecycle-ge
 import { createLifecycleRuntime } from "./e-lifecycle-runtime";
 import { initializeWorld } from "./world-origin";
 import { replayLifecycleRuntime } from "./e-lifecycle-replay";
+import * as genesisModule from "./e-lifecycle-genesis";
 import * as sourceModule from "./e-year-source";
 import * as executorModule from "./e-favor-executor";
 import type { GenerateWorldOptions } from "./worldgen";
@@ -74,6 +75,49 @@ beforeAll(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("cold native lifecycle replay", () => {
+  it("compares full annual and final trees through the real pair helper without encoding strings", async () => {
+    // Call-through observers only: neither equality nor regeneration is mocked.
+    const pair = vi.spyOn(genesisModule, "canonicalLifecycleDataEqual");
+    const encoder = vi.spyOn(genesisModule, "canonicalLifecycleData");
+    const native = vi.spyOn(sourceModule, "createRulesYearSource");
+    const favor = vi.spyOn(executorModule, "createFavorExecutor");
+    for (const evidence of [initial, annual]) {
+      pair.mockClear();
+      encoder.mockClear();
+      native.mockClear();
+      favor.mockClear();
+      const replayed = await replayLifecycleRuntime(evidence);
+      fidelity(replayed, evidence.output);
+      expect(pair).toHaveBeenCalledTimes(evidence.output.journal.length + 1);
+      expect(encoder).not.toHaveBeenCalled();
+      expect(native).toHaveBeenCalledTimes(evidence.output.journal.length);
+      expect(favor).toHaveBeenCalledTimes(evidence.output.journal.length);
+      for (let index = 0; index < evidence.output.journal.length; index++) {
+        fidelity(pair.mock.calls[index][0], evidence.output.journal[index]);
+        expect(pair.mock.calls[index][0]).not.toBe(evidence.output.journal[index]);
+        expect(pair.mock.calls[index][1]).toBe(replayed.journal[index]);
+      }
+      fidelity(pair.mock.calls.at(-1)![0], evidence.output);
+      expect(pair.mock.calls.at(-1)![1]).toBe(replayed);
+      expect(pair.mock.results.every(result => result.type === "return" && result.value === true)).toBe(true);
+      expect(replayed.owned.people).toBe(replayed.favors.people);
+      expect(replayed.owned.events).toBe(replayed.favors.legacyEvents);
+    }
+    const forged = structuredClone(annual);
+    forged.output.journal[0].postNative.owned.people.protagonist.mind.stress++;
+    pair.mockClear();
+    encoder.mockClear();
+    await expect(replayLifecycleRuntime(forged)).rejects.toThrow("Lifecycle annual record disagreement");
+    expect(pair.mock.results.at(-1)?.value).toBe(false);
+    expect(encoder).not.toHaveBeenCalled();
+    const forgedFinal = structuredClone(initial);
+    forgedFinal.output.owned.people.protagonist.mind.stress++;
+    pair.mockClear();
+    await expect(replayLifecycleRuntime(forgedFinal)).rejects.toThrow("Lifecycle final output disagreement");
+    expect(pair.mock.results.at(-1)?.value).toBe(false);
+    expect(encoder).not.toHaveBeenCalled();
+  });
+
   it("regenerates zero-year and incomplete alive output without borrowing caller aliases", async () => {
     for (const evidence of [initial, annual]) {
       const candidate = structuredClone(evidence);
