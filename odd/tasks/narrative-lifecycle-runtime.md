@@ -1,6 +1,6 @@
 # Lifecycle runtime — reviewable ODD units
 
-FE1 DONE bounded: source `ae01652` and passive checkpoint `46565a3` fast-forward integrated, main Node26 413/7 tests plus types/lint PASS. Human explicitly left FE1 unreviewed (Engram7625); no native approval/lineage claimed. ACTIVE LR1a closed lifecycle genesis/admission is next; not release-ready.
+CURRENT: LR1a DONE (bounded genesis/admission), fast-forward integrated on main `1418dfbba5a65bdfe243c1f923d2f8f91ec5fc80`; native review APPROVED and ACK BURNED with exact lineage. LR1b IN PROGRESS (mapped annual execution/frontier contract); no runtime source writes yet. FE1 remains DONE bounded and explicitly unreviewed (Engram7625). Not release-ready; LR2, genuine death continuation, RI1 and RA1 remain pending.
 
 ## Intent and recovery
 
@@ -11,8 +11,8 @@ Locator `odd/tasks/narrative-lifecycle-runtime.md`; FULL Engram7604 topic `odd/n
 ## Tasks
 
 - [x] **FE1 — DONE (bounded extraction):** source `ae01652`, fast-forward main `46565a3`, integrated413/7 PASS plus types/lint, four hashes unchanged. Explicit human unreviewed7625; RDD stays on, no native approval. Writer plus independent verifier and main gate observed.
-- [ ] **LR1a — IN PROGRESS:** closed lifecycle genesis creation/cold admission/private instantiation; delegated writer, two new source/test files plus narrow design docs. First prerequisite only, not full runtime.
-- [ ] **LR1b — PENDING:** map annual execution/frontier using trusted rules-year source and FE1; no writer yet.
+- [x] **LR1a — DONE (bounded genesis/admission):** source/main `1418dfb`, exactly two genesis source/test paths plus narrow design docs; 84 focused and 430/10 related tests PASS on both nodes, types/lint PASS, native APPROVED/ACK BURNED. First prerequisite only, not full runtime.
+- [ ] **LR1b — IN PROGRESS (mapped; source not started):** new `src/domain/e-lifecycle-runtime.ts` and `src/domain/e-lifecycle-runtime.test.ts`, bounded append to `docs/design/narrative-engine.md`; trusted native annual execution plus FE1, contiguous frontier, actual-state journal, atomic publication/rollback. Exact contract and checks below; parent prepares isolated writer after full book synchronization.
 - [ ] **LR2 — PENDING:** map full actual-state ordered journal/replay certification preserving old capsules; no writer yet.
 - [ ] **LC1 — PENDING:** genuine seeded unforced death continuation, incomplete/aborted handling and RG1 integration; split later units if necessary.
 
@@ -56,4 +56,48 @@ Historical blocker above is superseded: user “bueno, segui hasta completar el 
 
 New src/domain/e-lifecycle-genesis.ts and src/domain/e-lifecycle-genesis.test.ts; narrow docs/design/narrative-engine.md contract section. Taskbook parent-owned. Complete creation, cold admission and private reconstruction APIs; explicit new lifecycle tuple, E1 origin + trusted rules-year declaration + protagonist own identity + complete initial resources + canonical digest. Preserve old E1/C2/capsule codecs unchanged. Descriptor-first closed data before reads/hash/cloning: reject getters/symbols/hidden/executable/nonplain/cyclic/sparse/extended/nonfinite data; permitted legacy own undefined and signed zero lossless. Regenerate full actual Person/Mind/events/config through existing E1 origin; compare COMPLETE canonical genesis, not digest alone. No arbitrary imported world, demographic policy, hydration/history backfill, quotas or callbacks. One fresh private actual registry; separate favor ledgers; config endYear origin metadata not execution ceiling. Do not build unused checkpoint framework or advance stub. Future runtime/replay must consume this reconstruction.
 
-Advisory550–850 authored lines including tests/docs, not cap. RED missing module/API then getter/unknown tuple/forged-rehashed/caller alias/signedzero/undefined/resources negatives; true origin semantic parity and two independent instantiations. Exact foreground timeout600 commands: Node26 and Node24 prefixes above, node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-genesis.test.ts --maxWorkers=1; final related run includes src/domain/e-lifecycle-genesis.test.ts src/domain/world-initialization.test.ts src/domain/world-origin.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts src/domain/e-runtime.test.ts src/domain/e-capsule.test.ts src/domain/e-annual-policy.test.ts src/domain/e-annual-composition.test.ts src/domain/annual-runtime-baseline.test.ts --maxWorkers=1. Node26 tsc --noEmit --incremental false, scoped ESLint two new source paths, diffcheck. No Next guides apply domain-only. Parent owns new isolated worktree/commit/native/integration; no LR1a source writes yet.
+Advisory550–850 authored lines including tests/docs, not cap. RED missing module/API then getter/unknown tuple/forged-rehashed/caller alias/signedzero/undefined/resources negatives; true origin semantic parity and two independent instantiations. Exact foreground timeout600 commands: Node26 and Node24 prefixes above, node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-genesis.test.ts --maxWorkers=1; final related run includes src/domain/e-lifecycle-genesis.test.ts src/domain/world-initialization.test.ts src/domain/world-origin.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts src/domain/e-runtime.test.ts src/domain/e-capsule.test.ts src/domain/e-annual-policy.test.ts src/domain/e-annual-composition.test.ts src/domain/annual-runtime-baseline.test.ts --maxWorkers=1. Node26 tsc --noEmit --incremental false, scoped ESLint two new source paths, diffcheck. No Next guides apply domain-only. Parent owns new isolated worktree/commit/native/integration; no LR1a source writes existed at this historical mapping checkpoint (superseded by closure below).
+
+## LR1a closure — bounded, integrated
+
+Parent-provided proof: source/main `1418dfbba5a65bdfe243c1f923d2f8f91ec5fc80`, exactly three paths, 597 authored lines = 168 production + 399 tests + 30 design docs. Baseline120 PASS → missing-module RED → focused84 GREEN. Final related Node26/Node24 430/10 PASS, 57.68s/55.50s; types/scoped lint PASS and writer hashes recorded. Main fast-forward matched all three hashes, then focused84 PASS, types/lint/diffcheck PASS and three hashes stable; only unrelated `.claude/` remained. These are inherited observations, not tests rerun by this documentation update.
+
+Native `review-1d7bcdc836d2482b` APPROVED; ACK BURNED target `7a0b4bd2d7837b40da0b33f52a75c0f2c994d7a6f3670e5205fc93016296676e`, consumed revision `e1b6f00ac694328762b2555878b9ced7ad7f538b7615f4acd01f2c1b2ca2ba95`. First ACK with controller-only input was rejected without mutation; exact-lineage-only ACK succeeded. No STATUS queried after burn. This approval closes LR1a only, not FE1 or release gates.
+
+| Path | SHA256 at source/main integration |
+|---|---|
+| src/domain/e-lifecycle-genesis.ts | 6ca33f3d53e034494788d395a4bf8bb3217c7e6513f183c86d17b00f6edff21d |
+| src/domain/e-lifecycle-genesis.test.ts | 334e42694a05d75214217f5de869a284b835e962753efa2526bac38d1a7d97c7 |
+| docs/design/narrative-engine.md | cfd8534b46a8652cee9d14ecb371e4e1164056fdd2352909f1a504e302f0754b |
+
+Running new-workstream source count: FE1 511 + LR1a 567 = 1,078, excluding docs. Initial all-path units: FE1 561 + LR1a 597 = 1,158, excluding passive taskbook updates. This current documentation update is passive, not counted as source. Historical forecasts and evidence above remain intact.
+
+## LR1b contract — annual execution and atomic frontier
+
+Exact derived source scope: new `src/domain/e-lifecycle-runtime.ts` and `src/domain/e-lifecycle-runtime.test.ts`; bounded append to `docs/design/narrative-engine.md`. No genesis canonical export is needed in this unit: no hash comparison. Taskbook remains parent-owned; no runtime writes yet. Parent prepares an isolated writer only after full file/Engram7604 synchronization. Advisory scope must be reforecast with the worker before growing beyond a coherent unit; never compress coverage.
+
+### Admission and annual transaction
+
+- `createLifecycleRuntime(genesis: unknown)` exposes a frozen initial result, async `advance(year)` and `snapshot`. Contiguous frontier starts at `startYear - 1`, must be a safe integer and not `-0`; `origin.endYear` is not an execution ceiling. No future checkpoint import, authority callbacks, human resolver or external plans input.
+- Clone the combined actual owned state and favors graph transactionally, preserving aliases. Use trusted `createRulesYearSource` with fresh private execution for exactly one physical year. Retain the pre-economic physical snapshot and FULL post-native people/Mind, logs, decisions and counters; never substitute an E2 physical projection. Preserve native births, deaths, genotype and class.
+- Apply `planAnnualFavorDraft` → FE1 resources/grants → stable eligible creditor traversal with two `.25` slots. Replan each response from the current draft. Next year's native execution reads the favor-updated actual Mind.
+- Detach and deep-freeze final owned/favors state and journal BEFORE swapping frontier/state atomically. The journal retains full post-native and final actual states/ledgers, resolved economic plans, slot-null observations and entries. Life-position and economic-position namespaces are distinct. This evidence is NOT a full replay certificate; LR2 remains pending.
+
+### Failure, status and cancellation boundaries
+
+Alive status is incomplete. Only observed genuine death completes the death year; reject the next advance. No forced death or horizon completion. Reject overlapping advances. Late failure rolls back state/frontier, clears the guard and permits retry with a fresh source. Cancellation is between closed steps only: no source cancellation port exists. A later controller abort may discard before commit, but there is no mid-step interruption claim. This is a technical boundary, not a new product choice.
+
+### Test-first checks and exact future commands
+
+Require new-module RED before implementation, then GREEN and triangulation: real independent public native-physics parity BEFORE economic comparison; real life/genetic birth and maternal effects; full properties, signed zero, own undefined, registry order and counters; newborn/dead resources; two current slots; detached final Mind; rollback/retry and overlap; beyond-horizon execution and dead status. This is not full LR2, death continuation, RI1 or RA1 release proof.
+
+All future validation is foreground serial with timeout600, unchanged test timeouts. Use both node prefixes: N26 `/home/linuxbrew/.linuxbrew/bin/node`, N24 `/home/tanisjam/.nvm/versions/node/v24.20.0/bin/node`.
+
+- Baseline: `<node> node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-genesis.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts --maxWorkers=1`.
+- Focused RED/GREEN/triangulation: `<node> node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-runtime.test.ts --maxWorkers=1`.
+- Final exact related suite on BOTH nodes: `<node> node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-runtime.test.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts src/domain/e-annual-policy.test.ts src/domain/e-annual-composition.test.ts src/domain/legacy-year.test.ts src/domain/e-runtime.test.ts src/domain/e-capsule.test.ts src/domain/simulate.test.ts src/domain/simulate-decide-year.test.ts src/domain/replay.test.ts src/domain/fork.test.ts --maxWorkers=1`.
+- Types: `/home/linuxbrew/.linuxbrew/bin/node node_modules/typescript/bin/tsc --noEmit --incremental false`.
+- Scoped lint: `/home/linuxbrew/.linuxbrew/bin/node node_modules/eslint/bin/eslint.js src/domain/e-lifecycle-runtime.ts src/domain/e-lifecycle-runtime.test.ts`.
+- Whitespace: `git diff --check`.
+
+Commands above are the future writer contract, not executed during this documentation-only synchronization. Parent retains native review, integration and terminal Git ownership; no release completion is claimed.
