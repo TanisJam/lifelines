@@ -1295,3 +1295,33 @@ years and mutation during the first await. Tests are small-fixture correctness e
 not LIFE-scale memory/performance, a Proxy sandbox or general runtime portability proof.
 No runtime/version/production behavior or old E1/E2/E3/C2 codec changes are introduced.
 LR2b's separate lossless capsule, long death continuation, RI1 and RA1 remain later gates.
+
+## Lifecycle LR2b: lossless capsule with full replay on every admission
+
+`src/domain/e-lifecycle-capsule.ts` preserves one complete LR1a genesis and LR1b
+output as an inactive, storage-free capsule. It does not activate production,
+branch persistence, human authority or release readiness.
+
+**Quick path:** `await createLifecycleCapsule({ genesis, output })` →
+`await serializeLifecycleCapsule(capsule)` → `await deserializeLifecycleCapsule(wire)`.
+`await admitLifecycleCapsule(candidate)` admits borrowed objects. All four APIs take
+unknown input, reject extra root fields and return regenerated frozen data (or wire).
+Zero-year, incomplete alive and genuine-death outputs are valid, not release proof.
+
+| Review point | LR2b contract |
+|---|---|
+| Closed shapes | Capsule exactly `{ manifest, digest, genesis, output }`; wire exactly `{ manifest, payload, digest }` in that declaration order. Exported `LifecycleCapsule` and `LifecycleCapsuleManifest` describe this boundary for future storage, without adding a storage stub. |
+| Manifest | `capsuleSchema: lifecycle-capsule-lr2b-1`, `codec: sorted-own-data-tuples-lr2b-1`, plus the complete unchanged `LIFECYCLE_GENESIS_VERSIONS` tuple, including its nested origin tuple. Unknown axes/extensions reject. No migration or old E1/C2/E3 codec change. |
+| Sole encoder | Payload is the string `canonicalLifecycleData({ genesis, output })`, reusing the exact genesis tagged grammar. Records sort keys; arrays preserve order; tagged undefined/null/string/boolean/number/array/record distinguish own presence, finite number strings and `-0`. UTF-16 code units, NUL and lone surrogates survive JSON escaping. |
+| Strict inverse | Only the new codec decodes this grammar. Check tag, arity and leaf/container types; reject duplicate record keys and noncanonical number strings. Safely define own hostile keys on null records. Exact re-encoding rejects unsorted entries, alternate escapes and whitespace in the payload. |
+| Integrity frame | SHA-256 of UTF-8 `JSON.stringify([canonicalLifecycleData(manifest), payload])`, excluding digest. Require lowercase 64-hex digest. Exact outer JSON equality additionally rejects duplicate JSON keys, whitespace, alternate escapes and envelope/manifest field order. |
+| Semantic authority | Every create/admit/serialize/deserialize independently regenerates genesis and invokes full LR2a trusted native/economic replay. Rehashed forged Mind, logs, decisions, counters, resources, slot observations and derived evidence still reject. Candidate plans are never execution instructions. |
+| Input and ownership | Descriptor-check the WHOLE borrowed graph before reads, hash, clone or await, then detach before native execution. Reject accessors/executable data, hidden/symbol fields, sparse/extended arrays, cycles, nonplain containers and nonfinite values. Return regenerated genesis/output rather than decoded record order: actual registry traversal and people/log aliases are restored by the trusted owners. |
+
+Review `e-lifecycle-capsule.test.ts` for bounded real annual/death fixtures, lossless
+leaf fidelity, restored aliases/order, async capture, semantic rehash attacks and
+strict wire grammar. Digest integrity is not authenticated authorship or historical
+provenance. No Proxy/global-monkeypatch hardening, resource sandbox, LIFE-scale
+performance or general cross-runtime portability claim is made. Long death
+continuation, branch-version extension, repository/LifeStore/rewrite migration,
+RI1 and RA1 remain separate gates; old capsule wire pins remain unchanged.
