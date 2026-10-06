@@ -1,8 +1,23 @@
 # Narrative lifecycle kernel — release work units
 
+**ACTIVE — user “seguimos” resumes the authorized release after pause7581. RL1a1–5 are DONE as bounded integrated units: reusable legacy annual kernel only.** RL1/RL1b/full RG1 genuine death continuation/RI1/RA1 remain pending or incomplete; NOT release-ready. Source/tests remain FROZEN at main `4309dcc3972de967c861890c3d2f090453514bc0`. NEXT: RL1b1 trusted rules-year source PENDING; no source writes in this checkpoint. Parent owns source launches, reviews, commits and integration.
+
+## Current checkpoint boundary
+
+| Boundary | Current state |
+|---|---|
+| Main | `feat/narrative-engine`, `4309dcc3972de967c861890c3d2f090453514bc0`; tracked-clean at entry, only unrelated untracked `.claude/` |
+| Lifecycle root | Parent checked HEAD/status and reports clean; RL1a5 source `cf22411f79517c5eba9430b6435a5ac03360ba69` integrated with identical four hashes |
+| Parent verifier | Latest main: observed 758/758, 18 files, 202.28s, Node 26 serial; types/lint PASS, stable hashes; not rerun here |
+| Mirrors | Update existing FULL `7536` and `7504`, expected project `lifelines`; no new mirrors or truncation |
+| Resume | Pause7581 requested save/stop; no passive commit occurred. User now resumed; prior pause is historical |
+| Scope | Only both task books and their existing mirrors; no source/tests/Git mutations/native operations/children/network/install/live DB |
+
+## Historical checkpoint lead and authority — superseded, retained verbatim
+
 RL1a1–RL1a4 are DONE as bounded units only. RL1a5 is IN PROGRESS under the current parent source authorization at isolated HEAD `18024e76b123923203070ffe6d8a22174fe4a3d0`; RL1 remains IN PROGRESS. Source/tests are now FROZEN; this transaction is documentation-only. Native review, exact-unit commit from `18024e76`, and integration remain pending. BASELINE: 44/44 in 18.20s before source writes. Parent owns review/integration; no DONE authority. Full annual lifecycle, NEW version/continuation, and release are NOT done. Main, `7504`, and `.claude/perf` remain untouched.
 
-## Authority and current boundary
+## Historical authority and boundary
 
 | Boundary | Recorded state |
 |---|---|
@@ -141,11 +156,13 @@ Forecast: 500–1000 authored lines including moves and tests; a review heuristi
 - `simulateYears` clones: do not reuse it as a whole-physical-phase callback. Social work performs actual Mind relationship, dream/stress, birth-parent grief, and NPC no-op writes even without events. It is not Mind-free physics; an event log alone is not replay proof. No historical Mind backfill.
 - A future NEW tuple/runtime must close creation, class, literacy, parents, away state, operations, Mind, identity, events, and adjudication authority, and replay complete owned state. Current E1 is rules-only, human-reject, wire-unchanged; no implicit migration.
 
-## Still pending — not release-ready
+## Historical unit-3 pending boundary — not release-ready
 
 RL1a4 closes ordered application and causal birth/maternal cleanup, not D1/finalization, reusable annual execution, NEW E-version/fact journal, authentic mortality runtime, RI1/RA1, or production readiness. Preserve `.claude/perf`; no push, PR, deployment, installs, network/provider work, live database access, or destructive actions.
 
-## Documentation-only transaction and evidence
+## Historical documentation-only transaction and evidence
+
+The one-book restrictions below applied to the prior transaction; the current checkpoint permits both named books and existing mirrors only.
 
 Allowed edit surface: `odd/tasks/narrative-lifecycle-kernel.md` only. No source writes, parent-root writes, Git mutation, native review, source tests, provider/network/install actions, or children are permitted. Update the FULL existing mirror `7536` for expected project `lifelines`, topic `odd/narrative-lifecycle-kernel/tasks`, and read it back fully; keep `7504` untouched.
 
@@ -230,7 +247,7 @@ Parent continuation started this bounded source transaction at isolated HEAD `3e
 3. Preserve NPC no-event Mind writes and protagonist reflection, including Y1 decline and A5 help. Do not infer state from events alone or backfill Mind.
 4. Preserve forced/fallback selection gating and captured protagonist versus D1 option references. D1 vignette, snapshot, yield, and death-stop extraction are a separate future unit.
 
-### Mapped test-first and delivery gates — current evidence below
+### Historical RL1a4 mapped test-first and delivery gates — closure below
 
 - [x] Capture existing focused BASELINE 32 before writes; preserve all original eight pins, invalid smith fixture, raw `undefined`, `-0`, and aliases unchanged.
 - [x] Add missing active-API/delegation behavior coverage and observe intended RED, then move actual bodies and observe focused GREEN.
@@ -240,7 +257,9 @@ Parent continuation started this bounded source transaction at isolated HEAD `3e
 
 ## Next step
 
-RL1a5 is IN PROGRESS under current parent authorization. Parent owns `7504`, review, integration, and delivery. Historical pending statements below precede RL1a4 closure; all release constraints remain.
+RL1b1 trusted rules-year source is mapped PENDING; parent owns source launches, review, commits, integration and delivery. The exact source boundary remains frozen. See the closure and narrowly mapped next unit below.
+
+Historical next-step statement (superseded): RL1a5 is IN PROGRESS under current parent authorization. Parent owns `7504`, review, integration, and delivery. Historical pending statements below precede RL1a4 closure; all release constraints remain.
 
 ### RL1a4 source progress — isolated transaction
 
@@ -265,7 +284,7 @@ Independent evidence: first Node 24 full run 330/332, existing clergy timeout 52
 
 Source `216d542419acc0472e0d65bf40905d6e538b3eeb` → parent `b14a277304399aab05632a9045f68c49269b6365`, identical four hashes. Native exact `3e1ffbf` → `216d542`: 1928 authored lines/all five paths (1887 source + 41 doc). `review-f1db6fc967d9167f`: APPROVED, ACK BURNED; target `3a9597fa26a01b4fe3c2e71a1856edb111c60660f2e0bf6ba1a43b5a28b8bc34`; consumed `b05af3f2e29b3cffd7381d4a8e0b485910ef42b4c5db0dec9b6e566622b36695`. Receipts NEVER STATUS authority/reusable approval. Main POST-integration: 745/745, 18 files, 208.36s, Node 26 serial; types/lint PASS, six hashes stable, only `.claude` dirty. Prior timeout evidence/cause UNKNOWN remains unchanged.
 
-### RL1a5 — IN PROGRESS
+### Historical RL1a5 source progress — superseded by DONE closure below
 
 Source/tests FROZEN, NOT DONE; native exact base `18024e76` → new unit commit/integration pending. Pre-write full book/mirror matched: 276 lines/32173 bytes, SHA-256 `f7b893507bd2eaa27a214812710933c5a39c281f824b5890e0cd854c8319eda1`. RED: 2 missing API/capture failures + 44 PASS, 21.23s; GREEN 46/46, 16.85s → 57/57, 16.91s. BEFORE test strengthening: FULL five-file Node 26 345/345, 168.19s; independent Node 24 345/345, 156.22s; types/lint PASS, full four-path semantic diff: no production defect. New fixture assumptions (intensity/events/slot), readonly literals and prefer-const corrected; discarded capture-spy case failed 1/57 before correction. No spy remains except existing `runLegacyYear`, restored in finally. Weaker newcomer self-identity assertion RESTORED: separate pre-question captured Mind attest 768 → after build 771 → after annual 785. Test-only 7+/2−; production unchanged. AFTER strengthening: Node 26 focused 57/57, 16.54s; independent Node 24 focused 57/57, 17.78s; types/lint PASS. Full suites NOT rerun on latest test. Eight pins/smith unchanged. Source 952 authored: simulate 17/268, kernel 220/0, mechanics 22/0, test 307/118; total 566+/386−. No policy/replay/production-readiness claim.
 
@@ -285,3 +304,20 @@ Finalization + borrowed `runLegacyYear` async API owns all phases, same four dom
 - `runLegacyYear`: decay/capture→partition→shocks→biology→leyrwite→await batch→application→D1→capture; one owned Record, same Mind/counters. Preserve per-year mortality/town closure, captured versus LIVE protagonist options, debug cohort config startYear override/fromYear anchor, D1 override/prefetch versus fallback engine accounting/parent credit, protagonist Mind-relationship effect, raw slots.
 - Public `simulateYears` retains initial clone/defaults, initial startYear−1, inclusive horizon loop, snapshot store/yield BEFORE live-death stop, elapsed report. Cancellation: `drainSimulation` beforeNext/progress only; no new midyear cancel.
 - Test-first: 44 baseline → new API RED → GREEN; eight pins unchanged. Prove current birth-parent/grief and D1 before capture, detached later mutation, birth/death/horizon/noProtag/resumed/progress/cancel. Earlier ordered application cleanup/counters/slots remain intact.
+
+### Immutable RL1a5 closure — DONE bounded unit (parent-provided)
+
+- Source `cf22411f79517c5eba9430b6435a5ac03360ba69` → main `4309dcc3972de967c861890c3d2f090453514bc0`, identical four frozen SHA-256 values in the current-source table above.
+- Native exact base `18024e76b123923203070ffe6d8a22174fe4a3d0` → `cf22411f79517c5eba9430b6435a5ac03360ba69`; `review-8f6614aec068baa4` APPROVED, ACK BURNED. Target `74c95d5e372f5adf0e9fe1fa7811ea0dd5cc2866ecef706288e76b24e1d2a1f4`; consumed `c5b6a78b31f4256c889bc827d186b1924020e053dbfc578306f31f1d94594fc5`; candidate `77c4314a945b6361ba7e2d66993fb59a2c895a6d`. Immutable provenance only, NEVER standalone STATUS authority or reusable approval.
+- Full five-file 345/345 Node 24/26 runs above preceded test strengthening. Latest focused 57/57 on each Node version and subsequent main 758/758, 18 files, 202.28s, Node 26 serial, types/lint PASS and stable hashes are separate observations. No source tests were run here; prior failures and unknown causes remain preserved.
+- RL1a1–5 DONE means reusable legacy annual kernel only. NEW E journal/replay/version, genuine unforced death continuation, full RG1, RI1 and RA1 remain pending/incomplete. Existing E1 replay/wire/human rejection unchanged; favor ledgers remain separate from `Person.mind`.
+
+### RL1b1 — trusted rules-year source (PENDING)
+
+Prospective source surface: `src/domain/simulate.ts` exports factory `createLegacyRunContext`; new `src/domain/e-year-source.ts` and `src/domain/e-year-source.test.ts` own/prove `native-rules/person-year-batched/v1`. Fresh private `new RuleDecisionMaker()` from existing `src/adapters/decision/rule-decision-maker.ts` uses `decideYear`; that adapter is a reference, not an authorized edit here. No caller callbacks, overrides or core choices; no server/environment factory. Separate favor ledgers, not `Person.mind`; no new product-policy choice, historical Mind backfill or implicit E1 migration.
+
+Delegated implementation route is triggered by multi-file source/test writes. Advisory scope: approximately 300–600 source-authored lines, NOT a hard cap; preserve readable coverage. Parent owns source launch/test-first contract, independent verification, native review, commits and integration. This documentation writer launches nothing.
+
+### Resumed checkpoint — passive verification contract
+
+Only `odd/tasks/narrative-lifecycle-kernel.md`, `odd/tasks/narrative-release-execution.md` and FULL existing mirrors7536/7504 are synchronized. Preserve all historical records above, including earlier transaction restrictions as history. Required: full books/mirrors readback and exact equality; `git diff --check`; line/byte counts and SHA-256 for both books; four frozen source hashes; unchanged HEAD/status. No source tests, native actions, Git mutations or source writes. Pause7581 produced no passive commit; “seguimos” resumes the existing authorization, not a new release-ready gate.
