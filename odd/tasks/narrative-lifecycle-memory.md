@@ -1,6 +1,6 @@
 # Lifecycle memory — measured, lossless performance units
 
-CURRENT: LP1a IN PROGRESS (source independently verified; native APPROVED, exact ACK BURNED; local commit/integration PENDING); LP1b/LP1c/LP1d PENDING. Integrated base/main `0de392699d2c9e9e54e22058e3049d4561705648` unchanged; isolated `feat/lifecycle-memory` has the same HEAD, NOT LC1 WIP `9b7af0b`. No commits or DONE; no explicit human local-commit permission is known. Continue-until-release does not authorize delivery; LC1 remains BLOCKED/pending. Next human choice: allow local reviewable commits within the release feature branch (no push/PR/deploy/merge), or no commits (retain source verification). FULL mirror: observation7658, `odd/narrative-lifecycle-memory/tasks`, project `lifelines`; parent owns later propagation to MAIN.
+CURRENT: LP1a DONE bounded; LP1b IN PROGRESS (mapped encoder-only unit; no source writes yet); LP1c conditional / LP1d PENDING. Main `0d3858dc0829c81fe8d3030e5ebd625c12232720` integrates LP1a source `c230539` after passive bookkeeping `f9491da`; four source hashes match approved bytes. Human7678 explicitly permits local verified release commits/integration branches ONLY: no push, PR, main/default merge or deploy. LC1 remains BLOCKED/pending; isolated clean WIP `9b7af0b` is NOT integrated. Parent prepares a new LP1b worktree after durable book tracking. FULL mirror: observation7658, `odd/narrative-lifecycle-memory/tasks`, project `lifelines`. Historical checkpoints below are preserved, superseded by CURRENT and the transition append.
 
 ## Decision and proof boundary
 
@@ -14,8 +14,8 @@ Native approvals remain bounded LR1a/LR1b/LR2a/LR2b only. FE1 is explicitly unre
 
 | Unit | State | Deliverable / gate |
 |---|---|---|
-| LP1a | IN PROGRESS | Immutable annual-journal prefix reuse independently verified; native APPROVED / exact ACK BURNED. Local commit permission and integration pending; no DONE. |
-| LP1b | PENDING | After measurement, map redundant canonical/capture/replay transient-copy improvements. No current path permission. |
+| LP1a | DONE bounded | Immutable annual-journal prefix reuse verified, native APPROVED / exact ACK BURNED, locally integrated at main0d3858d. Capacity/LC1 remain open. |
+| LP1b | IN PROGRESS, mapped | Encoder-only private canonical allocation reduction; exact two genesis source/test surfaces below. No source writes yet. |
 | LP1c | PENDING, conditional | If needed, map explicitly versioned graph-sharing wire preserving full semantic replay. Never silently change old capsule bytes. No unmapped implementation authorized. |
 | LP1d | PENDING | Independently measure capacity: total high-water RSS and baseline delta for fixed workload against provisional target. Connect evidence to LC1 long-coverage gate; never automatically close LC1. |
 
@@ -70,4 +70,29 @@ Parent owns final validation, native ASSESS/INSPECT, work-unit review, terminal 
 Independent CURRENT, parent-reported: BOTH N26/N24 552/11 PASS (92.36/90.92s); fresh memory BOTH PASS; types/lint/diff-check PASS; four source hashes stable before/after. RSS bytes baseline/max/delta, elapsed ms: N26 347320320/2461437952/2114117632, 51072.791; N24 333357056/2088644608/1755287552, 48472.570. Both 1GB-target false; delta not exclusive memory. Full cold canon/aliases/order/freeze PASS: genuine4 years, death1501, wire56561271, same recorded pins.
 
 Native `review-3ca656937db22083`: medium400 lines/6 paths APPROVED; exact ACK BURNED. Target `b12fbe05455a489b9819a7ba202aade5a466090829adae1ad8db9b800aabe6db`; consumed `6418066e554cf5506fd66890f4fa370de53a1a8771548ccb3ebe4e4257d29417`. NEVER STATUS again. Source322: runtime24+/11-, test97, memory173, design17; native400 includes bookkeeping. Approval freezes original trees/400 scope, not later book bytes. Passive post-ACK bookkeeping, not new source or invented writer result. No commits/integration; isolated HEAD unchanged. LP1a IN PROGRESS, LP1b/c/d pending; human commit choice required.
+
+## LP1a closure / LP1b mapped encoder unit
+
+Parent-supplied transition, not rerun here: human7678 permits local verified release commits/integration branches only. LP1a source `c230539` covers six feature-branch paths; parent integration `0d3858dc0829c81fe8d3030e5ebd625c12232720` cherry-picks the four source/design paths after passive `f9491da`. Independent BOTH552/11, fresh memory, types/lint PASS remain the evidence above. Main spot30/types/lint/diff-check PASS; four source hashes stable and HEAD unchanged, only unrelated `.claude/`. LP1a DONE bounded. Native review/target/consumed receipt above is exhausted: NEVER STATUS again and no next approval inferred.
+
+Capacity target1GB remains unmet (fresh totals about 2.09–2.46GB for four genuine years). LC1 BLOCKED pending genuine ≥60-year proof; no automatic closure, forced death or survivor search. LP1c/d remain pending as mapped.
+
+### LP1b contract and scope
+
+Only future source surfaces: `src/domain/e-lifecycle-genesis.ts` and `src/domain/e-lifecycle-genesis.test.ts`. Replace private canonical recursive map/join with append traversal and a private bounded coalescing chunk writer, joining once. Keep public `canonicalLifecycleData` string, digests, tagged grammar and old wire EXACT. Preserve the WHOLE descriptor guard BEFORE traversal: zero hooks; hostile own keys; UTF16/JSON escaping; own undefined versus absence; signed zero; ordered arrays; sorted records; finite-number grammar.
+
+No frame clone, replay, capsule or controller edits; no new design-document permission (two source files, source comments and this taskbook suffice). Existing private canonical also serves digests. Remove child arrays/strings, NOT final two comparison strings or wire JSON escaping. Avoid token-per-array-item explosion. Advisory growth: ≤200 added test lines / about100 production lines, not a cap or reason to minify. Pause parent if a third source surface or huge growth is needed.
+
+### LP1b evidence plan — not executed
+
+Meaningful functional RED is unavailable for an unchanged-output allocation optimization. Record that exception explicitly: do not fake a mocked-map or heap-threshold RED. Before production, capture literal byte-fixture baseline GREEN and all canonical/wire pins; afterward require exact byte equivalence, full functional/forgery checks and fresh resource measurements. No LP1b baseline, implementation or pass is claimed yet.
+
+Foreground serial, timeout600; existing timeouts unchanged. Use N26/N24 prefixes above:
+
+1. Before production, focused N26 `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts --maxWorkers=1`; retain literal canonical/wire fixtures and forgery checks.
+2. CURRENT LP1a full baseline on BOTH nodes: the exact eleven-file final suite already listed above, `--maxWorkers=1`; fixed v1/4 memory baseline separately in fresh processes on BOTH: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-memory.test.ts --maxWorkers=1 --pool=threads`.
+3. Candidate: focused genesis first, then SAME eleven-file final suite on BOTH and SAME fresh memory workload on BOTH. Compare baseline/candidate maxRSS, baseline delta, phase heap/elapsed/wire and full cold canon/aliases/traversal without invented thresholds.
+4. N26 `node_modules/typescript/bin/tsc --noEmit --incremental false`; N26 `node_modules/eslint/bin/eslint.js src/domain/e-lifecycle-genesis.ts src/domain/e-lifecycle-genesis.test.ts`; `git diff --check`; exact two-source hashes before/after validation.
+
+Parent owns worktree, independent verification, native review and permitted terminal Git. This update is docs/mirrors only: no commands, source/tests, native calls, children or network delivery. See [runtime CURRENT and LC1 reference](narrative-lifecycle-runtime.md).
 
