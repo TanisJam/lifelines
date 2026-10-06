@@ -1,6 +1,6 @@
 # Lifecycle runtime — reviewable ODD units
 
-CURRENT: LR1a, LR1b, LR2a and LR2b DONE bounded; LR2b source/main `0adc8447bd474dd71cf3fb7e9ab7f2f76b74cb13`, native APPROVED/ACK BURNED. LC1 IN PROGRESS (mapped controller; writer launch pending). FE1 remains DONE bounded and explicitly unreviewed (Engram7625). Not release-ready; LIFE proof, RI1 and RA1 remain pending. Historical mapping statements below are superseded by the closure/scope append.
+CURRENT: LR1a, LR1b, LR2a and LR2b DONE bounded; main HEAD `70dca9a` (parent-reported). LC1 IN PROGRESS — BLOCKED: isolated partial implementation; representative LIFE coverage FAIL, long coverage/capacity pending. No LC1 integration/review/commit. FE1 remains DONE bounded and explicitly unreviewed (Engram7625). Not release-ready; LIFE proof, RI1 and RA1 remain pending. Continue-until-release remains active; capacity decision blocks dependent work, not the whole feature. Historical mapping statements below are superseded by the closure/scope append.
 
 ## Intent and recovery
 
@@ -15,7 +15,7 @@ Locator `odd/tasks/narrative-lifecycle-runtime.md`; FULL Engram7604 topic `odd/n
 - [x] **LR1b — DONE (bounded annual execution/frontier):** source/main `dfa38b6`; three paths, 714 authored lines (154 production/522 tests/38 docs); dual-node 540/13 PASS, types/lint PASS, native APPROVED/ACK BURNED. Not full replay or LIFE-scale proof.
 - [x] **LR2a — DONE (bounded full replay):** source/main `fff9123`; five paths, 517 authored lines (516+/1−, including 28 design-doc lines). Both nodes 514/11 PASS, types/lint PASS; native APPROVED/ACK BURNED. No LIFE-scale performance proof.
 - [x] **LR2b — DONE (bounded lossless capsule):** source/main `0adc844`; three paths, 464 authored lines (138 production/296 tests/30 docs); dual-node 597/12 PASS, types/lint PASS, native APPROVED/ACK BURNED. No LIFE-scale proof.
-- [ ] **LC1 — IN PROGRESS (mapped; writer launch pending):** new `src/domain/e-lifecycle-run.ts` and `src/domain/e-lifecycle-run.test.ts`; bounded design-doc append. Certified start/resume, genuine death/budget/abort and LIFE proofs; advisory550–900, not cap. Controller/checks below.
+- [ ] **LC1 — IN PROGRESS / BLOCKED (isolated partial; long coverage/capacity pending):** three isolated paths modified; representative LIFE coverage FAIL. Certified start/resume, genuine death/budget/abort remain the contract; fast checks are not long-LIFE proof. Next: human deployment RAM budget, then map bounded journal/canonical-wire performance units before writer. No new source authorization, release cut or DONE claim.
 
 ## FE1 scope and invariants
 
@@ -136,3 +136,13 @@ Native `review-226708585e7e6fcd` APPROVED/ACK BURNED target `a566dd22b35978fa63d
 Checks: API RED→GREEN; start/resume/zero/budget/beyond-horizon genuine death/inflight and prior abort/forged resume/errors/caller fidelity. LIFEsmoke: `baseline-1327-0`, start/end1327, founders6 Alice/f, all actors grain2/effort3/need1, max4; unforced death expected by1330, no exact year; serialized cold replay/alias/canon. Also normal E1 default62 founders, real protagonist age0, ~60+ years before UI release; log elapsed/RSS/heap/wire bytes. No seed search/forced death/mocks/heap flags/timeout override. Memory risk: partial; journal optimization needs mapping. Cancellation cannot bound retention.
 
 Existing nodes, foreground timeout600: focused run test, `-t LIFEsmoke`; final BOTH `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-run.test.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-runtime.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts --maxWorkers=1`. N26 types/lint two new paths/diffcheck as above. RI1: human version/replay/storage choice, no product choice/MVP cut.
+
+## LC1 partial — coverage FAIL / capacity decision pending
+
+Inherited only; no reruns. Isolated lifecycle-run3 HEAD70dca9a32c979a643dc58dd969ce864822dce9f0; uncommitted3paths593=90prod/414tests/89docs. Baseline106PASS→missing-moduleRED→fast32GREEN, types/lintPASS. baseline1327/default-origin first-year deaths were short, not long proof.
+
+Predeclared lifecycle-representative-v1/0..4: once each, E1default62founders1498/1558, Alice/f age0, resources2/3/1, max128. All5 genuine complete; years3/2/3/2/4, frontiers1500/1499/1500/1499/1501; cold canon/alias/traversalPASS. Aggregate LIFE coverageFAIL117.979s: no ≥60-year member, no death beyond1558. No seed search/forcing/age override/OOM/timeout/string limit. Wires31723585/17407793/30759790/15953474/56561271 bytes. Largest sampled process RSS3092930560/heap-used2604526176 bytes: NOT peaks or exclusive per-member measurements. Capacity risk needs human deployment RAM budget; invent no limit/cut.
+
+Fast32PASS4.16s; explicit representative1skipped. Dual-node seven-file gates SKIPPED after failed gate. No LC1 native commit/review/integration; main source70dca9a unchanged; no RA1 release. Next map bounded journal/canon-wire performance units before writer; preserve semantic full-execution certification, old-version replay, no forced death. Continue-until-release active, not blanket pause.
+
+Isolated SHA256 prod0f2d53b6e16c913a14f716b3747cc110a49e9c0305d179841425e80628a6f65d; test0a4c0e5a483c29cf96b3a82094630f574139ca9de3698a7ccf158054131db9ac; docs eae2f3c45482caeb21492255c4657552e1020d1a42d7399656abdaa2300442b5.
