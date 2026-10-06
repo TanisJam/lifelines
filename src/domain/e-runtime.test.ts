@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { createAnnualRuntimeCapsule, serializeAnnualRuntimeCapsule } from "./e-capsule";
 import { ANNUAL_RUNTIME_VERSION, createAnnualRuntime, replayAnnualRuntime, type AnnualPlan, type Newcomer, type ResponseAuthority, type RuntimeOutput } from "./e-runtime";
 import { initializeWorld } from "./world-initialization";
+import * as favorExecutor from "./e-favor-executor";
 
 type Mutable<T> = T extends object ? { -readonly [K in keyof T]: Mutable<T[K]> } : T;
 
@@ -38,6 +41,88 @@ function expectExactData(actual: unknown, expected: unknown) {
     for (const key of Reflect.ownKeys(expected)) expectExactData(Reflect.get(actual as object, key), Reflect.get(expected, key));
   } else expect(Object.is(actual, expected)).toBe(true);
 }
+
+// Lossless, order-sensitive canon: unlike JSON, retains own undefined and -0.
+function canon(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (typeof value === "number" && Object.is(value, -0)) return "-0";
+  if (Array.isArray(value)) return `[${value.map(canon).join(",")}]`;
+  if (value !== null && typeof value === "object") return `{${Object.keys(value).map(key => `${JSON.stringify(key)}:${canon(Reflect.get(value, key))}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+function digest(value: string) { return createHash("sha256").update(value).digest("hex"); }
+
+describe("pre-extraction complete canon and wire", () => {
+  it.each([false, true])("pins actual explicit/composed execution (composed=%s)", composed => {
+    const { runtime, creditor, debtor } = setup();
+    const person = { ...child(), id: "constructor" };
+    const physical: AnnualPlan["physical"] = [
+      { id: "arrival", kind: "create", person, causes: [] },
+      { id: "leave", kind: "residence", actor: debtor, status: "away", causes: ["arrival"] },
+    ];
+    if (composed) {
+      runtime.advanceWithAnnualPolicy({ year: 1327, physical });
+      runtime.advanceWithAnnualPolicy({ year: 1328, physical: [{ id: "return", kind: "residence", actor: debtor, status: "home", causes: ["leave"] }] });
+    } else {
+      runtime.advance({ ...grant(), physical, resources: [{ id: "allocation", kind: "allocate", actor: person.id, allocation: { grain: 0, effort: 1, need: 1 }, causes: ["arrival"] }], grants: [
+        { id: "blocked", creditor, debtor, causes: ["leave"] },
+        { id: "grant", creditor, debtor: person.id, causes: ["allocation"] },
+      ] });
+      runtime.advance({ ...quiet(1328), requests: [{ id: "request", obligation: "grant/help", noise: 0 }] });
+    }
+    const output = runtime.final();
+    const pins = [output.state, output.journal.map(r => r.entries), output.journal.map(r => r.plan)].map(v => digest(canon(v)));
+    pins.push(digest(serializeAnnualRuntimeCapsule(createAnnualRuntimeCapsule(output))));
+    expect(pins).toEqual(composed ? [
+      "becd715e2000ecb29e8a16c750a2acf869d8f530eb24ba6ca41c9403636eb739",
+      "72fce26358e34f5553999c5e6b30defe4dd00c44811ed3e2e051e07064122fe7",
+      "c88da3518f026aa6974a69a432aef29679a45d5a817c3c6fe24ea8e34bcfda03",
+      "42ae5f1c1f10e23c95653d805889aa81e474794274a72c8d3df20dc2abf13690",
+    ] : [
+      "9c96e81a4d64a2213e58a997b8245bde74058fb6d51900bc8fe28552d4bf0093",
+      "882a657ded54bd4c23e14be414076ea4e5837728f1bfc1d754401c14394233b9",
+      "5fbd2580f958487b2e34dc689e0e97d318b5de12a3bc555985486ebf94d9487d",
+      "1d7b6d1758a3d0bbd16f3ed502b1365988712903dcdc1520678d59a874a6a9da",
+    ]);
+    expectExactData(replayAnnualRuntime(output), output);
+  });
+});
+
+describe("live favor delegation", () => {
+  it.each([false, true])("calls the real executor for every phase (composed=%s)", composed => {
+    const realFactory = favorExecutor.createFavorExecutor;
+    const executors: ReturnType<typeof realFactory>[] = [];
+    const factory = vi.spyOn(favorExecutor, "createFavorExecutor").mockImplementation((...args) => {
+      const executor = realFactory(...args);
+      // Call-through spies: no fabricated state, outcomes or effects.
+      vi.spyOn(executor, "prior");
+      vi.spyOn(executor, "append");
+      vi.spyOn(executor, "executeResource");
+      vi.spyOn(executor, "executeGrant");
+      vi.spyOn(executor, "executeRequest");
+      executors.push(executor);
+      return executor;
+    });
+    try {
+      const { runtime, debtor } = setup();
+      const physical: AnnualPlan["physical"] = [{ id: "arrival", kind: "create", person: child(), causes: [] }];
+      if (composed) {
+        runtime.advanceWithAnnualPolicy({ year: 1327, physical });
+        runtime.advanceWithAnnualPolicy({ year: 1328, physical: [] });
+      } else {
+        runtime.advance({ ...grant(), physical, resources: [{ id: "reset", kind: "resource-change", actor: debtor, resource: "effort", amount: 0, causes: ["arrival"] }] });
+        runtime.advance(request());
+      }
+      expect(factory).toHaveBeenCalledTimes(2);
+      expect(executors[0].prior).toHaveBeenCalledWith("arrival", []);
+      expect(executors[0].append).toHaveBeenCalledWith(expect.objectContaining({ phase: "physical" }));
+      expect(executors[0].executeResource).toHaveBeenCalled();
+      expect(executors[0].executeGrant).toHaveBeenCalled();
+      expect(executors[1].executeRequest).toHaveBeenCalled();
+      expectExactData(replayAnnualRuntime(runtime.final()), runtime.final());
+    } finally { vi.restoreAllMocks(); }
+  });
+});
 
 describe("E2a explicit annual runtime", () => {
   it("owns a two-year conserved favor, resource consumption, debt and supplemental tie", () => {
@@ -148,6 +233,27 @@ describe("E2a explicit annual runtime", () => {
     const output = runtime.advance(request());
     expect(output.state.obligations[0].status).toBe("fulfilled");
     expect(lastEntries(output).map(e => e.id)).toEqual(["request", "request/response"]);
+  });
+
+  it("discards physical, resource, grant and request history together on late authority failure", () => {
+    let fail = true;
+    const { runtime, debtor, creditor, other } = setup(() => {
+      if (fail) throw new Error("late failure");
+      return { source: "human", selected: "help" };
+    });
+    runtime.advance(grant());
+    const before = runtime.final();
+    const plan: AnnualPlan = { ...request(),
+      physical: [{ id: "arrival", kind: "create", person: child(), causes: ["grant"] }],
+      resources: [{ id: "refill", kind: "resource-change", actor: debtor, resource: "effort", amount: 1, causes: ["arrival"] }],
+      grants: [{ id: "additional", creditor, debtor: other, causes: ["refill"] }],
+    };
+    expect(() => runtime.advance(plan)).toThrow(/late failure/);
+    expectExactData(runtime.final(), before);
+    fail = false;
+    const output = runtime.advance(plan);
+    expect(lastEntries(output).map(e => e.id)).toEqual(["arrival", "refill", "additional", "request", "request/response"]);
+    expect(output.state.obligations.map(o => o.status)).toEqual(["fulfilled", "open"]);
   });
 
   it("recomputes after each grant and records caller order against current balances", () => {

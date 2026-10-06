@@ -3,9 +3,9 @@ import { planAnnualFavorDraft, stableAnnualIdOrder } from "./e-annual-policy";
 import { planAnnualHelpSlot } from "./e-annual-composition";
 import { initializeWorld, copyInitializationData } from "./world-initialization";
 import type { WorldOrigin } from "./world-origin";
-import { applyGrantPhysics, applyHelpResponsePhysics, canonicalHelpResponseEffects, currentHelpContext, inspectHelpOpportunities, requireFavorData, validateHelpRequestPhysics, type CurrentHelpView, type HelpEvidence, type HelpFavorEffect, type HelpHistoryEntry } from "./effects";
+import { inspectHelpOpportunities, requireFavorData, type CurrentHelpView, type HelpEvidence, type HelpHistoryEntry } from "./effects";
+import { createFavorExecutor } from "./e-favor-executor";
 import { ensureLifeState, applyLifeTransition } from "./life-state";
-import { selectFavorResponse } from "./favor-policy";
 import { requireFields, requireId, requireInteger } from "./obligations";
 import { FACETS, VALUES, DREAM_GOALS } from "./mind";
 import { JOB_POOL, TRAIT_POOL, type Person, type Event } from "./types";
@@ -223,30 +223,8 @@ export function createAnnualRuntime(initialization: unknown, resources: unknown,
       if (year < world.config.startYear || year > world.config.endYear || (frontier !== null && year <= frontier)) throw new Error("Invalid year frontier");
       const next = structuredClone(state);
       const entries: RuntimeEntry[] = [];
-      function known(actor: string): Person {
-        if (!Object.hasOwn(next.people, actor)) throw new Error("Unknown actor");
-        return next.people[actor];
-      }
-      function living(actor: string): Person {
-        const person = known(actor);
-        if (person.birthYear > year || (person.deathYear !== undefined && person.deathYear <= year)) throw new Error("Nonliving actor");
-        return person;
-      }
-      function prior(id: string, refs: string[]) {
-        if (next.legacyEvents.some(e => e.id === id) || next.events.some(e => e.id === id)) throw new Error("Duplicate operation identity");
-        for (const ref of refs) {
-          if (!next.events.some(e => e.id === ref && e.year <= year) && !next.legacyEvents.some(e => e.id === ref && e.year <= year)) throw new Error("Unknown or forward cause");
-        }
-      }
-      function append(entry: Omit<RuntimeEntry, "year" | "position">, extra: Partial<HelpHistoryEntry> = {}) {
-        const full = { ...entry, year, position: next.events.length };
-        entries.push(full);
-        next.events.push({ id: full.id, kind: full.kind, year, position: full.position, actors: full.actors, ...extra });
-      }
-      function evidence(actors: string[]) {
-        const balances = (ledger: Record<string, number>) => actors.map(a => Object.hasOwn(ledger, a) ? ledger[a] : undefined);
-        return structuredClone({ people: actors.map(known), grain: balances(next.grain), assistance: balances(next.assistance), need: balances(next.need), obligations: next.obligations, ties: next.ties, priorOperations: next.events.map(e => e.id), lifeEvents: next.legacyEvents.filter(e => e.year <= year && e.actors.some(a => actors.includes(a))) });
-      }
+      const favor = createFavorExecutor(next, year, entries, authority);
+      const { living, prior, append } = favor;
       plan.physical.forEach((op, declarationIndex) => {
         prior(op.id, op.causes);
         let actors: string[];
@@ -279,77 +257,8 @@ export function createAnnualRuntime(initialization: unknown, resources: unknown,
         plan.resources = allowances.resources;
         plan.grants = allowances.grants;
       }
-      plan.resources.forEach((op, declarationIndex) => {
-        prior(op.id, op.causes); living(op.actor);
-        const consumed = evidence([op.actor]);
-        if (op.kind === "allocate") {
-          if (Object.hasOwn(next.grain, op.actor)) throw new Error("Already allocated");
-          for (const [key, value] of [["grain", op.allocation.grain], ["assistance", op.allocation.effort], ["need", op.allocation.need]] as const) Object.defineProperty(next[key], op.actor, { value, writable: true, enumerable: true, configurable: true });
-        } else {
-          const key = op.resource === "effort" ? "assistance" : op.resource;
-          if (!Object.hasOwn(next[key], op.actor)) throw new Error("Missing allocation");
-          const balance = next[key][op.actor] + op.amount;
-          integer(balance);
-          next[key] = { ...next[key], [op.actor]: balance };
-        }
-        append({ id: op.id, kind: op.kind, phase: "resources", declarationIndex, actors: [op.actor], causes: op.causes, consumed, effects: [op], outcome: "committed" });
-      });
-      plan.grants.forEach((op, declarationIndex) => {
-        prior(op.id, op.causes);
-        const actors = [op.creditor, op.debtor]; actors.forEach(known);
-        const consumed = evidence(actors);
-        let reason: string | undefined;
-        for (const actor of actors) {
-          const person = known(actor);
-          if (person.birthYear > year) reason ??= "unborn";
-          else if (person.deathYear !== undefined && person.deathYear <= year) reason ??= "dead";
-          else if (person.away || ensureLifeState(person, next.legacyEvents).residence.status !== "home") reason ??= "absent";
-          else if (!Object.hasOwn(next.grain, actor)) reason ??= "missing-allocation";
-        }
-        if (!reason && next.grain[op.creditor] === 0) reason = "exhausted-grain";
-        if (!reason && next.grain[op.debtor] === Number.MAX_SAFE_INTEGER) reason = "grain-capacity";
-        if (reason) {
-          append({ id: op.id, kind: "grant-ineligible", phase: "grants", declarationIndex, actors, causes: op.causes, consumed, effects: [], outcome: "ineligible", reason }); return;
-        }
-        const effects: HelpFavorEffect[] = [
-          { kind: "grain", from: op.creditor, to: op.debtor, amount: 1 },
-          { kind: "obligation", id: `${op.id}/help`, creditor: op.creditor, debtor: op.debtor, origin: op.id, status: "open" },
-        ];
-        // All annual entries are admitted history; no fixed-registry C/D reducer is used.
-        const physicsCauses = op.causes.filter(c => next.events.some(e => e.id === c));
-        Object.assign(next, applyGrantPhysics(next, { id: op.id, year, position: next.events.length, actors, causes: physicsCauses, effects }));
-        append({ id: op.id, kind: "grain-grant", phase: "grants", declarationIndex, actors, causes: op.causes, consumed, effects, outcome: "committed" });
-      });
-      function executeRequest(op: RequestIntention, declarationIndex: number) {
-        prior(op.id, []); prior(`${op.id}/response`, []);
-        const obligation = next.obligations.find(o => o.id === op.obligation);
-        if (!obligation) throw new Error("Unknown obligation");
-        const actors = [obligation.creditor, obligation.debtor];
-        const consumed = evidence(actors);
-        const candidate = inspectHelpOpportunities(next, year).find(o => o.obligation === op.obligation)!;
-        if (candidate.reason !== null) {
-          append({ id: op.id, kind: "request-ineligible", phase: "help", declarationIndex, actors, causes: [obligation.origin], consumed, effects: [], outcome: "ineligible", reason: candidate.reason }); return;
-        }
-        const batch = { id: op.id, year, position: next.events.length, actors, causes: [obligation.origin], effects: [], obligation: op.obligation };
-        const context = validateHelpRequestPhysics(next, batch);
-        append({ id: op.id, kind: "help-request", phase: "help", declarationIndex, actors, causes: batch.causes, consumed: { current: consumed, evidence: context.evidence }, effects: [], outcome: "committed" }, { obligation: op.obligation });
-        const id = `${op.id}/response`;
-        const { evidence: policy } = currentHelpContext(next, op.obligation, year);
-        const responseConsumed = evidence(actors);
-        const baseline = selectFavorResponse(policy.factors, op.noise);
-        let selected = baseline;
-        let source: "rules" | "human" = "rules";
-        if (authority) {
-          const result = authority(detached({ id, year, actors, obligation: op.obligation, evidence: policy, baseline, noise: op.noise }));
-          requireFavorData(result); record(result); requireFields(result, ["source", "selected"]);
-          if (result.source !== "human" || (result.selected !== "help" && result.selected !== "refuse")) throw new Error("Invalid human authority result");
-          selected = result.selected; source = "human";
-        }
-        const effects = canonicalHelpResponseEffects({ ties: next.ties }, obligation, id, selected);
-        const response = { id, year, position: next.events.length, actors, causes: [obligation.origin, op.id], obligation: op.obligation, request: op.id, effects };
-        Object.assign(next, applyHelpResponsePhysics(next, response, selected));
-        append({ id, kind: "help-response", phase: "help", declarationIndex, actors, causes: response.causes, consumed: { current: responseConsumed, evidence: policy }, effects, outcome: "committed", authority: { source, selected, baseline, noise: op.noise } }, { obligation: op.obligation, request: op.id });
-      }
+      plan.resources.forEach(favor.executeResource);
+      plan.grants.forEach(favor.executeGrant);
       if (annualPolicy) {
         const creditors = [...new Set(inspectHelpOpportunities(next, year)
           .filter(candidate => candidate.reason === null).map(candidate => candidate.creditor))].sort(stableAnnualIdOrder);
@@ -358,10 +267,10 @@ export function createAnnualRuntime(initialization: unknown, resources: unknown,
             const request = planAnnualHelpSlot(next, world.config.seed, year, creditor, slot);
             if (!request) continue;
             plan.requests.push(request);
-            executeRequest(request, plan.requests.length - 1);
+            favor.executeRequest(request, plan.requests.length - 1);
           }
         }
-      } else plan.requests.forEach(executeRequest);
+      } else plan.requests.forEach(favor.executeRequest);
       // No owned publication occurs until all operations and authority results pass.
       const nextJournal = [...journal, { plan, entries }];
       const output = detached({ version: ANNUAL_RUNTIME_VERSION, origin, genesis, frontier: year, state: next, journal: nextJournal });
