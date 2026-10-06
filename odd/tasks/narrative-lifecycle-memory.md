@@ -1,6 +1,6 @@
 # Lifecycle memory — measured, lossless performance units
 
-CURRENT: LP1a DONE bounded; LP1b IN PROGRESS (mapped encoder-only unit; no source writes yet); LP1c conditional / LP1d PENDING. Main `0d3858dc0829c81fe8d3030e5ebd625c12232720` integrates LP1a source `c230539` after passive bookkeeping `f9491da`; four source hashes match approved bytes. Human7678 explicitly permits local verified release commits/integration branches ONLY: no push, PR, main/default merge or deploy. LC1 remains BLOCKED/pending; isolated clean WIP `9b7af0b` is NOT integrated. Parent prepares a new LP1b worktree after durable book tracking. FULL mirror: observation7658, `odd/narrative-lifecycle-memory/tasks`, project `lifelines`. Historical checkpoints below are preserved, superseded by CURRENT and the transition append.
+CURRENT: LP1a DONE bounded; LP1b IN PROGRESS (new mapped full-tree pair comparison, NOT the rejected chunk encoder); LP1c conditional / LP1d PENDING. MAIN HEAD `c3abaca`; scoped owned production restored to that HEAD, unchanged; new canonical tests62 retained in the child. Failed encoder attempt discarded, not integrated or committed. Human7678 permits local verified release commits/integration branches ONLY: no push, PR, main/default merge or deploy. LC1 remains BLOCKED/pending; isolated LC1 WIP `9b7af0b` is NOT integrated. FULL mirror target: existing observation7658, `odd/narrative-lifecycle-memory/tasks`, project `lifelines`. No observation7604 mirror update needed: same LP1b-active pointer. Parent must copy this complete MAIN book to the isolated tree before writer/source candidate work. Historical checkpoints below are superseded by CURRENT and the latest LP1b contract.
 
 ## Decision and proof boundary
 
@@ -15,19 +15,19 @@ Native approvals remain bounded LR1a/LR1b/LR2a/LR2b only. FE1 is explicitly unre
 | Unit | State | Deliverable / gate |
 |---|---|---|
 | LP1a | DONE bounded | Immutable annual-journal prefix reuse verified, native APPROVED / exact ACK BURNED, locally integrated at main0d3858d. Capacity/LC1 remain open. |
-| LP1b | IN PROGRESS, mapped | Encoder-only private canonical allocation reduction; exact two genesis source/test surfaces below. No source writes yet. |
+| LP1b | IN PROGRESS, newly mapped | Full-tree canonical pair equality; exact four genesis/replay source/test surfaces below. Chunk encoder rejected; production restored, tests62 retained. |
 | LP1c | PENDING, conditional | If needed, map explicitly versioned graph-sharing wire preserving full semantic replay. Never silently change old capsule bytes. No unmapped implementation authorized. |
 | LP1d | PENDING | Independently measure capacity: total high-water RSS and baseline delta for fixed workload against provisional target. Connect evidence to LC1 long-coverage gate; never automatically close LC1. |
 
 ## LP1a mapped scope and invariants
 
-Inherited implemented scope: `src/domain/e-lifecycle-runtime.ts`, `src/domain/e-lifecycle-runtime.test.ts`, new `src/domain/e-lifecycle-memory.test.ts`; bounded append to `docs/design/narrative-engine.md`. This correction authorizes only the design append and featurebook, not source/test writes. Stable integrated main is the base; harness uses runtime + capsule directly, without controller dependency.
+Historical implemented surfaces: `src/domain/e-lifecycle-runtime.ts`, `src/domain/e-lifecycle-runtime.test.ts`, new `src/domain/e-lifecycle-memory.test.ts`, bounded `docs/design/narrative-engine.md` append. Harness uses runtime + capsule directly, no controller.
 
-Detach/freeze each NEW record once. Privately retain and share the published immutable prefix as identical objects; clone only the publication frame/new record, not earlier committed graphs. Trust private provenance, never caller `Object.isFrozen`; freezing must avoid recursing known prefixes. Preserve transactional combined owned+favors cloning, one actual registry and atomic pointer swap. Baseline runtime duplicated private/published journals; reuse removes repeated prefix copying, not a promise of 1 GB.
+Detach/freeze each NEW record once; privately share published immutable prefixes as identical objects. Clone publication frame/new record, not earlier graphs; trust private provenance, never caller `Object.isFrozen`, and skip known prefixes during freeze. Preserve transactional combined owned+favors cloning, one registry, atomic pointer swap. Baseline duplicated private/published journals; reuse removes repeated prefix copying, not a1GB promise.
 
-Keep full frozen publication semantics and unchanged content after advance/failure/retry. Preserve canonical identity, wire bytes, field presence, signed zero, aliases and order. Canonical encoder, replay, capsule and controller remain untouched in LP1a. Baseline canonical/wire pins precede production edits; retain all old proof, full replay and capsule forgery tests.
+Preserve frozen content after advance/failure/retry, canonical identity/wire/field presence/signed zero/aliases/order. LP1a leaves encoder/replay/capsule/controller untouched; baseline pins precede edits and all replay/capsule forgery proof remains.
 
-Inherited test sequence: immutable-prefix RED → runtime30 GREEN, with rollback/retry/frozen-content coverage. Advisory 400–700 authored lines, not a cap; no minification. This documentation correction runs no tests.
+Inherited immutable-prefix RED → runtime30 GREEN includes rollback/retry/frozen-content. Advisory400–700 lines, not a cap; no minification. No tests run by this documentation update.
 
 ## Fresh-process measurement contract
 
@@ -58,12 +58,9 @@ Inherited checks: N26 baseline295/4 PASS; full suite BOTH552/11 PASS (88.60/84.6
 
 Foreground serial, shell timeout600. N26=`/home/linuxbrew/.linuxbrew/bin/node`; N24=`/home/tanisjam/.nvm/versions/node/v24.20.0/bin/node`.
 
-1. Before production: baseline genesis/runtime/replay/capsule tests with `--maxWorkers=1`; pin canon/wire. First measurement: N26 `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-memory.test.ts --maxWorkers=1 --pool=threads`.
-2. Focused RED/GREEN: runtime tests; keep replay/capsule forgery coverage.
-3. Final BOTH node prefixes: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-runtime.test.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts src/domain/e-annual-policy.test.ts src/domain/e-annual-composition.test.ts src/domain/e-runtime.test.ts src/domain/e-capsule.test.ts src/domain/annual-runtime-baseline.test.ts --maxWorkers=1`. New memory test separately, fresh on both nodes for baseline/candidate claims.
-4. N26 `node_modules/typescript/bin/tsc --noEmit --incremental false`; N26 `node_modules/eslint/bin/eslint.js src/domain/e-lifecycle-runtime.ts src/domain/e-lifecycle-runtime.test.ts src/domain/e-lifecycle-memory.test.ts`; `git diff --check`.
+Reusable eleven-file suite, BOTH node prefixes: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-runtime.test.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts src/domain/e-annual-policy.test.ts src/domain/e-annual-composition.test.ts src/domain/e-runtime.test.ts src/domain/e-capsule.test.ts src/domain/annual-runtime-baseline.test.ts --maxWorkers=1`. New memory test separately, fresh on both nodes for baseline/candidate claims.
 
-Parent owns final validation, native ASSESS/INSPECT, work-unit review, terminal Git and featurebook propagation to MAIN after observed checks. Native candidate excludes accumulated feature history. No release, capacity or long-LIFE closure claim. See [runtime gate/history](narrative-lifecycle-runtime.md).
+Historical LP1a prospective commands are superseded by its checkpoint/closure and CURRENT LP1b proof plan. Parent owns validation/review/Git; native candidate excludes accumulated feature history. No capacity or long-LIFE closure. See [runtime gate/history](narrative-lifecycle-runtime.md).
 
 ## LP1a checkpoint (supersedes recovered unknowns; preserves history)
 
@@ -71,28 +68,47 @@ Independent CURRENT, parent-reported: BOTH N26/N24 552/11 PASS (92.36/90.92s); f
 
 Native `review-3ca656937db22083`: medium400 lines/6 paths APPROVED; exact ACK BURNED. Target `b12fbe05455a489b9819a7ba202aade5a466090829adae1ad8db9b800aabe6db`; consumed `6418066e554cf5506fd66890f4fa370de53a1a8771548ccb3ebe4e4257d29417`. NEVER STATUS again. Source322: runtime24+/11-, test97, memory173, design17; native400 includes bookkeeping. Approval freezes original trees/400 scope, not later book bytes. Passive post-ACK bookkeeping, not new source or invented writer result. No commits/integration; isolated HEAD unchanged. LP1a IN PROGRESS, LP1b/c/d pending; human commit choice required.
 
-## LP1a closure / LP1b mapped encoder unit
+## LP1a closure / LP1b transition history
 
 Parent-supplied transition, not rerun here: human7678 permits local verified release commits/integration branches only. LP1a source `c230539` covers six feature-branch paths; parent integration `0d3858dc0829c81fe8d3030e5ebd625c12232720` cherry-picks the four source/design paths after passive `f9491da`. Independent BOTH552/11, fresh memory, types/lint PASS remain the evidence above. Main spot30/types/lint/diff-check PASS; four source hashes stable and HEAD unchanged, only unrelated `.claude/`. LP1a DONE bounded. Native review/target/consumed receipt above is exhausted: NEVER STATUS again and no next approval inferred.
 
 Capacity target1GB remains unmet (fresh totals about 2.09–2.46GB for four genuine years). LC1 BLOCKED pending genuine ≥60-year proof; no automatic closure, forced death or survivor search. LP1c/d remain pending as mapped.
 
-### LP1b contract and scope
+### Rejected LP1b encoder attempt — historical evidence only
 
-Only future source surfaces: `src/domain/e-lifecycle-genesis.ts` and `src/domain/e-lifecycle-genesis.test.ts`. Replace private canonical recursive map/join with append traversal and a private bounded coalescing chunk writer, joining once. Keep public `canonicalLifecycleData` string, digests, tagged grammar and old wire EXACT. Preserve the WHOLE descriptor guard BEFORE traversal: zero hooks; hostile own keys; UTF16/JSON escaping; own undefined versus absence; signed zero; ordered arrays; sorted records; finite-number grammar.
+Superseded mapping: private append traversal with a 32 Ki UTF16 coalescing chunk writer, two genesis source/test surfaces; public canonical strings/digests/grammar/wire unchanged. Its unchanged-output optimization had no meaningful functional RED; the earlier exception applied ONLY to that attempt, not the new helper contract.
 
-No frame clone, replay, capsule or controller edits; no new design-document permission (two source files, source comments and this taskbook suffice). Existing private canonical also serves digests. Remove child arrays/strings, NOT final two comparison strings or wire JSON escaping. Avoid token-per-array-item explosion. Advisory growth: ≤200 added test lines / about100 production lines, not a cap or reason to minify. Pause parent if a third source surface or huge growth is needed.
+Parent-reported attempt: all572/11 PASS; cold canonical/wire pins stable. RSS improved only5.6%/1.4% on N26/N24, while elapsed increased63.9%/40.5%. Parent7684 rejected it: no integration, native review or commit. Scoped owned production restored to MAIN HEAD `c3abaca`; new canonical tests62 retained. These measurements are rejected-attempt evidence, NOT proof for the new pair comparator. The old chunk-writer plan is NOT a live instruction.
 
-### LP1b evidence plan — not executed
+### LP1b CURRENT contract — full-tree canonical pair equality
 
-Meaningful functional RED is unavailable for an unchanged-output allocation optimization. Record that exception explicitly: do not fake a mocked-map or heap-threshold RED. Before production, capture literal byte-fixture baseline GREEN and all canonical/wire pins; afterward require exact byte equivalence, full functional/forgery checks and fresh resource measurements. No LP1b baseline, implementation or pass is claimed yet.
+Exact four future source/test surfaces ONLY:
+- `src/domain/e-lifecycle-genesis.ts`
+- `src/domain/e-lifecycle-genesis.test.ts`
+- `src/domain/e-lifecycle-replay.ts`
+- `src/domain/e-lifecycle-replay.test.ts`
 
-Foreground serial, timeout600; existing timeouts unchanged. Use N26/N24 prefixes above:
+Add explicit internal-module export `canonicalLifecycleDataEqual(left, right): boolean`. Before ANY early false or same-argument `Object.is`, preflight BOTH WHOLE arguments with `requireFavorData(left, true)` and `requireFavorData(right, true)`. Unknown malformed data on either side must reject even when an earlier field mismatches; late getters/cycles must not evade admission, and hooks remain ZERO. Preserve existing descriptor guards against sparse/extended arrays, symbol keys and nonfinite numbers.
 
-1. Before production, focused N26 `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts --maxWorkers=1`; retain literal canonical/wire fixtures and forgery checks.
-2. CURRENT LP1a full baseline on BOTH nodes: the exact eleven-file final suite already listed above, `--maxWorkers=1`; fixed v1/4 memory baseline separately in fresh processes on BOTH: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-memory.test.ts --maxWorkers=1 --pool=threads`.
-3. Candidate: focused genesis first, then SAME eleven-file final suite on BOTH and SAME fresh memory workload on BOTH. Compare baseline/candidate maxRSS, baseline delta, phase heap/elapsed/wire and full cold canon/aliases/traversal without invented thresholds.
-4. N26 `node_modules/typescript/bin/tsc --noEmit --incremental false`; N26 `node_modules/eslint/bin/eslint.js src/domain/e-lifecycle-genesis.ts src/domain/e-lifecycle-genesis.test.ts`; `git diff --check`; exact two-source hashes before/after validation.
+After preflight, compare the FULL trees, exactly matching the unchanged old canonical string equality:
+- Finite numbers use `Object.is`, preserving signed zero; strings compare exact UTF16 code units.
+- Arrays require the same kind and length, ordered recursive values.
+- Records require the same own-key count, `hasOwn` for each left name, and recursive values. Ignore insertion order and ordinary-versus-null prototype, as old canonical encoding does. Hostile keys are data, not prototype lookup.
+- Own undefined and absence remain distinct via key counts/own-key presence. Repeated references unfold to the same canonical values, not identity-based equality. No WeakMap cache, hashes or projection.
 
-Parent owns worktree, independent verification, native review and permitted terminal Git. This update is docs/mirrors only: no commands, source/tests, native calls, children or network delivery. See [runtime CURRENT and LC1 reference](narrative-lifecycle-runtime.md).
+Public original `canonicalLifecycleData` string encoder, digest, byte format and version remain UNCHANGED. The tiny helper is not a trusted callback, new product API, external-unknown authority or cache. Runtime aliases must still be checked separately on independently regenerated returned output: tree comparison is not an alias certificate.
+
+Replace ONLY replay's two string-comparison sites (annual record and final output) with this helper. Preserve FULL regeneration, closed-envelope cloning BEFORE await, all unknown-data checks and admission-frontier checks. No bypass of regeneration; no capsule/controller/runtime edits or design-document permission. Advisory150–350 authored lines, not a cap: two production files plus two tests, without minification.
+
+### LP1b CURRENT proof plan — pending, not executed here
+
+Strict behavior-level RED: the named helper is missing. Then GREEN: pair truth agrees with the UNCHANGED OLD canonical strings on bounded fixtures covering all tags/keys, +/-0, null prototypes, repeated references, hostile keys, surrogates and insertion order. Exercise all malformed/closed-data cases with zero hooks, both sides including early mismatch/late invalid data, and existing replay forgeries across all fields. Tests must assert actual replay uses the pair helper while the byte-encoding helper is NOT called for comparison, without bypassing full regeneration.
+
+Foreground serial, timeout600; existing timeouts unchanged. Use the N26/N24 prefixes above; no heap/GC/timeout/seed/mortality changes:
+1. BEFORE production edits: focused N26 `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts --maxWorkers=1`; then fresh memory baseline on BOTH nodes using `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-memory.test.ts --maxWorkers=1 --pool=threads`. Production must be unchanged for these baselines. Fixed default v1/4:85 initial people, four genuine years, death1501, wire56561271; retain old canonical/wire pins above.
+2. Capture meaningful missing-helper RED, implement minimum pair walk/replay replacement, then focused GREEN and negative/alternate triangulation. Retained tests62 do not replace new behavior evidence.
+3. Final BOTH: exact eleven-file suite listed above plus SAME fresh memory workload separately on BOTH. Compare maxRSS, baseline delta, phase heap/elapsed/wire and full cold canonical/aliases/traversal. Baseline/candidate must each be fresh processes; delta is not exclusive memory.
+4. N26 `node_modules/typescript/bin/tsc --noEmit --incremental false`; N26 `node_modules/eslint/bin/eslint.js src/domain/e-lifecycle-genesis.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.ts src/domain/e-lifecycle-replay.test.ts`; `git diff --check`; four scoped source/test diff checks and hashes before/after validation.
+
+Goal: eliminate paired full-string materializations, NOT promise1GB; other capsule/wire peak capture costs persist. Capacity and LC1 remain open. Parent owns copying this FULL MAIN book to the isolated tree before writer/source candidate, independent verification, native review and permitted terminal Git. This documentation update performs no source/tests, commands, children, native calls, network delivery or commits. See [runtime CURRENT and LC1 reference](narrative-lifecycle-runtime.md).
 
