@@ -1229,3 +1229,41 @@ endYear. No demographic policy, economic replenishment, historical hydration, qu
 callback authority or implicit migration is introduced. Regeneration is a consistency
 proof, not authenticated authorship, a Proxy sandbox or a scaling/resource-limit claim.
 LR1b annual orchestration and LR2 complete actual-state journal/replay remain separate units.
+
+## Lifecycle LR1b: atomic native annual execution
+
+`src/domain/e-lifecycle-runtime.ts` consumes admitted LR1a genesis and executes complete
+native years followed by the existing AP1/RC1 favor policies. This is an in-memory
+execution owner, **not** LR2 replay certification, persistence or production activation.
+
+**Quick path:** `createLifecycleRuntime(genesis)` → retain `initial` →
+`await advance(startYear)` → inspect `snapshot()` → advance the next contiguous year.
+The API and every published graph are frozen. It accepts no checkpoint, physical
+operation list, response authority, resolver, policy callback or external choice plan.
+
+| Review point | LR1b behavior |
+|---|---|
+| Frontier | Initial `startYear - 1`; safe integers excluding `-0`, then exactly one contiguous year per advance. Origin `endYear` remains metadata, not an execution ceiling. Alive means `incomplete`; an observed dead protagonist means `complete`, without manufactured death or horizon completion. A committed native death year includes all remaining native and economic phases; later advances reject. |
+| Actual ownership | Clone `owned` and `favors` together. Native execution and FE1 borrow the same actual Person/Mind registry and life-event log. Each attempt creates one fresh trusted rules source/resolver with captured config and original start-year anchor, and executes it exactly once. Native births, inherited facets/values, class, deaths and survivor effects remain native outcomes, never E2 physical projections. |
+| Economics | Plan AP1 from the actual post-native view; execute resources then grants through authority-free FE1. Traverse currently eligible creditors in `stableAnnualIdOrder`, each with two RC1 `.25` slots. Plan each slot immediately from current state after prior responses. Missing newborn allocations stay missing until adult eligibility; dead actors retain their ledgers. No new economy or Mind policy is introduced. |
+| Journal | Ordered year records preserve the existing complete version tuple, pre-economic `physicalSnapshot`, full `postNative` owned state/ledgers, resolved resources/grants/requests, creditor order, every current slot observation and full FE1 entries. `request: null` means **no request planned**, not a guessed activation or eligibility reason. Complete `final` state/ledgers include counters, decisions and life history. |
+| Position namespaces | `positions.life` and `positions.decisions` are exclusive-ended native log ranges; `positions.economic` is a separate exclusive-ended economic-history range. FE1 entry positions index only economic history. These indices must not be treated as one interleaved life/economic clock. |
+| Final publication | `owned`, `favors` and `canonicalYearSnapshot` describe actual final state, not the pre-economic snapshot. Future economic Mind effects would therefore feed the next native year. The detached, deeply frozen complete output/journal is constructed **before** one committed-pointer swap. Previously returned checkpoints remain unchanged. |
+| Failure and overlap | Concurrent advances reject. Native, planning, resource, grant, HELP, slot, detachment or freezing failure discards the entire draft and leaves state/frontier/journal/publication untouched. The guard clears for retry, which uses another fresh source and draft. |
+| Cancellation | Stop only **between closed steps**. No source cancellation port exists and no mid-step interruption or rollback of an already committed year is promised. A future owner may discard a run before external publication; this module supplies no signal/cancellation API. |
+
+Review `e-lifecycle-runtime.test.ts` in this order: independently initialized **public**
+native simulation parity before economics; genuine maternal death/birth/grief and later
+newborn adulthood; ordered competing HELP slots; then failure/retry/overlap and frozen
+publication. Complete own-key order/presence and `Object.is` leaves protect undefined
+and signed zero. Registry/log aliases are checked separately from incidental shared
+module-level distribution objects. A test-only post-resource Mind mutation exercises
+future ownership without claiming that FE1 currently has a Mind-effect policy.
+
+**Next seam:** LR2 can reconstruct from private admitted genesis and compare actual-state
+records, full native evidence/counters, current slot observations and ordered economic
+entries. This unit adds no new canonical hash or durable wire and does not admit its own
+outputs as checkpoints. Existing E1/E2/E3/C2/capsule contracts remain unchanged.
+Cumulative full-state/evidence retention has significant memory costs; bounded fixtures
+are correctness evidence, not lifespan-scale certification. Genuine long continuation,
+LR2, RI1 and RA1 release gates remain separate obligations.
