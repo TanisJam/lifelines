@@ -9,6 +9,28 @@ import { FALLBACK_CLASS } from "./period/classes";
 import { keyedDraw, keyedRng } from "./rng";
 import { TRAIT_POOL, type Event, type EventKind, type JsonValue, type Override, type Person, type Sex, type SocialClass, type Trait } from "./types";
 import { isLiterate, pickCommonClass, pickJobForClass, pickTraits } from "./worldgen";
+import type { VignetteRelationshipTarget } from "./vignettes";
+
+/** The protagonist's first living sibling (shares a mother or father), if any — used for `D1`'s `sibling-quarrel` vignette. */
+export function livingSiblingId(people: Readonly<Record<string, Person>>, person: Person): string | undefined {
+  return Object.values(people).find((p) => p.id !== person.id && p.deathYear === undefined && ((person.motherId && p.motherId === person.motherId) || (person.fatherId && p.fatherId === person.fatherId)))?.id;
+}
+
+/** The protagonist's first living child, if any — used for `D1`'s `teaching-a-child` vignette. */
+export function livingChildId(people: Readonly<Record<string, Person>>, person: Person): string | undefined {
+  return Object.values(people).find((p) => (p.motherId === person.id || p.fatherId === person.id) && p.deathYear === undefined)?.id;
+}
+
+/** Resolve a person-agnostic vignette target against the current owned family. */
+export function relationshipTargetId(target: VignetteRelationshipTarget, person: Person, people: Readonly<Record<string, Person>>): string | undefined {
+  if (target === "spouse") return person.spouseId;
+  if (target === "child") return livingChildId(people, person);
+  if (target === "sibling") return livingSiblingId(people, person);
+  // "parent": prefer a living mother, then a living father. Preserve missing-parent behavior.
+  if (person.motherId && people[person.motherId]?.deathYear === undefined) return person.motherId;
+  if (person.fatherId && people[person.fatherId]?.deathYear === undefined) return person.fatherId;
+  return undefined;
+}
 
 /**
  * Decision 055 / PR14 STEP 2 (decision 076): conception probability given a real "try" this year —

@@ -9,6 +9,9 @@ import { FALLBACK_CLASS } from "./period/classes";
 import { ruleDistribution } from "./rule-heuristics";
 import { storyCircle } from "./story-circle";
 import type { Vignette } from "./vignettes";
+import type { YearSnapshot } from "./types";
+import type { Facet } from "./mind";
+import { relationshipTargetId } from "./legacy-year-mechanics";
 import { activeFeudPair, hasMovedAway, isAlive, pairKey, recentUnresolvedBreakup } from "./events";
 import { commitId, conceptionProbability, dreamGoalSatisfiedBy, fertilityDampingFactor, levyClassMultiplier, mintId, overrideFor, pickAwayDestination, pushEvent, resolveCourtshipOnDeath, resolveWidowhood, school, spawnAwayPerson, spawnChild, spawnGentrySuitor, spawnImmigrant } from "./legacy-year-mechanics";
 import { applyLifeTransition, ensureLifeState } from "./life-state";
@@ -993,6 +996,223 @@ export function applyLegacySocialBatch<C extends LegacySocialApplyCandidate>(
     // biology above), so this id's slot always advances as an occurrence.
     commitId(people, events, descriptor.personId, minted, true);
   }
+}
+
+export interface LegacyPublicationState {
+  readonly people: Record<string, Person>;
+  readonly events: Event[];
+  readonly decisions: DecisionRecord[];
+}
+
+/** Publication is detached, not frozen; never clone the working registry between phases. */
+export function captureLegacyYear(ownedPublicationState: LegacyPublicationState, year: number): YearSnapshot {
+  const { people, events, decisions } = ownedPublicationState;
+  return { year, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) };
+}
+
+/** Structural D1 catalog shape; the kernel has no dependency on simulate, even for types. */
+export interface LegacyD1Descriptor {
+  readonly decisionId: string;
+  readonly kind: string;
+  readonly personId: string;
+  readonly partnerId?: string;
+  readonly options: readonly string[];
+  readonly extra?: Record<string, JsonValue>;
+}
+
+export interface LegacyFinalizeContext<TownEvent extends string = string> extends LegacyPublicationState {
+  readonly config: WorldConfig;
+  readonly counters: { decisionCalls: number };
+  readonly originalOverrideYear: number;
+  readonly options: LegacySocialBatchContext<SocialCandidate>["options"];
+  readonly buildQuestion: (descriptor: LegacyD1Descriptor, year: number, config: WorldConfig, people: Record<string, Person>) => DecisionQuestion;
+  readonly buildDailyLifeVignetteDescriptor: (person: Person, year: number, seed: string, people: Readonly<Record<string, Person>>, events: readonly Event[], townEvent: TownEvent | undefined) => LegacyDailyLifeCandidate<LegacyD1Descriptor>;
+  readonly getVignetteForOption: (option: string) => Vignette | undefined;
+  readonly optionLabel: LegacySocialApplyContext<LegacySocialApplyCandidate>["optionLabel"];
+  readonly resolveSocialDecision: LegacySocialBatchContext<SocialCandidate>["resolveSocialDecision"];
+}
+
+/** Actual D1 selection, sampling, Mind effects and slot commit, not an outcome callback shell. */
+async function resolveDailyLifeVignette<C extends LegacyD1Descriptor, TownEvent extends string>(
+  context: LegacyFinalizeContext<TownEvent>,
+  protagonist: Person,
+  year: number,
+  townEventType: TownEvent | undefined,
+  overrides: readonly Override[],
+  d1Candidates: readonly LegacyDailyLifeCandidate<C>[],
+  finalVignetteWinner: string | undefined,
+  preFetched?: ResolvedDecision,
+): Promise<{ decision: DecisionRecord; wasRealCall: boolean }> {
+  const { config, people, events, options: liveOptions, buildQuestion,
+    buildDailyLifeVignetteDescriptor, getVignetteForOption, optionLabel, resolveSocialDecision } = context;
+  const { decisionMaker, engineSource } = liveOptions;
+  const seed = config.seed;
+  const decisionId = `D1:${protagonist.id}:${year}`;
+  const forced = overrideFor(overrides, "D1", protagonist.id, year === context.originalOverrideYear);
+
+  let vignette: Vignette;
+  let deciderId: string;
+  if (forced) {
+    // Forced option ownership takes precedence over the speculative winner.
+    vignette = getVignetteForOption(forced.optionId) ?? d1Candidates[0]?.vignette ?? buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType).vignette;
+    deciderId = vignette.decidedByParent ? (relationshipTargetId("parent", protagonist, people) ?? protagonist.id) : protagonist.id;
+  } else {
+    const winner = finalVignetteWinner ? d1Candidates.find((c) => c.descriptor.decisionId === finalVignetteWinner) : undefined;
+    if (winner) {
+      vignette = winner.vignette;
+      deciderId = winner.deciderId;
+    } else {
+      const picked = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType);
+      vignette = picked.vignette;
+      deciderId = picked.deciderId;
+    }
+  }
+
+  const options = Object.keys(vignette.outcomes);
+  const descriptor: LegacyD1Descriptor = {
+    decisionId,
+    kind: "D1",
+    personId: deciderId,
+    ...(deciderId !== protagonist.id ? { partnerId: protagonist.id } : {}),
+    options,
+    extra: { vignette: vignette.id },
+  };
+  const decider = people[deciderId] ?? protagonist;
+  const question = buildQuestion(descriptor, year, config, people);
+
+  let final: Distribution;
+  let jevRaw: Distribution | undefined;
+  let prior: Distribution | undefined;
+  let occurrenceProbability: number | undefined;
+  let source: DecisionSource;
+  let chosen: string;
+  let noise: Record<string, number> = {};
+  let fragility: number;
+  let surprise: boolean;
+  let wasRealCall = false;
+
+  if (forced) {
+    chosen = forced.optionId;
+    final = { [chosen]: 1 };
+    source = "forced";
+    fragility = NOT_FRAGILE;
+    surprise = false;
+  } else {
+    const result = preFetched ?? (await resolveSocialDecision(question, decisionMaker, engineSource));
+    wasRealCall = !preFetched && engineSource === "jev";
+    jevRaw = result.jevRaw;
+    prior = result.prior;
+    occurrenceProbability = result.occurrenceProbability;
+    final = result.final;
+    source = result.source;
+    const sample = sampleGumbelMax(final as Record<string, number>, seed, protagonist.id, year, "D1");
+    chosen = sample.chosen;
+    noise = sample.noise;
+    fragility = decisionFragility(sample.scores);
+    surprise = isSurprise(final, chosen);
+  }
+
+  const outcome = vignette.outcomes[chosen]!;
+  // Credit the parent decider, but the protagonist lives the thought, memory and relationship.
+  const cause = outcome.cause(protagonist.name, config.town.name);
+  const actors = deciderId !== protagonist.id ? [deciderId, protagonist.id] : [protagonist.id];
+  const event = pushEvent(events, year, "vignette", actors, { vignette: vignette.id, outcome: chosen }, []);
+  pushThought(protagonist.mind, outcome.emotion, cause, outcome.intensity, outcome.duration, year, outcome.facet as Facet | undefined);
+  if (outcome.memorable) addMemory(seed, protagonist.id, year, protagonist.mind, cause, outcome.emotion);
+  if (outcome.relationshipTarget) {
+    const targetId = relationshipTargetId(outcome.relationshipTarget, protagonist, people);
+    const target = targetId ? people[targetId] : undefined;
+    if (target) updateRelationship(protagonist.mind, target.id, target.mind.values, outcome.relationshipDelta ?? 10);
+  }
+
+  const decisionOptions: DecisionOption[] = options.map((id) => ({ id, label: optionLabel("D1", id, decider.name) }));
+  // Mint the protagonist's slot even when a parent made the call; occurrence is unconditional.
+  const minted = mintId(people, "D1", protagonist.id, year);
+  commitId(people, events, protagonist.id, minted, true);
+  const decision: DecisionRecord = {
+    id: minted.id,
+    personId: deciderId,
+    partnerId: descriptor.partnerId,
+    year,
+    kind: "D1",
+    // Persist English model-facing text; reader-facing narration is localized separately.
+    question: vignette.question("en", config.town.name),
+    options: decisionOptions,
+    jevRaw,
+    prior,
+    final,
+    noise,
+    chosen,
+    fragility,
+    surprise,
+    source,
+    causes: [],
+    resultingEventIds: [event.id],
+    occurrenceProbability,
+  };
+  return { decision, wasRealCall };
+}
+
+/** The quiet-year guard runs after all outcomes, then publishes their CURRENT complete state. */
+export async function finalizeLegacyYear<C extends LegacyD1Descriptor, TownEvent extends string>(
+  context: LegacyFinalizeContext<TownEvent>,
+  batchOutput: LegacySocialBatchOutput<C>,
+  townEvent: TownEvent | undefined,
+  overrides: readonly Override[],
+): Promise<YearSnapshot> {
+  const { people, events, decisions, counters, options } = context;
+  const { year, d1Candidates, resultByDecisionId, finalVignetteWinner } = batchOutput;
+  if (options.protagonistId) {
+    const protagonist = people[options.protagonistId];
+    if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
+      const hasOwnEventThisYear = events.some((e) => e.year === year && e.actors.includes(protagonist.id));
+      if (!hasOwnEventThisYear) {
+        const preFetched = finalVignetteWinner ? resultByDecisionId.get(finalVignetteWinner) : undefined;
+        const { decision, wasRealCall } = await resolveDailyLifeVignette(context, protagonist, year, townEvent, overrides, d1Candidates, finalVignetteWinner, preFetched);
+        decisions.push(decision);
+        if (wasRealCall) counters.decisionCalls += 1;
+      }
+    }
+  }
+  return captureLegacyYear(context, year);
+}
+
+export type LegacyRunContext<C extends LegacySocialApplyCandidate, Debug> =
+  LegacySocialBatchContext<C, NonNullable<C["townEventType"]>> & LegacySocialApplyContext<C> &
+  LegacyFinalizeContext<NonNullable<C["townEventType"]>> & {
+    readonly debug: Debug | undefined;
+    readonly protagonistId: string | undefined;
+    readonly captureCandidates: (year: number, debug: Debug | undefined) => C[];
+    readonly resolveBiologyDecision: LegacyYearContext<C, Debug>["resolveBiologyDecision"];
+    readonly townEventForYear: (seed: string, year: number) => NonNullable<C["townEventType"]> | undefined;
+    readonly mortalityMultiplier: (townEvent: NonNullable<C["townEventType"]> | undefined, age: number, sex: Sex, socialClass: SocialClass) => number;
+    readonly isSocialKind: (kind: string) => boolean;
+    readonly overrides: readonly Override[];
+  };
+
+/** Borrow the same live registry/logs/options/counter/debug; own the actual ordered annual phases. */
+export async function runLegacyYear<C extends LegacySocialApplyCandidate, Debug>(
+  context: LegacyRunContext<C, Debug>,
+  year: number,
+): Promise<YearSnapshot> {
+  // Lookup stays AFTER decay/capture/partition, as before. The closure binds THIS year's shock.
+  const yearContext: LegacyYearContext<C, Debug> = {
+    ...context,
+    get optionsProtagonistId() { return context.options.protagonistId; },
+    captureCandidates: (debug) => context.captureCandidates(year, debug),
+    mortalityMultiplier: (age, sex, socialClass) => context.mortalityMultiplier(townEvent, age, sex, socialClass),
+  };
+  const candidates = beginLegacyYear(yearContext);
+  const biologyCandidates = candidates.filter((c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy" || c.kind === "away-arrival" || c.kind === "return" || c.kind === "arranged-match");
+  // D1 is speculative in batches but has its dedicated quiet-year application, not generic apply.
+  const pendingSocialCandidates = candidates.filter((c) => context.isSocialKind(c.kind) && c.kind !== "D1");
+  const townEvent = context.townEventForYear(context.config.seed, year);
+  const townEventId = emitLegacyYearShocks(yearContext, year, townEvent);
+  const leftVillageThisYear = resolveLegacyBiology(yearContext, year, biologyCandidates, context.overrides, townEvent, townEventId);
+  presentLegacyLeyrwite(yearContext, year);
+  const output = await resolveLegacySocialBatch(context, year, pendingSocialCandidates, context.overrides, leftVillageThisYear, townEvent);
+  applyLegacySocialBatch(context, output, townEventId);
+  return finalizeLegacyYear(context, output, townEvent, context.overrides);
 }
 
 interface VitalCandidate {

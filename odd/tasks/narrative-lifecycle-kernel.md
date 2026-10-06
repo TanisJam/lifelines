@@ -1,6 +1,6 @@
 # Narrative lifecycle kernel — release work units
 
-RL1a1–RL1a4 are DONE as bounded units only. RL1a5 is PENDING, mapped below, NOT source permission. This transaction is documentation-only; four domain paths are frozen. Historical authority, pending gates, receipts, and failures below describe their recorded stages; RL1a4 closure supersedes its former IN PROGRESS status. Full annual lifecycle, NEW version/continuation, and release are NOT done. Main, `7504`, and `.claude/perf` remain untouched.
+RL1a1–RL1a4 are DONE as bounded units only. RL1a5 is IN PROGRESS under the current parent source authorization at isolated HEAD `18024e76b123923203070ffe6d8a22174fe4a3d0`; RL1 remains IN PROGRESS. Source/tests are now FROZEN; this transaction is documentation-only. Native review, exact-unit commit from `18024e76`, and integration remain pending. BASELINE: 44/44 in 18.20s before source writes. Parent owns review/integration; no DONE authority. Full annual lifecycle, NEW version/continuation, and release are NOT done. Main, `7504`, and `.claude/perf` remain untouched.
 
 ## Authority and current boundary
 
@@ -240,7 +240,7 @@ Parent continuation started this bounded source transaction at isolated HEAD `3e
 
 ## Next step
 
-RL1a5 is PENDING: map only, no source authority. Parent owns `7504`, subsequent source authorization, review, integration, and delivery. Historical pending statements below precede RL1a4 closure; all release constraints remain.
+RL1a5 is IN PROGRESS under current parent authorization. Parent owns `7504`, review, integration, and delivery. Historical pending statements below precede RL1a4 closure; all release constraints remain.
 
 ### RL1a4 source progress — isolated transaction
 
@@ -265,7 +265,18 @@ Independent evidence: first Node 24 full run 330/332, existing clergy timeout 52
 
 Source `216d542419acc0472e0d65bf40905d6e538b3eeb` → parent `b14a277304399aab05632a9045f68c49269b6365`, identical four hashes. Native exact `3e1ffbf` → `216d542`: 1928 authored lines/all five paths (1887 source + 41 doc). `review-f1db6fc967d9167f`: APPROVED, ACK BURNED; target `3a9597fa26a01b4fe3c2e71a1856edb111c60660f2e0bf6ba1a43b5a28b8bc34`; consumed `b05af3f2e29b3cffd7381d4a8e0b485910ef42b4c5db0dec9b6e566622b36695`. Receipts NEVER STATUS authority/reusable approval. Main POST-integration: 745/745, 18 files, 208.36s, Node 26 serial; types/lint PASS, six hashes stable, only `.claude` dirty. Prior timeout evidence/cause UNKNOWN remains unchanged.
 
-### NEXT RL1a5 — PENDING map only
+### RL1a5 — IN PROGRESS
+
+Source/tests FROZEN, NOT DONE; native exact base `18024e76` → new unit commit/integration pending. Pre-write full book/mirror matched: 276 lines/32173 bytes, SHA-256 `f7b893507bd2eaa27a214812710933c5a39c281f824b5890e0cd854c8319eda1`. RED: 2 missing API/capture failures + 44 PASS, 21.23s; GREEN 46/46, 16.85s → 57/57, 16.91s. BEFORE test strengthening: FULL five-file Node 26 345/345, 168.19s; independent Node 24 345/345, 156.22s; types/lint PASS, full four-path semantic diff: no production defect. New fixture assumptions (intensity/events/slot), readonly literals and prefer-const corrected; discarded capture-spy case failed 1/57 before correction. No spy remains except existing `runLegacyYear`, restored in finally. Weaker newcomer self-identity assertion RESTORED: separate pre-question captured Mind attest 768 → after build 771 → after annual 785. Test-only 7+/2−; production unchanged. AFTER strengthening: Node 26 focused 57/57, 16.54s; independent Node 24 focused 57/57, 17.78s; types/lint PASS. Full suites NOT rerun on latest test. Eight pins/smith unchanged. Source 952 authored: simulate 17/268, kernel 220/0, mechanics 22/0, test 307/118; total 566+/386−. No policy/replay/production-readiness claim.
+
+| Current frozen source | SHA-256 |
+|---|---|
+| `src/domain/simulate.ts` | `e41ea5d1951e563479928d341e67f8f0b5d55b633da6d665b15490bcbc5f35ff` |
+| `src/domain/legacy-year.ts` | `5a05b830833611bdc3a1ad343bfa52ea6512d618f55492cbc5f26232decfe85c` |
+| `src/domain/legacy-year-mechanics.ts` | `e3614dd3aec571625e802678d1ac88c20a7fa9a7daf8220f7aefd2be8b392cf4` |
+| `src/domain/legacy-year.test.ts` | `f7f773eae19b7bf3455e689744fd561eacaf6862eee10c7e0af94c474ed3c8af` |
+
+Three production hashes unchanged; document hash captured separately with these four as the current five-file snapshot.
 
 Finalization + borrowed `runLegacyYear` async API owns all phases, same four domain files/no new source file; estimate 600–850 lines, mostly move/context/tests. Completes REUSABLE LEGACY year only, not NEW E-version/fact journal/authentic mortality runtime/production readiness. Current E1 rules-only/human-reject/wire unchanged; no historical Mind backfill or new product-policy question.
 

@@ -1,13 +1,13 @@
 import { ageInYear, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
-import { applyLegacySocialBatch, beginLegacyYear, emitLegacyYearShocks, presentLegacyLeyrwite, resolveLegacyBiology, resolveLegacySocialBatch, type LegacyYearContext, type ResolvedDecision } from "./legacy-year";
-import { commitId, dreamGoalSatisfiedBy, mintId, overrideFor, pushEvent, resolveCourtshipOnDeath } from "./legacy-year-mechanics";
+import { captureLegacyYear, runLegacyYear, type LegacyRunContext, type ResolvedDecision } from "./legacy-year";
+import { dreamGoalSatisfiedBy, livingChildId, livingSiblingId, relationshipTargetId, resolveCourtshipOnDeath } from "./legacy-year-mechanics";
 export { conceptionProbability, fertilityDampingFactor } from "./legacy-year-mechanics";
 import type { MintedId } from "./decision-id";
-import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution } from "./decisions";
+import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord } from "./decisions";
 import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, pairKey } from "./events";
 import { biologyDistribution } from "./life-course-rules";
 import { ensureLifeState, markMarriageable } from "./life-state";
-import { addMemory, compactMindState, computeMood, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
+import { compactMindState, computeMood, type DreamGoal, renderPortrait } from "./mind";
 import type { Locale } from "./locale";
 import {
   IMMIGRATION_POPULATION_CAP_RATIO,
@@ -24,7 +24,7 @@ import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistributi
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
 import type { Event, EventKind, JsonValue, Job, Override, Person, Sex, SimulationResult, SocialClass, WorldConfig, YearSnapshot } from "./types";
-import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
+import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext } from "./vignettes";
 import { pickJobForClass } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
@@ -1717,27 +1717,6 @@ async function resolveSocialDecision(question: DecisionQuestion, decisionMaker: 
   return { prior, final: prior, source: "rules" };
 }
 
-/** The protagonist's first living sibling (shares a mother or father), if any — used for `D1`'s `sibling-quarrel` vignette. */
-function livingSiblingId(people: Readonly<Record<string, Person>>, person: Person): string | undefined {
-  return Object.values(people).find((p) => p.id !== person.id && p.deathYear === undefined && ((person.motherId && p.motherId === person.motherId) || (person.fatherId && p.fatherId === person.fatherId)))?.id;
-}
-
-/** The protagonist's first living child, if any — used for `D1`'s `teaching-a-child` vignette. */
-function livingChildId(people: Readonly<Record<string, Person>>, person: Person): string | undefined {
-  return Object.values(people).find((p) => (p.motherId === person.id || p.fatherId === person.id) && p.deathYear === undefined)?.id;
-}
-
-/** Resolves a `VignetteOutcome.relationshipTarget` tag to a concrete person id — only `simulate.ts` knows the protagonist's actual spouse/parent/sibling/child, so this stays out of the (pure, person-agnostic) vignette pool itself. */
-function relationshipTargetId(target: VignetteRelationshipTarget, person: Person, people: Readonly<Record<string, Person>>): string | undefined {
-  if (target === "spouse") return person.spouseId;
-  if (target === "child") return livingChildId(people, person);
-  if (target === "sibling") return livingSiblingId(people, person);
-  // "parent": prefer a living mother, then a living father.
-  if (person.motherId && people[person.motherId]?.deathYear === undefined) return person.motherId;
-  if (person.fatherId && people[person.fatherId]?.deathYear === undefined) return person.fatherId;
-  return undefined;
-}
-
 /**
  * The pure `D1` candidate-building step: given a protagonist and year, deterministically picks the
  * eligible vignette (keyed RNG) and returns its `CandidateDescriptor` alongside the vignette itself.
@@ -1844,155 +1823,6 @@ function buildDailyLifeVignetteCandidates(
 }
 
 /**
- * "At least one entry per year" (round 10, decision 042): called once per year, ONLY when the
- * protagonist produced zero events of their own that year (checked by the caller, after every
- * other biology/social decision for the year has already resolved) — presents ONE everyday-life
- * `D1` vignette, a real DecisionMaker call sampled exactly like any other social decision, never
- * throttled by `LIFE_DECISION_BUDGET` (it's always about the protagonist). `overrides` still apply
- * (a `D1:<protagonistId>:<year>` id), so a rewrite can change what the protagonist did with an
- * otherwise-quiet year too.
- */
-async function resolveDailyLifeVignette(
-  protagonist: Person,
-  year: number,
-  seed: string,
-  config: WorldConfig,
-  people: Record<string, Person>,
-  events: Event[],
-  townEventType: TownEventType | undefined,
-  decisionMaker: DecisionMaker,
-  engineSource: "jev" | "rules",
-  overrides: readonly Override[],
-  /** Round 12 continuation (decision 046): the whole eligible-vignette pool this protagonist-year offered, and which one (if any) the cross-batch `vignette-pick` sample chose. */
-  d1Candidates: readonly { readonly descriptor: CandidateDescriptor; readonly vignette: Vignette; readonly deciderId: string }[],
-  finalVignetteWinner: string | undefined,
-  /** Round 11 (decision 044): a result already fetched as part of the decider's per-person-year batch — when present, no extra `DecisionMaker` call is made here at all. */
-  preFetched?: ResolvedDecision,
-  isOverrideYear = false,
-): Promise<{ decision: DecisionRecord; wasRealCall: boolean }> {
-  const decisionId = `D1:${protagonist.id}:${year}`;
-  const forced = overrideFor(overrides, "D1", protagonist.id, isOverrideYear);
-
-  let vignette: Vignette;
-  let deciderId: string;
-  if (forced) {
-    // A forked/overridden D1 decision (decision 043): resolve which vignette OWNS the forced option
-    // rather than assuming whichever one won selection — option ids are unique across the pool.
-    vignette = getVignetteForOption(forced.optionId) ?? d1Candidates[0]?.vignette ?? buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType).vignette;
-    deciderId = vignette.decidedByParent ? (relationshipTargetId("parent", protagonist, people) ?? protagonist.id) : protagonist.id;
-  } else {
-    const winner = finalVignetteWinner ? d1Candidates.find((c) => c.descriptor.decisionId === finalVignetteWinner) : undefined;
-    if (winner) {
-      vignette = winner.vignette;
-      deciderId = winner.deciderId;
-    } else {
-      // Legacy fallback: no batched `decideYear` result (an adapter that only implements `decide()`)
-      // — fall back to the old single RNG pick, exactly as before decision 044.
-      const picked = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType);
-      vignette = picked.vignette;
-      deciderId = picked.deciderId;
-    }
-  }
-
-  const options = Object.keys(vignette.outcomes);
-  const descriptor: CandidateDescriptor = {
-    decisionId,
-    kind: "D1",
-    personId: deciderId,
-    ...(deciderId !== protagonist.id ? { partnerId: protagonist.id } : {}),
-    options,
-    extra: { vignette: vignette.id },
-  };
-  const decider = people[deciderId] ?? protagonist;
-  const question = buildQuestion(descriptor, year, config, people);
-
-  let final: Distribution;
-  let jevRaw: Distribution | undefined;
-  let prior: Distribution | undefined;
-  let occurrenceProbability: number | undefined;
-  let source: DecisionSource;
-  let chosen: string;
-  let noise: Record<string, number> = {};
-  let fragility: number;
-  let surprise: boolean;
-  let wasRealCall = false;
-
-  if (forced) {
-    chosen = forced.optionId;
-    final = { [chosen]: 1 };
-    source = "forced";
-    fragility = NOT_FRAGILE;
-    surprise = false;
-  } else {
-    // Already answered as part of this person's batched `decideYear` request this year — no extra
-    // call. Otherwise (a legacy adapter without `decideYear`, or a caller that didn't prefetch),
-    // fall back to one dedicated `decide()` call, exactly as before decision 044.
-    const result = preFetched ?? (await resolveSocialDecision(question, decisionMaker, engineSource));
-    wasRealCall = !preFetched && engineSource === "jev";
-    jevRaw = result.jevRaw;
-    prior = result.prior;
-    occurrenceProbability = result.occurrenceProbability;
-    final = result.final;
-    source = result.source;
-    const sample = sampleGumbelMax(final as Record<string, number>, seed, protagonist.id, year, "D1");
-    chosen = sample.chosen;
-    noise = sample.noise;
-    fragility = decisionFragility(sample.scores);
-    surprise = isSurprise(final, chosen);
-  }
-
-  const outcome = vignette.outcomes[chosen]!;
-  // An infant/toddler vignette (decision 043) is still lived by the protagonist — the thought, the
-  // memory, the relationship nudge all still land on their mind — only `deciderId` (below) credits
-  // the parent who actually made the call, same split `AP1` already makes.
-  const cause = outcome.cause(protagonist.name, config.town.name);
-  const actors = deciderId !== protagonist.id ? [deciderId, protagonist.id] : [protagonist.id];
-  const event = pushEvent(events, year, "vignette", actors, { vignette: vignette.id, outcome: chosen }, []);
-  pushThought(protagonist.mind, outcome.emotion, cause, outcome.intensity, outcome.duration, year, outcome.facet as Facet | undefined);
-  if (outcome.memorable) addMemory(seed, protagonist.id, year, protagonist.mind, cause, outcome.emotion);
-  if (outcome.relationshipTarget) {
-    const targetId = relationshipTargetId(outcome.relationshipTarget, protagonist, people);
-    const target = targetId ? people[targetId] : undefined;
-    if (target) updateRelationship(protagonist.mind, target.id, target.mind.values, outcome.relationshipDelta ?? 10);
-  }
-
-  const decisionOptions: DecisionOption[] = options.map((id) => ({ id, label: optionLabel("D1", id, decider.name) }));
-  // D1's minted subject is always the PROTAGONIST (matching its legacy `D1:<protagonistId>:<year>`
-  // shape), even when `deciderId` is a parent (decision 043) — it's fundamentally the protagonist's
-  // day. Always pushed by the caller (`simulate()`'s "at least one entry per year" guarantee), so the
-  // slot commits unconditionally as an occurrence.
-  const minted = mintId(people, "D1", protagonist.id, year);
-  commitId(people, events, protagonist.id, minted, true);
-  const decision: DecisionRecord = {
-    id: minted.id,
-    personId: deciderId,
-    partnerId: descriptor.partnerId,
-    year,
-    kind: "D1",
-    // Decision 059: always English here, deliberately — `DecisionRecord.question` is computed once
-    // at simulate time and persisted (unlike `narrate.ts`'s prose, which is re-derived fresh from
-    // structured events every render), so it can't be re-localized per viewer without either storing
-    // both languages or growing `DecisionRecord` with the raw params needed to rebuild it. The
-    // chronicle's own reader-facing prose/title (what the proposal calls "per-locale narration") goes
-    // through `narrate.ts`'s `locale` parameter instead, at render time, per the reader's locale.
-    question: vignette.question("en", config.town.name),
-    options: decisionOptions,
-    jevRaw,
-    prior,
-    final,
-    noise,
-    chosen,
-    fragility,
-    surprise,
-    source,
-    causes: [],
-    resultingEventIds: [event.id],
-    occurrenceProbability,
-  };
-  return { decision, wasRealCall };
-}
-
-/**
  * Runs the deterministic yearly simulation from `fromYear` (or the config's
  * start year) through `config.endYear`. Every probabilistic choice — social
  * (via the `DecisionMaker` port) or biological (illness, death,
@@ -2028,106 +1858,25 @@ export async function* simulateYears(
 
   const startYear = options.fromYear ?? config.startYear;
 
-  snapshots.set(startYear - 1, { year: startYear - 1, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) });
+  snapshots.set(startYear - 1, captureLegacyYear({ people, events, decisions }, startYear - 1));
 
   for (let year = startYear; year <= config.endYear; year++) {
-    const yearContext: LegacyYearContext<CandidateDescriptor, MarriageFunnelCollector> = {
+    const context: LegacyRunContext<CandidateDescriptor, MarriageFunnelCollector> = {
       config, people, events, decisions, originalOverrideYear: startYear, protagonistId, counters,
-      debug: marriageFunnelDebug,
-      get optionsProtagonistId() { return options.protagonistId; },
-      captureCandidates: (debug) => gatherCandidatesForYear(
-        year, people, events, seed, options.protagonistId,
+      debug: marriageFunnelDebug, marriageFunnelDebug, options, overrides,
+      captureCandidates: (capturedYear, debug) => gatherCandidatesForYear(
+        capturedYear, people, events, seed, options.protagonistId,
         debug ? { collector: debug, startYear: config.startYear } : undefined,
       ),
-      resolveBiologyDecision,
-      mortalityMultiplier: (age, sex, socialClass) => townEventMortalityMultiplier(townEvent, age, sex, socialClass),
-    };
-    const candidates = beginLegacyYear(yearContext);
-    const biologyCandidates = candidates.filter(
-      (c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy" || c.kind === "away-arrival" || c.kind === "return" || c.kind === "arranged-match",
-    );
-    // D1 is excluded here even though it's in `SOCIAL_KINDS` (used for `validate-override.ts`'s
-    // reconstruction, round 10 decision 043) — it has its own dedicated call site below
-    // (`resolveDailyLifeVignette`, gated on "no event yet this year"), never the generic per-kind loop.
-    const pendingSocialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind) && c.kind !== "D1");
-
-    // Town event (decision 025): pushed once here, at most once per year, deterministically —
-    // `townEventForYear` is the exact same pure function `gatherCandidatesForYear` used to decide
-    // whether to offer every adult an A5 decision this year, so the two can never disagree.
-    const townEvent = townEventForYear(seed, year);
-    const townEventId = emitLegacyYearShocks(yearContext, year, townEvent);
-    const leftVillageThisYear = resolveLegacyBiology(yearContext, year, biologyCandidates, overrides, townEvent, townEventId);
-    presentLegacyLeyrwite(yearContext, year);
-
-    const phaseOutput = await resolveLegacySocialBatch<CandidateDescriptor, TownEventType>({
-      config, people, events, decisions, counters, options,
-      originalOverrideYear: yearContext.originalOverrideYear,
-      marriageFunnelDebug, inMarriageFunnelCohort, buildQuestion,
-      buildDailyLifeVignetteCandidates, personSummary, resolveSocialDecision,
+      resolveBiologyDecision, mortalityMultiplier: townEventMortalityMultiplier, townEventForYear,
+      isSocialKind: (kind) => SOCIAL_KINDS.has(kind),
+      inMarriageFunnelCohort, buildQuestion, optionLabel, questionText,
+      buildDailyLifeVignetteCandidates, buildDailyLifeVignetteDescriptor, getVignetteForOption,
+      personSummary, resolveSocialDecision,
       decisionBudget: LIFE_DECISION_BUDGET, concurrencyLimit, yearBatchConcurrency,
-    }, year, pendingSocialCandidates, overrides, leftVillageThisYear, townEvent);
-    const { d1Candidates, resultByDecisionId, finalVignetteWinner } = phaseOutput;
-    const isOverrideYear = year === yearContext.originalOverrideYear;
+    };
+    const snapshot = await runLegacyYear(context, year);
 
-    applyLegacySocialBatch({
-      config, people, events, decisions, protagonistId, marriageFunnelDebug,
-      inMarriageFunnelCohort, optionLabel, questionText,
-    }, phaseOutput, townEventId);
-
-    // "At least one entry per year" (round 10, decision 042): if the protagonist ends this year
-    // with no event of their own — every other situation this year either wasn't the one selected,
-    // or was selected but resolved to "nothing happens" (e.g. A1's "delay") — present one
-    // everyday-life vignette so the chronicle never has a silent year. Checked AFTER biology and
-    // social resolution above (not at candidate-gathering time), since only the actual outcome, not
-    // the mere presence of a candidate, determines whether a year is genuinely quiet. `D1` itself
-    // never goes through the round 12 (decision 045) event-selection gate that the OTHER social
-    // candidates now do — it's asked in the SAME batch (paid for once) but resolved here,
-    // unconditionally, exactly like round 10-11's D1-anchored guarantee, since its vignette outcomes
-    // always produce a real event and it's the one candidate that must never come up empty. What's
-    // NEW this round: the candidates it's backstopping for now got a real, Jev-judged, occurrence-
-    // weighted joint selection instead of N independent code-gated coin flips, so D1 fires less
-    // often in practice — but the mechanism guaranteeing it fires when needed is unchanged.
-    //
-    // Decision 047 fix: the OTHER reason D1 dominated wasn't selection at all — it was that a
-    // selected situation whose chosen option was a "nothing happens" one (A1 "delay", Y1
-    // "decline"/"wait", Y3 "stay", A3 "ignore", A6 "feud" (drags on), Y4 "nurse-it", A2 "wait"/
-    // "refuse", A5 every option) produced NO event for the protagonist, so `hasOwnEventThisYear`
-    // was false and D1 fired anyway even though a real situation WAS selected and resolved.
-    // Every no-op branch above now pushes a `reflection` event (same generic kind decision 030
-    // introduced for C2/O2/O4/etc.) for the protagonist only — declining, waiting, staying are
-    // story beats, not silence. NPCs are untouched (still no event on their own no-ops), so this
-    // never grows the general village simulation's event volume. D1 now only fires when the
-    // selected situation genuinely produced nothing (e.g. its counterpart got invalidated
-    // mid-resolution) — a true safety net, not the common case.
-    if (options.protagonistId) {
-      const protagonist = people[options.protagonistId];
-      if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
-        const hasOwnEventThisYear = events.some((e) => e.year === year && e.actors.includes(protagonist.id));
-        if (!hasOwnEventThisYear) {
-          const preFetched = finalVignetteWinner ? resultByDecisionId.get(finalVignetteWinner) : undefined;
-          const { decision: d1Decision, wasRealCall } = await resolveDailyLifeVignette(
-            protagonist,
-            year,
-            seed,
-            config,
-            people,
-            events,
-            townEvent,
-            options.decisionMaker,
-            options.engineSource,
-            overrides,
-            d1Candidates,
-            finalVignetteWinner,
-            preFetched,
-            isOverrideYear,
-          );
-          decisions.push(d1Decision);
-          if (wasRealCall) counters.decisionCalls += 1;
-        }
-      }
-    }
-
-    const snapshot: YearSnapshot = { year, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) };
     snapshots.set(year, snapshot);
     yield { year, snapshot };
 

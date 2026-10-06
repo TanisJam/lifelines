@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { beginLegacyYear, resolveLegacyVitalDecision, type LegacySocialApplyContext, type LegacySocialBatchContext, type LegacySocialBatchOutput, type ResolvedDecision } from "./legacy-year";
+import { beginLegacyYear, resolveLegacyVitalDecision, type LegacySocialBatchContext, type LegacySocialBatchOutput, type ResolvedDecision } from "./legacy-year";
 import type { DecisionMaker, PersonYearBatch } from "./decisions";
 import { getVignette } from "./vignettes";
 import { mintId, overrideFor, spawnChild } from "./legacy-year-mechanics";
@@ -67,49 +67,253 @@ function candidate(kind: string, personId: string, options: readonly string[]): 
   return { decisionId: `${kind}:${personId}:1530`, kind, personId, options };
 }
 
-// Borrow the actual public generator's owned context and language-catalog port. Suppress only
-// candidate capture here: direct phase tests then supply their explicit comparator input.
+// Borrow the public generator's initialized state/catalog without running a fixture year.
+// Direct phase tests supply their explicit comparator input on those same references.
 async function phaseContext(people: Record<string, Person>, protagonistId?: string) {
-  let borrowed: Parameters<typeof beginLegacyYear>[0] | undefined;
-  const begin = vi.spyOn(legacyYear, "beginLegacyYear").mockImplementation((context) => {
-    borrowed = context;
-    return [];
-  });
-  try {
-    await observe({ seed: "phase-contract", startYear: 1530, endYear: 1530, town: { name: "Testville" } }, people, [], { protagonistId });
-    const context = borrowed!;
-    // Discard the fixture run's shocks/vignette, not the owned arrays or catalog resolver.
-    context.events.length = 0;
-    context.decisions.length = 0;
-    return context;
-  } finally {
-    begin.mockRestore();
-  }
+  const context = await borrowedRunContext(people, { protagonistId }, "phase-contract");
+  return {
+    ...context,
+    get optionsProtagonistId() { return context.options.protagonistId; },
+    captureCandidates: () => [],
+    mortalityMultiplier: (age: number, sex: Person["sex"], socialClass: NonNullable<Person["socialClass"]>) => context.mortalityMultiplier(undefined, age, sex, socialClass),
+  };
 }
 
+type RunContext = legacyYear.LegacyRunContext<CandidateDescriptor, ReturnType<typeof createMarriageFunnelCollector>>;
 type SocialContext = LegacySocialBatchContext<CandidateDescriptor, NonNullable<CandidateDescriptor["townEventType"]>>;
+
+async function borrowedRunContext(people: Record<string, Person>, options: Partial<SimulateOptions> = {}, seed = "social-contract") {
+  let borrowed: RunContext | undefined;
+  const run = vi.spyOn(legacyYear, "runLegacyYear").mockImplementation(async (context, year) => {
+    borrowed = context as RunContext;
+    return legacyYear.captureLegacyYear(context, year);
+  });
+  try {
+    await observe({ seed, startYear: 1530, endYear: 1530, town: { name: "Testville" } }, people, [], options);
+    return borrowed!;
+  } finally {
+    run.mockRestore();
+  }
+}
 
 // Borrow the live catalog ports, then exercise the kernel directly on those SAME references.
 async function socialContext(people: Record<string, Person>, options: Partial<SimulateOptions> = {}) {
-  let borrowed: SocialContext | undefined;
-  const original = legacyYear.resolveLegacySocialBatch;
-  const phase = vi.spyOn(legacyYear, "resolveLegacySocialBatch").mockImplementation(async (...args) => {
-    borrowed = args[0] as SocialContext;
-    return original(...args);
-  });
-  try {
-    await observe({ seed: "social-contract", startYear: 1530, endYear: 1530, town: { name: "Testville" } }, people, [], {
-      ...options, overrides: [...Object.keys(people).map((id) => force("death", id, "survive")), ...(options.overrides ?? [])],
-    });
-    const context = borrowed!;
-    context.events.length = 0;
-    context.decisions.length = 0;
-    context.counters.decisionCalls = 0;
-    return context;
-  } finally {
-    phase.mockRestore();
-  }
+  return borrowedRunContext(people, options);
 }
+
+describe("borrowed annual execution API", () => {
+  it("exports actual finalization and annual orchestration", () => {
+    expect(legacyYear).toHaveProperty("finalizeLegacyYear", expect.any(Function));
+    expect(legacyYear).toHaveProperty("runLegacyYear", expect.any(Function));
+  });
+
+  it("publishes with three separate ordered clones, detached but not frozen", () => {
+    const owned = { people: { actor: person("capture", "actor", "f") }, events: [], decisions: [] };
+    const clone = vi.spyOn(globalThis, "structuredClone");
+    try {
+      const snapshot = legacyYear.captureLegacyYear(owned, 1530);
+      expect(Object.keys(snapshot)).toEqual(["year", "people", "events", "decisions"]);
+      expect(clone.mock.calls).toEqual([[owned.people], [owned.events], [owned.decisions]]);
+      expect(snapshot.people.actor).not.toBe(owned.people.actor);
+      expect(snapshot.people.actor!.mind).not.toBe(owned.people.actor!.mind);
+      const capturedStress = snapshot.people.actor!.mind.stress;
+      owned.people.actor.mind.stress += 100;
+      expect(snapshot.people.actor!.mind.stress).toBe(capturedStress);
+      expect(Object.isFrozen(snapshot)).toBe(false);
+      expect(Object.isFrozen(snapshot.people.actor!.mind)).toBe(false);
+    } finally {
+      clone.mockRestore();
+    }
+  });
+});
+
+describe("annual finalization effects", () => {
+  it("credits the living parent but mutates the protagonist's actual Mind before capture", async () => {
+    const context = await borrowedRunContext({
+      infant: person("d1-parent", "infant", "f", { birthYear: 1530, motherId: "mother" }),
+      mother: person("d1-parent", "mother", "f"),
+    }, { protagonistId: "infant" }, "d1-parent");
+    const infant = context.people.infant!;
+    const mind = infant.mind;
+    const parentBefore = canonical(context.people.mother!.mind);
+    const minted = mintId(context.people, "D1", "infant", 1530);
+    const fallback = vi.fn(context.resolveSocialDecision);
+    const snapshot = await legacyYear.finalizeLegacyYear({ ...context, resolveSocialDecision: fallback },
+      applicationOutput([]), undefined, [force("D1", "infant", "watch-the-night")]);
+    expect(fallback).not.toHaveBeenCalled();
+    expect(context.people.infant).toBe(infant);
+    expect(infant.mind).toBe(mind);
+    expect(context.decisions[0]).toMatchObject({ personId: "mother", partnerId: "infant", chosen: "watch-the-night", source: "forced" });
+    expect(context.events[0]!.actors).toEqual(["mother", "infant"]);
+    expect(mind.thoughts.at(-1)).toMatchObject({ emotion: "relief", intensity: 30 * (0.5 + mind.facets.altruism / 100), yearsLeft: 3 });
+    expect(mind.memories.at(-1)!.text).toContain("feverish child");
+    expect(canonical(context.people.mother!.mind)).toBe(parentBefore);
+    expect(snapshot.people.infant!.mind).toEqual(mind);
+    expect(snapshot.people.infant!.mind).not.toBe(mind);
+    expect(context.counters.decisionCalls).toBe(0);
+    expect(context.decisions[0]!.id).toBe(mintId({ infant: person("d1-parent", "infant", "f", { birthYear: 1530, motherId: "mother" }) }, "D1", "infant", 1530).id);
+    expect(infant.lifeState!.slots[minted.key]).toEqual({ occurred: 1, attempts: 0 });
+  });
+
+  it("keeps the winner's raw aliases/own undefined/-0 and nudges the current child relationship", async () => {
+    const context = await borrowedRunContext({
+      actor: person("d1-owned", "actor", "f"),
+      child: person("d1-owned", "child", "m", { motherId: "actor", birthYear: 1525 }),
+    }, { protagonistId: "actor" });
+    const vignette = getVignette("teaching-a-child")!;
+    const descriptor = { ...candidate("D1", "actor", Object.keys(vignette.outcomes)), decisionId: "raw:winner" };
+    const raw = { "teach-patiently": 1, "teach-briskly": -0 };
+    const result: ResolvedDecision = { jevRaw: raw, final: raw, source: "jev", occurrenceProbability: -0 };
+    const fallback = vi.fn(context.resolveSocialDecision);
+    const before = context.people.actor!.mind.relationships.find((r) => r.personId === "child")?.strength ?? 0;
+    const snapshot = await legacyYear.finalizeLegacyYear({ ...context, resolveSocialDecision: fallback }, applicationOutput([], {
+      d1Candidates: [{ descriptor, vignette, deciderId: "actor", question: context.buildQuestion(descriptor, 1530, context.config, context.people) }],
+      resultByDecisionId: new Map([[descriptor.decisionId, result]]), finalVignetteWinner: descriptor.decisionId,
+    }), undefined, []);
+    expect(fallback).not.toHaveBeenCalled();
+    const record = context.decisions[0]!;
+    expect(record.jevRaw).toBe(raw);
+    expect(record.final).toBe(raw);
+    expect(Object.hasOwn(record, "prior")).toBe(true);
+    expect(record.prior).toBeUndefined();
+    expect(Object.hasOwn(record, "partnerId")).toBe(true);
+    expect(record.partnerId).toBeUndefined();
+    expect(Object.is(record.occurrenceProbability, -0)).toBe(true);
+    const values = context.people.actor!.mind.values;
+    const childValues = context.people.child!.mind.values;
+    const names = Object.keys(values) as (keyof typeof values)[];
+    const compatibility = 1 - names.reduce((sum, name) => sum + Math.abs(values[name] - childValues[name]), 0) / (names.length * 100);
+    expect(context.people.actor!.mind.relationships.find((r) => r.personId === "child")!.strength).toBe(Math.round(before + 10 + compatibility * 5));
+    expect(context.people.actor!.mind.memories.at(-1)!.text).toContain("teaching a child");
+    expect(snapshot.decisions[0]!.final).toBe(snapshot.decisions[0]!.jevRaw);
+    expect(snapshot.decisions[0]!.final).not.toBe(raw);
+    expect(context.counters.decisionCalls).toBe(0);
+  });
+
+  for (const source of ["jev", "rules"] as const) {
+    for (const missing of ["winner", "result"] as const) {
+      it(`falls back for missing ${missing} with ${source} call accounting`, async () => {
+        const context = await borrowedRunContext({ actor: person("d1-fallback", "actor", "f") }, { protagonistId: "actor" });
+        const vignette = getVignette("teaching-a-child")!;
+        const descriptor = candidate("D1", "actor", Object.keys(vignette.outcomes));
+        const fallback = vi.fn(async (q: Parameters<SocialContext["resolveSocialDecision"]>[0]) => ({ final: { [q.options[0]!]: 1 }, source }));
+        const snapshot = await legacyYear.finalizeLegacyYear({ ...context,
+          options: { ...context.options, engineSource: source }, resolveSocialDecision: fallback,
+        }, applicationOutput([], {
+          d1Candidates: missing === "result" ? [{ descriptor, vignette, deciderId: "actor", question: context.buildQuestion(descriptor, 1530, context.config, context.people) }] : [],
+          finalVignetteWinner: descriptor.decisionId,
+        }), undefined, []);
+        expect(fallback).toHaveBeenCalledOnce();
+        expect(context.counters.decisionCalls).toBe(source === "jev" ? 1 : 0);
+        expect(snapshot.events.at(-1)!.kind).toBe("vignette");
+        expect(context.decisions[0]!.source).toBe(source);
+      });
+    }
+  }
+
+  it("gives forced option ownership precedence over a prefetched different winner", async () => {
+    const context = await borrowedRunContext({ actor: person("d1-force", "actor", "f") }, { protagonistId: "actor" });
+    const vignette = getVignette("teaching-a-child")!;
+    const descriptor = candidate("D1", "actor", Object.keys(vignette.outcomes));
+    const fallback = vi.fn(context.resolveSocialDecision);
+    await legacyYear.finalizeLegacyYear({ ...context, resolveSocialDecision: fallback }, applicationOutput([], {
+      d1Candidates: [{ descriptor, vignette, deciderId: "actor", question: context.buildQuestion(descriptor, 1530, context.config, context.people) }],
+      finalVignetteWinner: descriptor.decisionId,
+      resultByDecisionId: new Map([[descriptor.decisionId, { final: { "teach-patiently": 1 }, source: "jev" }]]),
+    }), undefined, [force("D1", "actor", "feed-it")]);
+    expect(context.events[0]!.payload.vignette).toBe("a-stray-dog");
+    expect(context.decisions[0]!.chosen).toBe("feed-it");
+    expect(fallback).not.toHaveBeenCalled();
+    expect(context.counters.decisionCalls).toBe(0);
+  });
+
+  it("retains quiet guards for missing, already dead, death-year and existing-event protagonists", async () => {
+    for (const state of ["missing", "dead", "death-year", "event"] as const) {
+      const context = await borrowedRunContext({ actor: person("d1-guard", "actor", "f", {
+        ...(state === "dead" ? { deathYear: 1529 } : state === "death-year" ? { deathYear: 1530 } : {}),
+      }) }, { protagonistId: state === "missing" ? "absent" : "actor" });
+      if (state === "event") mechanics.pushEvent(context.events, 1530, "reflection", ["actor"], {}, []);
+      const snapshot = await legacyYear.finalizeLegacyYear(context, applicationOutput([]), undefined, [force("D1", "actor", "feed-it")]);
+      expect(snapshot.decisions.filter((d) => d.kind === "D1")).toHaveLength(state === "death-year" ? 1 : 0);
+    }
+  });
+});
+
+describe("borrowed annual ordering", () => {
+  it("preserves family lookup insertion order and the missing-parent legacy quirk", () => {
+    const actor = person("family", "actor", "f", { motherId: "missing", fatherId: "father" });
+    const father = person("family", "father", "m");
+    const sibling = person("family", "sibling", "f", { motherId: "missing" });
+    const child = person("family", "child", "m", { motherId: "actor" });
+    const people = { actor, father, sibling, child };
+    expect(mechanics.relationshipTargetId("parent", actor, people)).toBe("missing");
+    expect(mechanics.livingSiblingId(people, actor)).toBe("sibling");
+    expect(mechanics.livingChildId(people, actor)).toBe("child");
+    expect(mechanics.relationshipTargetId("parent", person("family", "orphan", "f"), people)).toBeUndefined();
+  });
+
+  it("decays before mutating capture, binds the same-year shock, awaits batch, then applies and captures", async () => {
+    const context = await borrowedRunContext({ actor: person("run-order", "actor", "f") });
+    const mind = context.people.actor!.mind;
+    mind.thoughts.push({ emotion: "hope", cause: "old", intensity: 20, yearsLeft: 3, year: 1529 });
+    const calls: string[] = [];
+    const raw = { help: 1 };
+    const snapshot = await legacyYear.runLegacyYear({ ...context,
+      townEventForYear: () => { calls.push("town"); return "harvest"; },
+      captureCandidates: (year, debug) => {
+        calls.push("capture");
+        expect(year).toBe(1530);
+        expect(debug).toBe(context.debug);
+        expect(mind.thoughts[0]!.yearsLeft).toBe(2);
+        ensureLifeState(context.people.actor!, context.events);
+        return [candidate("death", "actor", ["die", "survive"]), { ...candidate("A5", "actor", ["help", "ignore"]), townEventType: "harvest" as const }];
+      },
+      mortalityMultiplier: (town, ...args) => {
+        calls.push("mortality");
+        expect(town).toBe("harvest");
+        return context.mortalityMultiplier(town, ...args);
+      },
+      overrides: [force("death", "actor", "survive")],
+      buildQuestion: (...args) => {
+        calls.push("question");
+        expect(args[3]).toBe(context.people);
+        expect(context.events[0]!.kind).toBe("town");
+        return context.buildQuestion(...args);
+      },
+      resolveSocialDecision: async () => {
+        calls.push("batch-start");
+        await Promise.resolve();
+        expect(mind.thoughts).toHaveLength(1);
+        calls.push("batch-end");
+        return { final: raw, source: "jev" };
+      },
+      options: { ...context.options, decisionMaker: { decide: vi.fn() } },
+    }, 1530);
+    expect(calls).toEqual(["capture", "town", "mortality", "question", "batch-start", "batch-end"]);
+    expect(context.people.actor!.mind).toBe(mind);
+    expect(mind.thoughts).toHaveLength(2); // A5 has a Mind effect even without an NPC event.
+    expect(snapshot.people.actor!.mind).toEqual(mind);
+    expect(snapshot.decisions.at(-1)!.final).toEqual(raw);
+    expect(snapshot.events.filter((e) => e.actors.includes("actor"))).toEqual([]);
+  });
+
+  it("publishes current newborn inheritance and immediate widow grief after actual ordered birth/death", async () => {
+    const seed = birthSeed(true, true);
+    const context = await borrowedRunContext(parents(seed), {}, seed);
+    const snapshot = await legacyYear.runLegacyYear({ ...context,
+      captureCandidates: () => [birthCandidate],
+      townEventForYear: () => undefined,
+      overrides: [force("A2", "mother", "try")],
+    }, 1530);
+    const child = Object.values(snapshot.people).find((p) => p.motherId === "mother")!;
+    expect(child).toBeDefined();
+    expect(child.mind).toEqual(context.people[child.id]!.mind);
+    expect(snapshot.people.mother!.deathYear).toBe(1530);
+    expect(snapshot.people.father!.mind.thoughts.some((t) => t.emotion === "grief")).toBe(true);
+    expect(snapshot.people.father!.lifeState!.marital.status).toBe("widowed");
+    expect(snapshot.events.map((e) => e.kind)).toEqual(["child", "birth", "death", "widowed"]);
+  });
+});
 
 describe("ordered social application API", () => {
   it("exports a synchronous owned phase", () => {
@@ -117,40 +321,27 @@ describe("ordered social application API", () => {
   });
 
   it("delegates the active generator phase with its owned references", async () => {
-    const apply = vi.spyOn(legacyYear, "applyLegacySocialBatch");
+    const apply = vi.spyOn(legacyYear, "runLegacyYear");
     try {
       await observe({ seed: "apply-delegation", startYear: 1530, endYear: 1530, town: { name: "Testville" } }, {
         actor: person("apply-delegation", "actor", "f"),
       }, [], { overrides: [force("death", "actor", "survive")] });
       expect(apply).toHaveBeenCalledOnce();
-      const [context, output] = apply.mock.calls[0]!;
-      expect(output.year).toBe(1530);
+      const [context, year] = apply.mock.calls[0]!;
+      expect(year).toBe(1530);
       expect(context.people.actor!.id).toBe("actor");
       expect(context.decisions).toEqual(expect.any(Array));
-      expect(apply.mock.results[0]!.value).toBeUndefined();
+      expect((await apply.mock.results[0]!.value).year).toBe(1530);
     } finally {
       apply.mockRestore();
     }
   });
 });
 
-// Capture ONLY language ports and owned references; suppress gathering/application for this
-// fixture run. The direct tests below run the real synchronous outcome bodies, not a dispatcher.
+// Borrow catalog ports and owned references without a fixture year's effects. Direct tests
+// run the real synchronous outcome bodies, not a dispatcher.
 async function applicationContext(seed: string, people: Record<string, Person>, protagonistId?: string) {
-  let borrowed: LegacySocialApplyContext<CandidateDescriptor> | undefined;
-  const begin = vi.spyOn(legacyYear, "beginLegacyYear").mockReturnValue([]);
-  const apply = vi.spyOn(legacyYear, "applyLegacySocialBatch").mockImplementation((context) => {
-    borrowed = context;
-  });
-  try {
-    await observe({ seed, startYear: 1530, endYear: 1530, town: { name: "Testville" } }, people, []);
-    borrowed!.events.length = 0;
-    borrowed!.decisions.length = 0;
-    return { ...borrowed!, protagonistId };
-  } finally {
-    begin.mockRestore();
-    apply.mockRestore();
-  }
+  return borrowedRunContext(people, { protagonistId }, seed);
 }
 
 function applicationOutput(candidates: CandidateDescriptor[], patch: Partial<LegacySocialBatchOutput<CandidateDescriptor>> = {}): LegacySocialBatchOutput<CandidateDescriptor> {
@@ -385,26 +576,28 @@ describe("live legacy social batch phase", () => {
   });
 
   it("delegates after biology and leyrwite with the one owned registry and logs", async () => {
-    const phase = vi.spyOn(legacyYear, "resolveLegacySocialBatch");
-    const biology = vi.spyOn(legacyYear, "resolveLegacyBiology");
-    const leyrwite = vi.spyOn(legacyYear, "presentLegacyLeyrwite");
-    try {
-      await observe({ seed: "social-delegation", startYear: 1530, endYear: 1530, town: { name: "Testville" } },
-        { subject: person("social-delegation", "subject", "m") }, [],
-        { overrides: [force("death", "subject", "survive")] });
-      expect(phase).toHaveBeenCalledTimes(1);
-      const context = phase.mock.calls[0]![0];
-      expect(context.people).toBe(biology.mock.calls[0]![0].people);
-      expect(context.events).toBe(biology.mock.calls[0]![0].events);
-      expect(context.decisions).toBe(biology.mock.calls[0]![0].decisions);
-      expect(context.counters).toBe(biology.mock.calls[0]![0].counters);
-      expect(phase.mock.invocationCallOrder[0]).toBeGreaterThan(leyrwite.mock.invocationCallOrder[0]!);
-      expect(leyrwite.mock.invocationCallOrder[0]).toBeGreaterThan(biology.mock.invocationCallOrder[0]!);
-    } finally {
-      phase.mockRestore();
-      biology.mockRestore();
-      leyrwite.mockRestore();
-    }
+    const context = await borrowedRunContext({ subject: person("social-delegation", "subject", "m") });
+    const calls: string[] = [];
+    const result = await legacyYear.runLegacyYear({ ...context,
+      overrides: [force("death", "subject", "survive")],
+      townEventForYear: () => "harvest",
+      captureCandidates: () => [candidate("death", "subject", ["die", "survive"]), candidate("Y3", "subject", ["learn", "ignore"])],
+      resolveBiologyDecision: (...args) => {
+        calls.push("biology");
+        expect(context.events[0]!.kind).toBe("town");
+        return context.resolveBiologyDecision(...args);
+      },
+      buildQuestion: (...args) => {
+        calls.push("question");
+        expect(args[3]).toBe(context.people);
+        expect(context.decisions[0]!.kind).toBe("death");
+        expect(context.people.subject!.lifeState).toBeDefined();
+        return context.buildQuestion(...args);
+      },
+    }, 1530);
+    expect(calls).toEqual(["biology", "question"]);
+    expect(result.decisions.map((d) => d.kind)).toEqual(["death", "Y3"]);
+    expect(result.people.subject).not.toBe(context.people.subject);
   });
 });
 
@@ -559,34 +752,38 @@ describe("social batch alternate contracts", () => {
   it("builds newcomer questions from the actual post-biology person and current Mind", async () => {
     const seed = "phase-contract";
     const subject = person(seed, "protagonist", "m");
-    const originalBegin = legacyYear.beginLegacyYear;
-    const begin = vi.spyOn(legacyYear, "beginLegacyYear").mockImplementation((context) => [
-      ...originalBegin(context), { ...candidate("Y5", subject.id, ["open-up", "keep-distance"]), partnerId: "away-1530" },
-    ]);
-    const originalPhase = legacyYear.resolveLegacySocialBatch;
+    const originalRun = legacyYear.runLegacyYear;
     let observedNewcomer = false;
-    const phase = vi.spyOn(legacyYear, "resolveLegacySocialBatch").mockImplementation(async (context, ...args) => {
-      const newcomer = context.people["away-1530"]!;
-      expect(newcomer).toBeDefined();
-      const mind = newcomer.mind;
-      const people = context.people;
-      return originalPhase({ ...context, buildQuestion: (descriptor, year, config, registry) => {
-        expect(registry).toBe(people);
-        expect(registry["away-1530"]).toBe(newcomer);
-        expect(registry["away-1530"]!.mind).toBe(mind);
-        if (descriptor.kind === "Y5" && descriptor.partnerId === newcomer.id) observedNewcomer = true;
-        return context.buildQuestion(descriptor, year, config, registry);
-      } }, ...args);
+    let newcomerMind: Person["mind"] | undefined;
+    const phase = vi.spyOn(legacyYear, "runLegacyYear").mockImplementation(async (context, year) => {
+      return originalRun({ ...context,
+        captureCandidates: (y, debug) => [
+          ...context.captureCandidates(y, debug), { ...candidate("Y5", subject.id, ["open-up", "keep-distance"]), partnerId: "away-1530" },
+        ],
+        buildQuestion: (descriptor, y, config, registry) => {
+          expect(registry).toBe(context.people);
+          const newcomer = registry["away-1530"];
+          expect(newcomer).toBeDefined();
+          // Capture once at the existing port, before any question construction.
+          newcomerMind ??= newcomer!.mind;
+          const question = context.buildQuestion(descriptor, y, config, registry);
+          if (descriptor.kind === "Y5" && descriptor.partnerId === newcomer!.id) {
+            expect(registry[newcomer!.id]!.mind).toBe(newcomerMind);
+            observedNewcomer = true;
+          }
+          return question;
+        },
+      }, year);
     });
     try {
-      await observe({ seed, startYear: 1530, endYear: 1530, town: { name: "Testville" } }, { protagonist: subject }, [
+      const observed = await observe({ seed, startYear: 1530, endYear: 1530, town: { name: "Testville" } }, { protagonist: subject }, [
         { id: "away-move", year: 1525, kind: "move", actors: [subject.id], payload: { away: true }, causes: [] },
       ], { protagonistId: subject.id, overrides: [force("death", subject.id, "survive"),
         force("away-arrival", subject.id, "arrive"), force("Y5", subject.id, "open-up"), force("return", subject.id, "stay")] });
       expect(observedNewcomer).toBe(true);
+      expect(observed.report.result.people["away-1530"]!.mind).toBe(newcomerMind);
     } finally {
       phase.mockRestore();
-      begin.mockRestore();
     }
   });
 
@@ -730,10 +927,12 @@ describe("complete legacy pre-social phase", () => {
     const subject = person(seed, "protagonist", "m");
     // Explicit same-year descriptor protects the phase handoff without changing the legacy
     // catalog's pre-biology eligibility policy (which remains a later extraction boundary).
-    const originalBegin = legacyYear.beginLegacyYear;
-    const begin = vi.spyOn(legacyYear, "beginLegacyYear").mockImplementation((context) => [
-      ...originalBegin(context), { ...candidate("Y5", subject.id, ["open-up", "keep-distance"]), partnerId: "away-1530" },
-    ]);
+    const originalRun = legacyYear.runLegacyYear;
+    const begin = vi.spyOn(legacyYear, "runLegacyYear").mockImplementation((context, year) => originalRun({
+      ...context, captureCandidates: (y, debug) => [
+        ...context.captureCandidates(y, debug), { ...candidate("Y5", subject.id, ["open-up", "keep-distance"]), partnerId: "away-1530" },
+      ],
+    }, year));
     try {
       const observed = await observe({ seed, startYear: 1530, endYear: 1530, town: { name: "Testville" } }, { protagonist: subject }, [
         { id: "away-move", year: 1525, kind: "move", actors: [subject.id], payload: { away: true }, causes: [] },
@@ -837,34 +1036,24 @@ describe("legacy whole-year canonical baseline", () => {
   });
 
   it("the public annual generator actively delegates on its owned state", async () => {
-    const begin = vi.spyOn(legacyYear, "beginLegacyYear");
-    const shocks = vi.spyOn(legacyYear, "emitLegacyYearShocks");
-    const biology = vi.spyOn(legacyYear, "resolveLegacyBiology");
-    const leyrwite = vi.spyOn(legacyYear, "presentLegacyLeyrwite");
+    const run = vi.spyOn(legacyYear, "runLegacyYear");
     try {
       const world = generateWorld({ seed: "legacy-delegation", startYear: 1530, endYear: 1530, founderCount: 10 });
       const observed = await observe(world.config, world.people, world.events);
-      expect(begin).toHaveBeenCalledTimes(1);
-      expect(shocks).toHaveBeenCalledTimes(1);
-      expect(biology).toHaveBeenCalledTimes(1);
-      expect(leyrwite).toHaveBeenCalledTimes(1);
-      expect(begin.mock.invocationCallOrder[0]).toBeLessThan(shocks.mock.invocationCallOrder[0]!);
-      expect(shocks.mock.invocationCallOrder[0]).toBeLessThan(biology.mock.invocationCallOrder[0]!);
-      expect(biology.mock.invocationCallOrder[0]).toBeLessThan(leyrwite.mock.invocationCallOrder[0]!);
-      const context = begin.mock.calls[0]![0];
-      for (const [used] of [...shocks.mock.calls, ...biology.mock.calls, ...leyrwite.mock.calls]) {
-        expect(used).toBe(context);
-        expect(used.people).toBe(observed.report.result.people);
-        expect(used.events).toBe(observed.report.result.events);
-        expect(used.decisions).toBe(observed.report.result.decisions);
-      }
+      expect(run).toHaveBeenCalledOnce();
+      const [context, year] = run.mock.calls[0]!;
+      expect(year).toBe(1530);
+      expect(context.people).toBe(observed.report.result.people);
+      expect(context.events).toBe(observed.report.result.events);
+      expect(context.decisions).toBe(observed.report.result.decisions);
       expect(context.counters.decisionCalls).toBe(observed.report.decisionCalls);
+      expect(context.debug).toBe(context.marriageFunnelDebug);
       expect(world.people).not.toBe(context.people);
+      const publication = await run.mock.results[0]!.value;
+      expect(publication).toBe(observed.report.snapshots.get(year));
+      expect(publication.people).not.toBe(context.people);
     } finally {
-      begin.mockRestore();
-      shocks.mockRestore();
-      biology.mockRestore();
-      leyrwite.mockRestore();
+      run.mockRestore();
     }
   });
 
