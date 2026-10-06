@@ -1,6 +1,6 @@
 # Narrative lifecycle kernel — release work units
 
-RL1a1, RL1a2, and RL1a3 are DONE as bounded work units, not completion of the full annual lifecycle pipeline or NEW version/continuation. RL1a3 has native approval, a committed source boundary, parent integration with identical source hashes, and observed combined verification. RL1a4 is IN PROGRESS under the parent continuation authorization at isolated HEAD `3e1ffbf5f016700726542900037e69de0fb3950e`. This source transaction owns only the four mapped domain paths and this book; historical documentation-only restrictions below describe prior transactions, not current authority. Before first source write, update and fully read back existing mirror `7536` for project `lifelines`, topic `odd/narrative-lifecycle-kernel/tasks`. Strict test-first: baseline 32, missing API/delegation RED, then complete ordered social application GREEN and direct causal triangulation. Native review, integration, combined verification, and release remain pending; do not mark this unit DONE. Main, record `7504`, and `.claude/perf` remain untouched.
+RL1a1–RL1a4 are DONE as bounded units only. RL1a5 is PENDING, mapped below, NOT source permission. This transaction is documentation-only; four domain paths are frozen. Historical authority, pending gates, receipts, and failures below describe their recorded stages; RL1a4 closure supersedes its former IN PROGRESS status. Full annual lifecycle, NEW version/continuation, and release are NOT done. Main, `7504`, and `.claude/perf` remain untouched.
 
 ## Authority and current boundary
 
@@ -143,7 +143,7 @@ Forecast: 500–1000 authored lines including moves and tests; a review heuristi
 
 ## Still pending — not release-ready
 
-RL1a3 preparation/resolution is not completion of old phase 3. Ordered social application, interleaved birth/maternal death, vignette work, snapshots/D1, remaining lifecycle phases, the new E-version journal/continuation, genuine unforced death, RI1, and RA1 remain incomplete. Closed RL1a2 and RL1a3 do not declare the full release ready; RL1a4 is IN PROGRESS, with current source evidence below. Preserve `.claude/perf`; no push, PR, deployment, installs, network/provider work, live database access, or destructive actions.
+RL1a4 closes ordered application and causal birth/maternal cleanup, not D1/finalization, reusable annual execution, NEW E-version/fact journal, authentic mortality runtime, RI1/RA1, or production readiness. Preserve `.claude/perf`; no push, PR, deployment, installs, network/provider work, live database access, or destructive actions.
 
 ## Documentation-only transaction and evidence
 
@@ -209,7 +209,9 @@ Parent-provided subsequent evidence closes RL1a3 gates 6 and 7, without erasing 
 - All four source hashes and the document hash were stable before/after both full runs. At that historical source-gate closure, the source boundary remained HEAD `0a010442b2edf29c0be397c4af7fa5f8a7985c65`, three modified source files, 499 additions / 210 deletions (709 authored lines), mechanics unchanged. Pre-sync document SHA-256: `0c5ca454d73bb535cce16d8c25d0b7b34b67477d0fc9abf309c470d0e2dfe19f`.
 - Final documentation checks: full file and mirror `7536` readbacks/equality with byte counts and SHA-256; `git diff --check`, HEAD/status, and unchanged four source hashes. These checks are documentation-only, not repeated source validation. Failed-writer cause remains UNKNOWN, not proven to be model or tooling.
 
-## Active unit: RL1a4 — ordered social application (IN PROGRESS)
+## Closed unit: RL1a4 — ordered social application (DONE)
+
+The following source-transaction map/progress is historical; closure below supersedes pending delivery gates.
 
 Parent continuation started this bounded source transaction at isolated HEAD `3e1ffbf5f016700726542900037e69de0fb3950e`. Move the entire ordered application currently at `src/domain/simulate.ts` lines 2143–2851 (about 710 source lines), plus 45–60 helper lines. This is ONE coherent phase, not multi-area scope: selection, sampling, occurrence invariant, all 26 outcome bodies, and unconditional record/commit for every input candidate in original order. Forecast 1600–1900 added/deleted lines, mostly moves, typed context, and meaningful tests; do not minify or trim coverage.
 
@@ -238,7 +240,7 @@ Parent continuation started this bounded source transaction at isolated HEAD `3e
 
 ## Next step
 
-Independent Node 24 and semantic checks are complete. Parent owns release record `7504`, native review, exact-unit commit, integration, combined verification, and subsequent lifecycle units. RL1a4 remains IN PROGRESS; source validation does not confer native approval or release readiness. Preserve historical constraints, failure history, immutable receipts, and later lifecycle/release gates. Main and `7504` remain untouched. Full annual pipeline and NEW version/continuation are NOT done.
+RL1a5 is PENDING: map only, no source authority. Parent owns `7504`, subsequent source authorization, review, integration, and delivery. Historical pending statements below precede RL1a4 closure; all release constraints remain.
 
 ### RL1a4 source progress — isolated transaction
 
@@ -258,3 +260,17 @@ Independent evidence: first Node 24 full run 330/332, existing clergy timeout 52
 | `src/domain/legacy-year.ts` | `dc60376ffb886152c2c4c7139066b53a583a8a0b59d6e8e33d58d01e7974b181` |
 | `src/domain/legacy-year-mechanics.ts` | `a9824e184bd8f708d966daffe179e8c87ec8791ad8ded54f73df755fce1cfdd9` |
 | `src/domain/legacy-year.test.ts` | `d02790f6b88085acb97e8f4ae33b88b163b872f52c4a2c533ceff1e9fb5d39ae` |
+
+### Immutable RL1a4 closure (parent-provided)
+
+Source `216d542419acc0472e0d65bf40905d6e538b3eeb` → parent `b14a277304399aab05632a9045f68c49269b6365`, identical four hashes. Native exact `3e1ffbf` → `216d542`: 1928 authored lines/all five paths (1887 source + 41 doc). `review-f1db6fc967d9167f`: APPROVED, ACK BURNED; target `3a9597fa26a01b4fe3c2e71a1856edb111c60660f2e0bf6ba1a43b5a28b8bc34`; consumed `b05af3f2e29b3cffd7381d4a8e0b485910ef42b4c5db0dec9b6e566622b36695`. Receipts NEVER STATUS authority/reusable approval. Main POST-integration: 745/745, 18 files, 208.36s, Node 26 serial; types/lint PASS, six hashes stable, only `.claude` dirty. Prior timeout evidence/cause UNKNOWN remains unchanged.
+
+### NEXT RL1a5 — PENDING map only
+
+Finalization + borrowed `runLegacyYear` async API owns all phases, same four domain files/no new source file; estimate 600–850 lines, mostly move/context/tests. Completes REUSABLE LEGACY year only, not NEW E-version/fact journal/authentic mortality runtime/production readiness. Current E1 rules-only/human-reject/wire unchanged; no historical Mind backfill or new product-policy question.
+
+- Move actual D1 body (original simulate 1855–1994) and final guard/capture (2072–2138) into kernel. Move `livingSiblingId`, `livingChildId`, `relationshipTargetId` to mechanics, preserving missing-parent behavior. Original catalog/question/vignette-label ports allowed; no outcome-mutator callback or kernel→simulate import.
+- Capture `{year,people,events,decisions}` via THREE separate `structuredClone` calls in EXACT existing order, NOT `Object.freeze`: detached publication, not second simulation registry. Capture callback already mutates lifeState/debug; do not call it pure.
+- `runLegacyYear`: decay/capture→partition→shocks→biology→leyrwite→await batch→application→D1→capture; one owned Record, same Mind/counters. Preserve per-year mortality/town closure, captured versus LIVE protagonist options, debug cohort config startYear override/fromYear anchor, D1 override/prefetch versus fallback engine accounting/parent credit, protagonist Mind-relationship effect, raw slots.
+- Public `simulateYears` retains initial clone/defaults, initial startYear−1, inclusive horizon loop, snapshot store/yield BEFORE live-death stop, elapsed report. Cancellation: `drainSimulation` beforeNext/progress only; no new midyear cancel.
+- Test-first: 44 baseline → new API RED → GREEN; eight pins unchanged. Prove current birth-parent/grief and D1 before capture, detached later mutation, birth/death/horizon/noProtag/resumed/progress/cancel. Earlier ordered application cleanup/counters/slots remain intact.
