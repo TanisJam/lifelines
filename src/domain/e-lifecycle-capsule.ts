@@ -29,12 +29,14 @@ function freeze<T>(value: T): T {
   }
   return value;
 }
-function capture(input: unknown, fields: string[]): Record<string, unknown> {
+function checkedRecord(input: unknown, fields: string[]): Record<string, unknown> {
   // WHOLE borrowed graph before any field read, hashing, cloning or await.
   requireFavorData(input, true);
   record(input);
   requireFields(input, fields);
-  return structuredClone(input);
+  // Borrow only within this synchronous scope; regenerate immediately captures
+  // ownership through genesis admission and replay before either can suspend.
+  return input;
 }
 function requireManifest(value: unknown): void {
   if (canonicalLifecycleData(value) !== canonicalLifecycleData(LIFECYCLE_CAPSULE_MANIFEST)) {
@@ -58,6 +60,8 @@ function requireDigest(value: unknown, manifest: unknown, encoded: string): asse
 async function regenerate(candidate: Record<string, unknown>): Promise<LifecycleCapsule> {
   // Digest is integrity, NEVER execution authority. LR1a regenerates genesis;
   // LR2a independently regenerates every native/economic year and all evidence.
+  // Genesis admission detaches synchronously. Replay guards/clones its whole
+  // envelope before its first await; after this await never read candidate again.
   const genesis = admitLifecycleGenesis(candidate.genesis);
   const output = await replayLifecycleRuntime({ genesis, output: candidate.output });
   const manifest = freeze(structuredClone(LIFECYCLE_CAPSULE_MANIFEST));
@@ -66,11 +70,11 @@ async function regenerate(candidate: Record<string, unknown>): Promise<Lifecycle
 
 /** Required closed input { genesis, output }, including zero-year/alive/death output. */
 export async function createLifecycleCapsule(input: unknown): Promise<LifecycleCapsule> {
-  return regenerate(capture(input, ["genesis", "output"]));
+  return regenerate(checkedRecord(input, ["genesis", "output"]));
 }
 /** Cold admission always performs full trusted replay, including rehashed candidates. */
 export async function admitLifecycleCapsule(input: unknown): Promise<LifecycleCapsule> {
-  const candidate = capture(input, ["manifest", "digest", "genesis", "output"]);
+  const candidate = checkedRecord(input, ["manifest", "digest", "genesis", "output"]);
   requireManifest(candidate.manifest);
   requireDigest(candidate.digest, candidate.manifest, payload(candidate.genesis, candidate.output));
   return regenerate(candidate);

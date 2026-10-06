@@ -76,6 +76,51 @@ beforeAll(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("full trusted lifecycle capsule", () => {
+  it.each(["create", "admit"])("%s avoids outer capture but retains essential replay capture", async kind => {
+    const input = structuredClone(kind === "create" ? evidence : capsule);
+    const clone = vi.spyOn(globalThis, "structuredClone"); // call through, never replace ownership
+    const result = await (kind === "create" ? createLifecycleCapsule(input) : admitLifecycleCapsule(input));
+    const envelopes = clone.mock.calls.map(([value]) => value).filter(value => {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+      const keys = Object.keys(value).sort().join(",");
+      return keys === "genesis,output" || keys === "digest,genesis,manifest,output";
+    });
+    expect(clone.mock.calls.some(([value]) => value === input)).toBe(false);
+    expect(envelopes).toHaveLength(1);
+    expect(Object.keys(envelopes[0] as object).sort()).toEqual(["genesis", "output"]);
+    expect((envelopes[0] as Evidence).output).toBe(input.output);
+    fidelity(result, capsule);
+    frozen(result);
+  });
+
+  it.each(["create", "admit", "serialize"])("%s isolates root replacements immediately after returning its promise", async kind => {
+    const candidate = structuredClone(capsule as unknown) as Candidate;
+    const originalGenesis = candidate.genesis;
+    const input = { genesis: candidate.genesis, output: candidate.output };
+    const pending = kind === "create" ? createLifecycleCapsule(input)
+      : kind === "admit" ? admitLifecycleCapsule(candidate) : serializeLifecycleCapsule(candidate);
+    candidate.genesis.initial.people.protagonist.name = "mutated after return";
+    candidate.output.owned.people.protagonist.mind.stress = 999;
+    candidate.output.journal[0].economics.resources.length = 0;
+    define(candidate.manifest, "codec", "mutated after return");
+    candidate.digest = "0".repeat(64);
+    for (const root of [input, candidate]) {
+      define(root, "genesis", null);
+      define(root, "output", null);
+    }
+    define(candidate, "manifest", null);
+    const result = await pending;
+    if (typeof result === "string") expect(result === wire).toBe(true);
+    else {
+      fidelity(result, capsule);
+      frozen(result);
+      expect(result.genesis).not.toBe(originalGenesis);
+      expect(result.output.owned.people).toBe(result.output.favors.people);
+      expect(Object.keys(result.genesis.initial.people)).toEqual(capsule.genesis.initial.registryOrder);
+      expect(await serializeLifecycleCapsule(result) === wire).toBe(true);
+    }
+  });
+
   it("roundtrips full canon, restores generated order/aliases and returns frozen detached data", async () => {
     const candidate = structuredClone(capsule as unknown) as Candidate;
     const native = vi.spyOn(sourceModule, "createRulesYearSource");
