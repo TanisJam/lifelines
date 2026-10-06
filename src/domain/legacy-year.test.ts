@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { beginLegacyYear, resolveLegacyVitalDecision, type LegacySocialBatchContext } from "./legacy-year";
+import { beginLegacyYear, resolveLegacyVitalDecision, type LegacySocialApplyContext, type LegacySocialBatchContext, type LegacySocialBatchOutput, type ResolvedDecision } from "./legacy-year";
 import type { DecisionMaker, PersonYearBatch } from "./decisions";
 import { getVignette } from "./vignettes";
 import { mintId, overrideFor, spawnChild } from "./legacy-year-mechanics";
@@ -10,6 +10,8 @@ import { shouldPresentLeyrwite } from "./period/markers";
 import * as legacyYear from "./legacy-year";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import { createMind } from "./mind";
+import { keyedDraw, keyedRng } from "./rng";
+import { activeRomancePairs, pairKey } from "./events";
 import { createMarriageFunnelCollector, simulateYears, type CandidateDescriptor, type SimulateOptions } from "./simulate";
 import type { Event, Person, WorldConfig } from "./types";
 import { generateWorld } from "./worldgen";
@@ -108,6 +110,257 @@ async function socialContext(people: Record<string, Person>, options: Partial<Si
     phase.mockRestore();
   }
 }
+
+describe("ordered social application API", () => {
+  it("exports a synchronous owned phase", () => {
+    expect(legacyYear).toHaveProperty("applyLegacySocialBatch", expect.any(Function));
+  });
+
+  it("delegates the active generator phase with its owned references", async () => {
+    const apply = vi.spyOn(legacyYear, "applyLegacySocialBatch");
+    try {
+      await observe({ seed: "apply-delegation", startYear: 1530, endYear: 1530, town: { name: "Testville" } }, {
+        actor: person("apply-delegation", "actor", "f"),
+      }, [], { overrides: [force("death", "actor", "survive")] });
+      expect(apply).toHaveBeenCalledOnce();
+      const [context, output] = apply.mock.calls[0]!;
+      expect(output.year).toBe(1530);
+      expect(context.people.actor!.id).toBe("actor");
+      expect(context.decisions).toEqual(expect.any(Array));
+      expect(apply.mock.results[0]!.value).toBeUndefined();
+    } finally {
+      apply.mockRestore();
+    }
+  });
+});
+
+// Capture ONLY language ports and owned references; suppress gathering/application for this
+// fixture run. The direct tests below run the real synchronous outcome bodies, not a dispatcher.
+async function applicationContext(seed: string, people: Record<string, Person>, protagonistId?: string) {
+  let borrowed: LegacySocialApplyContext<CandidateDescriptor> | undefined;
+  const begin = vi.spyOn(legacyYear, "beginLegacyYear").mockReturnValue([]);
+  const apply = vi.spyOn(legacyYear, "applyLegacySocialBatch").mockImplementation((context) => {
+    borrowed = context;
+  });
+  try {
+    await observe({ seed, startYear: 1530, endYear: 1530, town: { name: "Testville" } }, people, []);
+    borrowed!.events.length = 0;
+    borrowed!.decisions.length = 0;
+    return { ...borrowed!, protagonistId };
+  } finally {
+    begin.mockRestore();
+    apply.mockRestore();
+  }
+}
+
+function applicationOutput(candidates: CandidateDescriptor[], patch: Partial<LegacySocialBatchOutput<CandidateDescriptor>> = {}): LegacySocialBatchOutput<CandidateDescriptor> {
+  return {
+    year: 1530, batchable: true, socialCandidates: candidates, questions: [],
+    forcedFlags: candidates.map((c) => force(c.kind, c.personId, c.options[0]!)),
+    fallbackFlags: candidates.map(() => false), resolved: candidates.map(() => undefined),
+    d1Candidates: [], resultByDecisionId: new Map(), finalVignetteWinner: undefined,
+    ...patch,
+  };
+}
+
+function birthSeed(maternalDeath: boolean, priorCore = false): string {
+  // A deterministic seeded fixture search, not a forced production death or changed physics.
+  for (let i = 0; i < 20000; i++) {
+    const seed = `ordered-birth-${i}`;
+    if (keyedDraw(seed, pairKey("mother", "father"), 1530, "conceive") >= mechanics.conceptionProbability(30)) continue;
+    if ((keyedDraw(seed, "mother", 1530, "maternal-death") < 0.0095) !== maternalDeath) continue;
+    if (priorCore && keyedRng(seed, "mother", 1530, "mind-memory-core-0")() >= 1 / 3) continue;
+    return seed;
+  }
+  throw new Error("No deterministic original-physics birth fixture found");
+}
+
+function parents(seed: string) {
+  const mother = person(seed, "mother", "f", { spouseId: "father" });
+  const father = person(seed, "father", "m", { spouseId: "mother" });
+  mother.mind.facets.perseverance = 50;
+  father.mind.facets.perseverance = 50;
+  return { mother, father };
+}
+
+const birthCandidate: CandidateDescriptor = { ...candidate("A2", "mother", ["try", "refuse"]), partnerId: "father" };
+
+describe("ordered social application effects", () => {
+  it("inherits the current parent Mind after an earlier core shift, before birth joy", async () => {
+    const seed = birthSeed(false, true);
+    const context = await applicationContext(seed, parents(seed));
+    const before = structuredClone(context.people);
+    const prefetched = spawnChild(seed, 1530, before.mother!, before.father!, before);
+    let atBirth: Record<string, Person> | undefined;
+    const actualSpawn = mechanics.spawnChild;
+    const spawn = vi.spyOn(mechanics, "spawnChild").mockImplementation((...args) => {
+      atBirth = structuredClone(args[4]);
+      return actualSpawn(...args);
+    });
+    try {
+      legacyYear.applyLegacySocialBatch(context, applicationOutput([
+        { ...candidate("A11", "mother", ["master-it"]), breakdownKind: "despair" }, birthCandidate,
+      ]), undefined);
+      const motherAtBirth = atBirth!.mother!;
+      const fatherAtBirth = atBirth!.father!;
+      expect(motherAtBirth.mind.facets.perseverance).toBeGreaterThan(50);
+      expect(motherAtBirth.mind.memories.some((m) => m.core && m.text.includes("overcame a breaking point"))).toBe(true);
+      expect(motherAtBirth.mind.thoughts.some((t) => t.cause.startsWith("welcoming"))).toBe(false);
+      expect(fatherAtBirth.mind.thoughts.some((t) => t.cause.startsWith("welcoming"))).toBe(false);
+      const child = Object.values(context.people).find((p) => p.motherId === "mother")!;
+      expect(child.mind).toEqual(createMind(seed, child.id, 1530, [motherAtBirth.mind, fatherAtBirth.mind]));
+      expect(child.mind.facets.perseverance).not.toBe(prefetched.mind.facets.perseverance);
+      expect(context.people.mother!.mind.thoughts.some((t) => t.cause === `welcoming ${child.name} into the family`)).toBe(true);
+      expect(context.decisions.map((d) => d.kind)).toEqual(["A11", "A2"]);
+      expect(context.events.map((e) => e.kind)).toEqual(["breakdown", "child", "birth"]);
+      expect(spawn).toHaveBeenCalledOnce();
+    } finally {
+      spawn.mockRestore();
+    }
+  });
+
+  it("immediately cleans maternal death and courtship before recording a later dead actor", async () => {
+    const seed = birthSeed(true);
+    const context = await applicationContext(seed, { ...parents(seed), suitor: person(seed, "suitor", "m") });
+    const { mother, father, suitor } = context.people;
+    const marriage = mechanics.pushEvent(context.events, 1529, "marriage", [mother!.id, father!.id], {}, []);
+    mechanics.pushEvent(context.events, 1529, "romance", [mother!.id, suitor!.id], {}, []);
+    suitor!.lifeState = applyLifeTransition(ensureLifeState(suitor!, context.events), { axis: "marital", to: "courting", partnerId: mother!.id }, 1529);
+    const labels = vi.fn(context.optionLabel);
+    const later = { ...candidate("A3", "mother", ["seize"]), opportunityJob: "baker" };
+    let atLaterLabel: Record<string, Person> | undefined;
+    labels.mockImplementation((...args) => {
+      if (args[0] === "A3") atLaterLabel = structuredClone(context.people);
+      return context.optionLabel(...args);
+    });
+    legacyYear.applyLegacySocialBatch({ ...context, optionLabel: labels }, applicationOutput([birthCandidate, later]), undefined);
+    const childEvent = context.events.find((e) => e.kind === "child")!;
+    const birth = context.events.find((e) => e.kind === "birth")!;
+    const death = context.events.find((e) => e.kind === "death")!;
+    const widow = context.events.find((e) => e.kind === "widowed")!;
+    const breakup = context.events.find((e) => e.kind === "breakup")!;
+    expect(context.events.map((e) => e.kind)).toEqual(["marriage", "romance", "child", "birth", "death", "widowed", "breakup"]);
+    expect(childEvent.causes).toEqual([marriage.id]);
+    expect(birth.causes).toEqual([childEvent.id]);
+    expect(death.causes).toEqual([childEvent.id, birth.id]);
+    expect(death.payload.cause).toBe("childbirth");
+    expect(widow.causes).toEqual([death.id]);
+    expect(breakup.causes).toEqual([death.id]);
+    expect(atLaterLabel!.mother!.deathYear).toBe(1530);
+    expect(atLaterLabel!.mother!.spouseId).toBeUndefined();
+    expect(atLaterLabel!.father!.lifeState!.marital.status).toBe("widowed");
+    expect(atLaterLabel!.suitor!.lifeState!.marital.status).toBe("single");
+    expect(father!.mind.thoughts.some((t) => t.emotion === "grief" && t.personId === mother!.id)).toBe(true);
+    expect(activeRomancePairs(context.events, suitor!.id)).toEqual([]);
+    expect(context.decisions.map((d) => d.kind)).toEqual(["A2", "A3"]);
+    expect(context.decisions[0]!.resultingEventIds).toEqual([childEvent.id, birth.id, death.id, widow.id, breakup.id]);
+    expect(context.decisions[1]!.resultingEventIds).toEqual([]);
+    expect(mother!.job).toBe("none");
+    expect(mother!.mind.thoughts.some((t) => t.cause.includes("becoming"))).toBe(false);
+    expect(mintId(context.people, "A3", "mother", 1530).id).not.toBe(context.decisions[1]!.id);
+  });
+
+  it("records unselected and dead candidates in input order with exact raw aliases and slots", async () => {
+    const seed = "raw-apply";
+    const context = await applicationContext(seed, { alive: person(seed, "alive", "f"), dead: person(seed, "dead", "m", { deathYear: 1529 }) });
+    const before = canonical(Object.values(context.people).map((p) => p.mind));
+    const raw = { help: 1, flee: -0 };
+    const response: ResolvedDecision = { jevRaw: raw, prior: raw, final: raw, source: "jev", occurrenceProbability: undefined };
+    const descriptors = [candidate("A5", "alive", ["help", "flee"]), candidate("A5", "dead", ["help", "flee"]), candidate("A5", "alive", ["help", "flee"])];
+    const firstId = mintId(context.people, "A5", "alive", 1530).id;
+    const deadId = mintId(context.people, "A5", "dead", 1530).id;
+    legacyYear.applyLegacySocialBatch(context, applicationOutput(descriptors, {
+      forcedFlags: [undefined, undefined, undefined], resolved: [response, { ...response, occurrenceProbability: -0 }, response],
+    }), undefined);
+    expect(context.decisions.map((d) => d.personId)).toEqual(["alive", "dead", "alive"]);
+    expect(context.decisions[0]!.id).toBe(firstId);
+    expect(context.decisions[1]!.id).toBe(deadId);
+    expect(context.decisions[2]!.id).not.toBe(firstId);
+    expect(mintId(context.people, "A5", "alive", 1530).id).not.toBe(context.decisions[2]!.id);
+    for (const d of context.decisions) {
+      expect(d.jevRaw).toBe(raw);
+      expect(d.prior).toBe(raw);
+      expect(d.final).toBe(raw);
+      expect(Object.is(d.final.flee, -0)).toBe(true);
+      expect(Object.hasOwn(d, "partnerId")).toBe(true);
+      expect(d.partnerId).toBeUndefined();
+      expect(Object.hasOwn(d, "occurrenceProbability")).toBe(true);
+      expect(d.resultingEventIds).toEqual([]);
+      expect(d.noise).not.toEqual({}); // even unselected/dead candidates are sampled
+    }
+    expect(Object.is(context.decisions[1]!.occurrenceProbability, -0)).toBe(true);
+    expect(canonical(Object.values(context.people).map((p) => p.mind))).toBe(before);
+    expect(context.events).toEqual([]);
+  });
+
+  it.each([false, true])("keeps NPC no-event Mind effects versus protagonist reflection (protagonist=%s)", async (protagonist) => {
+    const seed = "npc-mind-apply";
+    const context = await applicationContext(seed, {
+      actor: person(seed, "actor", "f", { founder: false, motherId: "ancestor" }),
+      partner: person(seed, "partner", "m"),
+      ancestor: person(seed, "ancestor", "f", { birthYear: 1470, deathYear: 1529 }),
+    }, protagonist ? "actor" : undefined);
+    const actorBefore = canonical(context.people.actor!.mind);
+    const partnerBefore = canonical(context.people.partner!.mind);
+    legacyYear.applyLegacySocialBatch(context, applicationOutput([
+      { ...candidate("Y1", "actor", ["decline"]), partnerId: "partner" },
+      { ...candidate("A5", "actor", ["help"]), townEventType: "fire" },
+    ]), "town-fire");
+    expect(canonical(context.people.actor!.mind)).not.toBe(actorBefore);
+    expect(canonical(context.people.partner!.mind)).not.toBe(partnerBefore);
+    expect(context.people.actor!.mind.thoughts.map((t) => t.emotion)).toEqual(["relief", "pride"]);
+    expect(context.people.partner!.mind.thoughts.map((t) => t.emotion)).toEqual(["shame"]);
+    expect(context.marriageFunnelDebug!.y1WonDraw).toBe(1);
+    expect(context.marriageFunnelDebug!.y1Outcomes.decline).toBe(1);
+    if (protagonist) {
+      expect(context.events.map((e) => e.kind)).toEqual(["reflection", "reflection"]);
+      expect(context.events.map((e) => e.payload.note)).toEqual(["declined-a-suitor", "helped-during-a-town-event"]);
+      expect(context.events[1]!.causes).toEqual(["town-fire"]);
+      expect(context.decisions.map((d) => d.resultingEventIds)).toEqual(context.events.map((e) => [e.id]));
+    } else {
+      expect(context.events).toEqual([]);
+      expect(context.decisions.map((d) => d.resultingEventIds)).toEqual([[], []]);
+    }
+    expect(context.decisions[1]!.causes).toEqual(["town-fire"]);
+  });
+
+  it.each([false, true])("rejects duplicate occurring kind/person before the alive guard (dead=%s)", async (dead) => {
+    const seed = "duplicate-apply";
+    const context = await applicationContext(seed, { actor: person(seed, "actor", "f", dead ? { deathYear: 1529 } : {}) });
+    const descriptor = candidate("A5", "actor", ["help"]);
+    expect(() => legacyYear.applyLegacySocialBatch(context, applicationOutput([descriptor, descriptor]), undefined))
+      .toThrow("PR6 invariant violated: (A5, actor) occurred more than once in year 1530.");
+    expect(context.decisions).toHaveLength(1);
+    expect(mintId(context.people, "A5", "actor", 1530).id).not.toBe(context.decisions[0]!.id);
+    expect(context.events).toEqual([]);
+  });
+
+  it.each(["forced", "fallback", "legacy"] as const)("bypasses selection only for %s answers", async (mode) => {
+    const seed = "selection-bypass";
+    const context = await applicationContext(seed, { actor: person(seed, "actor", "f") });
+    const raw = { help: 1 };
+    legacyYear.applyLegacySocialBatch(context, applicationOutput([candidate("A5", "actor", ["help"])], {
+      batchable: mode !== "legacy",
+      forcedFlags: mode === "forced" ? [force("A5", "actor", "help")] : [undefined],
+      fallbackFlags: [mode === "fallback"],
+      resolved: mode === "forced" ? [undefined] : [{ prior: raw, final: raw, source: "rules" }],
+    }), undefined);
+    expect(context.people.actor!.mind.thoughts).toHaveLength(1);
+    const d = context.decisions[0]!;
+    expect(d.occurrenceProbability).toBeUndefined();
+    expect(d.source).toBe(mode === "forced" ? "forced" : "rules");
+    expect(Object.hasOwn(d, "jevRaw")).toBe(true);
+    expect(d.jevRaw).toBeUndefined();
+    if (mode === "forced") {
+      expect(d.noise).toEqual({});
+      expect(d.prior).toBeUndefined();
+    } else {
+      expect(d.noise).not.toEqual({});
+      expect(d.prior).toBe(raw);
+      expect(d.final).toBe(raw);
+    }
+  });
+});
 
 const seeded = [
   ["maternal-check-37", 24],

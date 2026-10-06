@@ -1,6 +1,6 @@
 # Narrative lifecycle kernel — release work units
 
-RL1a1, RL1a2, and RL1a3 are DONE as bounded work units, not completion of the full annual lifecycle pipeline or NEW version/continuation. RL1a3 has native approval, a committed source boundary, parent integration with identical source hashes, and observed combined verification. RL1a4 is PENDING: the ordered social-application phase is mapped below, not started or authorized for source writes here. This documentation-only sync changes this task and its full Engram mirror, not release readiness.
+RL1a1, RL1a2, and RL1a3 are DONE as bounded work units, not completion of the full annual lifecycle pipeline or NEW version/continuation. RL1a3 has native approval, a committed source boundary, parent integration with identical source hashes, and observed combined verification. RL1a4 is IN PROGRESS under the parent continuation authorization at isolated HEAD `3e1ffbf5f016700726542900037e69de0fb3950e`. This source transaction owns only the four mapped domain paths and this book; historical documentation-only restrictions below describe prior transactions, not current authority. Before first source write, update and fully read back existing mirror `7536` for project `lifelines`, topic `odd/narrative-lifecycle-kernel/tasks`. Strict test-first: baseline 32, missing API/delegation RED, then complete ordered social application GREEN and direct causal triangulation. Native review, integration, combined verification, and release remain pending; do not mark this unit DONE. Main, record `7504`, and `.claude/perf` remain untouched.
 
 ## Authority and current boundary
 
@@ -143,7 +143,7 @@ Forecast: 500–1000 authored lines including moves and tests; a review heuristi
 
 ## Still pending — not release-ready
 
-RL1a3 preparation/resolution is not completion of old phase 3. Ordered social application, interleaved birth/maternal death, vignette work, snapshots/D1, remaining lifecycle phases, the new E-version journal/continuation, genuine unforced death, RI1, and RA1 remain incomplete. Closed RL1a2 and RL1a3 do not declare the full release ready; RL1a4 remains PENDING. Preserve `.claude/perf`; no push, PR, deployment, installs, network/provider work, live database access, or destructive actions.
+RL1a3 preparation/resolution is not completion of old phase 3. Ordered social application, interleaved birth/maternal death, vignette work, snapshots/D1, remaining lifecycle phases, the new E-version journal/continuation, genuine unforced death, RI1, and RA1 remain incomplete. Closed RL1a2 and RL1a3 do not declare the full release ready; RL1a4 is IN PROGRESS, with current source evidence below. Preserve `.claude/perf`; no push, PR, deployment, installs, network/provider work, live database access, or destructive actions.
 
 ## Documentation-only transaction and evidence
 
@@ -209,9 +209,9 @@ Parent-provided subsequent evidence closes RL1a3 gates 6 and 7, without erasing 
 - All four source hashes and the document hash were stable before/after both full runs. At that historical source-gate closure, the source boundary remained HEAD `0a010442b2edf29c0be397c4af7fa5f8a7985c65`, three modified source files, 499 additions / 210 deletions (709 authored lines), mechanics unchanged. Pre-sync document SHA-256: `0c5ca454d73bb535cce16d8c25d0b7b34b67477d0fc9abf309c470d0e2dfe19f`.
 - Final documentation checks: full file and mirror `7536` readbacks/equality with byte counts and SHA-256; `git diff --check`, HEAD/status, and unchanged four source hashes. These checks are documentation-only, not repeated source validation. Failed-writer cause remains UNKNOWN, not proven to be model or tooling.
 
-## Next mapped unit: RL1a4 — ordered social application (PENDING)
+## Active unit: RL1a4 — ordered social application (IN PROGRESS)
 
-Mapping only: parent must start a separate source transaction. Move the entire ordered application currently at `src/domain/simulate.ts` lines 2143–2851 (about 710 source lines), plus 45–60 helper lines. This is ONE coherent phase, not multi-area scope: selection, sampling, occurrence invariant, all 26 outcome bodies, and unconditional record/commit for every input candidate in original order. Forecast 1600–1900 added/deleted lines, mostly moves, typed context, and meaningful tests; do not minify or trim coverage.
+Parent continuation started this bounded source transaction at isolated HEAD `3e1ffbf5f016700726542900037e69de0fb3950e`. Move the entire ordered application currently at `src/domain/simulate.ts` lines 2143–2851 (about 710 source lines), plus 45–60 helper lines. This is ONE coherent phase, not multi-area scope: selection, sampling, occurrence invariant, all 26 outcome bodies, and unconditional record/commit for every input candidate in original order. Forecast 1600–1900 added/deleted lines, mostly moves, typed context, and meaningful tests; do not minify or trim coverage.
 
 ### API, ownership, and exact future surface
 
@@ -228,14 +228,33 @@ Mapping only: parent must start a separate source transaction. Move the entire o
 3. Preserve NPC no-event Mind writes and protagonist reflection, including Y1 decline and A5 help. Do not infer state from events alone or backfill Mind.
 4. Preserve forced/fallback selection gating and captured protagonist versus D1 option references. D1 vignette, snapshot, yield, and death-stop extraction are a separate future unit.
 
-### Future test-first and delivery gates — none executed here
+### Mapped test-first and delivery gates — current evidence below
 
-- [ ] Capture existing focused BASELINE 32 before writes; preserve all original eight pins, invalid smith fixture, raw `undefined`, `-0`, and aliases unchanged.
-- [ ] Add missing active-API/delegation behavior coverage and observe intended RED, then move actual bodies and observe focused GREEN.
-- [ ] Directly prove ordered prior-Mind → birth inheritance versus joy, birth/death cleanup → later dead-candidate record/commit, unselected/dead slots and raw identities, NPC Y1 decline/A5 help with no events but Mind writes and protagonist reflection, duplicate-occurrence throws, and forced/fallback selection.
-- [ ] Run the exact parent-approved Node 26 five-file suite and independent Node 24 full five-file suite serially, then nonincremental TypeScript/lint; capture four source hashes before/after. Exact executable commands must come from the parent/source-validation handoff; no invented commands or tests run here.
-- [ ] Freeze source; parent owns the exact-unit commit, native review, integration, and combined verification. No other sites or child delivery actions.
+- [x] Capture existing focused BASELINE 32 before writes; preserve all original eight pins, invalid smith fixture, raw `undefined`, `-0`, and aliases unchanged.
+- [x] Add missing active-API/delegation behavior coverage and observe intended RED, then move actual bodies and observe focused GREEN.
+- [x] Directly prove ordered prior-Mind → birth inheritance versus joy, birth/death cleanup → later dead-candidate record/commit, unselected/dead slots and raw identities, NPC Y1 decline/A5 help with no events but Mind writes and protagonist reflection, duplicate-occurrence throws, and forced/fallback selection.
+- [x] Complete Node 26 and independent Node 24 full five-file validation, nonincremental types/lint, stable hashes, and independent four-path full-diff/baseline semantic review: no defect. Historical timeouts remain below; no tests run here.
+- [ ] Source frozen; parent owns native review and exact-unit commit against `3e1ffbf5f016700726542900037e69de0fb3950e`, integration, and combined verification (745 forecast, not observed). Source: 1887 authored lines; all 26 actual outcome bodies and three unchanged helpers. No child delivery actions.
 
 ## Next step
 
-Parent synchronizes release record `7504` separately, then may start RL1a4's source transaction. Here RL1a4 stays PENDING and mapped only; no source/test writes. Preserve all historical constraints, failure history, immutable receipts, and later lifecycle/release gates. Main and `7504` remain untouched. Full annual pipeline and NEW version/continuation are NOT done.
+Independent Node 24 and semantic checks are complete. Parent owns release record `7504`, native review, exact-unit commit, integration, combined verification, and subsequent lifecycle units. RL1a4 remains IN PROGRESS; source validation does not confer native approval or release readiness. Preserve historical constraints, failure history, immutable receipts, and later lifecycle/release gates. Main and `7504` remain untouched. Full annual pipeline and NEW version/continuation are NOT done.
+
+### RL1a4 source progress — isolated transaction
+
+- Before first source write: full book and full existing mirror `7536` read; expected project `lifelines` / topic `odd/narrative-lifecycle-kernel/tasks` verified. Identical paragraph replacement marked IN PROGRESS in both, followed by full untruncated mirror readback (revision 15). No source writes preceded this readback.
+- Observed Node 26 BASELINE: 32/32 in 47.70s. Missing synchronous API/delegation RED: 2 failed, original 32 passed, 27.78s. Complete application extraction GREEN: 34/34 in 16.78s.
+- Kernel owns the actual ordered loop and all 26 outcome bodies. Three catalog-only ports retain the original signatures, including the candidate-derived town-event parameter. Captured protagonist, live debug collector, people/events/decisions, raw result aliases, and unconditional slot commits retain their original references/order. Helpers moved unchanged to mechanics, public simulate exports preserved. D1/isOverrideYear, vignette/snapshots/yield/termination remain in simulate.
+- Direct causal triangulation: current-parent core shift before child inheritance/birth joy; original seeded conception and maternal mortality with immediate grief/widow/courtship cleanup before a later dead actor; unselected/dead raw aliases, own undefined, -0 and ordered slot commits; NPC Y1 decline/A5 help versus protagonist reflections; duplicate occurrence before alive guard; forced/fallback/legacy selection bypass. Final focused 44/44 in 20.48s. Eight original canonical pins and invalid smith fixture unchanged.
+- Triangulation initially had two fixture-cohort expectations fail (42 passed); corrected only the NEW actor fixture to represent an in-simulation child with an actual ancestral person. No original fixture normalization. TypeScript PASS. Initial lint: 16 unused-import/output warnings; removed only newly obsolete imports/destructuring, final lint clean.
+- First five-file serial run: 331 PASS / 1 timeout in 251.48s. The existing marital-life-state invariant exceeded its unchanged 5000ms timeout (5277ms); no assertion failure, timeout increase, or production fix. Cause unknown; contention is not proven. Exact approved rerun, with NO source changes: five files / 332 PASS in 221.60s. This success does not erase the first timeout. Independent Node 24 evidence follows (parent-provided).
+- Source frozen at the four SHA-256 values below before final five-file rerun. Post-validation documentation edits require a separate document hash snapshot; they do not reopen source. Native review, exact-unit commit, integration, combined main verification, and release gates remain pending. No children/Git mutation/network/provider/install/live DB/new-runtime work.
+
+Independent evidence: first Node 24 full run 330/332, existing clergy timeout 5230/5000ms and maternal timeout 15325/15000ms; types/lint PASS. Controlled main `eab26f1` baseline (domain/lib identical to `3e1ffbf`) versus candidate: both two-test PASS, 3453/9551 versus 3441/9766ms, 75 skipped each; one pair does not prove cause. Subsequent FULL Node 24.20.0: five files, 332/332 in 161.08s, identical five hashes before/after and stable HEAD `3e1ffbf`. Independent full four-path diff plus baseline semantic checks complete: no defect. No timeout increase or source fix; earlier failures retained. D1/snapshots remain future work, not broader release readiness.
+
+| RL1a4 source path | SHA-256 |
+|---|---|
+| `src/domain/simulate.ts` | `bdb0587bc5c50ea10a39b8fd4749c194ac298c52d0518314b7bfe09767e73c12` |
+| `src/domain/legacy-year.ts` | `dc60376ffb886152c2c4c7139066b53a583a8a0b59d6e8e33d58d01e7974b181` |
+| `src/domain/legacy-year-mechanics.ts` | `a9824e184bd8f708d966daffe179e8c87ec8791ad8ded54f73df755fce1cfdd9` |
+| `src/domain/legacy-year.test.ts` | `d02790f6b88085acb97e8f4ae33b88b163b872f52c4a2c533ceff1e9fb5d39ae` |

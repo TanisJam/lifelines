@@ -2,12 +2,67 @@ import { ageInYear } from "./actuarial";
 import { candidateMatchesSubject, decisionSubject, type MintedId, mintDecisionId } from "./decision-id";
 import { activeRomancePairs, makeEventId } from "./events";
 import { advanceSlot, applyLifeTransition, EMPTY_SLOTS, ensureLifeState } from "./life-state";
-import { addMemory, createMind, pushThought } from "./mind";
+import { addMemory, createMind, pushThought, type DreamGoal } from "./mind";
+import { CONCEPTION_PROBABILITY_BANDS, FERTILITY_DAMPING_FLOOR, VILLAGE_CARRYING_CAPACITY_RATIO } from "./params/demography";
 import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import { FALLBACK_CLASS } from "./period/classes";
 import { keyedDraw, keyedRng } from "./rng";
 import { TRAIT_POOL, type Event, type EventKind, type JsonValue, type Override, type Person, type Sex, type SocialClass, type Trait } from "./types";
 import { isLiterate, pickCommonClass, pickJobForClass, pickTraits } from "./worldgen";
+
+/**
+ * Decision 055 / PR14 STEP 2 (decision 076): conception probability given a real "try" this year —
+ * replaces the old 100%. Looks up `params/demography.ts#CONCEPTION_PROBABILITY_BANDS` — see that
+ * constant's own doc comment (and `provenance.ts`) for the Davenport-interval rationale and the
+ * measured evidence behind PR14's raise.
+ */
+export function conceptionProbability(age: number): number {
+  const band = CONCEPTION_PROBABILITY_BANDS.find((b) => age < b.maxAge) ?? CONCEPTION_PROBABILITY_BANDS[CONCEPTION_PROBABILITY_BANDS.length - 1]!;
+  return band.probability;
+}
+
+/**
+ * Decision 080: a carrying-capacity feedback on conception, closing the population-ceiling gap
+ * `IMMIGRATION_POPULATION_CAP_RATIO` never covered (see `VILLAGE_CARRYING_CAPACITY_RATIO`'s own doc
+ * comment, `params/demography.ts`, for the full root-cause story). Below capacity (the village's own
+ * founder headcount times `VILLAGE_CARRYING_CAPACITY_RATIO`), returns 1 — no change from today's
+ * behavior. Past it, tapers hyperbolically toward `FERTILITY_DAMPING_FLOOR` as `capacity / livingCount`
+ * — smooth (no cliff at the boundary, unlike the immigration candidate's hard cutoff) and monotonic
+ * (more overcrowding always dampens at least as much as less). Multiplies directly into the "try"
+ * conceive roll at the call site below, rather than gating A2's ELIGIBILITY — a couple can still be
+ * asked and still try, exactly as before; only the odds of success shrink, matching how
+ * `conceptionProbability` itself already expresses "probability of success", not "eligible at all".
+ */
+export function fertilityDampingFactor(people: Readonly<Record<string, Person>>): number {
+  const founderCount = Object.values(people).filter((p) => p.founder).length;
+  const capacity = founderCount * VILLAGE_CARRYING_CAPACITY_RATIO;
+  if (capacity <= 0) return 1;
+  const livingCount = Object.values(people).filter((p) => p.deathYear === undefined && !p.away).length;
+  if (livingCount <= capacity) return 1;
+  return Math.max(FERTILITY_DAMPING_FLOOR, capacity / livingCount);
+}
+
+/**
+ * Whether `goal` is already backed by a real event on `personId`'s own log
+ * — the gate for A8's "push-harder" outcome (decision 023, "dream realized
+ * without the act"): the underlying act has to have actually happened
+ * (a real move, a real marriage/child, a real career change) before code
+ * will let Jev's "push harder" roll flip the dream to realized.
+ */
+export function dreamGoalSatisfiedBy(goal: DreamGoal, events: readonly Event[], personId: string): boolean {
+  switch (goal) {
+    case "leave for the city":
+      return events.some((e) => e.kind === "move" && e.actors[0] === personId && e.payload.away === true);
+    case "start a family":
+      return events.some((e) => e.kind === "birth" && e.actors.slice(1).includes(personId));
+    case "master a craft":
+      return events.some((e) => e.kind === "job" && e.actors[0] === personId && !e.payload.forced);
+    case "found something lasting":
+      return events.some((e) => (e.kind === "marriage" || e.kind === "birth") && e.actors.includes(personId));
+    default:
+      return false;
+  }
+}
 
 /** The kind of settlement a protagonist who leaves home might settle in (decision 040). */
 const SETTLEMENT_KINDS = ["market town", "port town", "city"] as const;
