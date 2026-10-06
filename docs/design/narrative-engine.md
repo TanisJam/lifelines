@@ -1267,3 +1267,31 @@ outputs as checkpoints. Existing E1/E2/E3/C2/capsule contracts remain unchanged.
 Cumulative full-state/evidence retention has significant memory costs; bounded fixtures
 are correctness evidence, not lifespan-scale certification. Genuine long continuation,
 LR2, RI1 and RA1 release gates remain separate obligations.
+
+## Lifecycle LR2a: full cold replay, no new capsule wire
+
+`replayLifecycleRuntime(candidate)` accepts exactly `{ genesis, output }` and returns
+**regenerated**, detached, deeply frozen native lifecycle output. It checks consistency
+by executing the existing LR1b owner, not by trusting candidate plans or final state.
+This inactive domain seam does not activate production or certify external authorship.
+
+**Quick path:** retain LR1a genesis and one LR1b initial/annual output → cold replay the
+whole envelope → consume the regenerated graph. Zero-year, incomplete alive and complete
+genuine-death outputs are valid. No callbacks, authority, resolver, overrides or checkpoint
+hydration are accepted. Existing human-history rejection rules and old capsule pins remain
+unchanged; LR2a cannot reproduce human entries through its authority-free runtime.
+
+| Review point | LR2a contract |
+|---|---|
+| Admission order | Descriptor-check the entire borrowed envelope before reads, clone, hash or await; then detach it before asynchronous native execution. Hidden/symbol/accessor/executable fields, nonplain containers, cycles, sparse/extended arrays and nonfinite values reject with no getter invocation. Caller mutation during an await cannot alter captured evidence. |
+| Execution authority | Semantically regenerate complete LR1a genesis, then execute only exactly contiguous safe journal years from startYear. Origin endYear is not a ceiling; the trusted owner rejects advances after genuine protagonist death. Candidate economic plans, effects, snapshots and native decisions are comparison evidence, never execution instructions. |
+| Full comparison | Compare every complete annual record and the entire final output: versions, physical snapshot, post-native actual Person/Mind, ordered events/decisions, counters and favor view; resources/grants/creditors/two current slots/null observations/requests/full FE1 entries; all three position ranges, final ledgers/history/frontier/status and canonical final snapshot. Unknown nested fields and rehashed derived forgeries reject without another Person/Mind schema. |
+| Lossless canon | `canonicalLifecycleData(unknown)` descriptor-checks and reuses the existing genesis encoding, preserving its digest bytes. Sorted record keys, ordered arrays, own undefined and distinct signed zero support comparison. The wrapper is NOT semantic admission, a certificate, an inverse codec or durable wire. |
+| Returned ownership | Sorted-record equality does not certify candidate reference identity or insertion order. Return the regenerated graph: actual registry traversal starts from genesis order (with native arrivals thereafter), `owned.people === favors.people` and `owned.events === favors.legacyEvents`, including each annual state. No candidate aliases survive. |
+
+Review `e-lifecycle-replay.test.ts` for bounded real native maternal/competition seeds,
+full-category tampering, descriptor zero hooks, lossless leaves, genuine death, beyond-horizon
+years and mutation during the first await. Tests are small-fixture correctness evidence,
+not LIFE-scale memory/performance, a Proxy sandbox or general runtime portability proof.
+No runtime/version/production behavior or old E1/E2/E3/C2 codec changes are introduced.
+LR2b's separate lossless capsule, long death continuation, RI1 and RA1 remain later gates.

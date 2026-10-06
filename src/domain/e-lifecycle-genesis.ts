@@ -67,6 +67,14 @@ function canonical(value: unknown): string {
   return `["record",[${Object.keys(value as object).sort().map(key =>
     `[${JSON.stringify(key)},${canonical((value as Record<string, unknown>)[key])}]`).join(",")}]]`;
 }
+/** Descriptor-checked lossless comparison material, NOT semantic admission or a
+ * durable codec. Reuse the genesis grammar without changing its digest bytes.
+ * Sorted records do not certify reference identity or registry traversal order. */
+export function canonicalLifecycleData(input: unknown): string {
+  requireFavorData(input, true);
+  return canonical(input);
+}
+
 function digest(payload: unknown): string {
   return createHash("sha256").update(canonical(payload), "utf8").digest("hex");
 }

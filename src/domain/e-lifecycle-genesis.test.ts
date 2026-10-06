@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { initializeWorld, WORLD_ORIGIN_VERSIONS } from "./world-origin";
-import { createLifecycleGenesis, admitLifecycleGenesis, instantiateLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS, type LifecycleGenesis } from "./e-lifecycle-genesis";
+import { createLifecycleGenesis, admitLifecycleGenesis, instantiateLifecycleGenesis, canonicalLifecycleData, LIFECYCLE_GENESIS_VERSIONS, type LifecycleGenesis } from "./e-lifecycle-genesis";
 import { createRulesYearSource, RULES_YEAR_SOURCE_VERSION } from "./e-year-source";
 import { createFavorExecutor } from "./e-favor-executor";
 import { initializationJson } from "./world-initialization";
@@ -352,6 +352,32 @@ describe("explicit complete resources and creation shape", () => {
     expect(Object.hasOwn(createLifecycleGenesis(input).origin.requested, "townName")).toBe(false);
     define(input.initialization, "provider", undefined);
     expect(() => createLifecycleGenesis(input)).toThrow();
+  });
+});
+
+describe("descriptor-checked canonical comparison export", () => {
+  it("reuses the existing digest bytes without claiming semantic admission", () => {
+    const candidate = frame();
+    const { digest, ...payload } = candidate;
+    expect(canonicalLifecycleData(payload)).toBe(JSON.stringify(tagged(payload)));
+    expect(createHash("sha256").update(canonicalLifecycleData(payload), "utf8").digest("hex")).toBe(digest);
+    expect(canonicalLifecycleData({ b: -0, a: undefined })).toBe(canonicalLifecycleData({ a: undefined, b: -0 }));
+    expect(canonicalLifecycleData({ a: undefined })).not.toBe(canonicalLifecycleData({}));
+    expect(canonicalLifecycleData(-0)).not.toBe(canonicalLifecycleData(0));
+    candidate.initial.people.protagonist.mind.stress++;
+    rehash(candidate);
+    expect(() => canonicalLifecycleData(candidate)).not.toThrow();
+    expect(() => admitLifecycleGenesis(candidate)).toThrow(/generation disagreement/);
+  });
+
+  it("checks descriptors before the canonical encoder can invoke a hook", () => {
+    let hooks = 0;
+    const input = Object.defineProperty({}, "constructor", { enumerable: true, get() { hooks++; return Object; } });
+    expect(() => canonicalLifecycleData(input)).toThrow(/own enumerable data/);
+    expect(hooks).toBe(0);
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(() => canonicalLifecycleData(cyclic)).toThrow();
   });
 });
 
