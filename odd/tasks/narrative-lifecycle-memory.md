@@ -1,6 +1,6 @@
 # Lifecycle memory — measured, lossless performance units
 
-CURRENT: LP1a / LP1b / LP1e DONE bounded; **LP1f IN PROGRESS, mapped before first source write**; LP1c conditional / LP1d PENDING. MAIN integration HEAD `edd14ab99ca724eb41fab11558c36506923627ec` (LP1e fast-forward). Human7678 permits local verified release commits/integration branches ONLY: no push, PR, main/default merge or deploy. Continue automatically until release; no capacity/release closure inferred. LC1 BLOCKED/pending; isolated WIP `9b7af0b` NOT integrated; ≥60-year proof, RI1 and RA1 unfinished. FULL mirror targets: existing7658, `odd/narrative-lifecycle-memory/tasks`, project `lifelines`, and runtime7604's LP1f-active pointer. Parent prepares a new isolated worktree after the doc commit and copies this FULL MAIN book before writer/source work. Historical checkpoints below are superseded by CURRENT and the LP1f contract.
+CURRENT: LP1a / LP1b / LP1e DONE bounded; **LP1f PENDING — rejected/superseded attempt, no delivered optimization**; **LP1g IN PROGRESS — semantic criterion decision ONLY, blocked on human choice before ANY implementation**. LP1c conditional / LP1d PENDING. MAIN HEAD `39bc638`; approved LP1e source integration remains `edd14ab99ca724eb41fab11558c36506923627ec`. Isolated `lifecycle-decode` production restored exactly to HEAD39bc638; 39 compatible test lines/52 cases remain UNCOMMITTED there, NOT in main. Before this metadata main had only unrelated `.claude/` changes (parent reported; no commands here). Human7678's local-only permission is historical, NOT unconditional future implementation/review/integration permission. No push/PR/main-default merge/deploy. LC1 BLOCKED/pending; isolated WIP `9b7af0b` NOT integrated; ≥60-year proof, RI1 and RA1 unfinished. FULL mirror targets: existing7658, topic `odd/narrative-lifecycle-memory/tasks`, project `lifelines`, and runtime7604. Historical forecasts below are superseded by CURRENT and the final LP1f rejection / LP1g decision boundary.
 
 ## Decision and proof boundary
 
@@ -8,16 +8,17 @@ User RAM guidance “nose, uno o dos” establishes a conservative **1 GB PROVIS
 
 LC1's fixed five-member cohort genuinely completed in 2–4 years; full cold canonical replay, aliases and traversal PASS, ≥60-year coverage FAIL. Sampled 3.09 GB process RSS was cumulative across members, NOT peak or exclusive per-member usage. Do not force ages/death, search survivors, change seeds, cap completion or change coverage to manufacture proof. Fixed worst member v1/4 already ran four genuine years: default62 founders, Alice/f age0, origin1498/1558, resources grain2/effort3/need1, budget128.
 
-Native approvals remain bounded LR1a/LR1b/LR2a/LR2b and LP1a/LP1b/LP1e only. FE1 is explicitly unreviewed for that candidate only; user RDD unchanged. No LP1f receipt or approved LC1. Preserve old E1 wire and human-authority rules. Delivery remains ask-on-risk / feature-branch-chain, local only; no push/deploy. Doc-only: no source/test/native/child/network execution.
+Native approvals remain bounded LR1a/LR1b/LR2a/LR2b and LP1a/LP1b/LP1e only. FE1 is explicitly unreviewed for that candidate only; user RDD unchanged. No LP1f/LP1g receipt or approved LC1. LP1g needs a human semantic criterion; that choice cannot confer RDD verdict, kill-switch or publishing authority. Preserve old E1 wire and human-authority rules. Delivery remains ask-on-risk / feature-branch-chain, local only; no push/deploy. Doc-only: no source/test/native/child/network execution.
 
-## Automatic task chain
+## Task chain — no unconditional next-unit permission
 
 | Unit | State | Deliverable / gate |
 |---|---|---|
 | LP1a | DONE bounded | Immutable annual-journal prefix reuse verified, native APPROVED / exact ACK BURNED, locally integrated at main0d3858d. Capacity/LC1 remain open. |
 | LP1b | DONE bounded | Full-tree canonical pair equality integrated at main `c066234`; native APPROVED / exact ACK BURNED. Mixed modest benefit, not capacity proof. Chunk encoder remains rejected. |
 | LP1e | DONE bounded | Redundant outer capsule capture removed; main `edd14ab`, native APPROVED / exact ACK BURNED. Essential replay capture retained; no capacity closure. |
-| LP1f | IN PROGRESS, mapped | Strict private cursor inverse of EXACT lifecycle canonical tagged payload string; avoid full tagged-array metadata graph. Two lifecycle capsule source/test surfaces only; outer envelope parse and full certification remain. |
+| LP1f | PENDING; attempt REJECTED/SUPERSEDED | Cursor parser not delivered: production restored exactly, compatible tests retained only as isolated uncommitted evidence. |
+| LP1g | IN PROGRESS; criterion decision ONLY | Human chooses current-authority recertification on EVERY save versus producer-time proof for a private immutable graph. No implementation before choice and any required contract revision/mapped unit. |
 | LP1c | PENDING, conditional | Separately map digest/string framing or explicitly versioned graph-sharing wire only if needed; no unnecessary versions or silent old-byte change. No unmapped implementation authorized. |
 | LP1d | PENDING | Independently measure capacity: total high-water RSS and baseline delta for fixed workload against provisional target. Connect evidence to LC1 long-coverage gate; never automatically close LC1. |
 
@@ -62,7 +63,7 @@ Foreground serial, shell timeout600. N26=`/home/linuxbrew/.linuxbrew/bin/node`; 
 
 Reusable eleven-file suite, BOTH node prefixes: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-runtime.test.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts src/domain/e-annual-policy.test.ts src/domain/e-annual-composition.test.ts src/domain/e-runtime.test.ts src/domain/e-capsule.test.ts src/domain/annual-runtime-baseline.test.ts --maxWorkers=1`. New memory test separately, fresh on both nodes for baseline/candidate claims.
 
-Historical LP1a prospective commands are superseded by its checkpoint/closure and CURRENT LP1f proof plan. Parent owns validation/review/Git; native candidate excludes accumulated feature history. No capacity or long-LIFE closure. See [runtime gate/history](narrative-lifecycle-runtime.md).
+Historical prospective commands are superseded by closures and CURRENT decision-only boundary; none are executable permission for LP1g. Parent owns validation/review/Git; native candidate excludes accumulated feature history. No capacity or long-LIFE closure. See [runtime gate/history](narrative-lifecycle-runtime.md).
 
 ## LP1a checkpoint (supersedes recovered unknowns; preserves history)
 
@@ -105,16 +106,16 @@ Mapped IN PROGRESS BEFORE first source write. Exact derived edit surfaces ONLY:
 
 Historical completed change: remove ONLY create/admit outer `structuredClone(input)`; WHOLE original `requireFavorData` before field reads, exact roots and synchronous manifest/digest guards retained. No await before detached frozen genesis admission and essential WHOLE replay capture before its first await. After await use only module manifest/detached genesis/regenerated output. Full replay mandatory; no callbacks/tokens/owned flags/trusted bypass or other source edits. Deserialize's strict inverse unchanged in LP1e; serialize FULL-admits. Original property order/manifest/payload/digest/grammar/wire/pins retained. Framing/version changes belong to conditional LP1c.
 
-### Reusable focused/final validation commands
+### Historical LP1e / rejected LP1f validation plan — not current permission
 
-LP1e clone-spy call-through allocation RED distinguished outer duplicate from essential replay capture, not brittle counts/mocks. Mutation isolation was baseline GREEN, not false RED; root/manifest/digest/genesis mutation, anti-hook/rehashed forgery/aliases/order/grammar/wire/pins protected. Its closure below supersedes prospective wording. LP1f uses its distinct JSON.parse allocation RED and SAME fresh BOTH-node fixed v1/4 baseline-before/candidate-after contract, timeout600, unchanged existing test timeouts, no seed/force/heap-GC changes. Total RSS includes Vitest; delta is nonexclusive,1GB never assumed PASS.
+LP1e clone-spy call-through allocation RED distinguished outer duplicate from essential replay capture, not brittle counts/mocks. Mutation isolation was baseline GREEN, not false RED; root/manifest/digest/genesis mutation, anti-hook/rehashed forgery/aliases/order/grammar/wire/pins protected. Its closure supersedes prospective wording. Rejected LP1f used a distinct JSON.parse allocation RED and SAME fresh BOTH-node fixed v1/4 baseline-before/candidate-after contract, timeout600, unchanged existing test timeouts, no seed/force/heap-GC changes. Total RSS includes Vitest; delta is nonexclusive,1GB never assumed PASS.
 
 1. Focused test-first N26: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-capsule.test.ts --maxWorkers=1`.
 2. Baseline/candidate fresh memory separately on BOTH: `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-memory.test.ts --maxWorkers=1 --pool=threads`. Fixed default v1/4:85 initial people, four genuine years, death1501, wire56561271, same pins above.
 3. Candidate related suite on BOTH: exact eleven-file suite above (`--maxWorkers=1`): lifecycle capsule/genesis/runtime/replay, year-source, favor-executor, annual-policy/composition, E1 runtime/capsule, annual baseline.
 4. N26 `node_modules/typescript/bin/tsc --noEmit --incremental false`; N26 `node_modules/eslint/bin/eslint.js src/domain/e-lifecycle-capsule.ts src/domain/e-lifecycle-capsule.test.ts`; `git diff --check`; two scoped source/test diffs and stable hashes before/after validation.
 
-Advisory ≤250 changed lines, not cap; no minification. If additional areas are needed, STOP for mapper. Parent owns isolated worktree after doc commit, FULL books/mirrors, writer, review and permitted local Git. Historical LP1e prospective wording is superseded by its closure and ACTIVE LP1f below. LP1c/d pending; LC1 BLOCKED, ≥60-year proof pending; RI1/RA1 unfinished. This documentation update executes no source/tests, commands, native review, children, network or commits. See [runtime active pointer/history](narrative-lifecycle-runtime.md).
+Historical LP1e advisory ≤250 changed lines was not a cap; no minification. Parent owns worktree/books/mirrors/review/Git. These prospective commands do NOT authorize new implementation. LP1c/d pending; LC1 BLOCKED, ≥60-year proof pending; RI1/RA1 unfinished. This documentation update executes no source/tests, commands, native review, children, network or commits. See [runtime current pointer/history](narrative-lifecycle-runtime.md).
 
 ## LP1e closure — bounded, integrated (parent observed; not rerun here)
 
@@ -129,30 +130,35 @@ ASSESS medium57/2, large writer, independentVerifier=false; writer checks stand,
 
 Total process RSS improved about14.1%/12.9%; includes Vitest, baseline delta is NOT exclusive usage. Sampled heap maximum increased; it is NOT a heap peak. Both candidates exceed provisional1GB. LP1e DONE bounded; full ≥60-year proof NOT closed.
 
-## LP1f ACTIVE contract — direct lifecycle payload cursor inverse
+## LP1f rejection — superseded attempt, no delivered optimization
 
-Mapped IN PROGRESS BEFORE first source write. Exact future source/test surfaces ONLY:
-- `src/domain/e-lifecycle-capsule.ts`
-- `src/domain/e-lifecycle-capsule.test.ts`
+Parent evidence, NOT rerun here. LP1f was mapped before source work on lifecycle capsule.ts/test.ts only. Earlier scout selected legacy E1 `e-capsule.ts`; corrected lifecycle84–143 lookup established string payload, a lookup bug NOT a checkout incident. No legacy E1 changes. The rejected private cursor parser avoided the full tagged-array metadata graph while retaining outer wire parse, exact sorted canonical parity, digest/wire/root guards and FULL regeneration/admission/replay/alias recovery. Grammar protected undefined/null, finite canonical number strings/-0, UTF16/lone surrogates, ordered arrays, safe null-prototype records/hostile keys, duplicates, controls/escapes/EOF/tags/arity/trailing data. Original encoder/API/versions/pins stayed unchanged. This historical map is NOT a live implementation instruction.
 
-Mapping correction: previous scout wrongly selected legacy `e-capsule.ts` (E1). Parent read ACTUAL `e-lifecycle-capsule.ts` lines84–143; corrected scout confirmed the lifecycle string-payload path. This was a lookup bug, NOT a checkout incident. NO legacy E1 changes authorized.
+Allocation RED → focused141 GREEN; candidate custom parser final BOTH651/11 PASS. N24 initial unrelated annual-baseline run TIMED OUT; unchanged rerun PASS. Full cold canonical/wire56561271 and old pins unchanged. Same fixed v1/4 fresh baseline/candidate measurement, no altered seed/force/heap-GC/timeouts:
 
-Replace private `decode(JSON.parse(envelope.payload))` with a strict private cursor inverse of the EXACT old canonical tagged payload STRING directly to the plain unknown graph, avoiding the full array/tag metadata graph. KEEP outer `JSON.parse(wire)` and mandatory envelope manifest + payload-string guard. KEEP `canonicalLifecycleData(decoded) === payload`, digest verification, exact `canonicalWire` bytes, unknown root-field checks for `{genesis,output}`, full regeneration/admission/replay and alias recovery. Original encoder/digest/API/versions unchanged. No dependency/library, tokens or trusted-public bypass; no genesis/replay/runtime/harness edits.
+| Rejected LP1f run | Baseline max RSS bytes | Candidate max RSS bytes | Baseline elapsed ms | Candidate elapsed ms |
+|---|---:|---:|---:|---:|
+| N26 | 1963016192 | 2024050688 | 49482.844 | 54755.833 |
+| N24 | 2276155392 | 1810710528 | 44134.513 | 50904.281 |
 
-Strict grammar:
-- `undefined` / `null` tags unary; `string` / `boolean` arity2; `number` arity2 with STRING finite canonical `Number.toString()` value and special `-0` preserved.
-- Arrays contain ordered Tagged values; records contain `[JSONkey, Tagged]` pairs sorted by the genesis encoder. This is NOT the legacy E1 unsorted grammar. Keep final full canonical parity guard, including record key sorting; do not replace it with a weaker check.
-- Build null-prototype records with safe own `Object.defineProperty`; reject duplicate keys (including hostile own keys). Own undefined remains distinct from absence.
-- Scan JSON string tokens using quote/backslash parity; delegate ONLY a SINGLE quoted leaf literal to standard `JSON.parse`, preserving Unicode/UTF16 including lone surrogates. Reject raw controls, invalid escapes and EOF.
-- Reject malformed tags/types, comma/bracket errors, extra arity and trailing data. Preserve the existing broad public Error class; do not invent a TypeError contract.
+N26 RSS+3.1%, elapsed/CPU+10.7%; N24 RSS−20.4%, elapsed/CPU+15.3%. Total process RSS includes Vitest, not exclusive memory; no capacity proof. Parent7704 REJECTED inconsistent RAM benefit, higher CPU and security complexity. No native review, commit or parser integration.
 
-Serialization may still dominate. Possible cold-decode RSS improvement is unproven; provisional1GB is NOT promised. Advisory150–350 authored source lines, not a cap; no minification. If broader areas are needed, STOP for mapper.
+Isolated `lifecycle-decode` capsule production restored to EXACT original HEAD39bc638. Compatible test additions39 lines/52 cases retained UNCOMMITTED; optimization-specific full-payload `JSON.parse` spy test removed. Latest verifier: original production + retained tests140 N26 PASS; types/scoped lint/diff PASS. Unchanged production blob `a1e189b5d61ef92e1aaa64851fe02e198c7a5e9d`; retained test blob `f1b66167e7a3a363b126cba990001af4725660df`; test SHA256 `cb7334512b6c15c043651d0f5f0e38e1baf0440380223bae446fd468a5b8826e`. Main39bc638 has NO retained test integration. LP1f PENDING/rejected attempt, NOT DONE; no delivered optimization or exhausted-receipt reuse.
 
-### LP1f test-first and final proof gate
+## LP1g — IN PROGRESS, human criterion decision ONLY
 
-Strict test-first allocation RED through public deserialize: capture original parser and payload string BEFORE installing a call-through `JSON.parse` spy. Outer wire parse and individual quoted leaf parse allowed; full payload parse forbidden. Observe genuine current allocation RED before production changes, then GREEN; no data-altering mocks or brittle total-call counts. Preserve complete old byte pins, semantic rehashed forgeries, aliases/order, own undefined/-0/UTF16; triangulate strict wrapper JSON, raw controls/invalid escapes, key duplicates, number lexemes, unknown tags/arity and malformed grammar table. Do not substitute legacy E1 fixtures.
+**Blocked on human semantic criterion before ANY implementation.** Read-only mapping identified a possible private WeakSet of EXACT producer identities, registered ONLY AFTER full regeneration/replay + digest + transitive graph freeze. Only privately owned, fully certified immutable capsules could serialize directly to unchanged wire. Unknown/cloned/frozen-unregistered/proxy inputs ALWAYS use unchanged FULL admission. Public admit ALWAYS does full current-authority admission, even for registered identities. No Object.isFrozen trust, flags/tokens/executable callbacks, hash-only proof or native authority cache. No policy/source/test change implemented; no new domain artifact.
 
-Use the focused capsule, fresh memory, BOTH-node eleven-file suite, types/two-file lint/diff/hash commands already listed above; do not duplicate or expand scope. Baseline N26 capsule/genesis/replay checks first. Fresh BEFORE-production baseline and AFTER-candidate on BOTH N26/N24 use SAME fixed default v1/4 memory harness, unchanged seeds, genuine death, force policy, heap/GC flags (none), existing timeouts and timeout600 discipline. Report pre-genesis RSS, total maxRSS and nonexclusive delta, sampled heap (not peak), elapsed/phase/wire plus full cold canonical/aliases/order/traversal. After LAST fix rerun BOTH eleven-file related suite, fresh candidate memory BOTH, types, scoped lint2, diff-check and stable two source hashes.
+This is a genuine product boundary, NOT merely an allocation optimization. Parent mapper evidence: `docs/design/narrative-engine.md:1318` explicitly requires EVERY create/admit/serialize/deserialize independently FULL regeneration. Calibration params/demography exports are TypeScript Readonly, NOT runtime-frozen (75–81/279–285); hazards mapping321/346 is mutable. Thus producer-time certification COULD become stale relative to current rules at later serialization, even if capsule state is transitively frozen. Actual calibration mutation was NOT observed; do NOT infer a bug.
 
-Parent owns isolated worktree, complete local books/mirrors before source, writer, native unit review, local commit and integration under explicit human7678. No LP1f approval inferred from exhausted LP1e receipt. LP1c graph-shared/versioned framing conditional/deferred; LP1d capacity pending; LC1 BLOCKED genuine ≥60-year proof; RI1/RA1 pending. No release/capacity claim. This documentation-only transaction executes no source/tests/commands/native/children/network/Git. FULL mirrors7658/7604 must match the complete current local books, not excerpts.
+### Pending human question — choose one semantic guarantee
+
+| Choice | Meaning / consequence |
+|---|---|
+| **A — current-authority recertification on EVERY save (recommended)** | Preserve existing independent FULL-regeneration guarantee. Abandon LP1g producer-certificate optimization, NOT implement it. Continue only with separately mapped LP1d/representation optimizations that do not weaken authority; no blanket permission. |
+| **B — producer-time proof ONLY for private owned immutable graphs** | Explicitly accept that changed calibration would be detected on FULL current-authority load, NOT that fast save. External admission/load and unknown/cloned/frozen-unregistered/proxy serialization remain FULL current-authority; public admit never bypasses. Requires explicit doc contract revision and mapped source/test unit BEFORE a writer, plus native checks afterward. Choice alone does not authorize implementation. |
+
+Only IF B is chosen and the contract/mapped unit are approved would the conditional source/test pair be `src/domain/e-lifecycle-capsule.ts` and `src/domain/e-lifecycle-capsule.test.ts`. They are candidate surfaces, NOT new domain artifacts or authorized writes in this doc-only transaction. No unknown-input bypass under either choice. No unconditional future permission. Human semantic choice is NOT an RDD verdict, kill-switch, publication or release permission. Preserve all global RDD and closed native lineages: NEVER STATUS exhausted receipts; FE1 alone remains explicitly unreviewed for its historical candidate.
+
+Next action: present A/B question, pending; NOT implementing. LP1a/b/e DONE bounded; LP1f PENDING/rejected; LP1c conditional, LP1d capacity/LC1 genuine≥60-year proof and RI1/RA1 pending. No capacity/release closure. FULL7658/7604 must equal the complete current local books; if write-only mirror update is unavailable, parent must resync each exact local file as full content, not excerpts. This transaction executes no source/tests/commands/native/children/network/commits.
 
