@@ -1,6 +1,6 @@
 # Lifecycle runtime — reviewable ODD units
 
-CURRENT: LR1a, LR1b and LR2a DONE bounded; LR2a source/main `fff9123274447aa27c06cfccdb994892fbccae3d`, native APPROVED/ACK BURNED. LR2b IN PROGRESS (mapped lossless capsule; no source writes yet). FE1 remains DONE bounded and explicitly unreviewed (Engram7625). Not release-ready; genuine death continuation, RI1 and RA1 remain pending. Historical mapping statements below are superseded by the closure/scope append.
+CURRENT: LR1a, LR1b, LR2a and LR2b DONE bounded; LR2b source/main `0adc8447bd474dd71cf3fb7e9ab7f2f76b74cb13`, native APPROVED/ACK BURNED. LC1 IN PROGRESS (mapped controller; writer launch pending). FE1 remains DONE bounded and explicitly unreviewed (Engram7625). Not release-ready; LIFE proof, RI1 and RA1 remain pending. Historical mapping statements below are superseded by the closure/scope append.
 
 ## Intent and recovery
 
@@ -14,8 +14,8 @@ Locator `odd/tasks/narrative-lifecycle-runtime.md`; FULL Engram7604 topic `odd/n
 - [x] **LR1a — DONE (bounded genesis/admission):** source/main `1418dfb`, exactly two genesis source/test paths plus narrow design docs; 84 focused and 430/10 related tests PASS on both nodes, types/lint PASS, native APPROVED/ACK BURNED. First prerequisite only, not full runtime.
 - [x] **LR1b — DONE (bounded annual execution/frontier):** source/main `dfa38b6`; three paths, 714 authored lines (154 production/522 tests/38 docs); dual-node 540/13 PASS, types/lint PASS, native APPROVED/ACK BURNED. Not full replay or LIFE-scale proof.
 - [x] **LR2a — DONE (bounded full replay):** source/main `fff9123`; five paths, 517 authored lines (516+/1−, including 28 design-doc lines). Both nodes 514/11 PASS, types/lint PASS; native APPROVED/ACK BURNED. No LIFE-scale performance proof.
-- [ ] **LR2b — IN PROGRESS (mapped; no source writes yet):** new `src/domain/e-lifecycle-capsule.ts` and `src/domain/e-lifecycle-capsule.test.ts`; bounded `docs/design/narrative-engine.md` append. Reuse the exact canonical tagged grammar; strict inverse only, no second encoder or existing codec changes. Forecast400–650 advisory, not cap; scope/checks below.
-- [ ] **LC1 — PENDING:** genuine seeded unforced death continuation, incomplete/aborted handling and RG1 integration; split later units if necessary.
+- [x] **LR2b — DONE (bounded lossless capsule):** source/main `0adc844`; three paths, 464 authored lines (138 production/296 tests/30 docs); dual-node 597/12 PASS, types/lint PASS, native APPROVED/ACK BURNED. No LIFE-scale proof.
+- [ ] **LC1 — IN PROGRESS (mapped; writer launch pending):** new `src/domain/e-lifecycle-run.ts` and `src/domain/e-lifecycle-run.test.ts`; bounded design-doc append. Certified start/resume, genuine death/budget/abort and LIFE proofs; advisory550–900, not cap. Controller/checks below.
 
 ## FE1 scope and invariants
 
@@ -124,3 +124,15 @@ LR2b async create/admit/serialize/deserializeLifecycleCapsule takes closed unkno
 Descriptor-check WHOLE input before await. Preserve signed zero, own undefined, UTF16 strings, array order; sort record keys and safely define hostile keys. Strict decode + EXACT reencode rejects malformed tags, duplicate keys, noncanonical numbers and alternate JSON envelopes (whitespace/duplicates). Zero/incomplete alive/death capsules valid, not release. No E1/C2/capsule-codec edits, branch storage, nested rewrite or human-authority activation; future RB1 extension needed for old repository hardcoded E3.
 
 Checks: existing N26/N24 prefixes, foreground serial timeout600, unchanged test timeouts. Baseline genesis/replay; new capsule RED/GREEN. Final BOTH `node_modules/vitest/vitest.mjs run src/domain/{e-lifecycle-genesis,e-lifecycle-runtime,e-lifecycle-replay,e-lifecycle-capsule,e-year-source,e-favor-executor,e-annual-policy,e-annual-composition,e-runtime,e-capsule,e-fork,annual-runtime-baseline}.test.ts --maxWorkers=1` (expand paths). N26 tsc `--noEmit --incremental false`; ESLint two new capsule paths; `git diff --check`. Parent writer/native/Git/integration pending; no LR2b source writes yet.
+
+## LR2b closure / LC1 controller and checks
+
+Inherited, not rerun: baseline189 → missing-module RED → 83 GREEN; N26/N24 597/12 PASS (95.82/93.13s), types/lint PASS. Main83/types/lint/diffcheck PASS, three hashes stable, HEAD unchanged. Verifier status NOT run (no after-`.claude/` proof); parent only `.claude/` before gate. Source2,243+434=2,677 excludes docs.
+
+Native `review-226708585e7e6fcd` APPROVED/ACK BURNED target `a566dd22b35978fa63da1a5744f6ac0c314a881ace480265c56874ce6513ca1c`, consumed `c29c63c1704eb4568a59c4a4f6d95953a49bf3642dfb67df3b2b0d3905fcfedd`; never STATUS after burn.
+
+`runLifecycle(input:unknown, options:{maxSteps,signal?})`: closed certified-genesis start/full-capsule resume; finite safe-integer budget. Typed complete/incomplete(budget)/aborted, each full certified capsule. Resume FULL admission/replay, reconstruct owner via trusted journal years, compare output before advancing; no checkpoint forge. Contiguous until genuine death/budget/cancel; alive NEVER complete, endYear NEVER death. Signal before/after committed year/event-loop yield; no source/admission/replay interruption. Observed abort wins over death capsule (runtime death ≠ producer aborted). Errors propagate; actual canonicalYearSnapshot, no E2 projection. Final capsule replays all output; necessary duplication, no weaker authority. No routes/store/human rewrite.
+
+Checks: API RED→GREEN; start/resume/zero/budget/beyond-horizon genuine death/inflight and prior abort/forged resume/errors/caller fidelity. LIFEsmoke: `baseline-1327-0`, start/end1327, founders6 Alice/f, all actors grain2/effort3/need1, max4; unforced death expected by1330, no exact year; serialized cold replay/alias/canon. Also normal E1 default62 founders, real protagonist age0, ~60+ years before UI release; log elapsed/RSS/heap/wire bytes. No seed search/forced death/mocks/heap flags/timeout override. Memory risk: partial; journal optimization needs mapping. Cancellation cannot bound retention.
+
+Existing nodes, foreground timeout600: focused run test, `-t LIFEsmoke`; final BOTH `node_modules/vitest/vitest.mjs run src/domain/e-lifecycle-run.test.ts src/domain/e-lifecycle-genesis.test.ts src/domain/e-lifecycle-runtime.test.ts src/domain/e-lifecycle-replay.test.ts src/domain/e-lifecycle-capsule.test.ts src/domain/e-year-source.test.ts src/domain/e-favor-executor.test.ts --maxWorkers=1`. N26 types/lint two new paths/diffcheck as above. RI1: human version/replay/storage choice, no product choice/MVP cut.
