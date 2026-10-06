@@ -1,6 +1,6 @@
 # Lifecycle runtime — reviewable ODD units
 
-CURRENT: LR1a, LR1b, LR2a and LR2b DONE bounded; main HEAD `70dca9a` (parent-reported). LC1 IN PROGRESS — BLOCKED: isolated partial implementation; representative LIFE coverage FAIL, long coverage/capacity pending. No LC1 integration/review/commit. FE1 remains DONE bounded and explicitly unreviewed (Engram7625). Not release-ready; LIFE proof, RI1 and RA1 remain pending. Continue-until-release remains active; capacity decision blocks dependent work, not the whole feature. Historical mapping statements below are superseded by the closure/scope append.
+CURRENT: LR1a, LR1b, LR2a and LR2b DONE bounded; main HEAD `0de392699d2c9e9e54e22058e3049d4561705648`. LC1 BLOCKED / pending (not active): isolated WIP `9b7af0b`, clean committed checkpoint, 593 authored lines across three source/test/design paths, NOT integrated. Representative LIFE coverage FAIL; long coverage/capacity pending. No approved LC1 or new receipt. FE1 remains DONE bounded and explicitly unreviewed for that candidate only (Engram7625). Not release-ready; LIFE proof, RI1 and RA1 remain pending. Continue-until-release remains active. Memory LP1a mapping is IN PROGRESS in the separate featurebook; no source writes yet. Historical uncommitted wording below is retained as a superset of history, superseded by the current checkpoint append.
 
 ## Intent and recovery
 
@@ -15,7 +15,7 @@ Locator `odd/tasks/narrative-lifecycle-runtime.md`; FULL Engram7604 topic `odd/n
 - [x] **LR1b — DONE (bounded annual execution/frontier):** source/main `dfa38b6`; three paths, 714 authored lines (154 production/522 tests/38 docs); dual-node 540/13 PASS, types/lint PASS, native APPROVED/ACK BURNED. Not full replay or LIFE-scale proof.
 - [x] **LR2a — DONE (bounded full replay):** source/main `fff9123`; five paths, 517 authored lines (516+/1−, including 28 design-doc lines). Both nodes 514/11 PASS, types/lint PASS; native APPROVED/ACK BURNED. No LIFE-scale performance proof.
 - [x] **LR2b — DONE (bounded lossless capsule):** source/main `0adc844`; three paths, 464 authored lines (138 production/296 tests/30 docs); dual-node 597/12 PASS, types/lint PASS, native APPROVED/ACK BURNED. No LIFE-scale proof.
-- [ ] **LC1 — IN PROGRESS / BLOCKED (isolated partial; long coverage/capacity pending):** three isolated paths modified; representative LIFE coverage FAIL. Certified start/resume, genuine death/budget/abort remain the contract; fast checks are not long-LIFE proof. Next: human deployment RAM budget, then map bounded journal/canonical-wire performance units before writer. No new source authorization, release cut or DONE claim.
+- [ ] **LC1 — BLOCKED / pending (not active; isolated WIP `9b7af0b`, not integrated):** clean three-path, 593-line checkpoint; representative LIFE coverage FAIL. Certified start/resume, genuine death/budget/abort remain the contract; fast checks are not long-LIFE proof. RAM guidance now gives a provisional 1 GB target within 1–2 GB, not a hard server limit. Next: measured memory units in [the separate featurebook](narrative-lifecycle-memory.md); no new source authorization, release cut or DONE claim.
 
 ## FE1 scope and invariants
 
@@ -146,3 +146,11 @@ Predeclared lifecycle-representative-v1/0..4: once each, E1default62founders1498
 Fast32PASS4.16s; explicit representative1skipped. Dual-node seven-file gates SKIPPED after failed gate. No LC1 native commit/review/integration; main source70dca9a unchanged; no RA1 release. Next map bounded journal/canon-wire performance units before writer; preserve semantic full-execution certification, old-version replay, no forced death. Continue-until-release active, not blanket pause.
 
 Isolated SHA256 prod0f2d53b6e16c913a14f716b3747cc110a49e9c0305d179841425e80628a6f65d; test0a4c0e5a483c29cf96b3a82094630f574139ca9de3698a7ccf158054131db9ac; docs eae2f3c45482caeb21492255c4657552e1020d1a42d7399656abdaa2300442b5.
+
+## Current checkpoint — LC1 pending; memory feature mapped
+
+Main `0de392699d2c9e9e54e22058e3049d4561705648` is the stable integrated base. Parent reports isolated LC1 WIP `9b7af0b` clean, retaining the same 593-line three-path partial unit; not integrated or approved. Earlier uncommitted/main70dca9a wording records the earlier checkpoint, not current status. No new receipt or source changes in this documentation update.
+
+Decision7656 / map7657: user “nose, uno o dos” RAM guidance means conservative 1 GB PROVISIONAL target within 1–2 GB, not a server hard limit; concurrency and actual capacity unknown. Five fixed cohort members genuinely completed in 2–4 years, full cold canon/alias/traversal PASS, ≥60-year coverage FAIL. Sampled 3.09 GB RSS is cumulative process sampling, NOT peak/exclusive per-member usage. Do not force ages/death, search survivors, reseed, cap completion or change coverage to fake proof.
+
+[Memory featurebook](narrative-lifecycle-memory.md), FULL topic `odd/narrative-lifecycle-memory/tasks`, maps LP1a IN PROGRESS (immutable journal-prefix reuse + fresh-process measurement), LP1b PENDING (measured transient copies), LP1c PENDING conditional (explicit versioned graph-sharing wire), LP1d PENDING (independent capacity). No memory source writes yet; no LP1b/LP1c implementation path permission. LP1d connects back to LC1 long coverage, never automatically closes LC1. Old E1 wire/human rules and bounded LR approvals remain intact; FE1 unreviewed applies only to FE1. Ask-on-risk / feature-branch-chain remains local only, no push/deploy. Parent owns timeline projection after durable full book/mirror writes.
