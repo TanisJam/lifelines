@@ -1,5 +1,9 @@
 # Narrative release execution — ODD tasks
 
+## PAUSED — latest human stop supersedes ACTIVE
+
+“termina lo que estas haciendo y cerramos, mañana seguimos, comitea lo actual y guarda en memoria”: source writes blocked until explicit human resume; no scheduled/background continuation. RL1b1 DONE bounded, approved/ACK burned/integrated; Node24/26 and main20 files/620 tests PASS (parent evidence). Code b0963b0 and closure7e6a400 committed; parent commits this passive checkpoint. Next runtime/replay scope unanswered; no next writer/version/artifact created. Prior receipts/history retained; NOT release-ready.
+
 ## CURRENT — RL1b1 DONE (bounded trusted source seam only)
 
 Main/source FROZEN at `b0963b02d065678e4eaed3cf7272b0d32cc43140`. Closure evidence: lifecycle book CURRENT section. Integrated SOURCE22,349+447=22,796, excluding passive prose. RL1b/RL1/full RG1/RI1/RA1 remain incomplete; NOT release-ready. NEXT: map explicit NEW lifecycle runtime genesis/admission/full replay, no source now or old E1 migration. Full mirrors7536/7504: `lifelines`; `.claude/` preserved. Parent owns passive commit.
