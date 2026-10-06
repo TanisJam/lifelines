@@ -1,6 +1,6 @@
 # Lifecycle runtime — reviewable ODD units
 
-CURRENT: LR1a DONE (bounded genesis/admission), fast-forward integrated on main `1418dfbba5a65bdfe243c1f923d2f8f91ec5fc80`; native review APPROVED and ACK BURNED with exact lineage. LR1b IN PROGRESS (mapped annual execution/frontier contract); no runtime source writes yet. FE1 remains DONE bounded and explicitly unreviewed (Engram7625). Not release-ready; LR2, genuine death continuation, RI1 and RA1 remain pending.
+CURRENT: LR1a and LR1b DONE bounded; LR1b source/main `dfa38b64a1470e5ece8018bdec94fd2fb429bd0e3`, native APPROVED/ACK BURNED. LR2a IN PROGRESS (mapped replay; no writer launched); LR2b PENDING (new lossless capsule). FE1 remains DONE bounded and explicitly unreviewed (Engram7625). Not release-ready; genuine death continuation, RI1 and RA1 remain pending. Historical mapping statements below are superseded by the closure/scope append.
 
 ## Intent and recovery
 
@@ -12,8 +12,9 @@ Locator `odd/tasks/narrative-lifecycle-runtime.md`; FULL Engram7604 topic `odd/n
 
 - [x] **FE1 — DONE (bounded extraction):** source `ae01652`, fast-forward main `46565a3`, integrated413/7 PASS plus types/lint, four hashes unchanged. Explicit human unreviewed7625; RDD stays on, no native approval. Writer plus independent verifier and main gate observed.
 - [x] **LR1a — DONE (bounded genesis/admission):** source/main `1418dfb`, exactly two genesis source/test paths plus narrow design docs; 84 focused and 430/10 related tests PASS on both nodes, types/lint PASS, native APPROVED/ACK BURNED. First prerequisite only, not full runtime.
-- [ ] **LR1b — IN PROGRESS (mapped; source not started):** new `src/domain/e-lifecycle-runtime.ts` and `src/domain/e-lifecycle-runtime.test.ts`, bounded append to `docs/design/narrative-engine.md`; trusted native annual execution plus FE1, contiguous frontier, actual-state journal, atomic publication/rollback. Exact contract and checks below; parent prepares isolated writer after full book synchronization.
-- [ ] **LR2 — PENDING:** map full actual-state ordered journal/replay certification preserving old capsules; no writer yet.
+- [x] **LR1b — DONE (bounded annual execution/frontier):** source/main `dfa38b6`; three paths, 714 authored lines (154 production/522 tests/38 docs); dual-node 540/13 PASS, types/lint PASS, native APPROVED/ACK BURNED. Not full replay or LIFE-scale proof.
+- [ ] **LR2a — IN PROGRESS (mapped; no writer launched):** new `src/domain/e-lifecycle-replay.ts` and `src/domain/e-lifecycle-replay.test.ts`; narrow descriptor-checked canonical export in existing `src/domain/e-lifecycle-genesis.ts` and `src/domain/e-lifecycle-genesis.test.ts`; bounded `docs/design/narrative-engine.md` append. No runtime behavior change; forecast450–700 advisory, not cap. Contract/checks below; parent owns launch/review/commit.
+- [ ] **LR2b — PENDING:** separate future new lossless capsule, not old E1; preserve existing codecs.
 - [ ] **LC1 — PENDING:** genuine seeded unforced death continuation, incomplete/aborted handling and RG1 integration; split later units if necessary.
 
 ## FE1 scope and invariants
@@ -101,3 +102,13 @@ All future validation is foreground serial with timeout600, unchanged test timeo
 - Whitespace: `git diff --check`.
 
 Commands above are the future writer contract, not executed during this documentation-only synchronization. Parent retains native review, integration and terminal Git ownership; no release completion is claimed.
+
+## LR1b closure / LR2a mapped replay
+
+Inherited evidence, not rerun: baseline137 → missing-module RED → 23 GREEN. Two diagnostic Vitest heap failures corrected with bounded fixtures, no flags/timeouts changed; Mind/genotype/optional assumptions corrected. N26/N24 540/13 PASS (212.49/204.20s), types/lint PASS; main spot23 PASS, types/lint/diffcheck and three hashes stable, only `.claude/`. Source count1,078+676=1,754 excludes docs. Cumulative journals/LIFE scale unproved.
+
+Native `review-bc049fd9d1fef069` APPROVED/ACK BURNED target `b571651dcde0ac4bd3307e773bf4aa7e58ef60fc0d4f543f4c558c4b1ec8adaa`, consumed `1558581ca241212ea7ee015b4ccdc45fd8f9dc3d30beb8c723ad271ac6d149d6`; never STATUS after burn.
+
+LR2a `replayLifecycleRuntime(unknown)` accepts exactly `{genesis,output}`: descriptor-check WHOLE envelope before reads/clone/hash/await; cold-admit genesis and detach input before await. Regenerate `createLifecycleRuntime` for contiguous candidate years, no horizon cap. Losslessly compare full annual records/final output: actual people/Mind/logs/decisions/counters, native/final states, favor ledgers/resources/grants/slots/null meaning/entries/position ranges/frontier/status/snapshot. Return regenerated frozen output restoring aliases/registry order. Zero/incomplete alive/death valid; reject human entries, unknown nested fields, forged/rehashed/gappy/accessor/executable/cyclic/nonfinite data. No callbacks/hash-only proof; canonical wrapper is NOT certificate, existing bytes unchanged.
+
+Future checks: existing N26/N24 prefixes, foreground serial timeout600, unchanged test timeouts. Baseline genesis/runtime; replay RED/GREEN; final BOTH: `src/domain/{e-lifecycle-genesis,e-lifecycle-runtime,e-lifecycle-replay,e-year-source,e-favor-executor,e-annual-policy,e-annual-composition,e-runtime,e-capsule,e-fork,annual-runtime-baseline}.test.ts` (expand each path), `node_modules/vitest/vitest.mjs run … --maxWorkers=1`. N26 tsc `--noEmit --incremental false`; ESLint exact four genesis/replay paths; `git diff --check`. No writer launched; parent owns launch/review/commit.
