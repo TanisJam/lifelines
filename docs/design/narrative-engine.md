@@ -1199,3 +1199,33 @@ replay tests (contract above); review and target-runtime verification are still 
 not close the full feature or authorize B–F. Next collect the separately scoped baseline, then prove
 the small favor slice with the director disabled. Density and literary polish follow verified
 consequences, not the other way around.
+
+## Lifecycle prerequisite LR1a: closed genesis and private instantiation
+
+`src/domain/e-lifecycle-genesis.ts` supplies **only** lifecycle creation, cold semantic
+admission and private reconstruction. It does not implement annual execution, lifecycle
+journal/replay, death continuation, persistence or production activation.
+
+**Quick path:** `createLifecycleGenesis({ initialization, protagonistId, resources })` →
+retain the detached frozen genesis → `admitLifecycleGenesis(candidate)` on cold data →
+`instantiateLifecycleGenesis(candidate)` for a fresh privately owned draft. Initialization
+is an E1 request, the protagonist must be a nonempty own generated actor ID, and resources
+must supply exactly every generated actor (including initially dead actors), each with
+nonnegative safe-integer `grain`, `effort` and `need`. Numeric allocation `-0` rejects.
+
+| Review point | LR1a contract |
+|---|---|
+| Closed tuple | Schema `lifecycle-genesis-lr1a-1`, runtime `native-rules-lifecycle-lr1-1`, rules-year `native-rules/person-year-batched/v1`, annual policy `annual-favor-policy-ap1-1`, composition `annual-composition-rc1-1`, plus all current `WORLD_ORIGIN_VERSIONS`. Source is exactly `{ version: RULES_YEAR_SOURCE_VERSION }`; no executable authority or override options. These identify future authorities, not completed runtime support. |
+| Complete genesis | Exact fields `versions`, `origin`, `source`, `protagonistId`, `resources`, `initial`, `digest`. E1 origin captures the normalized declaration/evidence; `initial` separately retains the actual complete generated config, Person/Mind registry, ordered life events and explicit registry traversal. Neither snapshot is another evolving world. |
+| Safety and semantics | Descriptor-check the entire tree before field reads, cloning or hashing. Reject executable hooks, hidden/symbol properties, nonplain containers, sparse/extended arrays, cycles and nonfinite values. Admit E1 origin and independently reuse `generateInitialWorld` to compare the complete lossless payload; rehashed fabricated Person/Mind, event, config, origin or traversal data still rejects. Structural acceptance of undefined alone is never semantic proof. |
+| Digest material | SHA-256 of UTF-8 private tagged canonical data: sorted record keys, ordered arrays, tagged primitive leaves and number strings, distinct `-0` and own undefined. Optional absence differs from own undefined; only exact generated presence is admitted. Existing E1 JSON normalization and closed E2/E3/C2 codecs are unchanged. This is not a public durable wire codec. |
+| Owned draft | Return `genesis`, frozen origin `config`, `protagonistId`, `owned` and `favors`. `owned` holds fresh mutable actual people, life events, empty decisions and `{ decisionCalls: 0 }`. Separate resource/debt/tie/appraisal/help-history ledgers start from explicit resources and empty collections. `favors.people === owned.people` and `favors.legacyEvents === owned.events`; native source and favor executor must borrow those same references. Independent instantiations share no mutable state. |
+| Horizon | `config.endYear` remains origin metadata, not a future lifecycle execution ceiling. Instantiation itself executes no years, manufactures no historical activity and supplies no advance/replay placeholder. |
+
+Review `e-lifecycle-genesis.test.ts` for E1 parity, full rehashed-state rejection,
+optional presence/signed-zero fidelity, descriptor zero hooks, complete resource admission,
+caller immutability, independent drafts and borrowed native/favor identity beyond origin
+endYear. No demographic policy, economic replenishment, historical hydration, quotas,
+callback authority or implicit migration is introduced. Regeneration is a consistency
+proof, not authenticated authorship, a Proxy sandbox or a scaling/resource-limit claim.
+LR1b annual orchestration and LR2 complete actual-state journal/replay remain separate units.
