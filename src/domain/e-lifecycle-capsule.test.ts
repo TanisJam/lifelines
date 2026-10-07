@@ -75,6 +75,60 @@ beforeAll(async () => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+describe("streamed digest framing", () => {
+  it.each(["create", "admit", "serialize", "deserialize"])("%s hashes the old tuple bytes without stringifying the whole frame", async kind => {
+    const input = await fixture("verify-5", false, '\u0000\b\f\n\r\t"\\ / \u2028\u2029\ud800x\udfff');
+    const original = await createLifecycleCapsule(input);
+    const encoded = canonicalLifecycleData(input);
+    const expectedDigest = hash(original.manifest, encoded);
+    const expectedWire = encodedWire(encoded);
+    const stringify = vi.spyOn(JSON, "stringify"); // native call-through, no crypto substitution
+    const result = kind === "create" ? await createLifecycleCapsule(input)
+      : kind === "admit" ? await admitLifecycleCapsule(original)
+      : kind === "serialize" ? await serializeLifecycleCapsule(original)
+      : await deserializeLifecycleCapsule(expectedWire);
+    const wholeFrames = stringify.mock.calls.filter(([value]) => Array.isArray(value)
+      && value.length === 2 && typeof value[0] === "string" && value[1] === encoded);
+    expect(wholeFrames.length).toBe(0);
+    if (typeof result === "string") expect(result === expectedWire).toBe(true);
+    else {
+      expect(result.digest).toBe(expectedDigest);
+      fidelity(result, original);
+    }
+  });
+
+  it("keeps a real canonical payload's boundary astral pair together and retains native escaping", async () => {
+    const suffix = '\ud83d\ude80\ud800x\udfff\u0000\b\f\n\r\t"\\ / \u2028\u2029';
+    const prefix = "RH1-name-";
+    const calibration = canonicalLifecycleData(await fixture("verify-5", false, prefix + suffix));
+    const firstPair = calibration.indexOf(suffix.slice(0, 2));
+    expect(firstPair).toBeGreaterThan(0);
+    // Name has no length bound in requestedOptions. Padding aligns bytes, not biology.
+    const padding = (32767 - firstPair % 32768 + 32768) % 32768;
+    const name = prefix + "a".repeat(padding) + suffix;
+    const input = await fixture("verify-5", false, name);
+    const encoded = canonicalLifecycleData(input);
+    expect(encoded.slice(32767, 32769)).toBe(suffix.slice(0, 2));
+    expect(encoded.indexOf(suffix.slice(0, 2))).toBe(32767);
+    const expectedDigest = hash(LIFECYCLE_CAPSULE_MANIFEST, encoded);
+    const expectedWire = encodedWire(encoded);
+    const stringify = vi.spyOn(JSON, "stringify");
+    const original = await createLifecycleCapsule(input);
+    expect(original.digest).toBe(expectedDigest);
+    const chunks = stringify.mock.calls.map(([value]) => value).filter((value): value is string =>
+      typeof value === "string" && value.startsWith(encoded.slice(0, 80)));
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.every(chunk => chunk.length <= 32768 && !chunk.endsWith("\ud83d"))).toBe(true);
+    expect(stringify.mock.calls.some(([value]) => typeof value === "string"
+      && value.startsWith(suffix.slice(0, 2)) && value.length <= 32768)).toBe(true);
+    stringify.mockRestore();
+    expect(await serializeLifecycleCapsule(original) === expectedWire).toBe(true);
+    const restored = await deserializeLifecycleCapsule(expectedWire);
+    fidelity(restored, original);
+    expect(restored.output.owned.people.protagonist.name).toBe(name);
+  });
+});
+
 describe("full trusted lifecycle capsule", () => {
   it.each(["create", "admit"])("%s avoids outer capture but retains essential replay capture", async kind => {
     const input = structuredClone(kind === "create" ? evidence : capsule);
@@ -309,8 +363,47 @@ describe("strict inverse and exact canonical wire", () => {
     '["record",[["x",["null"]],["x",["null"]]]]', '["record",[[1,["null"]]]]', '["record",[["x"]]]',
     '["record",[["z",["null"]],["a",["null"]]]]', '[ "null" ]', '["string","\\u0061"]',
   ];
+  malformed.push(
+    '', 'null', '{}', '[]', '["null"', '["null"]x', '["null"] ["null"]',
+    '["null",]', '["string"]', '["boolean",true,false]', '["boolean",truex]',
+    '["boolean",null]', '["boolean",0]', '["number","0x10"]', '["number",".1"]',
+    '["number","1e21"]', '["number","+1"]', '["number"," 1"]', '["number","1 "]',
+    '["number","-Infinity"]', '["number","nan"]', '["number","1e309"]',
+    '["array"]', '["array",[null]]', '["array",[[]]]', '["array",[["null"],]]',
+    '["array",[["null"]["null"]]]', '["array",[["null"]]', '["array",[,["null"]]]',
+    '["record",{}]', '["record",[["x",["null"],0]]]', '["record",[["x"["null"]]]]',
+    '["record",[["x",["null"]]["y",["null"]]]]', '["record",[["x",["null"]],]]',
+    '["record",[["__proto__",["null"]],["__proto__",["null"]]]]',
+    '["record",[["0",["null"]],["0",["null"]]]]',
+    '["record",[["10",["null"]],["2",["null"]],["1",["null"]]]]',
+    '["string","raw\ncontrol"]', '["string","raw\u0000control"]',
+    '["string","\\x00"]', '["string","\\u12"]', '["string","\\uZZZZ"]',
+    '["string","\\q"]', '["string","unterminated', '["string","dangling\\',
+    '["string","escaped\\"]', '["string","ok",0]', '["null"]\n',
+  );
   it.each(malformed)("rejects malformed/noncanonical tagged payload %s", async encoded => {
     await expect(deserializeLifecycleCapsule(encodedWire(encoded))).rejects.toThrow();
+  });
+
+  it("rejects every truncated boundary of a nested canonical payload", async () => {
+    const encoded = canonicalLifecycleData({ a: [undefined, null, true, -0, 'quote"\\'], b: {} });
+    for (let end = 0; end < encoded.length; end++) {
+      await expect(deserializeLifecycleCapsule(encodedWire(encoded.slice(0, end)))).rejects.toThrow();
+    }
+  });
+
+  it.each([
+    'even\\\\" odd\\" end', 'astral \ud83d\ude80 and lone \ud800 / \udfff',
+    '\u0000\b\f\n\r\t"\\ / \u2028\u2029',
+  ])("preserves quoted UTF-16 data through full semantic regeneration %s", async name => {
+    const input = await fixture("verify-5", false, name);
+    const original = await createLifecycleCapsule(input);
+    const originalWire = await serializeLifecycleCapsule(original);
+    const restored = await deserializeLifecycleCapsule(originalWire);
+    fidelity(restored, original);
+    frozen(restored);
+    expect(restored.output.owned.people.protagonist.name).toBe(name);
+    expect(await serializeLifecycleCapsule(restored) === originalWire).toBe(true);
   });
 
   it.each(["whitespace", "duplicate", "escape", "field order", "manifest order", "extra", "raw payload", "duplicate nested manifest"])(
