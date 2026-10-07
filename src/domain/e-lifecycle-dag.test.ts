@@ -1,8 +1,124 @@
 import { describe, expect, it, vi } from "vitest";
 import { canonicalLifecycleData } from "./e-lifecycle-genesis";
-import { decodeLifecycleDag, deserializeLifecycleDag, encodeLifecycleDag, serializeLifecycleDag } from "./e-lifecycle-dag";
+import { decodeLifecycleDag, deserializeLifecycleDag, encodeLifecycleDag, serializeLifecycleDag, type LifecycleDag, type LifecycleDagNode } from "./e-lifecycle-dag";
+
+function binaryTable(depth: number, leaf: LifecycleDagNode = ["z"]): LifecycleDag {
+  const nodes: LifecycleDagNode[] = [leaf];
+  for (let i = 0; i < depth; i++) nodes.push(["a", [i, i]]);
+  return { root: depth, nodes };
+}
 
 describe("internal lifecycle data dictionary (not authority)", () => {
+  it("rejects canonical exponential expansion before constructing decoded records", () => {
+    const table = binaryTable(100, ["r", []]);
+    // 101 definitions, 200 edges, depth 101; never unfold this root in an oracle.
+    const define = vi.spyOn(Object, "create");
+    let rejected = false;
+    try { decodeLifecycleDag(table); } catch { rejected = true; }
+    const calls = define.mock.calls.length;
+    define.mockRestore();
+    expect(rejected).toBe(true);
+    expect(calls).toBe(0);
+    expect(() => deserializeLifecycleDag(JSON.stringify(table))).toThrow();
+  });
+  it.each([1_600_003, 1_600_004, 1_600_005])("accounts exact unfolded node visits %s and their repeated edges", visits => {
+    // A tree has edges = visits - 1; with equal caps, node admission binds first.
+    // Decompose visits - 1 into weights 2^(d+1)-1, not an unfolded value.
+    const table = binaryTable(19);
+    const refs: number[] = [];
+    let remaining = visits - 1;
+    for (let d = 19; d >= 0; d--) {
+      const weight = 2 ** (d + 1) - 1;
+      while (remaining >= weight) { refs.push(d); remaining -= weight; }
+    }
+    table.nodes.push(["a", refs]); table.root++;
+    if (visits > 1_600_004) {
+      expect(() => decodeLifecycleDag(table)).toThrow();
+      expect(() => deserializeLifecycleDag(JSON.stringify(table))).toThrow();
+    } else {
+      const value = decodeLifecycleDag(table) as unknown[];
+      expect(value).toHaveLength(refs.length);
+      // Inspect only compact alias identity, never the expanded comparison guard.
+      const binary = value[0] as unknown[];
+      expect(binary[0]).toBe(binary[1]);
+      expect(() => deserializeLifecycleDag(JSON.stringify(table))).not.toThrow();
+    }
+  });
+  it("rejects the exact repeated-edge cap (which necessarily exceeds the node cap)", () => {
+    // Root edges: 2 * (800001 child edges + 1) = 1,600,004.
+    // Each child is a compact canonical chain with 800001 unfolded edges.
+    const table = binaryTable(18);
+    let remaining = 800_001;
+    const refs: number[] = [];
+    for (let d = 18; d >= 0; d--) {
+      const weight = 2 ** (d + 1) - 1;
+      while (remaining >= weight) { refs.push(d); remaining -= weight; }
+    }
+    table.nodes.push(["a", refs]);
+    table.nodes.push(["a", [19, 19]]); table.root = 20;
+    expect(() => decodeLifecycleDag(table)).toThrow();
+  });
+  it.each([-1, 0, 1])("counts repeated strings and array-index keys at text cap %+i", delta => {
+    const table = binaryTable(10, ["s", "s".repeat(3900)]);
+    // 1024 strings * 3900 + 2046 one-code-unit array keys + root key "x".
+    table.nodes.push(["s", "t".repeat(4353 + delta)]);
+    table.nodes.push(["r", [["", 10], ["x", 11]]]); table.root = 12;
+    if (delta > 0) expect(() => decodeLifecycleDag(table)).toThrow();
+    else expect(() => deserializeLifecycleDag(JSON.stringify(table))).not.toThrow();
+    let repeated: unknown = "s".repeat(3900);
+    for (let i = 0; i < 10; i++) repeated = [repeated, repeated];
+    const source = { "": repeated, x: "t".repeat(4353 + delta) };
+    if (delta > 0) expect(() => encodeLifecycleDag(source)).toThrow();
+    else {
+      const options = { nodes: 13, edges: 22, depth: 12, bytes: Buffer.byteLength(JSON.stringify(table)) };
+      expect(encodeLifecycleDag(source, options)).toEqual(table);
+      expect(() => decodeLifecycleDag(encodeLifecycleDag(source, options), options)).not.toThrow();
+    }
+  });
+  it.each([-1, 0, 1])("counts each repeated record key at text cap %+i", delta => {
+    const key = "k".repeat(3900);
+    const nodes: LifecycleDagNode[] = [["u"]];
+    let source: unknown = undefined;
+    for (let i = 0; i < 10; i++) {
+      nodes.push(["r", [["", i], [key, i]]]);
+      source = { "": source, [key]: source };
+    }
+    // 1023 repeated binary records * 3900 + the root key.
+    const rootKey = "w".repeat(10300 + delta);
+    nodes.push(["r", [[rootKey, 10]]]);
+    const table = { root: 11, nodes };
+    if (delta > 0) {
+      expect(() => decodeLifecycleDag(table)).toThrow();
+      expect(() => encodeLifecycleDag({ [rootKey]: source })).toThrow();
+    } else {
+      const restored = decodeLifecycleDag(table) as Record<string, Record<string, unknown>>;
+      expect(Object.hasOwn(restored[rootKey], "")).toBe(true);
+      expect(restored[rootKey][""]).toBe(restored[rootKey][key]);
+      expect(encodeLifecycleDag({ [rootKey]: source })).toEqual(table);
+    }
+  });
+  it("charges multi-digit array-index keys, not just edge counts", () => {
+    // Per occurrence: 11 strings of 355 + keys 0..10 (12 code units).
+    // 1024 occurrences plus binary keys: 4,013,054 code units, over cap.
+    const table: LifecycleDag = { root: 11, nodes: [["s", "v".repeat(355)], ["a", Array(11).fill(0)]] };
+    for (let i = 1; i <= 10; i++) table.nodes.push(["a", [i, i]]);
+    expect(() => decodeLifecycleDag(table)).toThrow();
+  });
+  it("saturates long chains and still rejects malformed late tails without construction", () => {
+    for (const depth of [53, 100, 127]) {
+      const table = binaryTable(depth, ["r", []]);
+      expect(() => decodeLifecycleDag(table)).toThrow();
+    }
+    const table = binaryTable(100, ["r", []]);
+    const define = vi.spyOn(Object, "create");
+    let rejected = false;
+    try { decodeLifecycleDag({ root: 101, nodes: [...table.nodes, ["r", [["late", 102]]]] }); }
+    catch { rejected = true; }
+    const calls = define.mock.calls.length;
+    define.mockRestore();
+    expect(rejected).toBe(true);
+    expect(calls).toBe(0);
+  });
   it("interns complete equal content, not just borrowed identity", () => {
     const table = encodeLifecycleDag([{ x: 1 }, { x: 1 }]);
     expect(table.nodes).toEqual([["n", "1"], ["r", [["x", 0]]], ["a", [1, 1]]]);
