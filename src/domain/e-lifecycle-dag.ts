@@ -70,6 +70,35 @@ function capture(input: unknown): unknown {
   visit(input, 1);
   return structuredClone(input);
 }
+/** Fixed format admission envelope, in unfolded capture units, not authority.
+ * `text` counts UTF16 string values AND every own key (including array indices).
+ * Keep the sentinel at cap + 1: every operand stays small even for 2^127 work. */
+const EXPANDED_WORK = { ...CAPTURE_WORK };
+interface ExpandedWork { nodes: number; edges: number; text: number; depth: number }
+function saturatedAdd(a: number, b: number, cap: number): number {
+  return a > cap || b > cap - a ? cap + 1 : a + b;
+}
+function expandedWork(node: LifecycleDagNode, earlier: ExpandedWork[]): ExpandedWork {
+  const result: ExpandedWork = { nodes: 1, edges: 0, text: node[0] === "s" ? node[1].length : 0, depth: 1 };
+  const refs = children(node);
+  for (let i = 0; i < refs.length; i++) {
+    const child = earlier[refs[i]];
+    const key = node[0] === "r" ? node[1][i][0] : String(i);
+    result.nodes = saturatedAdd(result.nodes, child.nodes, EXPANDED_WORK.nodes);
+    result.edges = saturatedAdd(result.edges, 1, EXPANDED_WORK.edges);
+    result.edges = saturatedAdd(result.edges, child.edges, EXPANDED_WORK.edges);
+    result.text = saturatedAdd(result.text, key.length, EXPANDED_WORK.bytes);
+    result.text = saturatedAdd(result.text, child.text, EXPANDED_WORK.bytes);
+    result.depth = Math.max(result.depth, child.depth + 1);
+  }
+  // A single leaf can itself exceed the text ceiling.
+  result.text = saturatedAdd(0, result.text, EXPANDED_WORK.bytes);
+  return result;
+}
+function admitExpansion(work: ExpandedWork): void {
+  if (work.nodes > EXPANDED_WORK.nodes || work.edges > EXPANDED_WORK.edges ||
+    work.text > EXPANDED_WORK.bytes || work.depth > EXPANDED_WORK.depth) fail();
+}
 function children(node: LifecycleDagNode): number[] {
   return node[0] === "a" ? node[1] : node[0] === "r" ? node[1].map(pair => pair[1]) : [];
 }
@@ -108,8 +137,9 @@ export function encodeLifecycleDag(input: unknown, options?: Partial<LifecycleDa
     return id;
   }
   const table = { root: visit(owned), nodes };
-  wire(table, cap);
-  return table;
+  // Use the exact decoder admission path, including compact-envelope capture:
+  // encoding must never emit a table rejected by same-options decoding.
+  return validate(table, cap);
 }
 /** Validate every definition, including unused tails, before materializing any
  * decoded data. Canonical DFS walks compact edges once, never unfolded values. */
@@ -121,7 +151,7 @@ function validate(input: unknown, cap: LifecycleDagLimits): LifecycleDag {
   const raw = record.nodes;
   if (!raw.length || raw.length > cap.nodes || !integer(record.root) || record.root !== raw.length - 1) fail();
   const signatures = new Set<string>(), nodes: LifecycleDagNode[] = [], heights: number[] = [];
-  const work = budget(cap);
+  const work = budget(cap), expanded: ExpandedWork[] = [];
   for (let index = 0; index < raw.length; index++) {
     const cell = raw[index];
     if (!Array.isArray(cell)) fail();
@@ -156,6 +186,9 @@ function validate(input: unknown, cap: LifecycleDagLimits): LifecycleDag {
     work.text(signature);
     if (signatures.has(signature)) fail();
     signatures.add(signature); nodes.push(node); heights.push(height);
+    // Earlier-only refs were checked above. Saturate, but finish all structural
+    // and canonical checks even after an intermediate definition is oversized.
+    expanded.push(expandedWork(node, expanded));
   }
   const seen = new Set<number>();
   let next = 0;
@@ -169,6 +202,7 @@ function validate(input: unknown, cap: LifecycleDagLimits): LifecycleDag {
   if (seen.size !== nodes.length) fail();
   const table = { root: record.root, nodes };
   wire(table, cap);
+  admitExpansion(expanded[record.root]);
   return table;
 }
 function materialize(table: LifecycleDag): unknown {
