@@ -50,7 +50,22 @@ function payload(genesis: unknown, output: unknown): string {
 function digest(manifest: unknown, encoded: string): string {
   // A JSON tuple frames two strings unambiguously. Both complete manifest and
   // complete tagged genesis/output participate; digest itself never does.
-  return createHash("sha256").update(JSON.stringify([canonicalLifecycleData(manifest), encoded]), "utf8").digest("hex");
+  const hash = createHash("sha256");
+  hash.update(`[${JSON.stringify(canonicalLifecycleData(manifest))},"`, "utf8");
+  for (let start = 0; start < encoded.length;) {
+    let end = Math.min(start + 32768, encoded.length);
+    // Native JSON escaping must see paired UTF-16 units together. Lone
+    // surrogates still receive JSON.stringify's original well-formed escaping.
+    if (end < encoded.length) {
+      const high = encoded.charCodeAt(end - 1);
+      const low = encoded.charCodeAt(end);
+      if (high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff) end--;
+    }
+    hash.update(JSON.stringify(encoded.slice(start, end)).slice(1, -1), "utf8");
+    start = end;
+  }
+  hash.update('\"]', "utf8");
+  return hash.digest("hex");
 }
 function requireDigest(value: unknown, manifest: unknown, encoded: string): asserts value is string {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value) || value !== digest(manifest, encoded)) {
