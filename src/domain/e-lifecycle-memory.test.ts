@@ -57,10 +57,11 @@ function aliases(output: Output): void {
 
 it.skipIf(!childSelected)("memory-child: fixed genuine runtime and full cold capsule", async () => {
   const started = performance.now();
-  const phases: { phase: string; rssBytes: number; heapUsedBytes: number; elapsedMs: number }[] = [];
+  const phases: { phase: string; rssBytes: number; heapUsedBytes: number; elapsedMs: number; maxRssBytes: number }[] = [];
   function sample(phase: string): void {
     const usage = process.memoryUsage();
-    phases.push({ phase, rssBytes: usage.rss, heapUsedBytes: usage.heapUsed, elapsedMs: performance.now() - started });
+    phases.push({ phase, rssBytes: usage.rss, heapUsedBytes: usage.heapUsed, elapsedMs: performance.now() - started,
+      maxRssBytes: process.resourceUsage().maxRSS * 1024 });
   }
   // Includes the child Vitest engine/imports. Never measure the supervising parent.
   sample("before-genesis");
@@ -124,6 +125,10 @@ it.skipIf(!childSelected)("memory-child: fixed genuine runtime and full cold cap
   const totalMaxRssBytes = process.resourceUsage().maxRSS * 1024;
   process.stdout.write(`${marker}${JSON.stringify({ node: process.version, seed: initialization.seed, steps,
     frontier: output.frontier, status: output.status, baselineRssBytes, totalMaxRssBytes,
+    generationSavePrefixMaxRssBytes: phases.find(entry => entry.phase === "serialized")!.maxRssBytes,
+    generationSaveLoadPrefixMaxRssBytes: phases.find(entry => entry.phase === "cold-admitted")!.maxRssBytes,
+    finalMaxRssBytes: totalMaxRssBytes,
+    highWaterScope: "Cumulative kernel process high-water through each prefix; final includes additional verification oracles. Includes Vitest baseline and retained owner/test graphs; not exclusive stage memory or a production server budget.",
     highWaterMinusBaselineBytes: totalMaxRssBytes - baselineRssBytes,
     provisionalTargetBytes: 1_000_000_000, targetMet: totalMaxRssBytes <= 1_000_000_000,
     elapsedMs: performance.now() - started, wireBytes, canonicalHash: hash(canonical), wireHash: hash(wire),
@@ -168,6 +173,20 @@ it.skipIf(childSelected)("measures one fresh child, including its Vitest process
   expect(metrics.canonicalHash).toBe("2f83c72b46391454fbc44e2288be27f09ef161ebf7d5c794a610bc072e881451");
   expect(metrics.wireHash).toBe("1ef4498df18f17cf3b17df4cfee86749450485bfdc29623a0e358ea830e709e8");
   expect(metrics.totalMaxRssBytes).toBeGreaterThan(0);
+  let previousMaxRssBytes = 0;
+  for (const observation of metrics.phases) {
+    expect(typeof observation.maxRssBytes).toBe("number");
+    expect(Number.isFinite(observation.maxRssBytes)).toBe(true);
+    expect(observation.maxRssBytes).toBeGreaterThanOrEqual(previousMaxRssBytes);
+    expect(observation.maxRssBytes % 1024).toBe(0); // Kernel KiB converted to bytes.
+    previousMaxRssBytes = observation.maxRssBytes;
+  }
+  expect(metrics.generationSavePrefixMaxRssBytes).toBe(metrics.phases.find((entry: { phase: string }) => entry.phase === "serialized").maxRssBytes);
+  expect(metrics.generationSaveLoadPrefixMaxRssBytes).toBe(metrics.phases.find((entry: { phase: string }) => entry.phase === "cold-admitted").maxRssBytes);
+  expect(metrics.generationSavePrefixMaxRssBytes).toBeLessThanOrEqual(metrics.generationSaveLoadPrefixMaxRssBytes);
+  expect(metrics.generationSaveLoadPrefixMaxRssBytes).toBeLessThanOrEqual(metrics.finalMaxRssBytes);
+  expect(metrics.finalMaxRssBytes).toBeGreaterThanOrEqual(previousMaxRssBytes);
+  expect(metrics.finalMaxRssBytes).toBe(metrics.totalMaxRssBytes);
   // The target is advisory data, never a volatile hard-threshold assertion.
   process.stdout.write(`${lines[0]}\n`);
 }, 600000);
