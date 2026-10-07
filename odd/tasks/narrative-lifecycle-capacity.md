@@ -1,8 +1,8 @@
 # Lifecycle capacity — full authority, bounded work
 
-CURRENT: CD1 DONE bounded -> RH1 DONE bounded/integrated -> RS1 attempt REJECTED7728 / NOT DONE delivery -> compact CG1 IN PROGRESS (source UNWRITTEN), CA1/CT1/CQ1 PENDING. Human7709 `keep_current_authority_full_replay_every_save`: LP1g DONE decision ONLY; EVERY create/admit/serialize/deserialize, including EVERY save, independently FULL-regenerates current-authority genesis/native/economic history. Design1318 unchanged; readonly calibration is not runtime-frozen. Producer cache rejected. No capacity/release closure.
+CURRENT: CD1 DONE bounded -> RH1 DONE bounded/integrated -> RS1 attempt REJECTED7728 / NOT DONE delivery -> compact CG1 DONE bounded/internal ONLY; CA1a IN PROGRESS (expansion-guard source UNWRITTEN), CA1b/CT1/CQ1 PENDING. Human7709 `keep_current_authority_full_replay_every_save`: LP1g DONE decision ONLY; EVERY create/admit/serialize/deserialize, including EVERY save, independently FULL-regenerates current-authority genesis/native/economic history. Design1318 unchanged; readonly calibration is not runtime-frozen. Producer cache rejected. No capacity/release closure.
 
-Parent release worktree `/home/tanisjam/Projects/Personal/lifelines`, `feat/narrative-engine`; bookkeeping branch `9e53fcc`, accepted integration `54533938a36245fafa6f5ea7b654f962bd725f1c`. MAIN means parent worktree, NOT default branch. RH1 source `8d77146` integrated exactly two capsule paths; CD1 `a7471c3` and LP1a/b/e integrated. Unrelated `.claude/` preserved. LC1 WIP `9b7af0b` not integrated; RI1/RA1 pending.
+Parent release worktree `/home/tanisjam/Projects/Personal/lifelines`, `feat/narrative-engine`; parent `077e2bf`, CG1 source `1cfc920`; prior RH1 integration `54533938a36245fafa6f5ea7b654f962bd725f1c`. MAIN means parent worktree, NOT default branch. RH1 source `8d77146` integrated exactly two capsule paths; CD1 `a7471c3` and LP1a/b/e integrated. Unrelated `.claude/` preserved. LC1 WIP `9b7af0b` not integrated; RI1/RA1 pending.
 
 FULL7715 `lifelines`, topic `odd/narrative-lifecycle-capacity/tasks`: owns closures/RS1 rejection. [Compact](narrative-lifecycle-compact.md) owns NEW representation chain; no new runtime-pool variant/cache. [Performance7658](narrative-lifecycle-memory.md): LP1/pins/suite; [runtime7604](narrative-lifecycle-runtime.md): runtime/LC1. Map/mirror BEFORE source. Historical benchmarks: Engram7725/7720 or Git1027cff/5453393 books. Burned receipts: NEVER STATUS.
 
@@ -58,7 +58,7 @@ Historical gate: fresh fixed four-year baseline/candidate BOTH N26/N24, unchange
 
 ## Representation/capacity PENDING — compact book owns NEW map
 
-[Compact](narrative-lifecycle-compact.md): CG1 IN PROGRESS standalone internal DAG codec; CA1 explicit additive format, CT1 conditional safe invocation-local validation/equality, CQ1 independent capacity/≥60-year proof PENDING. Source UNWRITTEN; no public integration/cache/new runtime pool. Old forecasts above historical only. Long-case Node string limit POSSIBLE, NOT observed; bounds/60 feasibility UNPROVED. No implicit migration/hash-only proof.
+[Compact](narrative-lifecycle-compact.md): CG1 DONE internal ONLY; writer + independent BOTH702/12 and parent47/types/lint PASS; ACK BURNED, NEVER STATUS (hashes/history there). CA1a IN PROGRESS: DAG.ts/test.ts expansion guard, source UNWRITTEN. CA1b/CT1/CQ1 PENDING; no public integration/cache/pool. Old forecasts above historical only. Long-case Node string limit POSSIBLE, NOT observed; bounds/60 feasibility UNPROVED. No implicit migration/hash-only proof.
 
 RV1/CQ1: independent capacity AND genuine ≥60-year proof remains UNKNOWN/PENDING. Original fixed five normal62-founder cases genuinely2–4 years, coverage FAIL; no adaptive survivor search/reseeding/forced ages/death/manufactured completion. Four-year memory PASS not long-proof closure. 1GB within1–2GB PROVISIONAL, not server limit; concurrency/deployment unknown. LC1 WIP9b7 not integrated, RI1/RA1 pending.
 
