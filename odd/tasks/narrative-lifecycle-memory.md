@@ -1,6 +1,6 @@
 # Lifecycle memory — measured, lossless performance units
 
-CURRENT: LP1a/b/e DONE bounded; LP1f PENDING/rejected, no delivered optimization; **LP1g DONE — human7709 decision ONLY: `keep_current_authority_full_replay_every_save`**. EVERY save independently FULL-regenerates under current authority; producer-proof/cache implementation permission NONE. New [capacity featurebook7715](narrative-lifecycle-capacity.md): **CD1 IN PROGRESS -> RH1 PENDING -> RS1 PENDING -> RV1 PENDING**, mapped/mirrored before first probe/hash/source write; LP1d derives CD1/RV1, LP1c maps RH1/conditional RS1. Parent checkpoint MAIN `ffa1841924e9924236885b482bd9ed35c98d460a`, `feat/narrative-engine`; LP1e source `edd14ab99ca724eb41fab11558c36506923627ec`, only `.claude/` dirty. Isolated HEAD39bc638 original production/retained39 test lines52 cases uncommitted, not integrated. LC1 WIP9b7af0b not integrated; ≥60-year proof/RI1/RA1 pending. Human7678 local verified commit/feature integration permission persists; no push/PR/default merge/deploy/destructive Git. FULL7658 project `lifelines`, topic `odd/narrative-lifecycle-memory/tasks`; runtime7604 and capacity7715 FULL mirrors. History/forecasts below are preserved, superseded by CURRENT; LP1g choice B has NO future permission.
+CURRENT: LP1a/b/e DONE bounded; LP1f PENDING/rejected, no delivered optimization; **LP1g DONE — human7709 decision ONLY: `keep_current_authority_full_replay_every_save`**. EVERY save independently FULL-regenerates under current authority; producer-proof/cache implementation permission NONE. New [capacity featurebook7715](narrative-lifecycle-capacity.md): **CD1 DONE bounded -> RH1 IN PROGRESS (map ONLY) -> RS1 PENDING/unmapped -> RV1 PENDING/unmapped**, mapped/mirrored before first probe/hash/source write; LP1d derives CD1/RV1, LP1c maps RH1/conditional RS1. Parent checkpoint MAIN `8d86a379cffdf50da1488ee9f65734a4c8e04b61`, `feat/narrative-engine`; CD1 source `a7471c3` verified/integrated per parent; LP1e source `edd14ab99ca724eb41fab11558c36506923627ec`. No working-tree status rerun here. Isolated HEAD39bc638 original production/retained39 test lines52 cases uncommitted, not integrated. LC1 WIP9b7af0b not integrated; ≥60-year proof/RI1/RA1 pending. Human7678 local verified commit/feature integration permission persists; no push/PR/default merge/deploy/destructive Git. FULL7658 project `lifelines`, topic `odd/narrative-lifecycle-memory/tasks`; runtime7604 and capacity7715 FULL mirrors. History/forecasts below are preserved, superseded by CURRENT; LP1g choice B has NO future permission.
 
 ## Decision and proof boundary
 
@@ -8,7 +8,7 @@ User RAM guidance “nose, uno o dos” establishes a conservative **1 GB PROVIS
 
 LC1's fixed five-member cohort genuinely completed in 2–4 years; full cold canonical replay, aliases and traversal PASS, ≥60-year coverage FAIL. Sampled 3.09 GB process RSS was cumulative across members, NOT peak or exclusive per-member usage. Do not force ages/death, search survivors, change seeds, cap completion or change coverage to manufacture proof. Fixed worst member v1/4 already ran four genuine years: default62 founders, Alice/f age0, origin1498/1558, resources grain2/effort3/need1, budget128.
 
-Native approvals remain bounded LR1a/LR1b/LR2a/LR2b and LP1a/LP1b/LP1e only. FE1 is explicitly unreviewed for that candidate only; user RDD unchanged. No LP1f/LP1g receipt or approved LC1. LP1g human7709 choice A is DONE decision-only, not an RDD verdict, kill-switch or publishing authority. Preserve old E1 wire and human-authority rules. Delivery remains ask-on-risk / feature-branch-chain, local only; no push/deploy. Doc-only: no source/test/native/child/network execution.
+Native approvals remain bounded LR1a/LR1b/LR2a/LR2b, LP1a/LP1b/LP1e and CD1 only. FE1 is explicitly unreviewed for that candidate only; user RDD unchanged. No LP1f/LP1g receipt or approved LC1. LP1g human7709 choice A is DONE decision-only, not an RDD verdict, kill-switch or publishing authority. Preserve old E1 wire and human-authority rules. Delivery remains ask-on-risk / feature-branch-chain, local only; no push/deploy. Doc-only: no source/test/native/child/network execution.
 
 ## Task chain — no unconditional next-unit permission
 
@@ -20,7 +20,7 @@ Native approvals remain bounded LR1a/LR1b/LR2a/LR2b and LP1a/LP1b/LP1e only. FE1
 | LP1f | PENDING; attempt REJECTED/SUPERSEDED | Cursor parser not delivered: production restored exactly, compatible tests retained only as isolated uncommitted evidence. |
 | LP1g | DONE; decision ONLY | Human7709 chose A: current-authority FULL regeneration EVERY save. Producer-proof/cache implementation permission NONE; design1318 unchanged. |
 | LP1c | Mapped onward | RH1 strict streamed digest; RS1 conditional full-state/versioned codec. See capacity7715; no cache/old-byte change. |
-| LP1d | Mapped onward | CD1 phase-prefix high-water IN PROGRESS; RV1 independent capacity/≥60-year proof PENDING. No capacity/LC1 closure. |
+| LP1d | Mapped onward | CD1 phase-prefix high-water DONE bounded; RV1 independent capacity/≥60-year proof PENDING/unmapped. No capacity/LC1 closure. |
 
 ## LP1a mapped scope and invariants
 
@@ -160,5 +160,18 @@ This is a genuine product boundary, NOT merely an allocation optimization. Paren
 
 Only IF B is chosen and the contract/mapped unit are approved would the conditional source/test pair be `src/domain/e-lifecycle-capsule.ts` and `src/domain/e-lifecycle-capsule.test.ts`. They are candidate surfaces, NOT new domain artifacts or authorized writes in this doc-only transaction. No unknown-input bypass under either choice. No unconditional future permission. Human semantic choice is NOT an RDD verdict, kill-switch, publication or release permission. Preserve all global RDD and closed native lineages: NEVER STATUS exhausted receipts; FE1 alone remains explicitly unreviewed for its historical candidate.
 
-Current next action: capacity7715 CD1 -> RH1 -> conditional RS1 -> RV1. LP1g DONE decision-only on human7709 A; historical B/WeakSet surfaces above grant NO future implementation permission. FULL7658/7604/7715 match complete local books, not excerpts. No capacity/LC1/RI1/RA1 closure; no source/tests/commands/native/children/network/commits here.
+Current next action: capacity7715 CD1 DONE -> RH1 IN PROGRESS (map ONLY) -> conditional RS1 -> RV1. Parent's next source unit uses a fresh worktree from current MAIN, scope/ownership + baseline BEFORE copying retained52 compatible cases; only lifecycle capsule.ts/test.ts mapped. No RS1/RV1 source permission. LP1g DONE decision-only on human7709 A; historical B/WeakSet surfaces above grant NO future implementation permission. FULL7658/7604/7715 match complete local books, not excerpts. No capacity/LC1/RI1/RA1 closure; no source/tests/commands/native/children/network/commits here.
+
+## CD1 closure / RH1 map — current parent evidence
+
+CD1 DONE bounded, source commit `a7471c3`, current MAIN `8d86a379cffdf50da1488ee9f65734a4c8e04b61`; memory-test SHA256 `310a1bd0c02d949e18e8fa5a3786406b108541aea62df54faa86691fc819fba5`. Parent verified fixed memory N26/N24, types/scoped lint/diff PASS; not rerun here. Functional RED has an instrumentation-only exception. Old whole-proof `targetMet=false` remains; genuine4 years/death1501/wire56561271, full cold replay and recorded canonical/wire pins preserved.
+
+| Node | Certified prefix peak bytes | GEN/save prefix peak bytes | GEN/save/load prefix peak bytes | FINAL complete-proof peak bytes |
+|---|---:|---:|---:|---:|
+| N26 | 1099546624 | 1423253504 | 1809199104 | 1995460608 |
+| N24 | 1181835264 | 1620549632 | 1881145344 | 1904500736 |
+
+Cumulative process RSS including Vitest, not isolated stages or exclusive memory. No1GB/≥60-year/server claim. Native `4a4581fef12ccffa` APPROVED / exact ACK BURNED; consumed `194b36df2b367bd7fdbd1c92f83ceed290fdcafed165f26ac1dcc28f5a1fd6fb`. NEVER STATUS again; closes CD1 only.
+
+RH1 book/source-first map IN PROGRESS, TWO future paths ONLY: `src/domain/e-lifecycle-capsule.ts`, `src/domain/e-lifecycle-capsule.test.ts`. Strict TDD: whole two-STRING frame `JSON.stringify` spy RED, old SHA exact oracle prepared before spy, bounded escaped UTF16 chunks preserving surrogate pairs. Digest first element is the CANONICAL manifest STRING, not an object; second is the encoded payload STRING. Full current-authority replay EVERY save remains mandatory; full wire/encoder/versions/guards unchanged. Parent fresh worktree from current MAIN, scope/ownership + baseline THEN copies retained39 lines/52 compatible cases. Parent native review/local commit/integration EVERY unit; no publish. ZERO source changes here; RS1/RV1 unmapped, no implementation permission. Full RH1 contract/validation remains in capacity7715.
 
