@@ -234,7 +234,19 @@ journal retaining two full state copies per year; B bounds the ENCODE peak, not 
 | B1 | chunked format + chunk codec + manifest validation, with tests | DONE `07c19c3` — 398 + 274 lines; 23/23 new; existing capsule/DAG 237/237; typecheck+eslint clean. A chunk covering year 1327 encodes to byte-identical 45,983 B in a 1-year and a 3-year life, proving it carries no accumulated state. |
 | B2 | repository: store/load chunks + manifest in one transaction, refusal paths | DONE `493b327` — db +23, repository +229/−13, tests +293; 28/28 repository, 35/35 neighbours; additive `lifecycle_chunked_manifests` table with immutability triggers, chunks in the existing digest-keyed `lifecycle_capsules_v1`. |
 | B3 | create path switched to the chunked format + the B2 genesis defect fixed | DONE `1c0ce60` — 6 files, +309/−21; 10/10 create, 39/39 read/repository/route, 23/23 chunked; typecheck+eslint clean. |
-| B4 | evidence: measured chunk encode peak, end-to-end persist/restart, suite | IN PROGRESS — measuring a 20-year life with 4-year chunks |
+| B4 | evidence: measured chunk encode peak, end-to-end persist/restart, suite | IN PROGRESS — a 4-year chunk FAILED at the end of a 20-year life (see below); re-measuring with 2-year cuts |
+
+### B4 first attempt — a design finding, not a bug
+The first end-to-end measurement (20-year life, default 4-year chunks) failed at chunk creation with
+`Invalid or oversized lifecycle data dictionary` from the work-text counter. The cause is structural:
+a chunk's cost depends on the POPULATION at that point in the life, which grows. The certified
+4-year production fixture already used 26,783,965 of the 32,000,000 work-text units (83.7 %) at 85
+people, so a 4-year chunk late in a 20-year life (~136 people) is roughly 1.6x that and cannot fit.
+A fixed year count therefore does NOT bound a chunk. The chunk boundary has to be size-driven
+(accumulate years until the encoded chunk approaches a declared budget, then cut), or the fixed count
+must be small enough for the largest population the life reaches. This is exactly what the
+predeclared gate exists to catch, and the design section's "chunkYears default 4" is superseded by
+whatever the measurement supports.
 
 ### B2 defect found by B3 (recorded, fixed)
 B2 stored the chunked genesis with `JSON.stringify`/`JSON.parse`. That round trip turns `-0` into
