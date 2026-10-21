@@ -91,6 +91,42 @@ function createSchema(db: DatabaseSync): void {
         SELECT RAISE(ABORT, 'Canonical history cannot be deleted');
       END;
 
+    -- Lifecycle engine persistence (RI1). Purely additive: the legacy lives, life_branches
+    -- and canonical_branch_bindings tables above are untouched and no row is migrated. A
+    -- new-engine life keeps its own metadata row and its own binding namespace, so a lifecycle
+    -- binding and a legacy canonical-branch-rb1 binding can never be confused.
+    CREATE TABLE IF NOT EXISTS lifecycle_lives (
+      id TEXT PRIMARY KEY,
+      protagonist_name TEXT NOT NULL,
+      protagonist_sex TEXT NOT NULL,
+      config_json TEXT NOT NULL,
+      branch_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    -- Capsule payloads live in their own strict table, owned exclusively by LifecycleRepository
+    -- (mirrors favor_records_v1's exact-schema guard, sqlite-favor-records.ts). The digest key and
+    -- the wire are UTF-16LE BLOBs so NUL and unpaired surrogates survive byte-exact — the capsule
+    -- digest is computed over those code units, so storage must not normalize them. The CREATE text
+    -- is kept on one line so it byte-matches the repository's normalized exact-schema check.
+    CREATE TABLE IF NOT EXISTS lifecycle_capsules_v1 (key BLOB NOT NULL PRIMARY KEY, wire BLOB NOT NULL) STRICT;
+
+    -- External lifecycle lineage; immutable for the same reason as canonical_branch_bindings.
+    CREATE TABLE IF NOT EXISTS lifecycle_bindings (
+      life_id TEXT NOT NULL,
+      branch_id TEXT NOT NULL,
+      binding_json TEXT NOT NULL,
+      PRIMARY KEY (life_id, branch_id)
+    );
+    CREATE TRIGGER IF NOT EXISTS lifecycle_binding_no_update
+      BEFORE UPDATE ON lifecycle_bindings BEGIN
+        SELECT RAISE(ABORT, 'Immutable lifecycle binding');
+      END;
+    CREATE TRIGGER IF NOT EXISTS lifecycle_binding_no_delete
+      BEFORE DELETE ON lifecycle_bindings BEGIN
+        SELECT RAISE(ABORT, 'Lifecycle history cannot be deleted');
+      END;
+
     -- Abuse protection (per-IP rate limiting on simulation-triggering endpoints): one row per
     -- allowed attempt, so a sliding window can be computed by counting/pruning rows younger than
     -- the window instead of maintaining separate hour/day counters that could drift out of sync.
