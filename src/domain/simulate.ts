@@ -428,7 +428,11 @@ function mourningOver(person: Person, events: readonly Event[], year: number): b
  * conception roll below, not the target average interval itself), shortened to ~1 year for gentry
  * (the same source's "elite... wet-nursing shortens intervals" finding — 24.6 vs 30.3 months).
  * Reset entirely (no cooldown) if her most recent child died before its first birthday, matching
- * Davenport's "the interval shortens when an infant dies before weaning."
+ * Davenport's "the interval shortens when an infant dies before weaning." Decision 085 made that
+ * reset unreachable in a normal run: with no age-0 biology roll, a child's earliest death is age 1,
+ * which the year AFTER it is already >= the 2-year floor (and gentry's floor is 1). Kept because it
+ * is the documented rule and is unit-tested directly; it would matter again for any earlier death
+ * the engine might add (a backfilled founder death, a future shock).
  */
 function eligibleForAnotherChild(mother: Person, people: Readonly<Record<string, Person>>, year: number): boolean {
   const children = Object.values(people).filter((c) => c.motherId === mother.id);
@@ -652,13 +656,27 @@ function gatherCandidatesForYear(
   // Lightweight away-NPCs (decision 040) are narrative props for the protagonist's own away
   // catalog below, not full villagers — they never face their own illness/death/immigration-cap
   // accounting, and never turn up as a match for anyone else's courtship.
-  const livingIds = Object.values(people)
+  const livingSorted = Object.values(people)
     .filter((p) => p.deathYear === undefined && !p.away)
-    .map((p) => p.id)
-    .sort();
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // The ids alone, in the same code-unit order the old `.sort()` produced (`livingSorted` keeps the
+  // person next to its id, so callers whose `people` map keys are NOT the person ids still work).
+  const livingIds = livingSorted.map((p) => p.id);
 
   // Biology: illness and death are decision opportunities for every living person, every year.
-  for (const id of livingIds) {
+  for (const person of livingSorted) {
+    const id = person.id;
+    // Decision 085: a newborn's FIRST biology roll is the FOLLOWING year, at `ageInYear` = 1.
+    // This snapshot is gathered before the year's own births are applied (see the doc comment
+    // above), so a child born in simulation never appears here in its birth year — but a FOUNDER
+    // newborn is generated at literal age 0 and IS in the registry at the start of the start year.
+    // Unguarded, she took an extra roll in `MORTALITY_BY_AGE_BAND`'s age<2 band (0.30) on top of
+    // her age-1 roll: survival to age 2 of 0.7 * 0.7 = 0.49, where decision 069 targets ~30%
+    // mortality BY age 1 — exactly ONE 0.30 roll. So no `illness:` or `death:` candidate at age 0
+    // for anyone; every child's first exposure is the one an in-sim child already gets.
+    // `livingIds` itself stays unfiltered: the immigration cap below counts newborns exactly as
+    // before, and a founder newborn still ages, marries and dies normally from age 1 on.
+    if (ageInYear(person.birthYear, year) === 0) continue;
     const movedAway = hasMovedAway(events, id);
     if (!movedAway) {
       const lastIllness = lastIllnessYear(events, id);

@@ -7,13 +7,19 @@ import * as runtimeModule from "./e-lifecycle-runtime";
 import * as capsuleModule from "./e-lifecycle-capsule";
 import * as sourceModule from "./e-year-source";
 
-function genesis(seed = "baseline-1327-0", normal = false) {
+function genesis(seed = "baseline-1327-0", normal = false, endYear = 1327) {
   const initialization = normal
-    ? { seed, protagonist: { name: "Alice", sex: "f" } }
-    : { seed, startYear: 1327, endYear: 1327, founderCount: 6, protagonist: { name: "Alice", sex: "f" } };
+    ? { seed, protagonist: { name: "Alice", sex: "f" as const } }
+    : { seed, startYear: 1327, endYear, founderCount: 6, protagonist: { name: "Alice", sex: "f" as const } };
   const { world } = initializeWorld(initialization);
   return createLifecycleGenesis({ initialization, protagonistId: "protagonist",
     resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+}
+/** Decision 085: no newborn is death-evaluated in its birth year, so no protagonist can die in
+ * 1327 any more. This fixture's protagonist genuinely dies at age 1 (1328) — measured on seed
+ * `lifecycle-genesis` — which is what the death-year/certification tests need. */
+function deathGenesis() {
+  return genesis("lifecycle-genesis", false, 1330);
 }
 type Mutable<T> = T extends object ? { -readonly [K in keyof T]: Mutable<T[K]> } : T;
 type Capsule = capsuleModule.LifecycleCapsule;
@@ -84,7 +90,7 @@ describe("controller", () => {
     expect(resumed.capsule === first.capsule).toBe(false);
   });
   it("reuses a genuinely complete admitted capsule without a continuation owner", async () => {
-    const completed = await runLifecycle({ kind: "start", genesis: genesis() }, { maxSteps: 4 });
+    const completed = await runLifecycle({ kind: "start", genesis: deathGenesis() }, { maxSteps: 4 });
     expect(completed.status).toBe("complete");
     const create = vi.spyOn(runtimeModule, "createLifecycleRuntime");
     const reused = await runLifecycle({ kind: "resume", capsule: completed.capsule }, { maxSteps: 20 });
@@ -222,18 +228,20 @@ describe("controller", () => {
       const source = real(...args);
       return { ...source, execute: async year => {
         const output = await source.execute(year);
-        if (++executions === 1) controller.abort();
+        // Decision 085: the protagonist's genuine death is at 1328 (age 1), not 1327, so abort
+        // in-flight during THAT native year instead of the first one.
+        if (++executions === 2) controller.abort();
         return output;
       } };
     });
-    const result = await runLifecycle({ kind: "start", genesis: genesis() }, { maxSteps: 4, signal: controller.signal });
+    const result = await runLifecycle({ kind: "start", genesis: deathGenesis() }, { maxSteps: 4, signal: controller.signal });
     expect(result.status).toBe("aborted");
     expect(result.capsule.output.status).toBe("complete");
-    expect(result.capsule.output.frontier).toBe(1327);
-    expect(executions).toBe(2); // committed native year plus full capsule certification
+    expect(result.capsule.output.frontier).toBe(1328);
+    expect(executions).toBe(4); // two committed native years, then two more regenerating the capsule
   });
   it("abort during certification and completed resume remains producer cancellation", async () => {
-    const completed = await runLifecycle({ kind: "start", genesis: genesis() }, { maxSteps: 4 });
+    const completed = await runLifecycle({ kind: "start", genesis: deathGenesis() }, { maxSteps: 4 });
     const controller = new AbortController();
     const real = capsuleModule.admitLifecycleCapsule;
     vi.spyOn(capsuleModule, "admitLifecycleCapsule").mockImplementation(async input => {
@@ -261,7 +269,7 @@ describe("controller", () => {
 });
 
 it("LIFEsmoke genuine unforced death and cold LR2b ownership", async () => {
-  const g = genesis();
+  const g = deathGenesis();
   let producer: Awaited<ReturnType<typeof runLifecycle>> | undefined = await runLifecycle({ kind: "start", genesis: g }, { maxSteps: 4 });
   expect(producer.status).toBe("complete");
   const death = producer.capsule.output.owned.people.protagonist.deathYear;
@@ -283,8 +291,9 @@ it("LIFEsmoke genuine unforced death and cold LR2b ownership", async () => {
   const zero = await runLifecycle({ kind: "start", genesis: g }, { maxSteps: 0 });
   const resumed = await runLifecycle({ kind: "resume", capsule: zero.capsule }, { maxSteps: 4 });
   expect(identity(resumed.capsule)).toBe(canon);
-  // This mandated seed dies in its first year. A separate alive seed proves
-  // continuation beyond 1327 above; do not mislabel the smoke as beyond-horizon death.
+  // Decision 085: this seed's protagonist dies at age 1 (1328), the earliest unforced death the
+  // engine can now produce. A separate alive seed proves continuation beyond 1327 above; do not
+  // mislabel the smoke as beyond-horizon death.
   process.stdout.write(`LIFEsmoke ${JSON.stringify({ frontier: cold.output.frontier, death, wireBytes: Buffer.byteLength(wire) })}\n`);
 });
 

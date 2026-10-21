@@ -156,9 +156,11 @@ describe("native lifecycle annual transaction", () => {
     const canonical = canonicalLifecycleData({ genesis: admitted, output });
     const wire = await serializeLifecycleCapsule(await createLifecycleCapsule({ genesis: admitted, output }));
     const digest = (text: string) => createHash("sha256").update(text).digest("hex");
-    expect(digest(canonical)).toBe("c1d772707e0000e09ceb08cf58df44c424359ddb99d850f89d5e76033a8d148c");
-    expect(digest(wire)).toBe("2acf03a4016066b76437d0d8304fc64f5d4e5e68d8e21a0e75e4b0426695aeb6");
-    expect(Buffer.byteLength(wire)).toBe(442369);
+    // Re-pinned (decision 085): an age-0 person no longer produces illness/death candidates, so
+    // this year's decision log lost the founder newborn's roll. Measured from this exact fixture.
+    expect(digest(canonical)).toBe("2bbdb85011b6fc3e81c31725a6a9aa846613e63e56f048e9d81bb8d073842d40");
+    expect(digest(wire)).toBe("7d7fbbe02052999018c740d2d41619d586b52bed38b74a1a6c0a8f9d9d455ab0");
+    expect(Buffer.byteLength(wire)).toBe(434793);
   });
 
   it("shares only the privately committed immutable annual prefix across publications", async () => {
@@ -460,7 +462,9 @@ describe("native lifecycle annual transaction", () => {
   });
 
   it("commits the ENTIRE genuine death year then refuses another native call", async () => {
-    const { runtime, outputs } = await publicParity({ ...defaults, seed: "baseline-1327-0" }, 1330);
+    // Decision 085: no founder newborn can die in its birth year any more, so this fixture uses a
+    // seed whose protagonist genuinely dies at age 1 (1328) instead of at 1327. Measured.
+    const { runtime, outputs } = await publicParity({ ...defaults, seed: "lifecycle-genesis", endYear: 1330 }, 1330);
     const death = outputs.at(-1)!;
     expect(death.status).toBe("complete");
     expect(death.owned.people.protagonist.deathYear).toBe(death.frontier);

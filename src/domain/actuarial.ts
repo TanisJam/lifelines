@@ -27,14 +27,15 @@ import type { SocialClass } from "./types";
  * the protagonist): see docs/decisions.md 050 and 069 for the exact before/after figures from the
  * runs this table was calibrated against.
  *
- * The age<2 band (not age<1): `simulate.ts` gathers a year's death candidates BEFORE that year's
+ * The age<2 band (not age<1): `simulate.ts` gathers a year's biology candidates BEFORE that year's
  * births are applied, so a child born in-sim is never death-evaluated in its own birth year — its
- * first ever roll is the FOLLOWING year, at `ageInYear` = 1, not 0 (a founder who happens to start the
- * world at literal age 0 is the only case where age 0 is ever actually evaluated). Splitting "infant"
- * mortality into an age<1 band and a separate, lower age-1 band would leave the age<1 band almost
- * entirely dead code for the born-during-sim majority of the population; age<2 folds both into one
- * band instead, so a newborn's real first exposure — whichever age it lands on — carries the
- * intended infant-mortality risk. See `check-demographics.ts#runStats`'s doc comment for the measured
+ * first ever roll is the FOLLOWING year, at `ageInYear` = 1, not 0. Decision 085 closed the one
+ * exception: a founder generated at literal age 0 used to be rolled at BOTH 0 and 1, doubling her
+ * infancy exposure, so age 0 now produces no biology candidate either. This band is therefore only
+ * ever applied at age 1: splitting "infant" mortality into an age<1 band and a separate, lower age-1
+ * band would leave the age<1 band entirely dead code, so age<2 folds both into one band and a
+ * newborn's real first exposure carries the intended infant-mortality risk. See
+ * `check-demographics.ts#runStats`'s doc comment for the measured
  * consequences of this (it also documents why the SCRIPT measures e0 over a 100-year window rather
  * than the game's own 60-year default — see that comment before assuming this table looks wrong
  * against a 60-year measurement).

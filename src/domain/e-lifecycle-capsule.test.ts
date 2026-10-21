@@ -15,13 +15,13 @@ type Evidence = Pick<LifecycleCapsule, "genesis" | "output">;
 type Candidate = Mutable<LifecycleCapsule>;
 const defaults = { seed: "baseline-1327-1", startYear: 1327, endYear: 1327, founderCount: 6,
   protagonist: { name: "Alice", sex: "f" } };
-async function fixture(seed = defaults.seed, annual = true, name = defaults.protagonist.name): Promise<Evidence> {
-  const initialization = { ...defaults, seed, protagonist: { name, sex: "random" } };
+async function fixture(seed = defaults.seed, annual = true, name = defaults.protagonist.name, endYear = 1327): Promise<Evidence> {
+  const initialization = { ...defaults, seed, endYear, protagonist: { name, sex: "random" as const } };
   const { world } = initializeWorld(initialization);
   const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist",
     resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
   const runtime = createLifecycleRuntime(genesis);
-  if (annual) await runtime.advance(1327);
+  if (annual) for (let year = 1327; year <= endYear && runtime.snapshot().status !== "complete"; year++) await runtime.advance(year);
   return { genesis, output: runtime.snapshot() };
 }
 function define(target: object, key: PropertyKey, value: unknown): void {
@@ -221,7 +221,9 @@ describe("full trusted lifecycle capsule", () => {
   });
 
   it("admits genuine unforced death without relabeling alive horizons as completion", async () => {
-    const input = await fixture("baseline-1327-0");
+    // Decision 085: a founder newborn no longer dies in its birth year, so this fixture extends the
+    // window to the protagonist's genuine age-1 death (1328). Measured on seed `lifecycle-genesis`.
+    const input = await fixture("lifecycle-genesis", true, defaults.protagonist.name, 1330);
     const result = await deserializeLifecycleCapsule(await serializeLifecycleCapsule(await createLifecycleCapsule(input)));
     expect(result.output.status).toBe("complete");
     expect(result.output.owned.people.protagonist.deathYear).toBe(result.output.frontier);

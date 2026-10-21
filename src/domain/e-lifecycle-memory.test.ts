@@ -169,9 +169,11 @@ it.skipIf(childSelected)("measures one fresh child, including its Vitest process
   const metrics = JSON.parse(lines[0].slice(marker.length));
   expect(metrics.fullColdProof).toBe(true);
   expect(metrics.steps).toBe(4);
-  expect(metrics.wireBytes).toBe(51659639);
-  expect(metrics.canonicalHash).toBe("d340cb0b34fa973462fce3c646a2e2bae22134b81896b465afcc667c4915d605");
-  expect(metrics.wireHash).toBe("ad584e4fde4702423e4bbf89f536d9d335928024ebcc00f6878943edb06d1eca");
+  // Re-pinned (decision 085): no age-0 biology roll, so the year-1498 decision content changed.
+  // Measured from this exact child run; `steps`/`frontier` are unchanged.
+  expect(metrics.wireBytes).toBe(51610673);
+  expect(metrics.canonicalHash).toBe("70c06f8affb513d2b455edb7c774f1dd37127b5f45dcfe6c9ccedcc7f60a92b4");
+  expect(metrics.wireHash).toBe("5b363daf7cfcd8abb10b620768f0f0f224226b4a79ccdd77dc12675f1c200699");
   expect(metrics.totalMaxRssBytes).toBeGreaterThan(0);
   let previousMaxRssBytes = 0;
   for (const observation of metrics.phases) {

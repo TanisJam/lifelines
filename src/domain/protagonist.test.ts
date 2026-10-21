@@ -88,9 +88,12 @@ describe("protagonist-centric simulation (round 9, decision 034/035)", () => {
 
   it("validateOverride does NOT reject on birth-year grounds alone for a decision at or after the birth year", () => {
     const { config, people, events } = protagonistWorld("proto-birth-ok");
-    // Every living person gets a "death" candidate every year, including the protagonist's birth year.
-    const override: Override = { id: "ov-at-birth-year", decisionId: `death:protagonist:${config.startYear}`, optionId: "survive" };
-    const result = validateOverride(override, people, events, config.startYear, config.seed, config, "protagonist");
+    // Decision 085: a newborn gets no biology candidate in its birth year (its first roll is age 1),
+    // so the earliest real `death:protagonist:<year>` decision is the year AFTER birth. The point
+    // under test is unchanged: a decision at or after the birth year is not rejected for its year.
+    const year = config.startYear + 1;
+    const override: Override = { id: "ov-after-birth-year", decisionId: `death:protagonist:${year}`, optionId: "survive" };
+    const result = validateOverride(override, people, events, year, config.seed, config, "protagonist");
     expect(result.ok).toBe(true);
   });
 

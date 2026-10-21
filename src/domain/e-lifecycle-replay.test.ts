@@ -158,7 +158,9 @@ describe("cold native lifecycle replay", () => {
   });
 
   it("accepts the complete genuine death year and rejects any continuation", async () => {
-    const candidate = await fixture({ ...defaults, seed: "baseline-1327-0" }, 1330);
+    // Decision 085: a founder newborn is no longer death-evaluated in its birth year, so this
+    // fixture's protagonist genuinely dies at age 1 (1328). Measured on seed `lifecycle-genesis`.
+    const candidate = await fixture({ ...defaults, seed: "lifecycle-genesis", endYear: 1330 }, 1330);
     const replayed = await replayLifecycleRuntime(candidate);
     expect(replayed.status).toBe("complete");
     expect(replayed.owned.people.protagonist.deathYear).toBe(replayed.frontier);
