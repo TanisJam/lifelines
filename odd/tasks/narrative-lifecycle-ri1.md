@@ -178,8 +178,19 @@ persisted: `createLifecycleCompactCapsule` throws `Invalid or oversized lifecycl
 against the capture ceiling in `src/domain/e-lifecycle-dag.ts`. A 1-year life of the same
 configuration (seed `baseline-1327-0`, 81 people) serializes fine at 522,413 bytes. So the compact
 capsule caps a SAVABLE 62-founder life at about 2 years; today that is invisible only because the
-protagonist dies at age 1-2 (L8). The consequence is direct and ordering-critical: any mortality
-recalibration would produce lives that cannot be saved at all. Capacity must be fixed before or
+protagonist dies at age 1-2 (L8).
+
+CORRECTION (2026-10-21, source-verified by a read-only explorer, then re-verified by the parent):
+the paragraph above attributes the failure to the `DEFAULT` capture profile (`bytes: 4_000_000`).
+That is WRONG. `createLifecycleCompactCapsule` reaches the DAG codec only through
+`serializeCompactLifecycleDag`, which applies `LIFECYCLE_DAG_WIRE_LIMITS` (8M table bytes, 512k
+edges, 100k nodes) plus its 32M admission-text work ceiling; the `DEFAULT` profile is used only by
+the non-compact entry points, which have no production caller. At the certified 4-year/85-person
+point the tightest wire dimension is admission text (26,783,965 of 32,000,000, i.e. 83.7 %), then
+dictionary edges (381,708 of 512,000, 74.6 %), while table bytes reach only 37.9 % of 8M. The
+observed failure is therefore a WIRE-profile text/admission-ceiling failure, not a 4M capture
+failure. The consequence for the roadmap is unchanged and still ordering-critical: any mortality
+recalibration would produce lives that cannot be saved at all, so capacity must be fixed before or
 together with calibration (the CQ1/RA1 capacity thread), not after it. Also recorded: the
 `/api/lives/:lifeId/rewrite/stream` route remains legacy-only in this MVP, so branching a
 new-engine life is not offered yet.
