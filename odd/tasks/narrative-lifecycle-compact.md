@@ -274,13 +274,22 @@ measurement. The full suite must return to the single pre-existing failure.
 | C1 | drop `postNative` from the record + update the design doc contract + retarget/remove the postNative assertions + re-pin the measured digests | pending |
 | C2 | re-measure a 20-year life's record and the chunk widths it now allows | pending |
 
-### CP1-B tasks (implementation status)
+### CP1-B tasks (REVERTED — kept as history)
 | ID | Scope | Status |
 |---|---|---|
-| B1 | chunked format + chunk codec + manifest validation, with tests | DONE `07c19c3` — 398 + 274 lines; 23/23 new; existing capsule/DAG 237/237; typecheck+eslint clean. A chunk covering year 1327 encodes to byte-identical 45,983 B in a 1-year and a 3-year life, proving it carries no accumulated state. |
-| B2 | repository: store/load chunks + manifest in one transaction, refusal paths | DONE `493b327` — db +23, repository +229/−13, tests +293; 28/28 repository, 35/35 neighbours; additive `lifecycle_chunked_manifests` table with immutability triggers, chunks in the existing digest-keyed `lifecycle_capsules_v1`. |
-| B3 | create path switched to the chunked format + the B2 genesis defect fixed | DONE `1c0ce60` — 6 files, +309/−21; 10/10 create, 39/39 read/repository/route, 23/23 chunked; typecheck+eslint clean. |
-| B4 | evidence: measured chunk encode peak, end-to-end persist/restart, suite | IN PROGRESS — a 4-year chunk FAILED at the end of a 20-year life (see below); re-measuring with 2-year cuts |
+| B1 | chunked format + chunk codec + manifest validation, with tests | REVERTED `a518ae4` (was `07c19c3`) — 672 lines removed |
+| B2 | repository: store/load chunks + manifest in one transaction, refusal paths | REVERTED `ccb6cbf` (was `493b327`) — +545/−14 undone |
+| B3 | create path switched to the chunked format + genesis defect fixed | REVERTED `db2deec` (was `1c0ce60`) — +309/−21 undone |
+| B4 | evidence: measured chunk encode peak, end-to-end persist/restart, suite | STOPPED — measured and conclusive (see below): B alone cannot serve long lives |
+
+Correction of course, 2026-10-21, human decision verbatim:
+`Sí: revertir tramos y hacer C + perfil (Recomendado)`. Reason: the chunked track was built BEFORE
+the measurement that invalidated it; it added ~1,600 lines of complexity and still could not persist
+a 20-year life because the atom (one journal record) exceeds the work-text ceiling. The product goal
+is a working happy path, so the plan is now the minimal one: C (simplify the record) + a measured
+profile raise + mortality calibration + removing the hidden flag. B stays in git history if a
+60-year horizon ever needs it; it is no longer live complexity. After the revert, the four lifecycle
+server/route suites pass 31/31 and `pnpm typecheck` is clean, so the compact path is fully restored.
 
 ### B4 result — CP1-B alone is NOT sufficient (measured conclusively)
 Three end-to-end measurements of a 20-year life (`cap-0`, 136 people at the end) all failed at chunk
