@@ -268,11 +268,25 @@ Gate: after the drop, measure a 20-year life's record again and prove a 1-year c
 2-year chunk if it does. Report heap/RSS and wall time. No chunk width may be declared without that
 measurement. The full suite must return to the single pre-existing failure.
 
-### CP1-C tasks
-| ID | Scope | Status |
-|---|---|---|
-| C1 | drop `postNative` from the record + update the design doc contract + retarget/remove the postNative assertions + re-pin the measured digests | pending |
-| C2 | re-measure a 20-year life's record and the chunk widths it now allows | pending |
+### CP1-C results (measured)
+| Task | Result |
+|---|---|
+| C1 | DONE `05b82b0` — `postNative` dropped from `LifecycleYearRecord`; the record keeps `year, versions, physicalSnapshot, economics, positions, final` (one full state per year). 326/326 domain, 39/39 server, projection untouched and byte-identical, typecheck+eslint clean. Net −3 lines: a simplification. The doc contract at `docs/design/narrative-engine.md:1249` and `:1288` was rewritten to the retained set; the tamper classes that only mutated the dropped field were removed with that justification, and every anchor assertion was retargeted. Re-pinned: 1-year wire 522,524 → 442,369 B; 4-year fixture wire 56,561,271 → 51,659,639 B; new digests printed by the runs. |
+| C2 | DONE (measured) — a 20-year life (`cap-0`, 136 people) now costs: run 198 s / 938 MB heap / 1,705 MB RSS; compact wire 49,191,002 B (essentially UNCHANGED, because the DAG already interned the two value-equal state copies, so the duplicate cost work budget, not stored bytes); encode peak 4,912 MB heap / 5,277 MB RSS, i.e. −29 % vs the 6,889/7,275 before C. |
+
+### Target lifespan and the resulting plan
+Human decision, verbatim: `10-15 años (Recomendado)`. Consequences, from the measured cost curve
+(~10 s of simulation and ~50 MB of run heap per journal year at 62 founders):
+- A 10-15 year life costs roughly 100-150 s of simulation plus the save, a ~3 GB encode peak and a
+  ~25-35 MB stored wire. That is the MVP envelope: one creation at a time on a normal host.
+- Creation is a bounded batch in the route, so the reader waits for the whole run before the first
+  tick; at 10-15 years that wait is ~2 minutes. Streaming the frames live is a separate concern and
+  is NOT authorized here.
+- 60-year lives remain out of reach with a single capsule (Node string limit) and would need the
+  reverted chunked track plus a performance unit. Documented, not pursued.
+
+Order from here: (1) calibrate mortality to the 10-15 year target, (2) set the wire profile from a
+measurement at THAT horizon, (3) remove the hidden flag so the happy path is reachable.
 
 ### CP1-B tasks (REVERTED — kept as history)
 | ID | Scope | Status |
