@@ -18,6 +18,12 @@ export interface CreateLifeRequest {
   readonly lang?: string;
   /** Abuse protection: the Cloudflare Turnstile token from the create-life form's widget. Ignored when Turnstile isn't configured server-side (see `src/server/turnstile.ts`). */
   readonly turnstileToken?: string;
+  /**
+   * Which engine creates this life. Absent or `"legacy"` is the original path, unchanged; only
+   * `"lifecycle"` runs the new engine (`src/server/lifecycle-life.ts`). Any other value is a 400
+   * before admission — there is no implicit fallback between the two representations.
+   */
+  readonly engine?: "legacy" | "lifecycle";
 }
 
 /** POST /api/lives/:lifeId/rewrite/stream request body. */

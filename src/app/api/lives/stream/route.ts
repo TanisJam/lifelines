@@ -5,7 +5,10 @@ import { generateWorld, resolveProtagonistSex } from "@/domain/worldgen";
 import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
 import { assertCompletedLife } from "@/server/completed-life";
+import { getDb } from "@/server/db";
 import { buildCandidateLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
+import { streamLifecycleLife } from "@/server/lifecycle-life";
+import { LifecycleRepository } from "@/server/lifecycle-repository";
 import { createSceneTracker } from "@/server/life-scene";
 import { newLifeBranchId, newLifeId, registerLife, type LifeBranchRecord } from "@/server/life-store";
 import { sseResponse, yieldToEventLoop } from "@/server/sse";
@@ -34,6 +37,10 @@ function errorResponse(message: string, status = 400): Response {
  * carries the one authoritative `Chronicle`, built by `buildLifeChronicle` (which DOES call Jev).
  * A client disconnect aborts the in-flight simulation and skips persisting a branch (see
  * `sseResponse`'s `AbortSignal` and `drainSimulation`'s `SimulationAbortedError`).
+ *
+ * RI1c (spec S7): `engine: "lifecycle"` streams the same `LifeStreamEvent` frames from the new
+ * engine instead, through `lifecycle-life.ts`. Absent or `"legacy"` keeps this legacy body exactly
+ * as it was; the shared admission guard applies to both branches.
  */
 export async function POST(request: Request): Promise<Response> {
   let body: Partial<CreateLifeRequest> = {};
@@ -47,18 +54,54 @@ export async function POST(request: Request): Promise<Response> {
   if (!name) return errorResponse('"name" is required.');
   const sex = body.sex;
   if (sex !== "f" && sex !== "m" && sex !== "random") return errorResponse('"sex" must be "f", "m" or "random".');
+  // Versioned branch selection (RI1c): absent or "legacy" is the original path, unchanged. An
+  // unknown value is refused here — with the other cheap local shape checks, before admission —
+  // and is never coerced into either representation.
+  const engine = body.engine;
+  if (engine !== undefined && engine !== "legacy" && engine !== "lifecycle") {
+    return errorResponse('"engine" must be "legacy" or "lifecycle".');
+  }
 
   // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work starts —
   // validated above only checks cheap, purely local input shape, so a malformed request never
   // costs the caller a rate-limit slot.
   const guard = await guardSimulation(request, body);
   if (guard instanceof Response) return guard;
-  const { decisionMaker, engineSource, backgroundDecisionMaker } = guard.engine;
 
   const seed = body.seed?.trim() || randomSeed();
+  const locale = body.lang && isLocale(body.lang) ? body.lang : "en";
+
+  if (engine === "lifecycle") {
+    // New engine (spec S7): the existing admission guard above still applies; no DecisionMaker is
+    // used, and persistence goes only through `LifecycleRepository`. The route owns identity and
+    // transport; the orchestration, projection and persist live in `lifecycle-life.ts`. The ids
+    // come from the same allocator as legacy lives (one identity space, `counters` rows only) —
+    // no `lives` or `life_branches` row is written by this branch.
+    const lifeId = newLifeId();
+    const branchId = newLifeBranchId();
+    const villageName = body.villageName?.trim() || undefined;
+    return sseResponse(async (send, signal) => {
+      await streamLifecycleLife({
+        // Per-request seam: the repository owns no state beyond its prepared statements.
+        repository: new LifecycleRepository(getDb()),
+        lifeId,
+        branchId,
+        name,
+        sex,
+        seed,
+        ...(villageName === undefined ? {} : { villageName }),
+        locale,
+        signal,
+        emit: (event) => send(event.type, event),
+        flushFrame: yieldToEventLoop,
+      });
+    });
+  }
+
+  const { decisionMaker, engineSource, backgroundDecisionMaker } = guard.engine;
+
   const startYear = START_YEAR;
   const endYear = startYear + MAX_LIFESPAN_YEARS;
-  const locale = body.lang && isLocale(body.lang) ? body.lang : "en";
 
   // "Let fate decide" (decision 041): resolve "random" to a concrete sex via the DecisionMaker
   // BEFORE the world (and the protagonist's own PersonMind) exists, rather than a name-blind coin
