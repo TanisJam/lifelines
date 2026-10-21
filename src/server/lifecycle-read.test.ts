@@ -10,7 +10,7 @@ vi.mock("@/server/decision-engine", async () => {
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import type { Chronicle } from "@/contracts/life";
 import { createLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
-import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
+import { createLifecycleGenesis, canonicalLifecycleData } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
 import { simulate } from "@/domain/simulate";
 import { initializeWorld } from "@/domain/world-origin";
@@ -119,11 +119,12 @@ describe("lifecycle read path (RI1d)", () => {
   });
 
   it("serves the detail chronicle as the projection of a fresh full-authority regeneration", async () => {
-    // The stored capsule is cold-admitted and FULLY replayed on read. The compact digest is
-    // computed over the exact wire table, so a matching digest against an independently regenerated
-    // capsule IS byte identity — the served view is the life, not a claim about it.
+    // The stored capsule is cold-admitted and FULLY replayed on read. The create path stores the
+    // chunked format, whose record digest is not the compact capsule digest, so the load is
+    // compared as the stronger claim: the whole regenerated artifact against a fresh regeneration.
     const loaded = await new LifecycleRepository(getDb()).load(LIFE, BRANCH);
-    expect(loaded!.capsule.digest).toBe(fresh.digest);
+    expect(canonicalLifecycleData(loaded!.capsule.output)).toBe(canonicalLifecycleData(fresh.output));
+    expect(loaded!.capsule.genesis.digest).toBe(fresh.genesis.digest);
 
     const result = await buildLifecycleChronicle(LIFE, undefined, "en");
     expect(result.error).toBeUndefined();
