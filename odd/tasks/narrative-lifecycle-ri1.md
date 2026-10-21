@@ -69,7 +69,7 @@ S10. Every unit closes with a `Risk:` line naming a high-risk item or `none`.
 | T2 RI1b view projection | S8 | delegated writer + parent spot check | DONE `16a4ac3` | 908 lines (472+399+37); 12/12 new; legacy chronicle 22/22 re-run by the parent; typecheck+eslint clean; gaps in L7 |
 | T3 RI1c create-route activation | S2,S7 | delegated writer + parent spot check | DONE `88e0ccc` | 5 files, +668/−2; 10/10 new; legacy route 9/9 re-run by the parent; typecheck+eslint clean; Risk item 1 |
 | T4 RI1d read-route activation | S2,S8 | delegated writer | DONE `30b4efb` | 6 files, +651/−2; 11/11 new; legacy 39/39; typecheck+eslint clean; no cache, digest-proven freshness |
-| T5 RI1e whole-unit evidence | S2,S9 | pending | pending | full suite running |
+| T5 RI1e whole-unit evidence | S2,S9 | inline | DONE | full suite `--maxWorkers=1`: 2.870 passed / 1 failed (pre-existing `route.quiet`) / 1 skipped; typecheck + eslint clean per unit |
 
 ## Log
 
@@ -183,3 +183,47 @@ recalibration would produce lives that cannot be saved at all. Capacity must be 
 together with calibration (the CQ1/RA1 capacity thread), not after it. Also recorded: the
 `/api/lives/:lifeId/rewrite/stream` route remains legacy-only in this MVP, so branching a
 new-engine life is not offered yet.
+
+L11 (2026-10-21) — T5 evidence and RI1 closure. Full suite with the project's established command
+form (`node node_modules/vitest/vitest.mjs run --maxWorkers=1 --pool=threads`): **2.870 passed, 1
+failed, 1 skipped (2.872)**, the single failure being the pre-existing
+`src/app/api/lives/stream/route.quiet.test.ts` ("Cannot read properties of undefined (reading
+'data')"). That is 48 more passing tests than the 2.822 baseline and NOTHING else failing, so spec
+S2/S9 hold. Typecheck and eslint were clean on every unit. Recorded operational fact: the same
+suite run with DEFAULT parallelism produced 5 additional TIMEOUT failures (5 s/15 s) inside the
+existing heavy simulation tests, because the four new lifecycle test files (each a real
+62-founder regeneration) compete for CPU; run in isolation those files pass 110/110, so the
+failures are contention, not behavior. The suite must keep being run with `--maxWorkers=1`; making
+the new tests cheaper is a follow-up, not a RI1 defect.
+
+## Closure
+
+RI1 is DONE: the shipped app can create, save and view lives produced by the new lifecycle engine,
+on the existing routes, with the legacy engine and every legacy life untouched and still the
+default. One authority per life (the compact lifecycle capsule), full current-authority regeneration
+on every save and full replay on every load, exact-version dispatch in both directions, and a
+projection that never invents a field the trusted output does not carry.
+
+Per-unit risk lines: T1 `none` (new tables, new binding namespace, no existing behavior changed);
+T2 `none` (pure projection, additive types); T3 `item 1` (a second production write path into the
+same SQLite file, sharing the legacy id counter); T4 `item 3` (the legacy list route now also
+depends on lifecycle storage being readable, so a lifecycle refusal turns that list into a 500
+instead of a partial list).
+
+Native review boundary: the slice since `138b95b` accumulates ~2.9k changed lines and stayed
+`under_budget` on every assessment, so no native review was due for it; the boundary stays pending
+for the next slice.
+
+Known limitations carried into the next units, none of them a RI1 defect:
+1. Lifespan: the engine's protagonist dies at age 1-2 today (L8), so a created life is very short.
+2. Capacity: a 62-founder life longer than ~4-5 journal years cannot be captured/serialized at all
+   (L10). Any recalibration of lifespan REQUIRES capacity work first.
+3. Rewrite/branching of lifecycle lives is not offered by the MVP.
+4. The projection cannot supply a few legacy-only view fields (L7) and reports them as explicit
+   gaps instead of inventing them.
+5. The create route's lifecycle branch emits `start`, then the committed journal frames, then
+   `done` (bounded batch), not a live per-year stream.
+
+Next for the MVP: RA1 (offline browser + restart evidence) requires a user-facing way to request a
+lifecycle life, because the create form posts no `engine` field and therefore always takes the
+legacy path.
