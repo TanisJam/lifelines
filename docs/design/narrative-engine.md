@@ -1342,3 +1342,98 @@ Corrected fixed v1/4 omits E1 dates (defaults): Alice/f, 85 people, origin1498/1
 RSS bytes: child maxRSS includes Vitest (KiB converted); delta is NOT exclusive generation memory. Annual4 heap: N26 198485080→115860992; N24 193776000→111092680. All four: wire56561271 bytes; canon SHA256 `2f83c72b46391454fbc44e2288be27f09ef161ebf7d5c794a610bc072e881451`; wire SHA256 `1ef4498df18f17cf3b17df4cfee86749450485bfdc29623a0e358ea830e709e8`.
 
 Both exceed provisional1GB: no capacity/≥60-year/release closure. Final validation, native review and integration pending; later LP1b/c/d need mapping.
+## Lifecycle LC1: certified run controller (release proof incomplete)
+
+`runLifecycle(input, { maxSteps, signal? })` owns a closed start or resume run.
+It returns a full LR2b capsule with producer status `complete`,
+`incomplete` plus `reason: "budget"`, or `aborted`. This inactive domain API
+adds no callback, resolver, authority, storage, route or UI surface.
+
+**Quick path:** supply exactly `{ kind: "start", genesis }` or
+`{ kind: "resume", capsule }`. The whole unknown authority graph is descriptor-
+checked and captured before any await. Options require a nonnegative safe-integer
+budget (excluding `-0`); optional own undefined signal means no cancellation.
+The signal is separately native-brand-checked, never serialized as authority.
+
+| Review point | Controller contract |
+|---|---|
+| Start/resume | Admit genesis for a new owner. Resume first fully cold-admits the capsule, rebuilds a fresh owner through trusted journal years and compares the complete output before continuing. No imported checkpoint becomes mutable authority. A genuinely complete admitted capsule needs no continuation owner. |
+| Progress | Budget counts new committed years only. Execute contiguous years until genuine death, budget exhaustion or observed cancellation. Origin `endYear` is metadata, not a ceiling; alive never means complete. Zero budget still certifies the current frontier. |
+| Cancellation | Check before/after each new committed advance and yield a real timer turn between steps, including the last step. Abort observed during admission/reconstruction/certification is considered at the next closed boundary. No interruption or rollback of native execution, admission or replay is promised. |
+| Result/errors | Observed abort wins over runtime death: an aborted producer may return a complete death capsule. Native, semantic and certification errors propagate unchanged, even alongside abort. Final capsule creation performs full LR2 replay and retains actual `canonicalYearSnapshot`, not an E2 projection. |
+| Ownership | Input capture detaches callers; regenerated publications are frozen. Native/favor people and life-log aliases and actual registry traversal are restored by existing owners. Lossless comparison covers full properties, own undefined and generated signed zero. |
+
+Review `e-lifecycle-run.test.ts`: start/resume/direct-owner parity, zero/budget,
+forged rehashed resume, hostile input/options, async caller mutation, property
+fidelity, prior/timer/in-flight cancellation, abort-over-death and error identity.
+Fast tests use `controller|LIFEsmoke`; the separate `LIFErepresentative` test
+is a release gate, not silently optional coverage.
+
+**Observed proof limitation:** the mandated six-founder `baseline-1327-0`
+Alice/f smoke dies genuinely in 1327 (551,693 wire bytes); it does not prove
+beyond-horizon death. A separate alive-seed parity case reaches 1328 beyond the
+1327 origin horizon. The existing E1 `default-origin` seed with default 62
+founders and an age-zero Alice/f protagonist dies genuinely in 1498. Full
+certification and cold replay succeeded for that one-year life (79 initial
+people, 5,908,291 wire bytes), but lifespan-scale retention remains unproved.
+The initial representative assertion failed lifespan coverage, not production
+semantics: a valid short death cannot establish long retention. That historical
+outcome remains intact; the current gate uses the explicitly predeclared workload
+cohort below instead of making each early death individually fail.
+
+### Predeclared representative workload v1
+
+Execute exactly these five seeds in order: `lifecycle-representative-v1/0`,
+`lifecycle-representative-v1/1`, `lifecycle-representative-v1/2`,
+`lifecycle-representative-v1/3`, `lifecycle-representative-v1/4`.
+Every member uses default E1 1498/1558/62-founder config, the registered age-zero
+Alice/f protagonist and complete grain2/effort3/need1 allocations. A fixed
+`maxSteps: 128` is a technical budget; alive exhaustion remains incomplete.
+No actor selection, overrides, forced survival/death, adaptive seed search,
+reordering, extra members or post-observation cap changes are permitted.
+
+All executed members, including short deaths and budget-incomplete lives,
+must retain full canonical capsules, actual snapshots, registry traversal and
+native/favor aliases through serialization, producer-reference disposal and cold
+LR2b replay. The aggregate gate requires at least one genuinely complete,
+cold-verified member with at least 60 executed years. This coverage requirement
+never instructs mortality; all outcomes are reported. Stop immediately on the
+first OOM, timeout, string/representation limit or implementation failure, and
+report the last metrics plus pending members without retrying a smaller workload.
+
+The 600-second test timeout is local to this new integration test; existing
+timeouts and heap limits are unchanged. Test-only call-through owner instrumentation
+reports progress every five committed years and phase starts/ends, including
+certification, serialization and cold replay. Elapsed/RSS/heap/wire metrics are
+observations, not peak memory or performance budgets. Parent mapping must resolve
+remaining long-life proof before UI release; no production callback or
+runtime/replay/codec redesign is included here.
+
+**Observed cohort v1 result:** all five members completed genuine short lives;
+all canonical capsules, actual snapshots, registry order and aliases passed cold
+verification. No incomplete member, beyond-1558 death, OOM, timeout or string limit
+was observed. The aggregate gate failed only the missing 60-year coverage;
+all members ran in order, with none pending and no substitutions or reruns.
+
+| Seed suffix | Initial people | Executed years / death frontier | Wire bytes | Member elapsed ms through cold verification |
+|---|---:|---|---:|---:|
+| /0 | 90 | 3 / 1500 | 31,723,585 | 19,582 |
+| /1 | 84 | 2 / 1499 | 17,407,793 | 16,808 |
+| /2 | 77 | 3 / 1500 | 30,759,790 | 20,813 |
+| /3 | 78 | 2 / 1499 | 15,953,474 | 10,133 |
+| /4 | 85 | 4 / 1501 | 56,561,271 | 50,634 |
+
+Cohort elapsed time through final verification was 117,971 ms. Largest sampled
+RSS was 3,092,930,560 bytes (/4 certification replay death frontier 1501);
+largest sampled heap-used was 2,604,526,176 bytes (/4 cold-replay start).
+These are process samples, not peaks or per-member exclusive retention. Short-life
+correctness is proved for the workload, not long-life memory/performance or release
+readiness. The earlier default-origin and baseline first-year deaths remain honest
+short-life evidence; the controller implementation is unchanged by this follow-up.
+
+**MVP decision (2026-10-21):** for the new-engine MVP the human chose to integrate
+this controller with the 60-year cohort requirement demoted from an assertion to a
+reported metric tracked as open risk CQ1. The cohort itself is unchanged: the same
+five predeclared seeds still run in order, every member is still fully cold-verified,
+and an unproved 60-year life is still printed as `coverage-open`. No member, rerun,
+substitution or observation-based cap is added, and no mortality behavior changed.
