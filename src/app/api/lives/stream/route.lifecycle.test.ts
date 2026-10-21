@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LifeStreamEvent } from "@/contracts/life";
 import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
-import { createLifecycleGenesis, canonicalLifecycleData } from "@/domain/e-lifecycle-genesis";
+import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
 import { createMind } from "@/domain/mind";
 import type { SimulateReport } from "@/domain/simulate";
@@ -180,14 +180,10 @@ describe("POST /api/lives/stream — new-engine activation (RI1c)", () => {
     expect(done.chronicle.protagonist.deathYear).toBe(ticks.at(-1)!.year);
     expect(done.stats).toEqual({ jevCalls: 0, cacheHits: 0, wallTimeMs: expect.any(Number) });
 
-    // Persistence authority: load FULL-regenerates, and the regenerated artifact equals a fresh
-    // regeneration of the same request. The stored life is the chunked format, whose record digest
-    // is not the compact capsule digest, so the output itself is compared instead.
+    // Persistence authority: load FULL-regenerates, and the stored digest equals a fresh regeneration.
     const loaded = await new LifecycleRepository(getDb()).load(start.lifeId, start.branchId);
     expect(loaded).toBeDefined();
-    const fresh = await freshCompact();
-    expect(canonicalLifecycleData(loaded!.capsule.output)).toBe(canonicalLifecycleData(fresh.output));
-    expect(loaded!.capsule.genesis.digest).toBe(fresh.genesis.digest);
+    expect(loaded!.capsule.digest).toBe((await freshCompact()).digest);
     expect(counts()).toEqual({
       ...before,
       lifecycle_lives: before.lifecycle_lives! + 1,

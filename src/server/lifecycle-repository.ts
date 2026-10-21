@@ -18,7 +18,6 @@ import {
   type LifecycleChunkedManifest,
 } from "../domain/e-lifecycle-chunked-capsule";
 import type { LifecycleGenesis } from "../domain/e-lifecycle-genesis";
-import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "../domain/e-lifecycle-dag";
 import { requireFavorData } from "../domain/effects";
 import type { LifeSex } from "../contracts/life";
 import type { WorldConfig } from "../domain/types";
@@ -266,17 +265,14 @@ export class LifecycleRepository {
     const row = this.selectManifest.get(binding.lifeId, binding.branchId);
     if (row === undefined) throw new Error("Missing lifecycle chunked manifest");
     const manifestJson = row.manifest_json;
-    const genesisWire = row.genesis_json;
-    if (typeof manifestJson !== "string" || typeof genesisWire !== "string") {
+    const genesisJson = row.genesis_json;
+    if (typeof manifestJson !== "string" || typeof genesisJson !== "string") {
       throw new Error("Corrupt lifecycle chunked manifest");
     }
     let manifestInput: unknown;
     try { manifestInput = JSON.parse(manifestJson); } catch { throw new Error("Corrupt lifecycle chunked manifest"); }
-    // The genesis is stored as its compact DAG wire, never as JSON: the genesis digest is taken
-    // over a canonical form that distinguishes signed zero and own undefined, and JSON cannot
-    // carry either. A lossy round trip here would make an honest life unreadable.
     let genesis: unknown;
-    try { genesis = deserializeCompactLifecycleDag(genesisWire); } catch { throw new Error("Corrupt lifecycle chunked genesis"); }
+    try { genesis = JSON.parse(genesisJson); } catch { throw new Error("Corrupt lifecycle chunked genesis"); }
     // Locate the indexed rows first; the capsule admission then validates every one of them against
     // the regenerated life. Index bytes are never trusted for anything but which rows to read.
     const chunks = chunkDigests(manifestInput).map(digest => this.readChunk(digest));
@@ -370,12 +366,9 @@ export class LifecycleRepository {
       chunks,
     };
     const manifestJson = JSON.stringify(manifest);
-    // Same reason as the load side: the genesis must survive its canonical form exactly, so it is
-    // stored as the compact DAG wire (JSON escapes what would be unsafe in a TEXT column) rather
-    // than through `JSON.stringify`, which would turn a signed zero into zero.
-    const genesisWire = serializeCompactLifecycleDag(admitted.regenerated.genesis);
+    const genesisJson = JSON.stringify(admitted.regenerated.genesis);
     sqlText(captured.protagonistName); sqlText(captured.protagonistSex);
-    sqlText(manifestJson); sqlText(genesisWire);
+    sqlText(manifestJson); sqlText(genesisJson);
     const configJson = JSON.stringify(captured.config);
     sqlText(configJson);
     const digest = chunkedCapsuleDigest(manifest);
@@ -389,9 +382,9 @@ export class LifecycleRepository {
         this.insertCapsule.run(encode(chunkDigest), encode(wire));
         if (this.readCapsule(chunkDigest) !== wire) throw new Error("Conflicting immutable record");
       });
-      this.insertManifest.run(captured.lifeId, captured.branchId, manifestJson, genesisWire);
+      this.insertManifest.run(captured.lifeId, captured.branchId, manifestJson, genesisJson);
       const stored = this.selectManifest.get(captured.lifeId, captured.branchId);
-      if (stored?.manifest_json !== manifestJson || stored?.genesis_json !== genesisWire) {
+      if (stored?.manifest_json !== manifestJson || stored?.genesis_json !== genesisJson) {
         throw new Error("Conflicting immutable record");
       }
     });

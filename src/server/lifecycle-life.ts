@@ -1,5 +1,5 @@
 import type { Chronicle, LifeSex, LifeStreamEvent } from "@/contracts/life";
-import { createChunkedLifecycleCapsule } from "@/domain/e-lifecycle-chunked-capsule";
+import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
 import type { Locale } from "@/domain/locale";
@@ -15,9 +15,7 @@ import type { LifecyclePublication } from "./lifecycle-repository";
  *
  * The lifecycle capsule is the only authority: the run's own output is projected, and persistence
  * goes through `LifecycleRepository.publish`, which FULL-regenerates under current authority. A
- * projection is a derived view and is never persisted as one. What is stored is the chunked
- * capsule format (CP1-B): the stored schema declares it, and the read path receives the same
- * `{ binding, capsule }` artifact for either format.
+ * projection is a derived view and is never persisted as one.
  */
 
 /** Mirrors the legacy create route's `START_YEAR`: the run begins at the start of the 1327–1361 period. */
@@ -143,22 +141,13 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
   }
   if (signal.aborted) return;
 
-  // Persist that SAME regeneration as an ordered chain of chunked capsules (CP1-B). The chunk size
-  // is the format's documented measured default (4 journal years), never raised here, and every
-  // chunk is encoded from this one in-memory output, so no chunk re-runs the life. The stored
-  // chunks only corroborate a later regeneration; the repository admits the payload under current
-  // authority and writes the manifest and every chunk in one transaction.
-  const chunked = await createChunkedLifecycleCapsule({ genesis: capsule.genesis, output: capsule.output });
-
   await repository.publish({
     lifeId,
     branchId,
     config: world.config,
     protagonistName: protagonist.name,
     protagonistSex: resolvedSex,
-    // The repository's chunked admission input is the creation artifact's manifest and chunks plus
-    // the genesis that regeneration produced: genesis is always re-admitted, never trusted.
-    capsule: { manifest: chunked.manifest, chunks: chunked.chunks, genesis: chunked.regenerated.genesis },
+    capsule: await createLifecycleCompactCapsule({ genesis: capsule.genesis, output: capsule.output }),
   });
 
   // Only AFTER a successful publish is the life visible. An abort that arrives during the save

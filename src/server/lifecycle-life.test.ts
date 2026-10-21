@@ -1,23 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { LifeStreamEvent } from "@/contracts/life";
-import {
-  createLifecycleCompactCapsule,
-  LIFECYCLE_COMPACT_CAPSULE_MANIFEST,
-  type LifecycleCompactCapsule,
-} from "@/domain/e-lifecycle-capsule";
-import {
-  createChunkedLifecycleCapsule,
-  lifecycleChunkDigest,
-  LIFECYCLE_CHUNKED_CAPSULE_SCHEMA,
-  LIFECYCLE_CHUNKED_DEFAULT_CHUNK_YEARS,
-} from "@/domain/e-lifecycle-chunked-capsule";
-import { canonicalLifecycleData, createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
+import { createLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
+import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
 import { initializeWorld } from "@/domain/world-origin";
 import { openDb } from "./db";
 import { LIFECYCLE_MAX_STEPS, streamLifecycleLife, type LifecycleLifeRequest } from "./lifecycle-life";
-import { projectLifecycleChronicle } from "./lifecycle-projection";
 import { LifecycleRepository } from "./lifecycle-repository";
 
 /**
@@ -50,17 +39,6 @@ async function freshCapsule(): Promise<LifecycleCompactCapsule> {
   const run = await runLifecycle({ kind: "start", genesis }, { maxSteps: LIFECYCLE_MAX_STEPS });
   if (run.status !== "complete") throw new Error(`fixture life did not end: ${run.status}`);
   return createLifecycleCompactCapsule({ genesis: run.capsule.genesis, output: run.capsule.output });
-}
-
-/** The same request's own genesis and complete output, before any capsule format encodes it. */
-async function freshRegeneration() {
-  const { world } = initializeWorld(initialization);
-  const genesis = createLifecycleGenesis({
-    initialization, protagonistId: "protagonist", resources: resourcesFor(world),
-  });
-  const run = await runLifecycle({ kind: "start", genesis }, { maxSteps: LIFECYCLE_MAX_STEPS });
-  if (run.status !== "complete") throw new Error(`fixture life did not end: ${run.status}`);
-  return { genesis: run.capsule.genesis, output: run.capsule.output, config: world.config };
 }
 
 function database(): { db: DatabaseSync; repository: LifecycleRepository } {
@@ -120,35 +98,6 @@ function ticksOf(frames: readonly LifeStreamEvent[]): Extract<LifeStreamEvent, {
   return frames.filter((frame): frame is Extract<LifeStreamEvent, { type: "tick" }> => frame.type === "tick");
 }
 
-interface StoredChunkedManifest {
-  readonly capsuleSchema: string;
-  readonly chunkYears: number;
-  readonly frontier: number;
-  readonly status: string;
-  readonly chunks: readonly { readonly from: number; readonly to: number; readonly digest: string }[];
-}
-
-/** The stored chunked manifest row, read as the bytes the repository actually wrote. */
-function storedManifest(db: DatabaseSync, lifeId = LIFE, branchId = BRANCH): StoredChunkedManifest | undefined {
-  const row = db.prepare("SELECT manifest_json FROM lifecycle_chunked_manifests WHERE life_id = ? AND branch_id = ?")
-    .get(lifeId, branchId) as { manifest_json: string } | undefined;
-  return row === undefined ? undefined : JSON.parse(row.manifest_json) as StoredChunkedManifest;
-}
-
-/** Every payload row of `lifecycle_capsules_v1`, keyed by the digest the row is stored under. */
-function storedPayloads(db: DatabaseSync): { key: string; value: Record<string, unknown> }[] {
-  const rows = db.prepare("SELECT key, wire FROM main.lifecycle_capsules_v1").all() as { key: Uint8Array; wire: Uint8Array }[];
-  return rows.map(row => ({
-    key: Buffer.from(row.key).toString("utf16le"),
-    value: JSON.parse(Buffer.from(row.wire).toString("utf16le")) as Record<string, unknown>,
-  }));
-}
-
-/** Frames compared without their measured wall time, the only nondeterministic field. */
-function withoutWallTime(frames: readonly LifeStreamEvent[]): unknown[] {
-  return frames.map(frame => frame.type === "done" ? { ...frame, stats: { ...frame.stats, wallTimeMs: 0 } } : frame);
-}
-
 describe("lifecycle create orchestration (RI1c)", () => {
   it("streams a start, one tick per regenerated journal year, then done, and publishes a reloadable capsule", async () => {
     const { db, repository } = database();
@@ -189,12 +138,7 @@ describe("lifecycle create orchestration (RI1c)", () => {
 
       const loaded = await repository.load(LIFE, BRANCH);
       expect(loaded).toBeDefined();
-      // The create path now stores the chunked format, whose record digest is not the compact
-      // capsule digest; equivalence with a fresh full regeneration is therefore asserted on the
-      // regenerated artifact itself, which is the stronger claim that digest stood for.
-      const fresh = await freshCapsule();
-      expect(canonicalLifecycleData(loaded!.capsule.output)).toBe(canonicalLifecycleData(fresh.output));
-      expect(loaded!.capsule.genesis.digest).toBe(fresh.genesis.digest);
+      expect(loaded!.capsule.digest).toBe((await freshCapsule()).digest);
       expect(count(db, "lifecycle_lives")).toBe(1);
       expect(count(db, "lifecycle_bindings")).toBe(1);
       // The lifecycle path never writes the legacy tables.
@@ -285,137 +229,3 @@ describe("lifecycle create orchestration (RI1c)", () => {
     expect(ticksOf(wire.frames).length).toBeGreaterThan(0);
   }, 60_000);
 });
-
-describe("lifecycle create persistence format (CP1-B B3)", () => {
-  it("stores a newly created life as a chunked capsule and writes no compact capsule for it", async () => {
-    const { db, repository } = database();
-    try {
-      const wire = harness();
-      await streamLifecycleLife({ ...request({ repository }), emit: wire.emit, flushFrame: wire.flushFrame });
-
-      const binding = repository.binding(LIFE, BRANCH);
-      expect(binding?.capsuleSchema).toBe(LIFECYCLE_CHUNKED_CAPSULE_SCHEMA);
-
-      const manifest = storedManifest(db);
-      expect(manifest).toBeDefined();
-      expect(manifest!.capsuleSchema).toBe(LIFECYCLE_CHUNKED_CAPSULE_SCHEMA);
-      // The format's documented measured default, used by the create path and never raised here.
-      expect(manifest!.chunkYears).toBe(LIFECYCLE_CHUNKED_DEFAULT_CHUNK_YEARS);
-
-      const ticks = ticksOf(wire.frames);
-      expect(manifest!.chunks.length).toBe(Math.ceil(ticks.length / LIFECYCLE_CHUNKED_DEFAULT_CHUNK_YEARS));
-      // Ordered, contiguous chain: starts at the life's first journal year, ends at its last one.
-      expect(manifest!.chunks[0]!.from).toBe(ticks[0]!.year);
-      for (let position = 1; position < manifest!.chunks.length; position++) {
-        expect(manifest!.chunks[position]!.from).toBe(manifest!.chunks[position - 1]!.to + 1);
-      }
-      expect(manifest!.chunks.at(-1)!.to).toBe(ticks.at(-1)!.year);
-      expect(manifest!.frontier).toBe(ticks.at(-1)!.year);
-
-      // Every payload row is exactly one chunk wire that recomputes its own digest; the compact
-      // capsule row — keyed by the binding's own digest — was NOT written for this life.
-      const payloads = storedPayloads(db);
-      expect(payloads.length).toBe(manifest!.chunks.length);
-      const digests = new Set<string>();
-      for (const stored of payloads) {
-        expect(Object.keys(stored.value).sort()).toEqual(["digest", "from", "table", "to"]);
-        expect(stored.value.digest).toBe(stored.key);
-        expect(stored.value.digest).toBe(lifecycleChunkDigest(
-          stored.value.from as number, stored.value.to as number, stored.value.table as string,
-        ));
-        digests.add(stored.key);
-      }
-      for (const index of manifest!.chunks) expect(digests.has(index.digest)).toBe(true);
-      expect(digests.has(binding!.capsuleDigest)).toBe(false);
-      expect(count(db, "lifecycle_chunked_manifests")).toBe(1);
-    } finally {
-      db.close();
-    }
-  }, 120_000);
-
-  it("loads the created chunked life to an artifact equal to a fresh full regeneration", async () => {
-    const { db, repository } = database();
-    try {
-      const wire = harness();
-      await streamLifecycleLife({ ...request({ repository }), emit: wire.emit, flushFrame: wire.flushFrame });
-
-      const loaded = await repository.load(LIFE, BRANCH);
-      expect(loaded).toBeDefined();
-      expect(loaded!.binding.capsuleSchema).toBe(LIFECYCLE_CHUNKED_CAPSULE_SCHEMA);
-      expect(loaded!.capsule.manifest.capsuleSchema).toBe(LIFECYCLE_CHUNKED_CAPSULE_SCHEMA);
-      // The read path receives the same { binding, capsule } shape it consumes for the compact format.
-      expect(loaded!.capsule.digest).toBe(loaded!.binding.capsuleDigest);
-      expect(loaded!.capsule.genesis.digest).toBe(loaded!.binding.genesisDigest);
-
-      const fresh = await freshRegeneration();
-      // The artifact is the full current-authority regeneration, never a reassembly of stored chunks.
-      expect(canonicalLifecycleData(loaded!.capsule.output)).toBe(canonicalLifecycleData(fresh.output));
-      expect(loaded!.capsule.genesis.digest).toBe(fresh.genesis.digest);
-
-      // The stored chain is exactly what a fresh chunking of that same regeneration produces.
-      const rechunked = await createChunkedLifecycleCapsule({ genesis: fresh.genesis, output: fresh.output });
-      expect(canonicalLifecycleData(loaded!.capsule.manifest)).toBe(canonicalLifecycleData(rechunked.manifest));
-      expect(loaded!.capsule.chunks!.map((chunk) => [chunk.from, chunk.to, chunk.digest]))
-        .toEqual(rechunked.chunks.map((chunk) => [chunk.from, chunk.to, chunk.digest]));
-    } finally {
-      db.close();
-    }
-  }, 180_000);
-
-  it("keeps the SSE frame sequence and the done chronicle identical to the persisted format's absence", async () => {
-    // Baseline: the same request through a publisher that accepts and stores nothing. The storage
-    // format cannot influence frames, so any difference here is a regression of the observable
-    // contract (start, one tick + flush per journal year, then done).
-    const baseline = harness();
-    await streamLifecycleLife({
-      ...request({ repository: { publish: async () => undefined } }),
-      emit: baseline.emit, flushFrame: baseline.flushFrame,
-    });
-
-    const { db, repository } = database();
-    try {
-      const stored = harness();
-      await streamLifecycleLife({ ...request({ repository }), emit: stored.emit, flushFrame: stored.flushFrame });
-
-      expect(stored.log).toEqual(baseline.log);
-      expect(withoutWallTime(stored.frames)).toEqual(withoutWallTime(baseline.frames));
-      expect(stored.log[0]).toBe("start");
-      expect(stored.log.at(-1)).toBe("done");
-
-      // The done chronicle is the projection of a fresh full regeneration, unchanged by storage.
-      const fresh = await freshRegeneration();
-      const expected = (await projectLifecycleChronicle({
-        source: { genesis: fresh.genesis, output: fresh.output },
-        identity: { lifeId: LIFE, branchId: BRANCH }, locale: "en",
-      })).view;
-      expect(doneOf(stored.frames.at(-1)).chronicle).toEqual(expected);
-    } finally {
-      db.close();
-    }
-  }, 180_000);
-
-  it("still reads a life published in the pre-existing compact format", async () => {
-    const { db, repository } = database();
-    try {
-      const fresh = await freshRegeneration();
-      const compact = await createLifecycleCompactCapsule({ genesis: fresh.genesis, output: fresh.output });
-      await repository.publish({
-        lifeId: "life-compact-existing", branchId: "branch-compact-existing", config: fresh.config,
-        protagonistName: "Alice", protagonistSex: "f", capsule: compact,
-      });
-
-      const loaded = await repository.load("life-compact-existing", "branch-compact-existing");
-      expect(loaded).toBeDefined();
-      expect(loaded!.binding.capsuleSchema).toBe(LIFECYCLE_COMPACT_CAPSULE_MANIFEST.capsuleSchema);
-      expect(loaded!.capsule.digest).toBe(compact.digest);
-      expect(loaded!.capsule.chunks).toBeUndefined();
-      expect(canonicalLifecycleData(loaded!.capsule.output)).toBe(canonicalLifecycleData(fresh.output));
-      // No chunked storage was created for it: the old format keeps its exact footprint.
-      expect(count(db, "lifecycle_chunked_manifests")).toBe(0);
-      expect(count(db, "lifecycle_capsules_v1")).toBe(1);
-    } finally {
-      db.close();
-    }
-  }, 120_000);
-});
-
