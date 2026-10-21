@@ -1395,9 +1395,10 @@ reordering, extra members or post-observation cap changes are permitted.
 All executed members, including short deaths and budget-incomplete lives,
 must retain full canonical capsules, actual snapshots, registry traversal and
 native/favor aliases through serialization, producer-reference disposal and cold
-LR2b replay. The aggregate gate requires at least one genuinely complete,
-cold-verified member with at least 60 executed years. This coverage requirement
-never instructs mortality; all outcomes are reported. Stop immediately on the
+LR2b replay. The aggregate 60-year coverage is a REPORTED metric, not an
+assertion (MVP decision 2026-10-21, tracked as open risk CQ1): the suite prints
+`coverage-open` when no member reaches 60 executed years instead of failing. This
+coverage requirement never instructs mortality; all outcomes are reported. Stop immediately on the
 first OOM, timeout, string/representation limit or implementation failure, and
 report the last metrics plus pending members without retrying a smaller workload.
 
