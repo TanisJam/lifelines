@@ -127,6 +127,29 @@ function createSchema(db: DatabaseSync): void {
         SELECT RAISE(ABORT, 'Lifecycle history cannot be deleted');
       END;
 
+    -- Chunked lifecycle format (CP1-B B2). Purely additive: the certified compact tables above are
+    -- untouched and no row is migrated. One immutable row per (life, branch) carries that life's
+    -- manifest JSON and the genesis JSON its chunks are corroborated against. Chunk payloads reuse
+    -- lifecycle_capsules_v1, the generic strict digest-keyed key/wire table: a chunk is stored under
+    -- its own domain-separated digest and both stored wire shapes declare disjoint exact key sets
+    -- ({manifest,table,digest} vs {from,to,table,digest}), so a chunk can never be read as a capsule
+    -- or the reverse. The manifest is an index, never authority: every load replays from genesis.
+    CREATE TABLE IF NOT EXISTS lifecycle_chunked_manifests (
+      life_id TEXT NOT NULL,
+      branch_id TEXT NOT NULL,
+      manifest_json TEXT NOT NULL,
+      genesis_json TEXT NOT NULL,
+      PRIMARY KEY (life_id, branch_id)
+    );
+    CREATE TRIGGER IF NOT EXISTS lifecycle_chunked_manifest_no_update
+      BEFORE UPDATE ON lifecycle_chunked_manifests BEGIN
+        SELECT RAISE(ABORT, 'Immutable lifecycle chunked manifest');
+      END;
+    CREATE TRIGGER IF NOT EXISTS lifecycle_chunked_manifest_no_delete
+      BEFORE DELETE ON lifecycle_chunked_manifests BEGIN
+        SELECT RAISE(ABORT, 'Lifecycle history cannot be deleted');
+      END;
+
     -- Abuse protection (per-IP rate limiting on simulation-triggering endpoints): one row per
     -- allowed attempt, so a sliding window can be computed by counting/pruning rows younger than
     -- the window instead of maintaining separate hour/day counters that could drift out of sync.
