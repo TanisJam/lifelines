@@ -1,6 +1,6 @@
 # Lifecycle runtime — reviewable ODD units
 
-CURRENT: FE1, LR1a/LR1b/LR2a/LR2b and LP1a/b/e DONE bounded. Parent release worktree `/home/tanisjam/Projects/Personal/lifelines`, `feat/narrative-engine`, parent `077e2bf`, CG1 source `1cfc920`; prior RH1 integration `54533938a36245fafa6f5ea7b654f962bd725f1c`; MAIN means parent worktree, NOT default branch. RH1 source `8d77146` integrated exactly two capsule paths; CD1/LP1e remain integrated. Read-only inspection found unrelated untracked `.claude/`, preserved. LP1f PENDING/rejected, no optimization delivered. **LP1g DONE decision ONLY: human7709 `keep_current_authority_full_replay_every_save`**; EVERY save independently FULL-regenerates under current authority; producer-proof/cache implementation permission NONE, design1318 unchanged. New [FULL capacity featurebook7715](narrative-lifecycle-capacity.md): **CD1 DONE bounded -> RH1 DONE bounded/integrated -> RS1 REJECTED7728 / NOT DONE delivery**; [compact](narrative-lifecycle-compact.md) owns CG1 DONE bounded/internal ONLY; CA1a DONE verified `ce99584`, CA1p DONE verified `bfc1ac9` (ACK burned), CA1b DONE verified `1f50196`+`8b20e75`, CT1/CQ1 PENDING; derives LP1d/LP1c. [Performance7658 history](narrative-lifecycle-memory.md) preserved. Retained39 lines/52 compatible LP1f cases NOW integrated as RH1 tests; rejected cursor parser NOT delivered. LC1 DONE verified `138b95b` (ACK burned `review-d1c36c534c463771`); ≥60-year coverage demoted to a REPORTED metric under CQ1 by human decision; RI1/RA1 pending.
+CURRENT: FE1, LR1a/LR1b/LR2a/LR2b and LP1a/b/e DONE bounded. Parent release worktree `/home/tanisjam/Projects/Personal/lifelines`, `feat/narrative-engine`, parent `077e2bf`, CG1 source `1cfc920`; prior RH1 integration `54533938a36245fafa6f5ea7b654f962bd725f1c`; MAIN means parent worktree, NOT default branch. RH1 source `8d77146` integrated exactly two capsule paths; CD1/LP1e remain integrated. Read-only inspection found unrelated untracked `.claude/`, preserved. LP1f PENDING/rejected, no optimization delivered. **LP1g DONE decision ONLY: human7709 `keep_current_authority_full_replay_every_save`**; EVERY save independently FULL-regenerates under current authority; producer-proof/cache implementation permission NONE, design1318 unchanged. New [FULL capacity featurebook7715](narrative-lifecycle-capacity.md): **CD1 DONE bounded -> RH1 DONE bounded/integrated -> RS1 REJECTED7728 / NOT DONE delivery**; [compact](narrative-lifecycle-compact.md) owns CG1 DONE bounded/internal ONLY; CA1a DONE verified `ce99584`, CA1p DONE verified `bfc1ac9` (ACK burned), CA1b DONE verified `1f50196`+`8b20e75`, CT1/CQ1 PENDING; derives LP1d/LP1c. [Performance7658 history](narrative-lifecycle-memory.md) preserved. Retained39 lines/52 compatible LP1f cases NOW integrated as RH1 tests; rejected cursor parser NOT delivered. LC1 DONE verified `138b95b` (ACK burned `review-d1c36c534c463771`); ≥60-year coverage demoted to a REPORTED metric under CQ1 by human decision; RI1 DONE (`70427ad`, `16a4ac3`, `88e0ccc`, `30b4efb`, closed `5d116ab`) with the feature book [RI1](narrative-lifecycle-ri1.md); RA1 DONE (hidden `?engine=lifecycle` opt-in + offline browser and restart evidence, see `## RA1` below).
 
 Human7678 local verified commit/feature integration permission persists; no routine unit-command re-asks, no push/PR/default merge/deploy/destructive Git. Parent owns review/Git; LP1g choice grants no cache implementation/RDD verdict/kill-switch/publishing authority. FE1 unreviewed7625 is bounded to FE1; RDD unchanged. DOC ONLY here: no source/tests/commands/native/children/network/commits. History/forecasts below are preserved and superseded by CURRENT; historical LP1g B has NO future permission.
 
@@ -134,4 +134,45 @@ Historical B candidate paths capsule.ts/test.ts under `src/domain/e-lifecycle-` 
 
 [Capacity7715](narrative-lifecycle-capacity.md) preserves CD1/RH1 closures/burned identities/hashes and RS1 REJECTED7728 evidence/errors. No RS1 native/commit/integration; four isolated files uncommitted, NOT DONE delivery. [Performance7658](narrative-lifecycle-memory.md) owns LP1 history; [compact](narrative-lifecycle-compact.md) alone owns CG1 closure (writer + independent BOTH702/12; parent47/types/lint PASS; native ACK BURNED, NEVER STATUS) and NEW CA1a/CA1b/CT1/CQ1 chain. Active CA1a DAG.ts/test.ts expansion guard source UNWRITTEN; no public format/native execution change. No duplicated forecasts, successor runtime pool or producer cache. Historical benchmarks Engram7725/7720 or Git1027cff/5453393 books.
 
-FULL CURRENT-authority replay EVERY save, human7709. Old pins unchanged; no capacity/60/server claim. Fixed five genuine2–4-year cases retain reported coverage-open/no adaptive search. LC1 integrated `138b95b` with coverage as a reported CQ1 metric; RI1/RA1 pending. Parent owns native RDD/Git, local verified feature integration only; no publish/default merge/deploy. FULL7715/7658/7604 and NEW compact mirrors/readbacks; doc-only, no source/tests/commands/network/children/native/commit.
+FULL CURRENT-authority replay EVERY save, human7709. Old pins unchanged; no capacity/60/server claim. Fixed five genuine2–4-year cases retain reported coverage-open/no adaptive search. LC1 integrated `138b95b` with coverage as a reported CQ1 metric; RI1 DONE (`70427ad`, `16a4ac3`, `88e0ccc`, `30b4efb`, closed `5d116ab`); RA1 DONE (hidden opt-in, offline browser + restart evidence, `## RA1` below). Parent owns native RDD/Git, local verified feature integration only; no publish/default merge/deploy. FULL7715/7658/7604 and NEW compact mirrors/readbacks; doc-only, no source/tests/commands/network/children/native/commit.
+
+## RA1 — new-engine release evidence, DONE 2026-10-21
+
+Human decision, verbatim: `Opt-in oculto (URL/dev) (Recomendado)`. The new engine is reachable ONLY
+through an explicit `?engine=lifecycle` address-bar flag. The visible create form is unchanged, so a
+reader who never passes the flag sends exactly today's request body and gets today's legacy life.
+
+Change: new pure `src/lib/engine-flag.ts` (`requestedEngine(search)`, exact match only — no
+coercion, no fallback, `"legacy"`/wrong case/absent all yield `undefined`) with 3 focused tests, and
+three lines in `src/app/[lang]/page.tsx` that read it at submit time and include the field only when
+it returns a value. Typecheck and eslint clean.
+
+Evidence, produced on the FINAL committed tree against a production build (`pnpm build` exit 0,
+`next start`, `DATA_DIR` outside the worktree, real Chromium via Playwright 1.63):
+- Flagged create: POST body `{"name":"Cora","sex":"random","lang":"en","engine":"lifecycle"}`; the
+  app created `life1-mvie6fpi` / `lb1-mvie6fpj`, moved the address bar to the life URL, rendered the
+  sky and chronicle, and `GET /api/lives/:id` returned a 4,348-byte Chronicle (Cora, 1327-1328, age
+  1, "a childhood accident"). `/en/lives` rendered the life as "1 version of this life".
+- Default create: POST body `{"name":"Dora","sex":"random","lang":"en"}` — no `engine` field at all,
+  which is the pre-existing body byte for byte.
+- Restart: with the same `DATA_DIR`, the server was stopped and started again. Before and after,
+  `GET /api/lives/life1-mvie6fpi` hashed `f22720884926037aeafea6053c1d735ff1f33d845b1c1ac52cc73df3a0caf7cb`
+  and `GET /api/lives` hashed `4febf1494a31a11f63931b771934f172c52f47b9db649c90565cf1f5965d23a5`,
+  identical in both states, so the life is fully regenerated from its persisted compact capsule.
+- Table state after the run: `lives = 0`, `life_branches = 0`, `lifecycle_lives = 1`,
+  `lifecycle_bindings = 1`, `lifecycle_capsules_v1 = 1`. The two engines' storage never mixes, and no
+  legacy row was written by a lifecycle life.
+- No page errors and no console errors in any of the browser runs. The same flow was reproduced
+  independently earlier (`life1-mvidyybg`, Ada, 1327-1327, age 0, "a fever in infancy") with
+  identical before/after restart hashes.
+
+Honest limitation, observed and NOT a new-engine regression: the default (legacy) create did not
+complete within a 240 s browser wait while offline. Its request body is provably unchanged and the
+legacy route body was not modified by RI1 beyond two pure hoists, so this is the LEGACY engine's own
+offline behavior (its decision engine has no provider configured). The new engine makes no model
+calls at all, which is why it completes offline; that asymmetry is recorded, not hidden.
+
+RA1 closes the MVP scope (CA1b -> LC1 -> RI1 -> RA1). Carried open risks, in priority order:
+capacity before lifespan calibration (a saved 62-founder life longer than ~4-5 journal years still
+cannot be captured, and calibration without capacity would produce unsavable lives), the ~1-year
+lifespan itself, and the unmeasured 60-year coverage tracked as CQ1.
