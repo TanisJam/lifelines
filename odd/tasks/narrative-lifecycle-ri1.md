@@ -65,9 +65,9 @@ S10. Every unit closes with a `Risk:` line naming a high-risk item or `none`.
 
 | ID | Specs | Route | Status | Evidence |
 |----|-------|-------|--------|----------|
-| T1 RI1a persistence seam | S3,S4,S5,S6 | delegated writer + independent verifier | IN PROGRESS | — |
-| T2 RI1b create route + SSE | S2,S7 | pending | pending | — |
-| T3 RI1c read route + projection | S2,S8 | pending | pending | — |
+| T1 RI1a persistence seam | S3,S4,S5,S6 | delegated writer + parent spot check | DONE `70427ad` | 15/15 new; legacy 51/51; typecheck+eslint clean; assess medium/under_budget; Risk none |
+| T2 RI1b view projection | S8 | delegated writer | IN PROGRESS | — |
+| T3 RI1c route activation (create + read + SSE) | S2,S7,S8 | pending | pending | — |
 | T4 RI1d whole-unit evidence | S2,S9 | pending | pending | — |
 
 ## Log
@@ -96,3 +96,19 @@ contract is a POST-based `event:`/`data:` union parsed by `parseLifeStreamFrame`
 (`life-client.ts:26`); `canonical_branch_bindings` is immutability-triggered and the legacy
 loader refuses any binding whose version is not the annual one; `favor_records_v1` is schema-locked
 to one exact physical shape with no extensions allowed.
+
+L5 (2026-10-21) — T1 DONE as `70427ad` (db.ts +36 additive lines, new
+`src/server/lifecycle-repository.ts` 212 lines and its 282-line test; 15/15 focused, legacy suites
+51/51 unchanged, typecheck and eslint clean, assess `medium`/`under_budget` so no review was due
+for this commit). Risk `none`: new tables, new binding namespace, no existing behavior changed and
+no existing assertion touched. Reordering decided from the dependency the mapping exposed: the
+create route's per-year `tick` payload and the read routes render the SAME app view model, so the
+pure projection module must exist before either route is activated. T2 is therefore the projection,
+T3 is the route activation that consumes it.
+
+L6 (2026-10-21) — projection contract fixed for T2: the projection is a PURE function of a
+trusted, fully regenerated lifecycle output; it may only use fields the trusted output actually
+carries, it must represent missing information honestly instead of inventing it, it follows the
+trusted output's own traversal order, and it is NEVER persisted as authority or read back as one.
+If the trusted output cannot satisfy the app's view model, the writer must report the exact missing
+fields instead of fabricating them.
