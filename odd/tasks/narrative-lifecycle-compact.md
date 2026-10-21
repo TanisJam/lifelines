@@ -228,7 +228,53 @@ Open item carried, not solved by B: the runtime's own peak (3.9 GB at 46 years) 
 journal retaining two full state copies per year; B bounds the ENCODE peak, not the run peak. A
 60-year life will still need C (or an equivalent runtime memory reduction) before it can run at all.
 
-### CP1-B tasks
+### CP1-C design (decided from the consumer map)
+
+Goal: halve the per-record work text so a late record fits the 32,000,000 ceiling at ~136+ people,
+which is the measured blocker for every chunk width.
+
+Decision: DROP `postNative` from `LifecycleYearRecord`; KEEP `final` and `physicalSnapshot`.
+Justification from the consumer map (read-only, path:line verified):
+- `postNative` has ZERO production readers. The only production read of a journal state field is
+  `src/server/lifecycle-projection.ts:189-190` (`record.final.owned`), which stays.
+- Neither field is an input to execution or admission: the runtime continues from
+  `committed.state` (`e-lifecycle-runtime.ts:100-114`), resume reads only `entry.year`
+  (`e-lifecycle-run.ts:72`), and replay re-executes from genesis and treats the record as evidence
+  (`e-lifecycle-replay.ts:26-41`, doc: "evidence to compare, NEVER instructions to execute").
+- `final` is the year's actual post-economics result and the shape `physicalSnapshot` does not cover
+  on the ledger side; `physicalSnapshot` keeps every year's pre-economics `{people, events,
+  decisions}`. `postNative` is the redundant middle copy.
+- `postNative` costs exactly as much as `final` (both a full `LifecycleState`), so this halves each
+  record's state mass. The work-text budget charges duplicated states twice
+  (`e-lifecycle-dag.ts:65-105`), which is why duplication, not partitioning, is what fails.
+
+Consequences that must be handled in the SAME unit, because they are part of the certified contract:
+1. `docs/design/narrative-engine.md:1249` and `:1288` state the journal preserves the full
+   `postNative` state/ledgers and that comparison covers the post-native actual Person/Mind. Both
+   lines must be rewritten to the new retained set; the LC1 section's cold-replay wording must stay
+   true.
+2. Every test that asserts on `record.postNative` must be removed or retargeted, and the
+   per-field tamper table loses exactly the classes that mutate that field. Deleting a certified
+   assertion is authorized ONLY as part of this drop; nothing else may be weakened, and the
+   remaining tamper classes must still be proven.
+3. Every stored capsule, compact capsule and chunk becomes unreadable (record comparison is exact
+   key-set equality both ways). That is acceptable ONLY because no released life uses this engine;
+   there is no migration and none may be added. The pinned digests/wire bytes in the tests change
+   and must be re-pinned from the new measurement, not adjusted by hand.
+4. The projection must be re-verified against the new record: it reads `final`, which survives, so
+   its behavior must be byte-identical.
+
+Gate: after the drop, measure a 20-year life's record again and prove a 1-year chunk fits, then a
+2-year chunk if it does. Report heap/RSS and wall time. No chunk width may be declared without that
+measurement. The full suite must return to the single pre-existing failure.
+
+### CP1-C tasks
+| ID | Scope | Status |
+|---|---|---|
+| C1 | drop `postNative` from the record + update the design doc contract + retarget/remove the postNative assertions + re-pin the measured digests | pending |
+| C2 | re-measure a 20-year life's record and the chunk widths it now allows | pending |
+
+### CP1-B tasks (implementation status)
 | ID | Scope | Status |
 |---|---|---|
 | B1 | chunked format + chunk codec + manifest validation, with tests | DONE `07c19c3` — 398 + 274 lines; 23/23 new; existing capsule/DAG 237/237; typecheck+eslint clean. A chunk covering year 1327 encodes to byte-identical 45,983 B in a 1-year and a 3-year life, proving it carries no accumulated state. |
