@@ -184,10 +184,58 @@ its refusal behavior for a broken chain, and a proof that a chunk chain cannot b
 authority. Nothing in this unit may change mortality, genesis, physics or the replay rule.
 
 ### Status
-PENDING. Blocked on the human's re-decision after the measured correction above: `A` at 20 years
-costs ~7 GB transient per save, `B` keeps the peak at the already-measured ~1 GB envelope by
-chunking, and `C` halves the peak as a companion. No source has been written; the scratch copy used
-for the measurement lives outside the workspace and is deleted with the rest of the scratch.
+DECIDED 2026-10-21 by the human, verbatim: `B: cápsulas por tramos (Recomendado)`. Implementation
+plan below. No source written yet.
+
+### CP1-B design (fixed decisions)
+
+Goal: keep the ENCODE peak inside the already-measured 4-year envelope (~1 GB) while persisting a
+life of any length, without weakening one byte of authority.
+
+The existing `lifecycle-capsule-compact-cb1-1` format is CERTIFIED and stays untouched. CP1-B adds a
+NEW, separately versioned chunked format; a stored life declares which schema it uses and each loader
+refuses the other. No implicit migration in either direction.
+
+1. **Chunk.** A chunk covers a contiguous year range `[from..to]` of one life and carries exactly that
+   range's journal records plus the state at `to`. Chunk payloads are encoded with the SAME compact
+   DAG codec and the SAME measured wire profile; the chunk size is chosen so one chunk's encode peak
+   stays inside the 4-year envelope (default: 4 journal years per chunk, configurable downward, never
+   silently upward without a measurement).
+2. **Manifest.** One immutable, exact-key-set manifest per `(lifeId, branchId)`:
+   `version`, `lifeId`, `branchId`, `genesisDigest`, `capsuleSchema` (the chunked one), `chunkYears`,
+   `frontier`, `status`, and an ordered `chunks` list of `{ from, to, digest }`. Immutability triggers
+   mirror the existing lifecycle binding table. The manifest is NEVER authority: it is an index that
+   must be corroborated by regeneration.
+3. **Save.** One full current-authority regeneration produces the complete output ONCE; the journal is
+   then sliced into chunks and each chunk is encoded sequentially from that same in-memory output (so
+   the peak is one chunk's encode plus the runtime state, not N replays). All chunks, the manifest and
+   the binding are written in ONE transaction. A digest is always recomputed from the admitted chunk.
+4. **Load.** Read the binding, require its recognized version and the chunked schema, then regenerate
+   the WHOLE life from genesis (full replay, as today), and validate every chunk against the
+   regenerated range and state. A missing chunk, a foreign schema, a digest mismatch or a state
+   disagreement is a REFUSAL, never a repair, never a partial view. Only after every chunk
+   corroborates is the reassembled capsule returned.
+5. **No second authority.** The chunk chain cannot stand in for replay: nothing may be read from a
+   chunk without a successful regeneration of that chunk's range. A chunk chain whose links are all
+   self-consistent but disagree with regeneration is still refused.
+6. **Boundary.** The old compact path keeps working unchanged (existing lives, existing tests). The
+   chunked path is additive and selected by schema.
+
+Open item carried, not solved by B: the runtime's own peak (3.9 GB at 46 years) is driven by the
+journal retaining two full state copies per year; B bounds the ENCODE peak, not the run peak. A
+60-year life will still need C (or an equivalent runtime memory reduction) before it can run at all.
+
+### CP1-B tasks
+| ID | Scope | Status |
+|---|---|---|
+| B1 | chunked format + chunk codec + manifest validation, with tests | pending |
+| B2 | repository: store/load chunks + manifest in one transaction, refusal paths | pending |
+| B3 | load: full replay + per-chunk corroboration, read-path wiring | pending |
+| B4 | evidence: measured encode peak per chunk, end-to-end persist/restart, suite | pending |
+
+Predeclared gate: a chunk's encode peak and the end-to-end save peak must be MEASURED at the claimed
+chunk size and reported with heap/RSS and wall time; a chunk size may not be raised without that
+measurement. The suite must stay at the single pre-existing failure.
 
 ## CT1 — PENDING/conditional: safe invocation-local efficiency
 
