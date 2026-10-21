@@ -4,6 +4,7 @@ import { isLocale } from "@/domain/locale";
 import { deathCauseDisplay } from "@/domain/narrate";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "@/domain/mortality";
 import { listLifeSummaries } from "@/server/life-store";
+import { listLifecycleSummaries } from "@/server/lifecycle-read";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,10 @@ export const runtime = "nodejs";
  * `question`), so unlike `simulate.ts`'s `questionText` it DOES honor the reader's locale — read
  * from an optional `?lang=` query param, since this route lives outside `app/[lang]` (API routes
  * never move under the locale segment) and so can't read it from the URL path the way a page can.
+ *
+ * RI1d (specs S2, S8): the legacy rows below are unchanged — same query, same order, same fields.
+ * Lifecycle lives are appended AFTER them, newest first, each derived from its own regenerated
+ * capsule (see `lifecycle-read.ts`). Nothing is re-sorted, filtered or renumbered.
  */
 export async function GET(request: Request): Promise<NextResponse> {
   const langParam = new URL(request.url).searchParams.get("lang");
@@ -33,5 +38,6 @@ export async function GET(request: Request): Promise<NextResponse> {
       branchCount: summary.branchCount,
     };
   });
+  items.push(...await listLifecycleSummaries(locale));
   return NextResponse.json(items);
 }

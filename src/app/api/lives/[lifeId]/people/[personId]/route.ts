@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isLocale } from "@/domain/locale";
 import { buildPersonSheet } from "@/server/life-chronicle";
+import { buildLifecyclePersonSheet, isLifecycleLife } from "@/server/lifecycle-read";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,9 @@ export async function GET(request: Request, context: { params: Promise<{ lifeId:
   const langParam = url.searchParams.get("lang");
   const locale = langParam && isLocale(langParam) ? langParam : "en";
 
-  const result = await buildPersonSheet(lifeId, personId, branchId, locale);
+  const result = isLifecycleLife(lifeId)
+    ? await buildLifecyclePersonSheet(lifeId, personId, branchId, locale)
+    : await buildPersonSheet(lifeId, personId, branchId, locale);
   if (!result.data) return NextResponse.json({ error: result.error }, { status: result.status ?? 500 });
   return NextResponse.json(result.data);
 }
