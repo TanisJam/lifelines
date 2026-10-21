@@ -236,17 +236,22 @@ journal retaining two full state copies per year; B bounds the ENCODE peak, not 
 | B3 | create path switched to the chunked format + the B2 genesis defect fixed | DONE `1c0ce60` — 6 files, +309/−21; 10/10 create, 39/39 read/repository/route, 23/23 chunked; typecheck+eslint clean. |
 | B4 | evidence: measured chunk encode peak, end-to-end persist/restart, suite | IN PROGRESS — a 4-year chunk FAILED at the end of a 20-year life (see below); re-measuring with 2-year cuts |
 
-### B4 first attempt — a design finding, not a bug
-The first end-to-end measurement (20-year life, default 4-year chunks) failed at chunk creation with
-`Invalid or oversized lifecycle data dictionary` from the work-text counter. The cause is structural:
-a chunk's cost depends on the POPULATION at that point in the life, which grows. The certified
-4-year production fixture already used 26,783,965 of the 32,000,000 work-text units (83.7 %) at 85
-people, so a 4-year chunk late in a 20-year life (~136 people) is roughly 1.6x that and cannot fit.
-A fixed year count therefore does NOT bound a chunk. The chunk boundary has to be size-driven
-(accumulate years until the encoded chunk approaches a declared budget, then cut), or the fixed count
-must be small enough for the largest population the life reaches. This is exactly what the
-predeclared gate exists to catch, and the design section's "chunkYears default 4" is superseded by
-whatever the measurement supports.
+### B4 result — CP1-B alone is NOT sufficient (measured conclusively)
+Three end-to-end measurements of a 20-year life (`cap-0`, 136 people at the end) all failed at chunk
+creation with `Invalid or oversized lifecycle data dictionary`, with chunk widths of 4, 2 and 1 year.
+With 1-year chunks there is nothing left to split: the ATOM is a single year's journal record, and a
+late record on its own already exceeds the 32,000,000 work-text ceiling. The cause is the record
+itself, not the partitioning: `LifecycleYearRecord` stores `postNative` (the full world state) plus
+`final: structuredClone(draft)` (a SECOND full copy), plus the physical snapshot and the economics, so
+one late record is roughly 2.5-4 MB of wire and 30M+ work-text units at ~136 people.
+
+Conclusion: chunking bounds how much is encoded at once only down to one record, and one record is
+already too big for a long life. CP1-B therefore REQUIRES the per-record reduction (option C) before
+it can serve a product-meaningful lifespan; C is a prerequisite, not a companion. The certified
+4-year fixture passes only because its records are ~6.7M each at 85 people.
+
+The design section's fixed-year chunking is also superseded: the chunk width must be size-driven, and
+after C the correct starting point is 1-2 years per chunk at the populations measured here.
 
 ### B2 defect found by B3 (recorded, fixed)
 B2 stored the chunked genesis with `JSON.stringify`/`JSON.parse`. That round trip turns `-0` into
