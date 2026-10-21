@@ -67,8 +67,9 @@ S10. Every unit closes with a `Risk:` line naming a high-risk item or `none`.
 |----|-------|-------|--------|----------|
 | T1 RI1a persistence seam | S3,S4,S5,S6 | delegated writer + parent spot check | DONE `70427ad` | 15/15 new; legacy 51/51; typecheck+eslint clean; assess medium/under_budget; Risk none |
 | T2 RI1b view projection | S8 | delegated writer + parent spot check | DONE `16a4ac3` | 908 lines (472+399+37); 12/12 new; legacy chronicle 22/22 re-run by the parent; typecheck+eslint clean; gaps in L7 |
-| T3 RI1c route activation (create + read + SSE) | S2,S7,S8 | pending | pending | — |
-| T4 RI1d whole-unit evidence | S2,S9 | pending | pending | — |
+| T3 RI1c create-route activation | S2,S7 | delegated writer + parent spot check | DONE `88e0ccc` | 5 files, +668/−2; 10/10 new; legacy route 9/9 re-run by the parent; typecheck+eslint clean; Risk item 1 |
+| T4 RI1d read-route activation | S2,S8 | delegated writer | DONE `30b4efb` | 6 files, +651/−2; 11/11 new; legacy 39/39; typecheck+eslint clean; no cache, digest-proven freshness |
+| T5 RI1e whole-unit evidence | S2,S9 | pending | pending | full suite running |
 
 ## Log
 
@@ -137,3 +138,48 @@ measurement behind the already-carried open risk CQ1 (no member reaches 60 execu
 not change mortality; the wiring is engine-agnostic and the legacy path stays the default. A
 mortality-calibration unit is the obvious next domain work and is proposed to the human rather than
 started, because recalibrating would change certified engine behavior, its fixtures and its digests.
+
+L9 (2026-10-21) — T3 DONE as `88e0ccc` (contract +6 additive lines, route +47/−2, new
+`src/server/lifecycle-life.ts` 162 lines, its 231-line test, new route test 224 lines). Human
+decision recorded before it started, verbatim: "Seguir RI1 y calibrar después (Recomendado)". The
+route gained one additive optional discriminator `engine?: "legacy" | "lifecycle"`; absent or
+`"legacy"` keeps the legacy body (the only legacy edits are two pure hoists of `seed`/`locale` and
+moving the `guard.engine` destructure below the new branch, verified line by line by the parent),
+an unknown value is a 400 before admission, and only `"lifecycle"` runs the new engine. The
+lifecycle branch reuses `guardSimulation`, never touches the legacy DecisionMaker, initialises the
+world with 1327/1427 to mirror the legacy horizon, resolves `"random"` sex through
+`initializeWorld`'s own deterministic resolution, allocates `{grain:2, effort:3, need:1}` to every
+person (documented as the certified representative workload, with calibration deferred to CQ1),
+runs `runLifecycle` with `maxSteps` defaulting to 100, and on a non-complete (still alive) run sends
+`"This life has not yet ended."` and persists NOTHING. Ticks are the committed journal, one frame
+per year in order, then the projection, then `publish` (one transaction, full regeneration), and
+only after a successful publish `done` with `stats: {jevCalls: 0, cacheHits: 0, wallTimeMs}`. The
+new engine is a bounded batch, so the client sees `start`, then the journal frames, then `done`
+rather than a live per-year stream; this is design-forced and recorded, not hidden. Evidence: 10/10
+new (6 module + 4 route cases), legacy route 9/9 re-run by the parent, typecheck and eslint clean.
+Risk item 1 as named by the writer: the branch is a second production write path into the same
+SQLite file and shares the legacy id counter.
+
+L10 (2026-10-21) — T4 DONE as `30b4efb` (new `src/server/lifecycle-read.ts` 157 lines, its 233-line
+test, new 244-line route test, three read routes +6/+8/+5 net). Dispatch is by `isLifecycleLife`
+only: a `lifecycle_lives` row selects the new engine, everything else keeps the legacy builder,
+order of operations and error texts (`"Life not found."`, `"Person not found."`). No cache and no
+stored projection is consulted: the served chronicle and sheet are the projection of a cold
+`LifecycleRepository.load` (full replay), proven by digest equality against an independent
+regeneration and by a forged `lifecycle_lives` row changing nothing served. The list appends
+lifecycle rows AFTER the untouched legacy rows, newest first, each from its own replay, with
+`branchCount: 1`. Evidence: 11/11 new, legacy `lifecycle-life`/`life-chronicle`/`life-store` 39/39,
+typecheck and eslint clean. A corrupt lifecycle capsule makes the whole list 500 rather than
+silently dropping a row; recorded as an accepted MVP trade-off.
+
+**T4 exposed a blocking capacity fact, verified independently by the parent.** A 62-founder life
+of 5 journal years (seed `ri1d-read-1`, complete at frontier 1331, 95 people, ~20.7 s) CANNOT be
+persisted: `createLifecycleCompactCapsule` throws `Invalid or oversized lifecycle data dictionary`
+against the capture ceiling in `src/domain/e-lifecycle-dag.ts`. A 1-year life of the same
+configuration (seed `baseline-1327-0`, 81 people) serializes fine at 522,413 bytes. So the compact
+capsule caps a SAVABLE 62-founder life at about 2 years; today that is invisible only because the
+protagonist dies at age 1-2 (L8). The consequence is direct and ordering-critical: any mortality
+recalibration would produce lives that cannot be saved at all. Capacity must be fixed before or
+together with calibration (the CQ1/RA1 capacity thread), not after it. Also recorded: the
+`/api/lives/:lifeId/rewrite/stream` route remains legacy-only in this MVP, so branching a
+new-engine life is not offered yet.
