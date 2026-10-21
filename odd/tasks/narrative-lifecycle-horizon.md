@@ -42,10 +42,31 @@ S7. Evidence: focused tests per unit; the full suite at the single pre-existing 
 
 | ID | Scope | Route | Status |
 |----|-------|-------|--------|
-| T1 | capacity profile from the 15-year measurement | measurement + delegated writer | IN PROGRESS |
-| T2 | horizon 15 + persist incomplete lives (engine constant + create route) | delegated writer | pending |
-| T3 | honest display of alive lives (projection, list, detail) | delegated writer | pending |
+| T1 | capacity profile from the 15-year measurement | measurement + delegated writer | DONE `dd0727a` |
+| T2 | horizon 15 + persist incomplete lives (engine constant + create route) | delegated writer | DONE `dd0727a` |
+| T3 | honest display of alive lives (projection, list, detail) | delegated writer | PENDING — blocked the `done` frame |
 | T4 | whole-unit evidence (suite, typecheck, eslint, browser + restart) | inline | pending |
+
+### T1/T2 evidence
+- 15-year measurement (seed `cap-0`, 125 people): capsule 29,066,054 B, run 93 s / 646 MB heap,
+  encode 2,164 MB heap.
+- New published profile, derived from the certified 4-year point scaled by the measured wire ratio
+  9.04x, with >=30% headroom: nodes 220,000 / edges 4,500,000 / depth 128 / bytes 36,000,000, and a
+  320,000,000 work-text ceiling. `DEFAULT` untouched. The derivation and the measurement are in the
+  constant's docstring; the exact-boundary tests now bind through the profile-lowering option path
+  instead of allocating the published ceilings.
+- `LIFECYCLE_HORIZON_YEARS = 15` is the run budget; `LIFECYCLE_MAX_STEPS` stays 100 because it fixes
+  the genesis `endYear` that a non-editable route test pins. A run alive at the horizon is persisted
+  as `incomplete` with its trusted status/frontier; the `"This life has not yet ended."` refusal is
+  gone; abort, projection refusal and persistence errors still write nothing. Tests 231 + 32 green,
+  typecheck and eslint clean.
+
+### Known gap opened by T1/T2 (T3 must close it)
+An alive-at-horizon life is persisted but emits NO `done` frame, because
+`projectLifecycleChronicle` still refuses `status !== "complete"` and `Chronicle.protagonist.deathYear`
+is a required number. So a horizon life is durable but not yet viewable; the SSE client gets no
+`done`/`onSaved` for it. T3 must make the contract represent an alive life honestly (no invented
+death year or cause) and then `lifecycle-life.ts` must project for the incomplete status too.
 
 ## Log
 
