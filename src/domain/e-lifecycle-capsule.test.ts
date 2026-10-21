@@ -195,10 +195,8 @@ describe("full trusted lifecycle capsule", () => {
       expect(result.output.owned.people).not.toBe(candidate.output.owned.people);
       expect(Object.keys(result.genesis.initial.people)).toEqual(result.genesis.initial.registryOrder);
       for (const entry of result.output.journal) {
-        for (const state of [entry.postNative, entry.final]) {
-          expect(state.owned.people).toBe(state.favors.people);
-          expect(state.owned.events).toBe(state.favors.legacyEvents);
-        }
+        expect(entry.final.owned.people).toBe(entry.final.favors.people);
+        expect(entry.final.owned.events).toBe(entry.final.favors.legacyEvents);
       }
     }
     expect(serialized === wire).toBe(true);
@@ -272,10 +270,6 @@ describe("full trusted lifecycle capsule", () => {
 
 describe("digest is not authority", () => {
   const mutations: [string, (c: Candidate) => void][] = [
-    ["full Mind", c => { c.output.journal[0].postNative.owned.people.protagonist.mind.stress++; }],
-    ["ordered life log", c => { c.output.journal[0].postNative.owned.events.reverse(); }],
-    ["native decision", c => define(c.output.journal[0].postNative.owned.decisions[0], "chosen", "forged")],
-    ["native counter", c => { c.output.journal[0].postNative.owned.counters.decisionCalls++; }],
     ["resource plan", c => { c.output.journal[0].economics.resources.pop(); }],
     ["slot evidence", c => define(c.output.journal[0].economics, "slots", [{ creditor: "p001", slot: 0, request: null }])],
     ["economic authority", c => define(c.output.journal[0].economics.entries[0], "authority", { source: "human" })],

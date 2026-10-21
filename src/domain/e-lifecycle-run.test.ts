@@ -29,7 +29,6 @@ function ownership(capsule: Capsule) {
   expect(Object.isFrozen(output.owned.people)).toBe(true);
   for (const entry of output.journal) {
     expect(entry.final.owned.people === entry.final.favors.people).toBe(true);
-    expect(entry.postNative.owned.people === entry.postNative.favors.people).toBe(true);
   }
 }
 function fidelity(actual: unknown, expected: unknown, path = "root"): void {

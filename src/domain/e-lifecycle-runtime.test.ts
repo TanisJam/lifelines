@@ -122,10 +122,9 @@ async function publicParity(options: GenerateWorldOptions, throughYear: number, 
       const record = actual.journal.at(-1)!;
       // PRIMARY ASSERTIONS: complete public native snapshots/actual state BEFORE economics.
       fidelity(record.physicalSnapshot, step.value.snapshot, `year${year}`);
-      fidelity(record.postNative.owned, publicOwned, `year${year}.owned`);
-      expect(record.postNative.owned.people).toBe(record.postNative.favors.people);
-      expect(record.postNative.owned.events).toBe(record.postNative.favors.legacyEvents);
-      fidelity(record.postNative.favors, view, `year${year}.postNative.favors`);
+      // The single retained annual state keeps the native registry/log aliases.
+      expect(record.final.owned.people).toBe(record.final.favors.people);
+      expect(record.final.owned.events).toBe(record.final.favors.legacyEvents);
       const economics = economy(view, independent.config.seed, year);
       fidelity(record.economics, economics, `year${year}.economics`);
       fidelity(actual.owned, publicOwned, `year${year}.final.owned`);
@@ -157,9 +156,9 @@ describe("native lifecycle annual transaction", () => {
     const canonical = canonicalLifecycleData({ genesis: admitted, output });
     const wire = await serializeLifecycleCapsule(await createLifecycleCapsule({ genesis: admitted, output }));
     const digest = (text: string) => createHash("sha256").update(text).digest("hex");
-    expect(digest(canonical)).toBe("3d96dc6a6739de54d345476c18cce1f553c69722702c13755ee513ccd8422ca4");
-    expect(digest(wire)).toBe("c1991e489978205547a392343e74798c9a387cefb523f5c317b6574423981675");
-    expect(Buffer.byteLength(wire)).toBe(522524);
+    expect(digest(canonical)).toBe("c1d772707e0000e09ceb08cf58df44c424359ddb99d850f89d5e76033a8d148c");
+    expect(digest(wire)).toBe("2acf03a4016066b76437d0d8304fc64f5d4e5e68d8e21a0e75e4b0426695aeb6");
+    expect(Buffer.byteLength(wire)).toBe(442369);
   });
 
   it("shares only the privately committed immutable annual prefix across publications", async () => {
@@ -268,13 +267,22 @@ describe("native lifecycle annual transaction", () => {
     expect(runtime.snapshot()).toBe(output);
   });
 
+  it("retains exactly the certified annual record keys without a second pre-economic state", async () => {
+    const runtime = createLifecycleRuntime(genesis());
+    const record = (await runtime.advance(1327)).journal[0];
+    // ONE full state per year: `final` is the actual post-economics state and the
+    // physical snapshot keeps the pre-economics people/events/decisions.
+    expect(Object.keys(record)).toEqual(["year", "versions", "physicalSnapshot", "economics", "positions", "final"]);
+    expect(Object.hasOwn(record, "postNative")).toBe(false);
+  });
+
   it.each(["lifecycle-genesis", "source-parity", "baseline-1327-1"])(
     "matches independent PUBLIC native phases, then economic execution (%s)", async seed => {
       const { outputs } = await publicParity({ ...defaults, seed }, 1335);
       expect(outputs.length).toBeGreaterThan(0);
       const initial = genesis({ ...defaults, seed });
-      expect(negativeZeros(outputs[0].journal[0].postNative.owned.people)).toBe(negativeZeros(initial.initial.people));
-      expect(ownData(outputs[0].journal[0].postNative.owned.decisions)).toContain('["undefined"]');
+      expect(negativeZeros(outputs[0].journal[0].final.owned.people)).toBe(negativeZeros(initial.initial.people));
+      expect(ownData(outputs[0].journal[0].final.owned.decisions)).toContain('["undefined"]');
     });
 
   it("preserves genuine births, genotype/class, maternal death, survivor grief and dead ledgers", async () => {
@@ -296,12 +304,12 @@ describe("native lifecycle annual transaction", () => {
     expect(deathYear.final.favors.grain[mother]).toBe(prior?.final.favors.grain[mother] ?? admitted.resources[mother].grain);
     const widowed = deathYear.final.owned.events.find(event => event.kind === "widowed" && event.causes.includes(maternal.id))!;
     expect(widowed).toBeDefined();
-    const survivor = deathYear.postNative.owned.people[widowed.actors[0]];
+    const survivor = deathYear.final.owned.people[widowed.actors[0]];
     expect(ownData(survivor.mind)).toContain("grief");
     for (const birth of births) {
       const childId = birth.actors[0];
       const born = final.journal.find(record => record.year === birth.year)!;
-      const child = born.postNative.owned.people[childId];
+      const child = born.final.owned.people[childId];
       expect(child.birthYear).toBe(birth.year);
       expect(child.motherId).toBeDefined();
       expect(child.fatherId).toBeDefined();
@@ -324,8 +332,8 @@ describe("native lifecycle annual transaction", () => {
       .filter(op => op.kind === "allocate" && newbornIds.has(op.actor)).map(op => ({ op, record })));
     expect(allocations.length).toBeGreaterThan(0);
     for (const { op, record } of allocations) {
-      expect(record.year - record.postNative.owned.people[op.actor].birthYear).toBe(16);
-      const born = final.journal.find(year => year.year === record.postNative.owned.people[op.actor].birthYear)!;
+      expect(record.year - record.final.owned.people[op.actor].birthYear).toBe(16);
+      const born = final.journal.find(year => year.year === record.final.owned.people[op.actor].birthYear)!;
       expect(Object.hasOwn(born.final.favors.grain, op.actor)).toBe(false);
       expect(record.economics.entries.some(entry => entry.kind === "allocate" && entry.actors[0] === op.actor)).toBe(true);
     }
@@ -344,7 +352,13 @@ describe("native lifecycle annual transaction", () => {
       } };
     });
     const { outputs } = await publicParity({ ...defaults, seed: "baseline-1327-1", founderCount: 12 }, 1329);
-    const changed = outputs.find(output => ownData(output.journal.at(-1)!.postNative.owned.people) !== ownData(output.owned.people));
+    const changed = outputs.find(output => {
+      const record = output.journal.at(-1)!;
+      const retained = ownData(record.final.owned.people);
+      // The economic Mind mutation is absent from the pre-economic snapshot, present in
+      // the retained annual state AND therefore in the published actual registry.
+      return retained !== ownData(record.physicalSnapshot.people) && retained === ownData(output.owned.people);
+    });
     expect(changed).toBeDefined();
     expect(ownData(changed!.canonicalYearSnapshot.people)).toBe(ownData(changed!.owned.people));
     expect(changed!.journal.at(-1)!.economics.entries.filter(entry => entry.kind === "help-response").every(entry => entry.authority?.source === "rules")).toBe(true);
@@ -605,7 +619,6 @@ describe("native lifecycle annual transaction", () => {
     const first = await runtime.advance(1327);
     const retained = ownData(first);
     expect(first.owned.people).not.toBe(input.initial.people);
-    expect(first.journal[0].postNative.owned.people).not.toBe(first.owned.people);
     expect(first.journal[0].final.owned.people).not.toBe(first.owned.people);
     const mutable = input as unknown as { initial: { people: Record<string, { mind: { stress: number } }> }; resources: Record<string, { grain: number }> };
     mutable.initial.people.protagonist.mind.stress = 999;

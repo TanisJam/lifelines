@@ -35,7 +35,7 @@ function frozen(value: unknown, seen = new Set<object>()): void {
   Object.values(value).forEach(entry => frozen(entry, seen));
 }
 function traversal(actual: Output, expected: Output): void {
-  const states = (value: Output) => [value, ...value.journal.flatMap(record => [record.postNative, record.final])];
+  const states = (value: Output) => [value, ...value.journal.map(record => record.final)];
   const a = states(actual);
   const e = states(expected);
   for (let i = 0; i < e.length; i++) {
@@ -47,7 +47,7 @@ function traversal(actual: Output, expected: Output): void {
   }
 }
 function aliases(output: Output): void {
-  const states = [output, ...output.journal.flatMap(record => [record.postNative, record.final])];
+  const states = [output, ...output.journal.map(record => record.final)];
   for (const state of states) {
     const { owned, favors } = state as unknown as LifecycleState;
     expect(owned.people === favors.people).toBe(true);
@@ -169,9 +169,9 @@ it.skipIf(childSelected)("measures one fresh child, including its Vitest process
   const metrics = JSON.parse(lines[0].slice(marker.length));
   expect(metrics.fullColdProof).toBe(true);
   expect(metrics.steps).toBe(4);
-  expect(metrics.wireBytes).toBe(56561271);
-  expect(metrics.canonicalHash).toBe("2f83c72b46391454fbc44e2288be27f09ef161ebf7d5c794a610bc072e881451");
-  expect(metrics.wireHash).toBe("1ef4498df18f17cf3b17df4cfee86749450485bfdc29623a0e358ea830e709e8");
+  expect(metrics.wireBytes).toBe(51659639);
+  expect(metrics.canonicalHash).toBe("d340cb0b34fa973462fce3c646a2e2bae22134b81896b465afcc667c4915d605");
+  expect(metrics.wireHash).toBe("ad584e4fde4702423e4bbf89f536d9d335928024ebcc00f6878943edb06d1eca");
   expect(metrics.totalMaxRssBytes).toBeGreaterThan(0);
   let previousMaxRssBytes = 0;
   for (const observation of metrics.phases) {

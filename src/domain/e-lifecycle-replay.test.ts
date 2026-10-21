@@ -104,7 +104,7 @@ describe("cold native lifecycle replay", () => {
       expect(replayed.owned.events).toBe(replayed.favors.legacyEvents);
     }
     const forged = structuredClone(annual);
-    forged.output.journal[0].postNative.owned.people.protagonist.mind.stress++;
+    forged.output.journal[0].final.owned.people.protagonist.mind.stress++;
     pair.mockClear();
     encoder.mockClear();
     await expect(replayLifecycleRuntime(forged)).rejects.toThrow("Lifecycle annual record disagreement");
@@ -131,10 +131,8 @@ describe("cold native lifecycle replay", () => {
       expect(replayed.owned.people).not.toBe(candidate.output.owned.people);
       expect(replayed.owned.people.protagonist.mind).not.toBe(candidate.output.owned.people.protagonist.mind);
       for (const record of replayed.journal) {
-        for (const state of [record.postNative, record.final]) {
-          expect(state.owned.people).toBe(state.favors.people);
-          expect(state.owned.events).toBe(state.favors.legacyEvents);
-        }
+        expect(record.final.owned.people).toBe(record.final.favors.people);
+        expect(record.final.owned.events).toBe(record.final.favors.legacyEvents);
       }
       fullyFrozen(replayed);
       expect(canonicalLifecycleData(candidate)).toBe(before);
@@ -185,7 +183,7 @@ describe("cold native lifecycle replay", () => {
     expect(born).toBeDefined();
     expect(born!.mind.facets).toBeDefined();
     expect(born!.socialClass).toBeDefined();
-    candidate.output.journal.at(-1)!.postNative.owned.people[born!.id].mind.facets.altruism++;
+    candidate.output.journal.at(-1)!.final.owned.people[born!.id].mind.facets.altruism++;
     await expect(replayLifecycleRuntime(candidate)).rejects.toThrow(/record disagreement/);
   });
 
@@ -255,13 +253,6 @@ describe("complete evidence rejection without a duplicated Person/Mind schema", 
     ["annual versions", c => define(c.output.journal[0].versions, "runtime", "unknown")],
     ["physical snapshot", c => { c.output.journal[0].physicalSnapshot.people.protagonist.name = "forged"; }],
     ["physical snapshot extension", c => define(c.output.journal[0].physicalSnapshot, "extension", undefined)],
-    ["post-native Person", c => { c.output.journal[0].postNative.owned.people.protagonist.name = "forged"; }],
-    ["post-native full Mind", c => { c.output.journal[0].postNative.owned.people.protagonist.mind.stress++; }],
-    ["post-native events", c => { c.output.journal[0].postNative.owned.events.reverse(); }],
-    ["post-native decisions", c => { c.output.journal[0].postNative.owned.decisions.pop(); }],
-    ["native chosen decision", c => define(c.output.journal[0].postNative.owned.decisions[0], "chosen", "forged")],
-    ["post-native counters", c => { c.output.journal[0].postNative.owned.counters.decisionCalls++; }],
-    ["post-native favor view", c => { c.output.journal[0].postNative.favors.grain.protagonist++; }],
     ["economic resource plan", c => { c.output.journal[0].economics.resources.pop(); }],
     ["economic grant plan", c => { c.output.journal[0].economics.grants.push({ id: "forged", creditor: "p001", debtor: "p002", causes: [] }); }],
     ["creditor order", c => { c.output.journal[0].economics.creditors.push("protagonist"); }],
@@ -385,7 +376,7 @@ describe("real competing HELP evidence, not candidate execution instructions", (
     if (kind === "evidence") define(response, "evidence", { forged: true });
     if (kind === "debt") define(candidate.output.favors.obligations[0], "status", "forged");
     if (kind === "tie") candidate.output.favors.ties[0].trust++;
-    if (kind === "native-human") define(record.postNative.owned.decisions[0], "source", "human");
+    if (kind === "native-human") define(record.final.owned.decisions[0], "source", "human");
     if (kind === "final-history") candidate.output.favors.events.at(-1)!.id += "/forged";
     const before = canonicalLifecycleData(candidate);
     // Reduce resolved values to a tiny diagnostic even if a mutation is a no-op.
@@ -402,7 +393,7 @@ describe("whole-envelope descriptor preflight", () => {
     const candidate = structuredClone(annual);
     let hooks = 0;
     const hook = () => { hooks++; throw new Error("Executed hook"); };
-    const target = candidate.output.journal[0].postNative.owned.people.protagonist.mind;
+    const target = candidate.output.journal[0].final.owned.people.protagonist.mind;
     if (kind === "getter") Object.defineProperty(target, "stress", { enumerable: true, get: hook });
     if (kind === "constructor-accessor") Object.defineProperty(target, "constructor", { enumerable: true, get: hook });
     if (kind === "toJSON") define(target, "toJSON", hook);

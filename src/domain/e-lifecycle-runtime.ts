@@ -27,8 +27,8 @@ export interface LifecycleHelpSlot {
 export interface LifecycleYearRecord {
   year: number;
   versions: LifecycleGenesis["versions"];
+  /** Pre-economic people/events/decisions. The pre-economic favor ledger copy is NOT retained. */
   physicalSnapshot: YearSnapshot;
-  postNative: LifecycleState;
   economics: {
     resources: ResourceOperation[];
     grants: GrantIntention[];
@@ -43,6 +43,7 @@ export interface LifecycleYearRecord {
     decisions: { start: number; end: number };
     economic: { start: number; end: number };
   };
+  /** The year's actual post-economics state; the only full state copy retained per year. */
   final: LifecycleState;
 }
 export interface LifecycleOutput extends LifecycleState {
@@ -118,7 +119,6 @@ export function createLifecycleRuntime(input: unknown) {
       // A fresh trusted source/resolver on every attempt; origin endYear is metadata only.
       const source = createRulesYearSource(genesis.source, config, draft.owned, protagonistId, config.startYear);
       const physicalSnapshot = await source.execute(year);
-      const postNative = structuredClone(draft);
       const allowances = planAnnualFavorDraft(draft.favors, config.seed, year);
       const entries: RuntimeEntry[] = [];
       const favor = createFavorExecutor(draft.favors, year, entries);
@@ -140,7 +140,7 @@ export function createLifecycleRuntime(input: unknown) {
         }
       }
       const record: LifecycleYearRecord = {
-        year, versions: genesis.versions, physicalSnapshot, postNative,
+        year, versions: genesis.versions, physicalSnapshot,
         economics: { resources: allowances.resources, grants: allowances.grants, creditors, slots, requests, entries },
         positions: {
           life: { start: lifeStart, end: draft.owned.events.length },
