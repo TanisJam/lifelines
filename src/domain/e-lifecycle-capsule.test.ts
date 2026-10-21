@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { canonicalLifecycleData, createLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS } from "./e-lifecycle-genesis";
 import { createLifecycleRuntime } from "./e-lifecycle-runtime";
+import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "./e-lifecycle-dag";
 import { initializeWorld } from "./world-origin";
 import * as sourceModule from "./e-year-source";
 import { admitLifecycleCapsule, admitLifecycleCompactCapsule, createLifecycleCapsule,
@@ -499,12 +500,26 @@ describe("compact lifecycle capsule (CA1b)", () => {
 
   it("rejects a mutated table or digest", async () => {
     const envelope = JSON.parse(compactWire) as { manifest: unknown; table: string; digest: string };
-    const tamperedTable = JSON.stringify({ manifest: envelope.manifest,
-      table: JSON.stringify({ ...JSON.parse(envelope.table), root: 0 }), digest: envelope.digest });
-    await expect(deserializeLifecycleCompactCapsule(tamperedTable)).rejects.toThrow(/digest/);
+    // Replace the first definition with a different valid one: the bytes differ,
+    // so the retained digest must disagree regardless of which node is the root.
+    const parsedTable = JSON.parse(envelope.table) as { root: number; nodes: unknown[] };
+    const tamperedTable = JSON.stringify({ manifest: envelope.manifest, digest: envelope.digest,
+      table: JSON.stringify({ ...parsedTable, nodes: [["b", true], ...parsedTable.nodes.slice(1)] }) });
+    await expect(deserializeLifecycleCompactCapsule(tamperedTable)).rejects.toThrow();
     const tamperedDigest = JSON.stringify({ manifest: envelope.manifest, table: envelope.table,
       digest: `${envelope.digest.slice(0, -1)}${envelope.digest.endsWith("0") ? "1" : "0"}` });
-    await expect(deserializeLifecycleCompactCapsule(tamperedDigest)).rejects.toThrow(/digest/);
+    await expect(deserializeLifecycleCompactCapsule(tamperedDigest)).rejects.toThrow();
+  });
+
+  it("still replays when a matching digest covers a structurally valid forgery", async () => {
+    // Digest is integrity, never authority: a self-consistent table and digest
+    // that decode cleanly must still fail current-authority replay.
+    const envelope = JSON.parse(compactWire) as { table: string };
+    const decoded = deserializeCompactLifecycleDag(envelope.table) as Record<string, unknown>;
+    const table = serializeCompactLifecycleDag({ genesis: decoded.genesis, output: { status: "complete" } });
+    const forged = JSON.stringify({ manifest: LIFECYCLE_COMPACT_CAPSULE_MANIFEST, table,
+      digest: compactHash(LIFECYCLE_COMPACT_CAPSULE_MANIFEST, table) });
+    await expect(deserializeLifecycleCompactCapsule(forged)).rejects.toThrow();
   });
 
   it("never migrates implicitly between the two capsule formats", async () => {
@@ -529,6 +544,10 @@ describe("compact lifecycle capsule (CA1b)", () => {
 
   it.each([null, {}, [], 1, undefined])("rejects non-string wire %s", async input => {
     await expect(deserializeLifecycleCompactCapsule(input)).rejects.toThrow(/wire string/);
+  });
+
+  it.each(["{", "null", "[]", "1", '"x"'])("rejects malformed or non-record wire %s", async input => {
+    await expect(deserializeLifecycleCompactCapsule(input)).rejects.toThrow();
   });
 
   it("rejects root extensions and missing fields for creation and admission", async () => {
