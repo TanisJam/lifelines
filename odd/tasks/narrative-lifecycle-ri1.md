@@ -66,7 +66,7 @@ S10. Every unit closes with a `Risk:` line naming a high-risk item or `none`.
 | ID | Specs | Route | Status | Evidence |
 |----|-------|-------|--------|----------|
 | T1 RI1a persistence seam | S3,S4,S5,S6 | delegated writer + parent spot check | DONE `70427ad` | 15/15 new; legacy 51/51; typecheck+eslint clean; assess medium/under_budget; Risk none |
-| T2 RI1b view projection | S8 | delegated writer | IN PROGRESS | — |
+| T2 RI1b view projection | S8 | delegated writer + parent spot check | DONE `16a4ac3` | 908 lines (472+399+37); 12/12 new; legacy chronicle 22/22 re-run by the parent; typecheck+eslint clean; gaps in L7 |
 | T3 RI1c route activation (create + read + SSE) | S2,S7,S8 | pending | pending | — |
 | T4 RI1d whole-unit evidence | S2,S9 | pending | pending | — |
 
@@ -112,3 +112,28 @@ carries, it must represent missing information honestly instead of inventing it,
 trusted output's own traversal order, and it is NEVER persisted as authority or read back as one.
 If the trusted output cannot satisfy the app's view model, the writer must report the exact missing
 fields instead of fabricating them.
+
+L7 (2026-10-21) — T2 DONE as `16a4ac3` (new `src/server/lifecycle-projection.ts` 472 lines, its
+399-line test, new types-only `src/contracts/lifecycle.ts` 37 lines; 12/12 focused, legacy
+`life-chronicle.test.ts` 22/22 re-run by the parent, typecheck and eslint clean). Risk `none`: the
+module is pure and deterministic, it changes no existing file, and it holds no verification role.
+It reuses the legacy view builders instead of re-deriving them and accepts only the trusted
+`{genesis, output}` pair. The view-model fields the trusted lifecycle output CANNOT supply, which
+T3 must represent honestly and never invent: `chronicle.lifeId`/`chronicle.branchId` (route
+identity, so the route must supply them), `chronicle.branches` (the engine has one branch),
+non-turn `entries[].level` and `tick.entries[].level` (the legacy level 2 came from the Jev
+decision adapter's significance; the projection uses the documented deterministic
+`DEFAULT_SIGNIFICANCE` heuristic), `personSheet.moments` ranking, `scene.timeBasis` (left unset
+rather than invented), and the listing's `branchCount` (a persistence fact, not an engine fact).
+
+L8 (2026-10-21) — measured BEFORE wiring T3, with a temporary probe removed after use
+(`src/domain/zz-ri1-probe.test.ts`, deleted; scratch JSON under `/tmp/opencode`): a full
+current-authority regeneration of the create-path configuration (default 62 founders, start 1327,
+`grain 2 / effort 3 / need 1`, Alice/f) COMPLETES at frontier 1328, i.e. the protagonist is born in
+1327 and dies at age 1, after a 2-year life. The same run also kills three other children at ages
+1, 1 and 5 while 62 adults stay alive, so this is the engine's young-age mortality calibration, not
+a protagonist-specific defect: the new engine currently produces 1-2 year lives. This is the direct
+measurement behind the already-carried open risk CQ1 (no member reaches 60 executed years). RI1 does
+not change mortality; the wiring is engine-agnostic and the legacy path stays the default. A
+mortality-calibration unit is the obvious next domain work and is proposed to the human rather than
+started, because recalibrating would change certified engine behavior, its fixtures and its digests.
