@@ -1,6 +1,6 @@
 # Lifecycle compact — additive representation, full authority
 
-CURRENT: CG1 DONE bounded/internal `1cfc920` -> parent `077e2bf`. CA1a DONE verified `d3e1622` -> parent `ce99584`. CA1p DONE verified `bfc1ac9` (ACK burned `review-579761cd42d2dc2f`). CA1b UNBLOCKED, source UNWRITTEN; CT1/CQ1 PENDING. RS1 REJECTED7728 isolated/uncommitted. No public format/native execution change/pool/cache.
+CURRENT: CG1 DONE bounded/internal `1cfc920` -> parent `077e2bf`. CA1a DONE verified `d3e1622` -> parent `ce99584`. CA1p DONE verified `bfc1ac9` (ACK burned `review-579761cd42d2dc2f`). CA1b DONE verified `1f50196` + `8b20e75` (ACK burned `review-f9f548e418a24691`); compact capsule 17.6x smaller on the production fixture. MVP OF THE NEW ENGINE chosen by the human (verbatim `## Log`): remaining CA1b CLOSED -> LC1 -> RI1 -> RA1, CQ1 carried as open risk. CT1/CQ1 PENDING. RS1 REJECTED7728 isolated/uncommitted. No public format/native execution change/pool/cache.
 
 FULL7730: `lifelines`, topic `odd/narrative-lifecycle-compact/tasks`. Other books retain history. DOC ONLY: no source/tests/native/Git delivery/network/children.
 
@@ -71,9 +71,17 @@ Native review `review-579761cd42d2dc2f` (lenses risk + reliability) APPROVED; ex
 - Authored tests probe wire bytes only at 4,500,000 (no exact 8,000,000/8,000,001), lower-only only for `edges`, and assert interned node counts, which pins interning strategy rather than behavior.
 - Compact decoders accept `unknown`; a future caller feeding external bytes must enforce its own request-size and trust boundary.
 
-## CA1b — UNBLOCKED by CA1p: explicit additive capsule format
+## CA1b — DONE verified: explicit additive capsule format
 
 Map ONLY `src/domain/e-lifecycle-capsule.ts` / `.test.ts`. Preserve legacy types/default create/EXACT old wire functions, C1/E1/C2; no implicit migration. Separate `CompactLiteralManifest`/factory/type and bounded codec dispatch for recognized manifest ONLY, NOT a trust flag. Domain-separated new digest over known manifest + canonical COMPACT dictionary, NOT giant unfolded string; old small genesis digest unchanged. Complete closed decode BEFORE FULL CURRENT replay, return regenerated output; forgery/mutation/schema/old-pin tests required.
+
+Delivered in `1f50196` (base `aae50ae`, 2 files / 210 lines) plus test hardening `8b20e75` (27 lines). `LIFECYCLE_COMPACT_CAPSULE_MANIFEST` (`capsuleSchema: lifecycle-capsule-compact-cb1-1`, `codec: canonical-dag-dictionary-cb1-1`, genesis versions carried), type/interface, and `create|admit|serialize|deserializeLifecycleCompactCapsule`. Digest frame is `["lifecycle-compact-capsule-cb1-1",<manifest canonical>,"<table>"]`, domain-separated from the legacy `[<manifest>,"<payload>"]` frame. The wire is `{manifest, table, digest}` with `table` as the exact canonical compact dictionary STRING, so `deserializeCompactLifecycleDag` can re-check byte equality; embedding it as a nested object would normalize noncanonical numbers silently. The legacy escaping loop was extracted into `hashEscaped` with byte-identical output.
+
+Evidence. RED observed first (18 new cases failing on missing exports, 145 prior green). GREEN 169/169 in `e-lifecycle-capsule.test.ts`. `pnpm typecheck` exit 0, eslint exit 0. Full suite 2,783 passed / 1 failed, the same pre-existing `src/app/api/lives/stream/route.quiet.test.ts`. Production fixture (`lifecycle-representative-v1/4`, 85 people, four advances, frontier 1501): compact capsule wire **3,215,276 bytes** vs legacy **56,561,271** = **17.6x** smaller; digest `765cce73…` stable across create → serialize → deserialize and the restored frontier is 1501. The compact table alone is 3,034,851 bytes; the remaining ~180 KB is JSON re-escaping of the embedded table string, the price of exact-byte checking.
+
+Authority. Digest is integrity only. `admit` and cold `deserialize` always re-run `admitLifecycleGenesis` plus full `replayLifecycleRuntime`; a table with a CORRECT recomputed digest but a forged output is rejected by replay, proved by test. Complete closed dictionary decode happens before replay. Cross-format admission fails in both directions; no implicit migration either way.
+
+Native review `review-f9f548e418a24691` (risk + reliability) APPROVED; exact ACK BURNED, target `sha256:a4303ca0…`, consumed `sha256:b58d3b90…`. NEVER STATUS. Reviewer advisories were test-coverage only (no replay-authority case, fragile root mutation, no malformed-JSON case); all three were closed in `8b20e75`, which assessed `medium` / `under_budget` (27 lines), so no new review was due.
 
 ### M1 — measurement gate, BLOCKS source (opened 2026-10-21) — MEASURED, REJECTED
 
@@ -119,3 +127,5 @@ Prior FULL7730/Git maps historical ONLY. Whole guards/pre-await capture/regenera
 - L-CA1b-open (2026-10-21): human approved starting CA1b after reconciliation, with the normal-wire measurement gate first (`M1`).
 - L-M1 (2026-10-21): M1 measured and REJECTED on both the expanded text ceiling (6.70x) and the dictionary edges ceiling (1.91x), with an 18.6x compact-wire payoff. Human verbatim: "dale, autorizo ese perfil, despues haceme un relevamiento de cuanto me falta para el primer mvp".
 - L-CA1p-closure (2026-10-21): CA1p implemented and closed at `bfc1ac9`; consent granted by the human for candidate review; review approved and ACK burned. Next action per the same human turn: the MVP gap survey, read-only.
+- L-MVP (2026-10-21): survey delivered. Human chose the NEW-ENGINE MVP over a product MVP on the legacy engine, verbatim: "mvp del motor nuevo". MVP scope is therefore CA1b -> LC1 -> RI1 -> RA1, with CQ1 (genuine 60-year coverage and the provisional 1GB target) carried as an open risk, not a gate for the first usable cut. Next unit: CA1b.
+- L-CA1b-closure (2026-10-21): CA1b implemented at `1f50196`, review approved and ACK burned, then test hardening `8b20e75` (medium/under_budget, no review due). Production fixture compact capsule 3,215,276 bytes vs 56,561,271 legacy (17.6x) with stable digest and frontier 1501. Next unit under the human's MVP choice: LC1.
