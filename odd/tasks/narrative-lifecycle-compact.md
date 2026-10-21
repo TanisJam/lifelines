@@ -105,6 +105,68 @@ Payoff confirmed: the compact table is 3,034,851 bytes against the 56,561,271-by
 Consequence: a real normal run needs an explicit FORMAT budget profile. Two binding dimensions must move (text work, dictionary edges) plus headroom on bytes. NOT implemented; no limit was changed; awaiting the human decision recorded in `## Log`.
 
 
+## CP1 — PENDING: capacity for realistic lifespans (measured)
+
+Opened 2026-10-21 on the human's decision to attack capacity BEFORE mortality calibration
+(verbatim: `Arrancar capacidad ahora (Recomendado)`), right after RI1/RA1 closed the new-engine MVP.
+Scope: make a 62-founder life of a realistic length both RUNNABLE and PERSISTABLE. No mortality,
+genesis, replay or authority change is authorized by this unit; if an option needs one, it says so.
+
+### Why (measured by the parent, not estimated)
+
+| Life | People | Runtime heap | RSS | Compact capsule | Verdict |
+|---|---|---|---|---|---|
+| 1 year (`baseline-1327-0`) | 81 | n/a | n/a | 522,413 bytes | persists |
+| 4 years (production fixture `lifecycle-representative-v1/4`) | 85 | n/a | n/a | 3,215,276 bytes; 3,034,851 canonical table bytes | persists (admission text 26,783,965 of 32,000,000 = 83.7 %; edges 381,708 of 512,000 = 74.6 %) |
+| 5 years (`ri1d-read-1`) | 95 | n/a | n/a | THROWS `Invalid or oversized lifecycle data dictionary` | fails |
+| 10 years (`cap-0`) | 111 | 417 MB | 570 MB | THROWS the same error | fails |
+| 20 years (`cap-0`) | 136 | 1,608 MB | 1,813 MB | not attempted | n/a |
+| 30 years (`cap-0`) | 160 | 2,792 MB | 3,415 MB | not attempted | n/a |
+| 46 years (`cap-0`, protagonist still ALIVE) | 206 | 3,919 MB | 4,404 MB | not attempted | n/a |
+
+Two independent ceilings, both real:
+1. **Capsule bytes.** The compact path applies `LIFECYCLE_DAG_WIRE_LIMITS` (8M table bytes, 512k
+   edges, 100k nodes) plus a 32M admission-text work ceiling; the `DEFAULT` 4M profile is NOT on
+   this path (corrected 2026-10-21, source-verified). The binding dimension at 4 years is admission
+   text, not table bytes.
+2. **Runtime memory.** A 62-founder run is killed by `JavaScript heap out of memory` at Node's
+   default 4 GB heap before reaching 46 years; the same run succeeds only with a raised heap
+   (`--max-old-space-size=12288`) and costs 3.9 GB heap / 4.4 GB RSS at 46 years and 462 s of wall
+   time. The project's provisional 1 GB envelope is exceeded by year ~8-10.
+
+### Cause (source-verified, not inferred)
+`LifecycleYearRecord` (`src/domain/e-lifecycle-runtime.ts:27-45`) retains per year: `physicalSnapshot`
+(a full `YearSnapshot`), `postNative` (the full `LifecycleState`), `final: structuredClone(draft)`
+(a SECOND full state copy), plus the economics arrays and positions. The retained state is therefore
+~2 full copies of the world per year, and the population also grows (84 -> 206 people over 46 years),
+so cost grows with years x population. Speed degrades with it (early years ~1.5 s, late years ~4-8 s).
+
+### Options and their measured/estimated cost
+A. **Raise the measured profiles** for a bounded horizon, no authority change. Estimate from the
+   measured person-years (4 years x 85 people = 340 person-years = 3.03M table bytes / 26.8M
+   admission text): ~20 years (~2,800 person-years, 8x) needs ~25M table bytes and ~215M admission
+   text, with ~1.6-2 GB heap; ~40 years (~5,600 person-years, 17x) needs ~51M table bytes and ~455M
+   admission text. This is labelled ESTIMATE because only the 4-year point is measured.
+B. **Chunked capsules** (per decade or per N years), each chunk admitted and replayed in order. This
+   is the only option that scales to 60+ years: an estimated ~780M admission text for 60 years
+   exceeds Node's ~536M-character string limit, so a single monolithic capsule cannot reach the CQ1
+   60-year goal at any profile size. Requires a format + read-path change and its own authority
+   analysis (replay must still regenerate; a chunk chain must not become a second authority).
+C. **Prune the journal's duplicate copy** (`final` and/or `postNative`) so one year retains one state
+   rather than two. Would cut memory and bytes by roughly half, but the journal records ARE certified
+   evidence (`journal[].final` aliases are pinned by tests and by LC1's verification), so this is an
+   authority-adjacent change, not a cheap optimization.
+
+### Predeclared gate (before any source change)
+Any profile number must come from a measurement at the horizon it claims, with heap/RSS and wall
+time reported; no limit may be raised "to be safe". Chunking must predeclare its per-chunk profile,
+its refusal behavior for a broken chain, and a proof that a chunk chain cannot become a second
+authority. Nothing in this unit may change mortality, genesis, physics or the replay rule.
+
+### Status
+PENDING. Blocked on the human's choice between `A now` (a 20-year product horizon at measured cost),
+`B` (the only path to 60 years), and `C` as an optional companion. No source has been written.
+
 ## CT1 — PENDING/conditional: safe invocation-local efficiency
 
 Map validation/equality separately if needed; effects.ts/genesis.ts/tests later, no current permission. NEVER naive unknown-MUTABLE memo: Proxy reflection can mutate earlier nodes to hidden getters BEFORE clone. Preserve WHOLE DataGuard.
