@@ -21,10 +21,18 @@ import type { LifecyclePublication } from "./lifecycle-repository";
 /** Mirrors the legacy create route's `START_YEAR`: the run begins at the start of the 1327–1361 period. */
 export const LIFECYCLE_START_YEAR = 1327;
 /**
- * The legacy bounded horizon (`MAX_LIFESPAN_YEARS`), reused as the default run budget. Reaching it
- * is NOT completion and NOT death: a protagonist still alive at the boundary is refused below.
+ * The initialised world's declared span (the legacy `MAX_LIFESPAN_YEARS`). It is NOT the run budget
+ * and carries no completion semantics: the run stops at `LIFECYCLE_HORIZON_YEARS` below, and a
+ * protagonist still alive there is persisted as alive, never as a death (spec S1).
  */
 export const LIFECYCLE_MAX_STEPS = 100;
+/**
+ * The product horizon: a life is the protagonist's chronicle up to 15 journal years (spec S1).
+ * Completion and horizon are different states — a death inside the horizon yields a `complete`
+ * life, while a protagonist still alive here yields an `incomplete` life that IS persisted. This is
+ * a run budget, never a death year: nothing is forced, reseeded or manufactured (spec S2).
+ */
+export const LIFECYCLE_HORIZON_YEARS = 15;
 const LIFECYCLE_END_YEAR = LIFECYCLE_START_YEAR + LIFECYCLE_MAX_STEPS;
 
 const PROTAGONIST_ID = "protagonist";
@@ -62,18 +70,19 @@ export interface LifecycleLifeRequest {
   readonly emit: (event: LifeStreamEvent) => void;
   /** The route's frame-flush discipline (`yieldToEventLoop`), awaited after every tick. */
   readonly flushFrame: () => Promise<void>;
-  /** New committed years only; defaults to the legacy 100-year horizon and is explicit for tests. */
+  /** New committed years only; defaults to the product horizon and is explicit for tests. */
   readonly maxSteps?: number;
 }
 
 /**
- * Runs one new-engine life end to end and emits the existing `LifeStreamEvent` frames. Returns
- * without frames after `start` when the client aborted, and without persisting anything unless a
- * complete life was projected and published.
+ * Runs one new-engine life end to end and emits the existing `LifeStreamEvent` frames. A death
+ * inside the horizon yields a `complete` life; a protagonist still alive at the horizon yields an
+ * `incomplete` life that is PERSISTED just the same. A real failure (an abort, an admission or
+ * projection refusal, a persistence error) refuses and persists nothing.
  */
 export async function streamLifecycleLife(request: LifecycleLifeRequest): Promise<void> {
   const { repository, lifeId, branchId, name, sex, seed, locale, signal, emit, flushFrame } = request;
-  const maxSteps = request.maxSteps ?? LIFECYCLE_MAX_STEPS;
+  const maxSteps = request.maxSteps ?? LIFECYCLE_HORIZON_YEARS;
   const startedAt = performance.now();
 
   // World initialisation is the ONLY source of the village name and of the resolved sex; the
@@ -108,12 +117,6 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
 
   const result = await runLifecycle({ kind: "start", genesis }, { maxSteps, signal });
   if (result.status === "aborted") return;
-  if (result.status !== "complete") {
-    // Alive is never completion, and the horizon is never treated as death. Nothing is persisted:
-    // this mirrors the legacy path's `assertCompletedLife` refusal, including the message.
-    emit({ type: "error", message: "This life has not yet ended." });
-    return;
-  }
 
   const capsule = result.capsule;
   const source = { genesis: capsule.genesis, output: capsule.output };
@@ -127,20 +130,28 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
     await flushFrame();
   }
 
-  let chronicle: Chronicle;
-  try {
-    const projection = await projectLifecycleChronicle({ source, identity: { lifeId, branchId }, locale });
-    // `projection.gaps` is honest and expected: a view-model field the trusted output cannot
-    // supply is reported (see RI1b), never invented, and never a reason to fail the request.
-    chronicle = projection.view;
-  } catch (error) {
-    // A projection REFUSAL (malformed or foreign input) is an error event, not a silent success.
-    if (signal.aborted) return;
-    emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
-    return;
+  // A `complete` life (a death inside the horizon) projects its chronicle BEFORE anything is
+  // persisted, so an admission or projection refusal still writes nothing. A life still alive at
+  // the horizon has no death and therefore no completion chronicle: its trusted output is
+  // persisted as-is, alive, and is NEVER coerced into a death to satisfy a view (specs S1/S2).
+  let chronicle: Chronicle | undefined;
+  if (result.status === "complete") {
+    try {
+      const projection = await projectLifecycleChronicle({ source, identity: { lifeId, branchId }, locale });
+      // `projection.gaps` is honest and expected: a view-model field the trusted output cannot
+      // supply is reported (see RI1b), never invented, and never a reason to fail the request.
+      chronicle = projection.view;
+    } catch (error) {
+      // A projection REFUSAL (malformed or foreign input) is an error event, not a silent success.
+      if (signal.aborted) return;
+      emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      return;
+    }
   }
   if (signal.aborted) return;
 
+  // Both statuses persist: the compact capsule stores the run's own `status` and `frontier`, so an
+  // alive life is loadable as alive at the horizon. Only a real failure above or here writes nothing.
   await repository.publish({
     lifeId,
     branchId,
@@ -151,8 +162,11 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
   });
 
   // Only AFTER a successful publish is the life visible. An abort that arrives during the save
-  // leaves a complete saved life but no `done` frame: the client that asked is already gone.
+  // leaves a saved life but no `done` frame: the client that asked is already gone.
   if (signal.aborted) return;
+  // An alive life is persisted but has no `done` yet: the honest alive chronicle is a read-side
+  // view (spec S5) that this unit does not build, and inventing one here is forbidden.
+  if (chronicle === undefined) return;
   emit({
     type: "done",
     chronicle,

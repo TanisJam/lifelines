@@ -11,13 +11,24 @@ export interface LifecycleDag { root: number; nodes: LifecycleDagNode[] }
 export interface LifecycleDagLimits { nodes: number; edges: number; depth: number; bytes: number }
 // Conservative experimental internal ceilings, NOT measured production capacity.
 const DEFAULT: LifecycleDagLimits = { nodes: 100_000, edges: 200_000, depth: 128, bytes: 4_000_000 };
-/** Explicit compact-wire FORMAT profile, MEASURED 2026-10-21 against the production
- * fixture (85 people, four years): 987,205 expanded node visits, 26,783,965
- * key/string UTF16 codeunits, 17,957 unique definitions, 381,708 dictionary
- * edges, 3,034,851 canonical table bytes. It bounds DATA admitted by the wire
- * format, NOT server capacity or a physics ceiling. Options may only LOWER it. */
+/** Explicit compact-wire FORMAT profile, MEASURED and DERIVED 2026-10-21.
+ *
+ * 15-year point (seed `cap-0`, 15 journal years, 125 people): compact capsule
+ * 29,066,054 bytes; run 93 s at 646 MB heap; encode peak 2,164 MB heap. The
+ * certified 4-year reference at this codec was 3,034,851 canonical table bytes,
+ * 17,957 definitions, 381,708 dictionary edges, 26,783,965 of a 32,000,000
+ * work-text ceiling, and 3,215,276 capsule bytes.
+ *
+ * Ratio = 29,066,054 / 3,215,276 = 9.0400. Scaling the published quantities
+ * gives the 15-year point: 162,331 definitions, 3,450,635 edges, 27,435,014
+ * table bytes, 242,126,702 work-text units. Each ceiling below is that point
+ * plus at least 30% headroom, rounded up: nodes 220,000 = 1.355x, edges
+ * 4,500,000 = 1.304x, bytes 36,000,000 = 1.312x, work text 320,000,000 =
+ * 1.322x. Depth stays 128: journal years are siblings, so a longer life adds
+ * no decoded nesting level. It bounds DATA admitted by the wire format, NOT
+ * server capacity or a physics ceiling. Options may only LOWER it. */
 export const LIFECYCLE_DAG_WIRE_LIMITS: LifecycleDagLimits = Object.freeze({
-  nodes: 100_000, edges: 512_000, depth: 128, bytes: 8_000_000,
+  nodes: 220_000, edges: 4_500_000, depth: 128, bytes: 36_000_000,
 });
 // Safely below MAX_SAFE_INTEGER. A valid table needs at most 8 visits per
 // definition and 4 per edge, plus its envelope; metadata depth is at most 6.
@@ -26,7 +37,10 @@ function workCeilings(base: LifecycleDagLimits, text: number): LifecycleDagLimit
   return { nodes: visits, edges: visits, depth: base.depth + 6, bytes: text };
 }
 const CAPTURE_WORK = workCeilings(DEFAULT, DEFAULT.bytes);
-const WIRE_WORK = workCeilings(LIFECYCLE_DAG_WIRE_LIMITS, 32_000_000);
+// Same derivation as the profile above: 242,126,702 measured units at 15 years
+// with 1.322x headroom. It bounds admission work, not released capacity.
+const WIRE_WORK_TEXT = 320_000_000;
+const WIRE_WORK = workCeilings(LIFECYCLE_DAG_WIRE_LIMITS, WIRE_WORK_TEXT);
 function fail(): never { throw new Error("Invalid or oversized lifecycle data dictionary"); }
 function integer(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0);

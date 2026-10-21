@@ -296,8 +296,8 @@ describe("internal lifecycle data dictionary (not authority)", () => {
 describe("measured compact-wire profile (CA1p)", () => {
   const repeated = (edges: number) => new Array<number>(edges).fill(0);
 
-  it("publishes the measured wire profile ceilings", () => {
-    expect(LIFECYCLE_DAG_WIRE_LIMITS).toEqual({ nodes: 100_000, edges: 512_000, depth: 128, bytes: 8_000_000 });
+  it("publishes the measured 15-year wire profile ceilings", () => {
+    expect(LIFECYCLE_DAG_WIRE_LIMITS).toEqual({ nodes: 220_000, edges: 4_500_000, depth: 128, bytes: 36_000_000 });
   });
 
   it("admits a normal run whose dictionary edges exceed the default table ceiling", () => {
@@ -318,40 +318,37 @@ describe("measured compact-wire profile (CA1p)", () => {
     expect(decodeCompactLifecycleDag(encodeCompactLifecycleDag(text))).toBe(text);
   });
 
-  it.each([512_000, 512_001])("binds exact dictionary edges %s in the wire profile", edges => {
-    const value = repeated(edges);
-    if (edges > 512_000) {
-      expect(() => encodeCompactLifecycleDag(value)).toThrow();
-      expect(() => decodeCompactLifecycleDag({ root: 1, nodes: [["n", "0"], ["a", repeated(edges)]] })).toThrow();
-    } else {
-      const table = encodeCompactLifecycleDag(value);
-      expect(table.nodes).toHaveLength(2);
-      expect(() => decodeCompactLifecycleDag(table)).not.toThrow();
-    }
+  it("binds dictionary edges exactly at a lowered profile ceiling", () => {
+    // The published ceiling (millions of edges) cannot be materialised in a test. A lowered option
+    // runs the SAME edge accounting, so the boundary is still proven exactly: a table with N
+    // references is admitted at a ceiling of N and refused at N - 1, on encode and on decode.
+    const exact = 4_096;
+    const value = repeated(exact);
+    const table: LifecycleDag = { root: 1, nodes: [["n", "0"], ["a", repeated(exact)]] };
+    expect(() => encodeCompactLifecycleDag(value, { edges: exact - 1 })).toThrow();
+    expect(encodeCompactLifecycleDag(value, { edges: exact })).toEqual(table);
+    expect(() => decodeCompactLifecycleDag(table, { edges: exact - 1 })).toThrow();
+    expect(decodeCompactLifecycleDag(table, { edges: exact })).toEqual(value);
   });
 
-  it.each([32_000_000, 32_000_001])("binds exact expanded key/string work %s in the wire profile", text => {
-    // 1,000 record keys (3 chars each, one of 4) each pointing at one shared
-    // 31,997-char value: expanded text is exactly 1,000 keys plus 1,000 values.
-    const keys = Array.from({ length: 1_000 }, (_, index) => index.toString(36).padStart(3, "0"));
-    if (text === 32_000_001) keys[0] = "0000";
-    const value = Object.fromEntries(keys.map(key => [key, "v".repeat(31_997)]));
-    if (text > 32_000_000) expect(() => encodeCompactLifecycleDag(value)).toThrow();
-    else {
-      const table = encodeCompactLifecycleDag(value);
-      // Record keys are inline literals in the table, not definitions: one shared
-      // value string plus the record itself.
-      expect(table.nodes).toHaveLength(2);
-      const decoded = decodeCompactLifecycleDag(table) as Record<string, string>;
-      expect(Object.keys(decoded)).toHaveLength(1_000);
-      expect(decoded["001"]).toBe("v".repeat(31_997));
-    }
+  it("binds wire characters exactly at a lowered profile ceiling, counting UTF-8 bytes", () => {
+    // Same wire accounting as the published `bytes` ceiling, without allocating it: the exact
+    // canonical JSON byte length is the boundary. The astral payload proves bytes, not code units.
+    const value = { text: "x".repeat(1_000), emoji: "😀".repeat(100) };
+    const table = encodeCompactLifecycleDag(value);
+    const exact = Buffer.byteLength(JSON.stringify(table), "utf8");
+    expect(() => encodeCompactLifecycleDag(value, { bytes: exact - 1 })).toThrow();
+    expect(encodeCompactLifecycleDag(value, { bytes: exact })).toEqual(table);
+    expect(() => decodeCompactLifecycleDag(table, { bytes: exact - 1 })).toThrow();
+    expect(() => decodeCompactLifecycleDag(table, { bytes: exact })).not.toThrow();
+    // 100 astral code points are 200 UTF-16 units but 400 UTF-8 bytes.
+    expect(exact - JSON.stringify(table).length).toBe(200);
   });
 
   it("keeps profile options lower-only and round-trips through its own exact-bytes codec", () => {
     const normal = repeated(200_001);
     expect(() => encodeCompactLifecycleDag(normal, { edges: 200_000 })).toThrow();
-    expect(() => encodeCompactLifecycleDag(normal, { edges: 512_001 })).toThrow();
+    expect(() => encodeCompactLifecycleDag(normal, { edges: 4_500_001 })).toThrow();
     const value = { negativeZero: -0, absent: undefined, text: "x".repeat(4_500_000) };
     const wire = serializeCompactLifecycleDag(value);
     const decoded = deserializeCompactLifecycleDag(wire) as Record<string, unknown>;

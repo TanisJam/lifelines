@@ -6,7 +6,9 @@ import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
 import { initializeWorld } from "@/domain/world-origin";
 import { openDb } from "./db";
-import { LIFECYCLE_MAX_STEPS, streamLifecycleLife, type LifecycleLifeRequest } from "./lifecycle-life";
+import {
+  LIFECYCLE_HORIZON_YEARS, LIFECYCLE_MAX_STEPS, streamLifecycleLife, type LifecycleLifeRequest,
+} from "./lifecycle-life";
 import { LifecycleRepository } from "./lifecycle-repository";
 
 /**
@@ -14,9 +16,9 @@ import { LifecycleRepository } from "./lifecycle-repository";
  * one tick per regenerated journal year, the projection, and the persist. These cases drive it
  * without any HTTP, `Request` or SSE surface, so the only variable is the lifecycle output itself.
  *
- * The engine currently ends a protagonist's life at age 1-2 (measured in RI1's L8), so a "complete"
- * run here is genuinely short; every expectation is computed from a fresh full-authority
- * regeneration, never from a hand-built fixture.
+ * This seed's protagonist dies at age 1, so a "complete" run here is genuinely short; the horizon
+ * path is exercised with a one-year budget instead of a full 15-year life. Every expectation is
+ * computed from a fresh full-authority regeneration, never from a hand-built fixture.
  */
 const SEED = "ri1c-lifecycle-1";
 const LIFE = "life-ri1c";
@@ -31,13 +33,12 @@ function resourcesFor(world: ReturnType<typeof initializeWorld>["world"]) {
 }
 
 /** A fresh full current-authority regeneration of exactly the request the module was given. */
-async function freshCapsule(): Promise<LifecycleCompactCapsule> {
+async function freshCapsule(maxSteps: number): Promise<LifecycleCompactCapsule> {
   const { world } = initializeWorld(initialization);
   const genesis = createLifecycleGenesis({
     initialization, protagonistId: "protagonist", resources: resourcesFor(world),
   });
-  const run = await runLifecycle({ kind: "start", genesis }, { maxSteps: LIFECYCLE_MAX_STEPS });
-  if (run.status !== "complete") throw new Error(`fixture life did not end: ${run.status}`);
+  const run = await runLifecycle({ kind: "start", genesis }, { maxSteps });
   return createLifecycleCompactCapsule({ genesis: run.capsule.genesis, output: run.capsule.output });
 }
 
@@ -90,10 +91,6 @@ function doneOf(event: LifeStreamEvent | undefined): Extract<LifeStreamEvent, { 
   if (event?.type !== "done") throw new Error(`Expected a done frame, got ${event?.type ?? "nothing"}`);
   return event;
 }
-function errorOf(event: LifeStreamEvent | undefined): Extract<LifeStreamEvent, { type: "error" }> {
-  if (event?.type !== "error") throw new Error(`Expected an error frame, got ${event?.type ?? "nothing"}`);
-  return event;
-}
 function ticksOf(frames: readonly LifeStreamEvent[]): Extract<LifeStreamEvent, { type: "tick" }>[] {
   return frames.filter((frame): frame is Extract<LifeStreamEvent, { type: "tick" }> => frame.type === "tick");
 }
@@ -138,7 +135,7 @@ describe("lifecycle create orchestration (RI1c)", () => {
 
       const loaded = await repository.load(LIFE, BRANCH);
       expect(loaded).toBeDefined();
-      expect(loaded!.capsule.digest).toBe((await freshCapsule()).digest);
+      expect(loaded!.capsule.digest).toBe((await freshCapsule(LIFECYCLE_HORIZON_YEARS)).digest);
       expect(count(db, "lifecycle_lives")).toBe(1);
       expect(count(db, "lifecycle_bindings")).toBe(1);
       // The lifecycle path never writes the legacy tables.
@@ -149,23 +146,64 @@ describe("lifecycle create orchestration (RI1c)", () => {
     }
   }, 120_000);
 
-  it("refuses a life the step budget left alive and persists nothing", async () => {
-    // Explicit budget, not a hidden constant: the module defaults to the legacy 100-year horizon.
-    expect(LIFECYCLE_MAX_STEPS).toBe(100);
+  it("persists a life that is still alive at the horizon, exactly as the trusted output", async () => {
+    // The product horizon is 15 journal years (spec S1); a small explicit budget reaches the same
+    // "still alive" state fast, and the protagonist of this seed is alive one year in.
+    expect(LIFECYCLE_HORIZON_YEARS).toBe(15);
     const { db, repository } = database();
     try {
       const wire = harness();
       await streamLifecycleLife({ ...request({ repository, maxSteps: 1 }), emit: wire.emit, flushFrame: wire.flushFrame });
 
-      expect(wire.frames.map((frame) => frame.type)).toEqual(["start", "error"]);
-      expect(errorOf(wire.frames[1]).message).toBe("This life has not yet ended.");
+      // The superseded "This life has not yet ended." refusal is gone: no error frame.
+      expect(wire.frames.filter((frame) => frame.type === "error")).toEqual([]);
+      expect(ticksOf(wire.frames)).toHaveLength(1);
+
+      const loaded = await repository.load(LIFE, BRANCH);
+      expect(loaded).toBeDefined();
+      const trusted = await freshCapsule(1);
+      // Stored status/frontier are the trusted output's own: alive, at the horizon, not a death.
+      expect(trusted.output.status).toBe("incomplete");
+      expect(loaded!.capsule.output.status).toBe("incomplete");
+      expect(loaded!.capsule.output.frontier).toBe(1327);
+      expect(loaded!.capsule.output.frontier).toBe(trusted.output.frontier);
+      expect(loaded!.capsule.digest).toBe(trusted.digest);
+      const protagonist = loaded!.capsule.output.owned.people.protagonist;
+      expect(protagonist).toBeDefined();
+      expect(protagonist!.deathYear).toBeUndefined();
+
+      expect(count(db, "lifecycle_lives")).toBe(1);
+      expect(count(db, "lifecycle_bindings")).toBe(1);
+      expect(count(db, "lifecycle_capsules_v1")).toBe(1);
+      // The lifecycle path never writes the legacy tables.
+      expect(count(db, "lives")).toBe(0);
+      expect(count(db, "life_branches")).toBe(0);
+    } finally {
+      db.close();
+    }
+  }, 120_000);
+
+  it("persists nothing when the client aborts during a still-alive run", async () => {
+    // The horizon path persists an alive life, so an abort AFTER the run but BEFORE the save must
+    // still write nothing: cancellation is a real failure, not a horizon.
+    const { db, repository } = database();
+    try {
+      const wire = harness();
+      const controller = new AbortController();
+      await streamLifecycleLife({
+        ...request({ repository, maxSteps: 1, signal: controller.signal }),
+        emit: (event) => { wire.emit(event); if (event.type === "tick") controller.abort(); },
+        flushFrame: wire.flushFrame,
+      });
+
+      expect(wire.frames.map((frame) => frame.type)).toEqual(["start", "tick"]);
       expect(count(db, "lifecycle_lives")).toBe(0);
       expect(count(db, "lifecycle_bindings")).toBe(0);
       expect(count(db, "lifecycle_capsules_v1")).toBe(0);
     } finally {
       db.close();
     }
-  });
+  }, 120_000);
 
   it("persists nothing and sends no done when the client already aborted", async () => {
     const { db, repository } = database();
