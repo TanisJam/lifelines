@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { canonicalLifecycleData } from "./e-lifecycle-genesis";
-import { decodeLifecycleDag, deserializeLifecycleDag, encodeLifecycleDag, serializeLifecycleDag, type LifecycleDag, type LifecycleDagNode } from "./e-lifecycle-dag";
+import { decodeCompactLifecycleDag, decodeLifecycleDag, deserializeCompactLifecycleDag, deserializeLifecycleDag,
+  encodeCompactLifecycleDag, encodeLifecycleDag, serializeCompactLifecycleDag, serializeLifecycleDag,
+  LIFECYCLE_DAG_WIRE_LIMITS, type LifecycleDag, type LifecycleDagNode } from "./e-lifecycle-dag";
 
 function binaryTable(depth: number, leaf: LifecycleDagNode = ["z"]): LifecycleDag {
   const nodes: LifecycleDagNode[] = [leaf];
@@ -288,5 +290,74 @@ describe("internal lifecycle data dictionary (not authority)", () => {
     const calls = clone.mock.calls.length;
     clone.mockRestore();
     expect(rejected && calls === 0).toBe(true);
+  });
+});
+
+describe("measured compact-wire profile (CA1p)", () => {
+  const repeated = (edges: number) => new Array<number>(edges).fill(0);
+
+  it("publishes the measured wire profile ceilings", () => {
+    expect(LIFECYCLE_DAG_WIRE_LIMITS).toEqual({ nodes: 100_000, edges: 512_000, depth: 128, bytes: 8_000_000 });
+  });
+
+  it("admits a normal run whose dictionary edges exceed the default table ceiling", () => {
+    // 200,001 references intern to two definitions: the default 200,000-edge
+    // table rejects the normal payload's shape, the measured profile does not.
+    const normal = repeated(200_001);
+    expect(() => encodeLifecycleDag(normal)).toThrow();
+    const table = encodeCompactLifecycleDag(normal);
+    expect(table.nodes).toHaveLength(2);
+    const decoded = decodeCompactLifecycleDag(table) as number[];
+    expect(decoded).toHaveLength(200_001);
+    expect(decoded[0]).toBe(0);
+  });
+
+  it("admits a normal run whose expanded key/string work exceeds the default fixed ceiling", () => {
+    const text = "x".repeat(4_500_000);
+    expect(() => encodeLifecycleDag(text)).toThrow();
+    expect(decodeCompactLifecycleDag(encodeCompactLifecycleDag(text))).toBe(text);
+  });
+
+  it.each([512_000, 512_001])("binds exact dictionary edges %s in the wire profile", edges => {
+    const value = repeated(edges);
+    if (edges > 512_000) {
+      expect(() => encodeCompactLifecycleDag(value)).toThrow();
+      expect(() => decodeCompactLifecycleDag({ root: 1, nodes: [["n", "0"], ["a", repeated(edges)]] })).toThrow();
+    } else {
+      const table = encodeCompactLifecycleDag(value);
+      expect(table.nodes).toHaveLength(2);
+      expect(() => decodeCompactLifecycleDag(table)).not.toThrow();
+    }
+  });
+
+  it.each([32_000_000, 32_000_001])("binds exact expanded key/string work %s in the wire profile", text => {
+    // 1,000 record keys (3 chars each, one of 4) each pointing at one shared
+    // 31,997-char value: expanded text is exactly 1,000 keys plus 1,000 values.
+    const keys = Array.from({ length: 1_000 }, (_, index) => index.toString(36).padStart(3, "0"));
+    if (text === 32_000_001) keys[0] = "0000";
+    const value = Object.fromEntries(keys.map(key => [key, "v".repeat(31_997)]));
+    if (text > 32_000_000) expect(() => encodeCompactLifecycleDag(value)).toThrow();
+    else {
+      const table = encodeCompactLifecycleDag(value);
+      // Record keys are inline literals in the table, not definitions: one shared
+      // value string plus the record itself.
+      expect(table.nodes).toHaveLength(2);
+      const decoded = decodeCompactLifecycleDag(table) as Record<string, string>;
+      expect(Object.keys(decoded)).toHaveLength(1_000);
+      expect(decoded["001"]).toBe("v".repeat(31_997));
+    }
+  });
+
+  it("keeps profile options lower-only and round-trips through its own exact-bytes codec", () => {
+    const normal = repeated(200_001);
+    expect(() => encodeCompactLifecycleDag(normal, { edges: 200_000 })).toThrow();
+    expect(() => encodeCompactLifecycleDag(normal, { edges: 512_001 })).toThrow();
+    const value = { negativeZero: -0, absent: undefined, text: "x".repeat(4_500_000) };
+    const wire = serializeCompactLifecycleDag(value);
+    const decoded = deserializeCompactLifecycleDag(wire) as Record<string, unknown>;
+    expect(Object.is(decoded.negativeZero, -0)).toBe(true);
+    expect(Object.hasOwn(decoded, "absent")).toBe(true);
+    expect(decoded.text).toBe("x".repeat(4_500_000));
+    expect(() => deserializeCompactLifecycleDag(`${wire} `)).toThrow();
   });
 });
