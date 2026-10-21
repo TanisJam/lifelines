@@ -197,10 +197,12 @@ NEW, separately versioned chunked format; a stored life declares which schema it
 refuses the other. No implicit migration in either direction.
 
 1. **Chunk.** A chunk covers a contiguous year range `[from..to]` of one life and carries exactly that
-   range's journal records plus the state at `to`. Chunk payloads are encoded with the SAME compact
-   DAG codec and the SAME measured wire profile; the chunk size is chosen so one chunk's encode peak
-   stays inside the 4-year envelope (default: 4 journal years per chunk, configurable downward, never
-   silently upward without a measurement).
+   range's journal records and nothing else. It does NOT carry the accumulated world state: `load`
+   regenerates that from genesis, so storing it per chunk would make every chunk grow with the whole
+   life and defeat the purpose. A chunk is encoded with the same compact DAG codec and wire profile,
+   so its encode cost depends only on its own years. The chunk size is chosen so one chunk's encode
+   peak stays inside the measured 4-year envelope (starting default: 4 journal years, configurable
+   downward, never raised without a measurement).
 2. **Manifest.** One immutable, exact-key-set manifest per `(lifeId, branchId)`:
    `version`, `lifeId`, `branchId`, `genesisDigest`, `capsuleSchema` (the chunked one), `chunkYears`,
    `frontier`, `status`, and an ordered `chunks` list of `{ from, to, digest }`. Immutability triggers
@@ -212,9 +214,10 @@ refuses the other. No implicit migration in either direction.
    the binding are written in ONE transaction. A digest is always recomputed from the admitted chunk.
 4. **Load.** Read the binding, require its recognized version and the chunked schema, then regenerate
    the WHOLE life from genesis (full replay, as today), and validate every chunk against the
-   regenerated range and state. A missing chunk, a foreign schema, a digest mismatch or a state
-   disagreement is a REFUSAL, never a repair, never a partial view. Only after every chunk
-   corroborates is the reassembled capsule returned.
+   regenerated journal range. A missing chunk, a foreign schema, a digest mismatch or a range
+   disagreement is a REFUSAL, never a repair, never a partial view. The artifact returned to callers is
+   the REGENERATED capsule, never a reassembly of stored bytes; the stored chunks exist to corroborate
+   that regeneration, not to supply it.
 5. **No second authority.** The chunk chain cannot stand in for replay: nothing may be read from a
    chunk without a successful regeneration of that chunk's range. A chunk chain whose links are all
    self-consistent but disagree with regeneration is still refused.
