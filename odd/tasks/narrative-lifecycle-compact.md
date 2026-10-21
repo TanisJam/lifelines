@@ -119,10 +119,14 @@ genesis, replay or authority change is authorized by this unit; if an option nee
 | 1 year (`baseline-1327-0`) | 81 | n/a | n/a | 522,413 bytes | persists |
 | 4 years (production fixture `lifecycle-representative-v1/4`) | 85 | n/a | n/a | 3,215,276 bytes; 3,034,851 canonical table bytes | persists (admission text 26,783,965 of 32,000,000 = 83.7 %; edges 381,708 of 512,000 = 74.6 %) |
 | 5 years (`ri1d-read-1`) | 95 | n/a | n/a | THROWS `Invalid or oversized lifecycle data dictionary` | fails |
-| 10 years (`cap-0`) | 111 | 417 MB | 570 MB | THROWS the same error | fails |
-| 20 years (`cap-0`) | 136 | 1,608 MB | 1,813 MB | not attempted | n/a |
-| 30 years (`cap-0`) | 160 | 2,792 MB | 3,415 MB | not attempted | n/a |
+| 10 years (`cap-0`) | 111 | 302 MB | 458 MB | 13,774,890 bytes; encode peak 3,022 MB heap / 3,370 MB RSS; run 44.7 s | persists at raised limits |
+| 20 years (`cap-0`) | 136 | 1,016 MB | 1,210 MB | 49,198,760 bytes; encode peak 6,889 MB heap / 7,275 MB RSS; run 192.9 s | persists at raised limits |
 | 46 years (`cap-0`, protagonist still ALIVE) | 206 | 3,919 MB | 4,404 MB | not attempted | n/a |
+
+Note on sampling: two runs of the same `cap-0` configuration reported different instantaneous heap at
+the same frontier (417 MB at 10 years in the curve run vs 302 MB in the capsule run; RSS 570 vs 458).
+They are GC-timing samples, not peaks, so treat the run-memory column as a range. The encode peaks are
+the decisive numbers and both come from the same run that also produced the wire size.
 
 Two independent ceilings, both real:
 1. **Capsule bytes.** The compact path applies `LIFECYCLE_DAG_WIRE_LIMITS` (8M table bytes, 512k
@@ -141,21 +145,37 @@ Two independent ceilings, both real:
 ~2 full copies of the world per year, and the population also grows (84 -> 206 people over 46 years),
 so cost grows with years x population. Speed degrades with it (early years ~1.5 s, late years ~4-8 s).
 
-### Options and their measured/estimated cost
-A. **Raise the measured profiles** for a bounded horizon, no authority change. Estimate from the
-   measured person-years (4 years x 85 people = 340 person-years = 3.03M table bytes / 26.8M
-   admission text): ~20 years (~2,800 person-years, 8x) needs ~25M table bytes and ~215M admission
-   text, with ~1.6-2 GB heap; ~40 years (~5,600 person-years, 17x) needs ~51M table bytes and ~455M
-   admission text. This is labelled ESTIMATE because only the 4-year point is measured.
-B. **Chunked capsules** (per decade or per N years), each chunk admitted and replayed in order. This
-   is the only option that scales to 60+ years: an estimated ~780M admission text for 60 years
-   exceeds Node's ~536M-character string limit, so a single monolithic capsule cannot reach the CQ1
-   60-year goal at any profile size. Requires a format + read-path change and its own authority
-   analysis (replay must still regenerate; a chunk chain must not become a second authority).
+### Options and their MEASURED cost
+A. **Raise the measured profiles** for a bounded horizon, no authority change. MEASURED on seed
+   `cap-0` by raising the wire profile in a scratch copy outside the workspace (the profile check
+   itself prevents measuring an oversized life):
+   - 10 years: wire 13,774,890 bytes; capsule creation peaks at 3,022 MB heap / 3,370 MB RSS;
+     the run itself costs 302 MB heap / 458 MB RSS and 44.7 s.
+   - 20 years: wire 49,198,760 bytes; capsule creation peaks at 6,889 MB heap / 7,275 MB RSS;
+     the run itself costs about 1 GB heap and 193 s.
+   So the cost is dominated by BUILDING the capsule, not by running the life, and it grows
+   superlinearly (1.38 MB/year at 10 years, 2.46 MB/year at 20). A 20-year horizon therefore needs
+   ~7 GB of transient memory per save, roughly 7x the project's provisional 1-2 GB envelope, and
+   two concurrent creates would exhaust a 16 GB host. A is only honest for a horizon near the
+   already-measured 4-year envelope; it does not deliver a product-meaningful lifespan within
+   budget.
+B. **Chunked capsules** (per N years) at the EXISTING measured 4-year profile. This is the only
+   option that keeps the peak inside the already-measured envelope: a 20-year life becomes 5 chunks,
+   each bounded by the 4-year profile's ~1 GB peak and ~3.2 MB wire, while total storage stays in the
+   same order (~13-49 MB measured above). Requires a format + read-path change, a chunk chain, and an
+   authority analysis proving the chain cannot become a second authority and that replay still
+   regenerates. Scales to 60+ years, where a single capsule hits Node's ~536M-character string limit
+   (an estimated ~780M admission text for 60 years).
 C. **Prune the journal's duplicate copy** (`final` and/or `postNative`) so one year retains one state
-   rather than two. Would cut memory and bytes by roughly half, but the journal records ARE certified
-   evidence (`journal[].final` aliases are pinned by tests and by LC1's verification), so this is an
-   authority-adjacent change, not a cheap optimization.
+   rather than two. Would cut the encode peak by roughly half (still ~3.5 GB at 20 years), and the
+   journal records ARE certified evidence, so this is an authority-adjacent change, not a cheap
+   optimization. Best used as a companion to B (larger chunks at the same peak), not as a
+   replacement for it.
+
+### Correction on record
+The parent first estimated A at ~25 MB wire and ~2 GB heap for 20 years, and recommended it as the
+cheap first step. The measurement above shows ~49 MB and ~7 GB, roughly 3x the memory estimate, so
+that recommendation is WITHDRAWN. The choice must be re-made against these numbers.
 
 ### Predeclared gate (before any source change)
 Any profile number must come from a measurement at the horizon it claims, with heap/RSS and wall
@@ -164,8 +184,10 @@ its refusal behavior for a broken chain, and a proof that a chunk chain cannot b
 authority. Nothing in this unit may change mortality, genesis, physics or the replay rule.
 
 ### Status
-PENDING. Blocked on the human's choice between `A now` (a 20-year product horizon at measured cost),
-`B` (the only path to 60 years), and `C` as an optional companion. No source has been written.
+PENDING. Blocked on the human's re-decision after the measured correction above: `A` at 20 years
+costs ~7 GB transient per save, `B` keeps the peak at the already-measured ~1 GB envelope by
+chunking, and `C` halves the peak as a companion. No source has been written; the scratch copy used
+for the measurement lives outside the workspace and is deleted with the rest of the scratch.
 
 ## CT1 — PENDING/conditional: safe invocation-local efficiency
 
