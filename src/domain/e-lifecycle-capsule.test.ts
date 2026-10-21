@@ -4,8 +4,10 @@ import { canonicalLifecycleData, createLifecycleGenesis, LIFECYCLE_GENESIS_VERSI
 import { createLifecycleRuntime } from "./e-lifecycle-runtime";
 import { initializeWorld } from "./world-origin";
 import * as sourceModule from "./e-year-source";
-import { admitLifecycleCapsule, createLifecycleCapsule, deserializeLifecycleCapsule,
-  LIFECYCLE_CAPSULE_MANIFEST, serializeLifecycleCapsule, type LifecycleCapsule } from "./e-lifecycle-capsule";
+import { admitLifecycleCapsule, admitLifecycleCompactCapsule, createLifecycleCapsule,
+  createLifecycleCompactCapsule, deserializeLifecycleCapsule, deserializeLifecycleCompactCapsule,
+  LIFECYCLE_CAPSULE_MANIFEST, LIFECYCLE_COMPACT_CAPSULE_MANIFEST, serializeLifecycleCapsule,
+  serializeLifecycleCompactCapsule, type LifecycleCapsule, type LifecycleCompactCapsule } from "./e-lifecycle-capsule";
 
 type Mutable<T> = T extends object ? { -readonly [K in keyof T]: Mutable<T[K]> } : T;
 type Evidence = Pick<LifecycleCapsule, "genesis" | "output">;
@@ -430,5 +432,108 @@ describe("strict inverse and exact canonical wire", () => {
     await expect(createLifecycleCapsule({ ...evidence, extra: undefined })).rejects.toThrow();
     await expect(createLifecycleCapsule({ genesis: evidence.genesis })).rejects.toThrow();
     await expect(deserializeLifecycleCapsule(encodedWire(canonicalLifecycleData({ ...evidence, extra: undefined })))).rejects.toThrow();
+  });
+});
+
+/** The compact capsule's own domain-separated digest frame, reimplemented here
+ * so a test can attest an INVALID table and prove integrity is not authority. */
+function compactHash(manifest: unknown, table: string): string {
+  const hasher = createHash("sha256");
+  hasher.update(`["lifecycle-compact-capsule-cb1-1",${JSON.stringify(canonicalLifecycleData(manifest))},"`, "utf8");
+  hasher.update(JSON.stringify(table).slice(1, -1), "utf8");
+  hasher.update('\"]', "utf8");
+  return hasher.digest("hex");
+}
+
+describe("compact lifecycle capsule (CA1b)", () => {
+  let compact: LifecycleCompactCapsule;
+  let compactWire: string;
+  beforeAll(async () => {
+    compact = await createLifecycleCompactCapsule(evidence);
+    compactWire = await serializeLifecycleCompactCapsule(compact);
+  });
+
+  it("declares its own recognized manifest and never reuses the legacy one", () => {
+    expect(Object.isFrozen(LIFECYCLE_COMPACT_CAPSULE_MANIFEST)).toBe(true);
+    expect(LIFECYCLE_COMPACT_CAPSULE_MANIFEST.capsuleSchema).toBe("lifecycle-capsule-compact-cb1-1");
+    expect(LIFECYCLE_COMPACT_CAPSULE_MANIFEST.codec).toBe("canonical-dag-dictionary-cb1-1");
+    expect(LIFECYCLE_COMPACT_CAPSULE_MANIFEST.capsuleSchema).not.toBe(LIFECYCLE_CAPSULE_MANIFEST.capsuleSchema);
+    expect(LIFECYCLE_COMPACT_CAPSULE_MANIFEST.codec).not.toBe(LIFECYCLE_CAPSULE_MANIFEST.codec);
+    for (const key of Object.keys(LIFECYCLE_GENESIS_VERSIONS) as (keyof typeof LIFECYCLE_GENESIS_VERSIONS)[]) {
+      expect(LIFECYCLE_COMPACT_CAPSULE_MANIFEST[key]).toEqual(LIFECYCLE_GENESIS_VERSIONS[key]);
+    }
+  });
+
+  it("round-trips through its own wire and fully regenerates on cold admission", async () => {
+    expect(compact.manifest).toEqual(LIFECYCLE_COMPACT_CAPSULE_MANIFEST);
+    fidelity(compact.genesis, evidence.genesis);
+    const restored = await deserializeLifecycleCompactCapsule(compactWire);
+    fidelity(restored, compact);
+    frozen(restored);
+    expect(await serializeLifecycleCompactCapsule(restored)).toBe(compactWire);
+    expect(await serializeLifecycleCompactCapsule(compact)).toBe(compactWire);
+  });
+
+  it("stores the same evidence in materially fewer bytes than the legacy wire", () => {
+    const legacyBytes = Buffer.byteLength(wire, "utf8");
+    const compactBytes = Buffer.byteLength(compactWire, "utf8");
+    expect(compactBytes).toBeGreaterThan(0);
+    expect(compactBytes).toBeLessThan(legacyBytes);
+  });
+
+  it("leaves the legacy capsule manifest, digest and wire untouched", async () => {
+    expect(await serializeLifecycleCapsule(capsule)).toBe(wire);
+    expect(capsule.digest).toBe(hash(capsule.manifest, canonicalLifecycleData(evidence)));
+  });
+
+  it("rejects a correctly rehashed table that is not a valid closed dictionary", async () => {
+    // Digest is integrity, never execution authority: a matching digest must not
+    // buy admission for a self-referential or forward-referencing table.
+    for (const nodes of [[["z"], ["a", [1]]], [["a", [2]], ["n", "1"]], [["a", [0]]]]) {
+      const table = JSON.stringify({ root: 0, nodes });
+      const envelope = JSON.stringify({ manifest: LIFECYCLE_COMPACT_CAPSULE_MANIFEST, table,
+        digest: compactHash(LIFECYCLE_COMPACT_CAPSULE_MANIFEST, table) });
+      await expect(deserializeLifecycleCompactCapsule(envelope)).rejects.toThrow();
+    }
+  });
+
+  it("rejects a mutated table or digest", async () => {
+    const envelope = JSON.parse(compactWire) as { manifest: unknown; table: string; digest: string };
+    const tamperedTable = JSON.stringify({ manifest: envelope.manifest,
+      table: JSON.stringify({ ...JSON.parse(envelope.table), root: 0 }), digest: envelope.digest });
+    await expect(deserializeLifecycleCompactCapsule(tamperedTable)).rejects.toThrow(/digest/);
+    const tamperedDigest = JSON.stringify({ manifest: envelope.manifest, table: envelope.table,
+      digest: `${envelope.digest.slice(0, -1)}${envelope.digest.endsWith("0") ? "1" : "0"}` });
+    await expect(deserializeLifecycleCompactCapsule(tamperedDigest)).rejects.toThrow(/digest/);
+  });
+
+  it("never migrates implicitly between the two capsule formats", async () => {
+    await expect(deserializeLifecycleCompactCapsule(wire)).rejects.toThrow();
+    await expect(deserializeLifecycleCapsule(compactWire)).rejects.toThrow();
+    await expect(admitLifecycleCompactCapsule(capsule)).rejects.toThrow(/manifest/);
+    await expect(admitLifecycleCapsule(compact)).rejects.toThrow(/manifest/);
+  });
+
+  it.each(["whitespace", "field order", "extra", "raw table", "manifest order"])(
+    "rejects outer %s", async kind => {
+      const envelope = JSON.parse(compactWire) as Record<string, unknown>;
+      let alternate = compactWire;
+      if (kind === "whitespace") alternate = ` ${compactWire}`;
+      if (kind === "field order") alternate = JSON.stringify({ digest: envelope.digest, manifest: envelope.manifest, table: envelope.table });
+      if (kind === "extra") alternate = JSON.stringify({ ...envelope, extra: null });
+      if (kind === "raw table") alternate = JSON.stringify({ ...envelope, table: JSON.parse(envelope.table as string) });
+      if (kind === "manifest order") alternate = JSON.stringify({ ...envelope, manifest: Object.fromEntries(Object.entries(envelope.manifest as object).reverse()) });
+      expect(alternate !== compactWire).toBe(true);
+      await expect(deserializeLifecycleCompactCapsule(alternate)).rejects.toThrow();
+    });
+
+  it.each([null, {}, [], 1, undefined])("rejects non-string wire %s", async input => {
+    await expect(deserializeLifecycleCompactCapsule(input)).rejects.toThrow(/wire string/);
+  });
+
+  it("rejects root extensions and missing fields for creation and admission", async () => {
+    await expect(createLifecycleCompactCapsule({ genesis: evidence.genesis })).rejects.toThrow();
+    await expect(admitLifecycleCompactCapsule({ manifest: compact.manifest, digest: compact.digest,
+      genesis: compact.genesis })).rejects.toThrow();
   });
 });

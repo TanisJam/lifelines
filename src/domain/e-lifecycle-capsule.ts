@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { admitLifecycleGenesis, canonicalLifecycleData, LIFECYCLE_GENESIS_VERSIONS,
   type LifecycleGenesis } from "./e-lifecycle-genesis";
+import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "./e-lifecycle-dag";
 import { replayLifecycleRuntime } from "./e-lifecycle-replay";
 import { requireFavorData } from "./effects";
 import { requireFields } from "./obligations";
@@ -47,11 +48,7 @@ function payload(genesis: unknown, output: unknown): string {
   // The sole encoder is the unchanged genesis grammar, not a parallel wire codec.
   return canonicalLifecycleData({ genesis, output });
 }
-function digest(manifest: unknown, encoded: string): string {
-  // A JSON tuple frames two strings unambiguously. Both complete manifest and
-  // complete tagged genesis/output participate; digest itself never does.
-  const hash = createHash("sha256");
-  hash.update(`[${JSON.stringify(canonicalLifecycleData(manifest))},"`, "utf8");
+function hashEscaped(hash: ReturnType<typeof createHash>, encoded: string): void {
   for (let start = 0; start < encoded.length;) {
     let end = Math.min(start + 32768, encoded.length);
     // Native JSON escaping must see paired UTF-16 units together. Lone
@@ -64,6 +61,13 @@ function digest(manifest: unknown, encoded: string): string {
     hash.update(JSON.stringify(encoded.slice(start, end)).slice(1, -1), "utf8");
     start = end;
   }
+}
+function digest(manifest: unknown, encoded: string): string {
+  // A JSON tuple frames two strings unambiguously. Both complete manifest and
+  // complete tagged genesis/output participate; digest itself never does.
+  const hash = createHash("sha256");
+  hash.update(`[${JSON.stringify(canonicalLifecycleData(manifest))},"`, "utf8");
+  hashEscaped(hash, encoded);
   hash.update('\"]', "utf8");
   return hash.digest("hex");
 }
@@ -154,4 +158,91 @@ export async function deserializeLifecycleCapsule(input: unknown): Promise<Lifec
   record(candidate);
   requireFields(candidate, ["genesis", "output"]);
   return regenerate(candidate);
+}
+
+/** Additive compact FORMAT. Recognized ONLY by its own manifest: it is not a
+ * trust flag, not a migration path, and it never replaces the legacy wire. */
+export const LIFECYCLE_COMPACT_CAPSULE_MANIFEST = Object.freeze({
+  capsuleSchema: "lifecycle-capsule-compact-cb1-1",
+  codec: "canonical-dag-dictionary-cb1-1",
+  ...LIFECYCLE_GENESIS_VERSIONS,
+});
+export type LifecycleCompactCapsuleManifest = typeof LIFECYCLE_COMPACT_CAPSULE_MANIFEST;
+export interface LifecycleCompactCapsule {
+  readonly manifest: LifecycleCompactCapsuleManifest;
+  readonly digest: string;
+  readonly genesis: LifecycleGenesis;
+  readonly output: LifecycleCapsule["output"];
+}
+const COMPACT_DOMAIN = "lifecycle-compact-capsule-cb1-1";
+function requireCompactManifest(value: unknown): void {
+  if (canonicalLifecycleData(value) !== canonicalLifecycleData(LIFECYCLE_COMPACT_CAPSULE_MANIFEST)) {
+    throw new Error("Unsupported lifecycle compact capsule manifest");
+  }
+}
+function compactPayload(genesis: unknown, output: unknown): string {
+  // The canonical COMPACT dictionary wire, never the unfolded tagged grammar.
+  return serializeCompactLifecycleDag({ genesis, output });
+}
+function compactDigest(manifest: unknown, table: string): string {
+  // Domain-separated from the legacy frame: a different prefix and arity mean
+  // no legacy bytes can be replayed as a compact capsule, or the reverse.
+  const hash = createHash("sha256");
+  hash.update(`["${COMPACT_DOMAIN}",${JSON.stringify(canonicalLifecycleData(manifest))},"`, "utf8");
+  hashEscaped(hash, table);
+  hash.update('\"]', "utf8");
+  return hash.digest("hex");
+}
+function requireCompactDigest(value: unknown, manifest: unknown, table: string): asserts value is string {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value) || value !== compactDigest(manifest, table)) {
+    throw new Error("Lifecycle compact capsule digest disagreement");
+  }
+}
+async function regenerateCompact(candidate: Record<string, unknown>): Promise<LifecycleCompactCapsule> {
+  // Same authority rule as the legacy format: digest is integrity only, genesis
+  // is re-admitted and every native/economic year is fully replayed here.
+  const genesis = admitLifecycleGenesis(candidate.genesis);
+  const output = await replayLifecycleRuntime({ genesis, output: candidate.output });
+  const manifest = freeze(structuredClone(LIFECYCLE_COMPACT_CAPSULE_MANIFEST));
+  const table = compactPayload(genesis, output);
+  return Object.freeze({ manifest, digest: compactDigest(manifest, table), genesis, output });
+}
+/** Required closed input { genesis, output }, identical admission to the legacy format. */
+export async function createLifecycleCompactCapsule(input: unknown): Promise<LifecycleCompactCapsule> {
+  return regenerateCompact(checkedRecord(input, ["genesis", "output"]));
+}
+/** Cold admission re-derives the compact table from regenerated data, not from trust. */
+export async function admitLifecycleCompactCapsule(input: unknown): Promise<LifecycleCompactCapsule> {
+  const candidate = checkedRecord(input, ["manifest", "digest", "genesis", "output"]);
+  requireCompactManifest(candidate.manifest);
+  requireCompactDigest(candidate.digest, candidate.manifest, compactPayload(candidate.genesis, candidate.output));
+  return regenerateCompact(candidate);
+}
+function compactWire(capsule: LifecycleCompactCapsule): string {
+  return JSON.stringify({ manifest: capsule.manifest,
+    table: compactPayload(capsule.genesis, capsule.output), digest: capsule.digest });
+}
+export async function serializeLifecycleCompactCapsule(input: unknown): Promise<string> {
+  return compactWire(await admitLifecycleCompactCapsule(input));
+}
+export async function deserializeLifecycleCompactCapsule(input: unknown): Promise<LifecycleCompactCapsule> {
+  if (typeof input !== "string") throw new Error("Expected lifecycle compact capsule wire string");
+  const envelope: unknown = JSON.parse(input);
+  requireFavorData(envelope, true);
+  record(envelope);
+  requireFields(envelope, ["manifest", "table", "digest"]);
+  requireCompactManifest(envelope.manifest);
+  if (typeof envelope.table !== "string") throw new Error("Expected lifecycle compact table string");
+  requireCompactDigest(envelope.digest, envelope.manifest, envelope.table);
+  // Complete closed dictionary decode BEFORE any current-authority replay: a
+  // matching digest never buys materialization or an executable graph.
+  const candidate = deserializeCompactLifecycleDag(envelope.table);
+  record(candidate);
+  requireFields(candidate, ["genesis", "output"]);
+  // JSON.parse alone loses duplicates and syntax variants. Require exact bytes,
+  // including manifest declaration order, escapes and outer envelope field order.
+  const canonicalWire = JSON.stringify({ manifest: LIFECYCLE_COMPACT_CAPSULE_MANIFEST,
+    table: envelope.table, digest: envelope.digest });
+  if (canonicalWire !== input) throw new Error("Noncanonical lifecycle compact capsule wire");
+  return regenerateCompact(candidate);
 }
