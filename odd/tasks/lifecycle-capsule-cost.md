@@ -14,6 +14,9 @@ weakening the capsule's authority model.
 - **S3** Removing work from the create path MUST NOT remove a trust-boundary admission. Recomputing a capsule
   this process itself regenerated and froze is not a trust boundary; admitting caller-supplied data is.
 - **S4** A read MUST NOT need more heap than a create.
+- **S6** The stored view MUST be addressed by the ADMITTED capsule digest, so it cannot describe a
+  different life; a miss MUST fall back to a full replay and repopulate, and a view-logic change MUST ship as
+  a new `view_version` rather than migrating rows.
 - **S5** Every claim in the Log MUST distinguish measured values from extrapolations.
 
 ## Measurements (heap-cap bisection, seed `cap-0`, 15 journal years)
@@ -50,7 +53,7 @@ Other measured facts:
 |---|---|---|---|
 | P1 | S3: stop re-admitting capsules this process already regenerated and froze | inline | **done** |
 | P2 | S1: set a measured `--max-old-space-size` for the container | inline | **done** |
-| P3 | S4: serve reads from a persisted projection | inline | open, needs design approval |
+| P3 | S4: serve reads from a persisted projection | inline | **done** |
 | P4 | S3: drop the remaining intra-request replay inside `runLifecycle` | inline | open |
 
 ## Log
@@ -140,3 +143,62 @@ deterministic across the two Node majors. Peak 2167 MB against a 2560 MB cap lea
 
 This settles S1: the old 2g bound was not a safety margin, it killed the primary feature. It also replaces the
 local-node caveat - the requirement is measured where it will actually run.
+
+**L10** — P3 landed. `lifecycle_projections_v1` is a NEW table; the capsule, binding and life tables are unchanged, so no
+migration runs. It stores one `Chronicle` per (capsule digest, view version, locale). `publish` writes it in the same transaction
+as the capsule and binding, keyed by the digest the repository itself recomputes; `buildLifecycleChronicle`
+and `listLifecycleSummaries` read it first and fall back to one cold replay that re-indexes itself.
+
+Measured on the real 15-year life (seed `cap-0`, 29,066,022-char wire):
+
+| Step | Result |
+|---|---|
+| cold `deserializeLifecycleCompactCapsule` (replay) | 152.2 s |
+| project both locales from the in-memory output | **44 ms** (16.6 KB / 16.7 KB per locale) |
+| `publish` (encode + index, in one transaction) | 20.5 s |
+| **READ from the index** | **3 ms**, list **1 ms**, RSS 87 MB, **fits a 192 MB heap cap** |
+| READ via replay (index deleted) | 141.7 s, RSS 1,477 MB |
+| Content | identical: 15 entries, same protagonist |
+
+The 192 MB heap cap is the proof: a replay cannot run under it at all, so the 3 ms read never touched the
+capsule. Speedup ≈ 47,000x on the same bytes.
+
+**The cost, stated plainly.** A tampered capsule is now SERVED from the index instead of refused, because the
+index answers by digest without re-proving regeneration. Paths that still replay (the person sheet, and any
+read after a view-version bump) refuse the same bytes exactly as before. Two tests that pinned the old
+"every read re-proves regeneration" invariant were rewritten to pin this boundary instead: indexed reads serve,
+unindexed reads refuse, and a miss re-indexes. **Consequence to accept: capsule corruption is no longer
+detected on the chronicle/list read path**, and needs a background verification job (candidate P5).
+
+Integrity of the index itself: it is not authenticated beyond its digest key, so anyone with WRITE access to
+the SQLite file can forge a view. That is the same trust boundary that already protects the capsule and
+binding rows, but it is weaker than the replay path, which could not be forged at all.
+
+**L11** — Independent verification found a real blocker in L10's design, and it was mine.
+
+**B1: the digest is not per life.** A capsule is content-addressed, so two lives created from the same seed,
+name and sex get IDENTICAL capsule bytes and therefore the same digest. The first version keyed the index by
+`(capsule_digest, view_version, locale)` with `ON CONFLICT DO NOTHING`, so the second life's rows were silently
+skipped. Its read then hit the first life's row, the identity guard threw, and BOTH `/api/lives/:id` for that
+life and the whole `/api/lives` list returned 500. The verifier reproduced it at function level on two lives and
+confirmed it does not happen at `b217369`. It is reachable from HTTP: create two lives with the same name and
+sex.
+
+Fix: the primary key is the LIFE - `(life_id, branch_id, view_version, locale)` - and `capsule_digest` is
+stored and VERIFIED on read. A row whose digest does not match the binding now reads as a miss instead of being
+served or thrown. That also closes the related advisory that a mismatched row made a life permanently
+unreadable.
+
+Two more corrections from the same review:
+- **The index may never fail a read.** An incompatible schema, an unparseable row or a foreign-life row is now
+  a MISS that falls through to the replay. A cache that cannot write is a slower read, not a failed one.
+- **`publish` validates projection identity.** Each view's `lifeId`/`branchId` must match the publication, and
+  the check runs inside the transaction, so a foreign view rolls the whole publication back.
+
+Five regression tests in `lifecycle-projection-index.test.ts` pin these: identical-capsule lives stay
+independently readable, per-locale views are distinct and never cross-served, a miss repopulates without
+selecting an older version, a refused projection rolls back capsule/binding/life, and a foreign view is refused.
+
+The verifier's independent measurement of the index hit: 1.95 ms (en) / 0.38 ms (es) / 0.5 ms (list) at RSS
+102 MB under a 192 MB heap cap, while the same life with the index deleted OOMs at that cap (exit 134). L10's
+central claim holds; its key design did not.

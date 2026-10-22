@@ -191,7 +191,7 @@ describe("lifecycle read path (RI1d)", () => {
     }
   }, 120_000);
 
-  it("surfaces a refused capsule as the error envelope instead of a view", async () => {
+  it("serves the index for a tampered capsule and refuses it wherever the index cannot answer", async () => {
     const db = getDb();
     const digest = (await new LifecycleRepository(db).load(LIFE, BRANCH))!.capsule.digest;
     const stored = storedCapsuleRow(db, Buffer.from(digest, "utf16le"));
@@ -202,20 +202,55 @@ describe("lifecycle read path (RI1d)", () => {
       Buffer.from(JSON.stringify(envelope), "utf16le"), stored.key,
     );
     try {
-      const result = await buildLifecycleChronicle(LIFE, undefined, "en");
-      expect(result.data).toBeUndefined();
-      expect(result.status).toBe(500);
-      expect(result.error).toMatch(/digest disagreement/i);
+      // P3's deliberate cost: the index is addressed by the capsule digest, so it still answers with
+      // the view it was written from. A read no longer re-proves regeneration.
+      const indexed = await buildLifecycleChronicle(LIFE, undefined, "en");
+      expect(indexed.error).toBeUndefined();
+      expect(indexed.data).toEqual(expectedChronicle);
+      expect((await listLifecycleSummaries("en"))[0]!.lifeId).toBe(LIFE);
+      // Every path that still replays refuses the same bytes, never repairs them.
       const sheet = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en");
       expect(sheet.data).toBeUndefined();
       expect(sheet.status).toBe(500);
+      expect(sheet.error).toMatch(/digest disagreement/i);
+      // With the index gone, the replay path must refuse too.
+      db.prepare("DELETE FROM main.lifecycle_projections_v1").run();
+      const refused = await buildLifecycleChronicle(LIFE, undefined, "en");
+      expect(refused.data).toBeUndefined();
+      expect(refused.status).toBe(500);
+      expect(refused.error).toMatch(/digest disagreement/i);
       await expect(listLifecycleSummaries("en")).rejects.toThrow(/digest disagreement/i);
     } finally {
       db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(stored.wire, stored.key);
     }
-    // Restored: the exact stored bytes read again as the same life.
+    // Restored: the exact stored bytes read again as the same life, re-indexing on the miss.
     const restored = await buildLifecycleChronicle(LIFE, undefined, "en");
     expect(restored.data).toEqual(expectedChronicle);
+  }, 120_000);
+
+  it("answers from the indexed view without replaying the capsule", async () => {
+    const db = getDb();
+    const digest = (await new LifecycleRepository(db).load(LIFE, BRANCH))!.capsule.digest;
+    // Order-independent: rebuild the "es" row first, whatever a previous test left behind.
+    expect((await buildLifecycleChronicle(LIFE, undefined, "es")).error).toBeUndefined();
+    const sentinel = { lifeId: LIFE, branchId: BRANCH, protagonist: { name: "Sentinel View", birthYear: 1,
+      sex: "f", deathYear: null, ageAtDeath: null, causeOfDeath: null } };
+    db.prepare("UPDATE main.lifecycle_projections_v1 SET view_json = ? WHERE capsule_digest = ? AND locale = ?")
+      .run(JSON.stringify(sentinel), digest, "es");
+    try {
+      // A view no replay could ever produce: if the read replays, this cannot come back.
+      const result = await buildLifecycleChronicle(LIFE, undefined, "es");
+      expect(result.error).toBeUndefined();
+      expect((result.data as { protagonist: { name: string } }).protagonist.name).toBe("Sentinel View");
+      expect((await listLifecycleSummaries("es"))[0]!.name).toBe("Sentinel View");
+    } finally {
+      db.prepare("DELETE FROM main.lifecycle_projections_v1 WHERE locale = ?").run("es");
+    }
+    // The miss replays and re-indexes the real view.
+    const healed = await buildLifecycleChronicle(LIFE, undefined, "es");
+    expect(healed.error).toBeUndefined();
+    expect(healed.data!.protagonist.name).toBe(expectedChronicle.protagonist.name);
+    expect(db.prepare("SELECT locale FROM main.lifecycle_projections_v1 WHERE locale = ?").all("es")).toHaveLength(1);
   }, 120_000);
 
   it("keeps the legacy builder serving a legacy life and never a lifecycle life", async () => {

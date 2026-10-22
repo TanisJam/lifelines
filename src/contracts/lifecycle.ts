@@ -2,9 +2,11 @@
  * Additive contract types for the new-engine (lifecycle capsule) read path — RI1b, spec S8.
  * Types only, no runtime code.
  *
- * A `LifecycleProjection` is a DERIVED VIEW. It is never persisted as authority, never stored as
- * the thing a later read trusts, and never read back as one: the lifecycle capsule (cold-admitted
- * and fully replayed) stays the only authority for what happened.
+ * A `LifecycleProjection` is a DERIVED VIEW. The lifecycle capsule stays the only authority for what
+ * happened: the view is content-addressed by that capsule's digest (see
+ * `server/lifecycle-projection-store.ts`), so a stored view cannot describe a different life, and a
+ * view-logic change ships as a new `view_version` instead of migrating rows. A read that cannot find
+ * such a row cold-admits and fully replays the capsule.
  */
 import type { LifeStreamEvent } from "./life";
 

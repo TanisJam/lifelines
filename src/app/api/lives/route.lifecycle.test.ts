@@ -267,7 +267,7 @@ describe("GET /api/lives/:lifeId/people/:personId — sheet activation (RI1d)", 
 });
 
 describe("GET /api/lives/:lifeId — refused capsule (RI1d)", () => {
-  it("surfaces a tampered capsule as the error envelope instead of a view", async () => {
+  it("serves the index for a tampered capsule and refuses it once the index is gone", async () => {
     const db = getDb();
     const digest = (await new LifecycleRepository(db).load(FIRST.lifeId, FIRST.branchId))!.capsule.digest;
     const key = Buffer.from(digest, "utf16le");
@@ -276,6 +276,12 @@ describe("GET /api/lives/:lifeId — refused capsule (RI1d)", () => {
     envelope.digest = "0".repeat(64);
     db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(Buffer.from(JSON.stringify(envelope), "utf16le"), key);
     try {
+      // P3's deliberate cost: the index answers by capsule digest without re-proving regeneration.
+      const indexed = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
+      expect(indexed.status).toBe(200);
+      expect((await indexed.json()) as Chronicle).toEqual(first.chronicle);
+      // Without the index, the replay path refuses the same bytes instead of repairing them.
+      db.prepare("DELETE FROM main.lifecycle_projections_v1").run();
       const response = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
       expect(response.status).toBe(500);
       const body = (await response.json()) as { error?: string; data?: unknown };
@@ -284,7 +290,7 @@ describe("GET /api/lives/:lifeId — refused capsule (RI1d)", () => {
     } finally {
       db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(stored.wire, key);
     }
-    // Restored: the same request is the same life again, never a repaired or partial view.
+    // Restored: the same request is the same life again, and the miss re-indexes it.
     const restored = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
     expect(restored.status).toBe(200);
     expect((await restored.json()) as Chronicle).toEqual(first.chronicle);

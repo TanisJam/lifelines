@@ -10,6 +10,7 @@ import { requireFavorData } from "../domain/effects";
 import type { LifeSex } from "../contracts/life";
 import type { WorldConfig } from "../domain/types";
 import { withTransaction } from "./db";
+import { LifecycleProjectionStore, type LifecycleProjectionWrite } from "./lifecycle-projection-store";
 
 /**
  * Physical format v1 mirrors `favor_records_v1` (`sqlite-favor-records.ts`): the digest key and the
@@ -50,6 +51,10 @@ export interface LifecyclePublication {
    * `createLifecycleCompactCapsule`. Its digest is only an admission gate; the stored artifact is
    * regenerated and re-digested under current authority and the caller's digest is never trusted. */
   readonly capsule: unknown;
+  /** Derived chronicle views to index alongside the capsule, one per locale. OPTIONAL: when absent,
+   * nothing is indexed and reads of this life keep taking the full replay. Never authority — the rows
+   * are keyed by the ADMITTED capsule digest computed here, not by anything the caller claims. */
+  readonly projections?: readonly LifecycleProjectionWrite[];
 }
 
 export interface LoadedLifecycle {
@@ -75,6 +80,14 @@ function sqlText(value: unknown): asserts value is string {
 function identifier(value: unknown): asserts value is string {
   sqlText(value);
   if (value.length === 0) throw new Error("Invalid branch identifier");
+}
+/** A stored view must describe the life it is being stored for: the view embeds the route identity. */
+function requireProjectionIdentity(view: unknown, lifeId: string, branchId: string): void {
+  const record = view as { readonly lifeId?: unknown; readonly branchId?: unknown } | null;
+  if (record === null || typeof record !== "object"
+    || record.lifeId !== lifeId || record.branchId !== branchId) {
+    throw new Error("Lifecycle projection identity disagreement");
+  }
 }
 function frozen<T>(value: T): T {
   if (value && typeof value === "object") { Object.values(value).forEach(frozen); Object.freeze(value); }
@@ -102,6 +115,7 @@ export class LifecycleRepository {
   private readonly selectBinding: StatementSync;
   private readonly selectCapsule: StatementSync;
   private readonly insertCapsule: StatementSync;
+  private readonly projections: LifecycleProjectionStore;
 
   constructor(private readonly db: DatabaseSync) {
     const [selectBinding, selectCapsule, insertCapsule] = this.transaction(() => {
@@ -123,6 +137,7 @@ export class LifecycleRepository {
     this.selectBinding = selectBinding;
     this.selectCapsule = selectCapsule;
     this.insertCapsule = insertCapsule;
+    this.projections = new LifecycleProjectionStore(db);
   }
 
   /** Reads and validates the binding row, enforcing the exact frozen key set and its recognized
@@ -187,6 +202,15 @@ export class LifecycleRepository {
           .run(captured.lifeId, captured.protagonistName, captured.protagonistSex, configJson, captured.branchId, Date.now());
         this.db.prepare("INSERT INTO lifecycle_bindings (life_id, branch_id, binding_json) VALUES (?, ?, ?)")
           .run(captured.lifeId, captured.branchId, JSON.stringify(binding));
+        // Same transaction as the capsule and binding: an indexed view can never outlive or precede
+        // the content address it is keyed by.
+        if (input.projections !== undefined && input.projections.length !== 0) {
+          for (const projection of input.projections) {
+            requireProjectionIdentity(projection.view, captured.lifeId, captured.branchId);
+          }
+          this.projections.write({ lifeId: captured.lifeId, branchId: captured.branchId,
+            capsuleDigest: admitted.digest }, input.projections);
+        }
       }
       return binding;
     });

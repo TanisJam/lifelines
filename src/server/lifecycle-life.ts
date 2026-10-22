@@ -2,7 +2,7 @@ import type { Chronicle, LifeSex, LifeStreamEvent } from "@/contracts/life";
 import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
-import type { Locale } from "@/domain/locale";
+import { LOCALES, type Locale } from "@/domain/locale";
 import { initializeWorld } from "@/domain/world-origin";
 import { projectLifecycleChronicle, projectLifecycleTick } from "./lifecycle-projection";
 import type { LifecyclePublication } from "./lifecycle-repository";
@@ -148,6 +148,16 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
   }
   if (signal.aborted) return;
 
+  // Index the chronicle for EVERY supported locale so a later read never replays. The request's own
+  // locale reuses the view projected above instead of recomputing it. Persisted in the same
+  // transaction as the capsule and keyed by the digest the repository itself recomputes.
+  const projections = await Promise.all(LOCALES.map(async (target) => ({
+    locale: target,
+    view: target === locale
+      ? chronicle
+      : (await projectLifecycleChronicle({ source, identity: { lifeId, branchId }, locale: target })).view,
+  })));
+
   // Both statuses persist: the compact capsule stores the run's own `status` and `frontier`, so an
   // alive life is loadable as alive at the horizon. Only a real failure above or here writes nothing.
   await repository.publish({
@@ -157,6 +167,7 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
     protagonistName: protagonist.name,
     protagonistSex: resolvedSex,
     capsule: await createLifecycleCompactCapsule({ genesis: capsule.genesis, output: capsule.output }),
+    projections,
   });
 
   // Only AFTER a successful publish is the life visible. An abort that arrives during the save
