@@ -7,6 +7,7 @@ import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/deci
 import { assertCompletedLife } from "@/server/completed-life";
 import { getDb } from "@/server/db";
 import { buildCandidateLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
+import { LifecycleQueueFullError, requestLifecycleCreateSlot } from "@/server/lifecycle-create-queue";
 import { streamLifecycleLife } from "@/server/lifecycle-life";
 import { LifecycleRepository } from "@/server/lifecycle-repository";
 import { createSceneTracker } from "@/server/life-scene";
@@ -77,24 +78,40 @@ export async function POST(request: Request): Promise<Response> {
     // transport; the orchestration, projection and persist live in `lifecycle-life.ts`. The ids
     // come from the same allocator as legacy lives (one identity space, `counters` rows only) —
     // no `lives` or `life_branches` row is written by this branch.
+    // One create at a time: a second concurrent create exceeds the container's 2560m cgroup and the
+    // kernel kills the process, reads included. A full waiting list is refused BEFORE a stream is
+    // opened, so the client gets an honest 429 instead of an SSE that never starts.
+    let ticket;
+    try {
+      ticket = requestLifecycleCreateSlot();
+    } catch (error) {
+      if (error instanceof LifecycleQueueFullError) return errorResponse(error.message, 429);
+      throw error;
+    }
     const lifeId = newLifeId();
     const branchId = newLifeBranchId();
     const villageName = body.villageName?.trim() || undefined;
     return sseResponse(async (send, signal) => {
-      await streamLifecycleLife({
-        // Per-request seam: the repository owns no state beyond its prepared statements.
-        repository: new LifecycleRepository(getDb()),
-        lifeId,
-        branchId,
-        name,
-        sex,
-        seed,
-        ...(villageName === undefined ? {} : { villageName }),
-        locale,
-        signal,
-        emit: (event) => send(event.type, event),
-        flushFrame: yieldToEventLoop,
-      });
+      try {
+        await ticket.ready(signal);
+        if (signal.aborted) return;
+        await streamLifecycleLife({
+          // Per-request seam: the repository owns no state beyond its prepared statements.
+          repository: new LifecycleRepository(getDb()),
+          lifeId,
+          branchId,
+          name,
+          sex,
+          seed,
+          ...(villageName === undefined ? {} : { villageName }),
+          locale,
+          signal,
+          emit: (event) => send(event.type, event),
+          flushFrame: yieldToEventLoop,
+        });
+      } finally {
+        ticket.release();
+      }
     });
   }
 

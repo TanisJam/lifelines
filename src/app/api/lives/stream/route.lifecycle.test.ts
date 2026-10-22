@@ -7,6 +7,11 @@ import { createMind } from "@/domain/mind";
 import type { SimulateReport } from "@/domain/simulate";
 import { initializeWorld } from "@/domain/world-origin";
 import { getDb } from "@/server/db";
+import {
+  LIFECYCLE_CREATE_QUEUE_LIMIT,
+  lifecycleCreateQueueState,
+  requestLifecycleCreateSlot,
+} from "@/server/lifecycle-create-queue";
 import { LifecycleRepository } from "@/server/lifecycle-repository";
 
 /**
@@ -221,4 +226,21 @@ describe("POST /api/lives/stream — new-engine activation (RI1c)", () => {
     expect(mocks.guard).not.toHaveBeenCalled();
     expect(counts()).toEqual(before);
   });
+
+  it("refuses with 429 when the create gate's waiting list is full", async () => {
+    const opened = [];
+    try {
+      // One running + the whole waiting list. The queue is a memory guardrail: refusing is honest.
+      for (let index = 0; index <= LIFECYCLE_CREATE_QUEUE_LIMIT; index++) opened.push(requestLifecycleCreateSlot());
+      const res = await POST(jsonRequest({ name: "Blocked", sex: "f", seed: SEED, engine: "lifecycle" }));
+      expect(res.status).toBe(429);
+      const body = (await res.json()) as { error?: string };
+      expect(body.error).toMatch(/waiting list is full/i);
+    } finally {
+      for (const ticket of opened) ticket.release();
+    }
+    // The refusal left no slot behind.
+    expect(lifecycleCreateQueueState()).toEqual({ active: 0, waiting: 0 });
+  });
+
 });

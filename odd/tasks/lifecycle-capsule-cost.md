@@ -56,6 +56,7 @@ Other measured facts:
 | P3 | S4: serve reads from a persisted projection | inline | **done** |
 | P4 | S3: drop the remaining intra-request replay inside `runLifecycle` | inline | open |
 | P5 | integrity: replay every stored life and compare each indexed view | inline | **done** |
+| P6 | safety: bound concurrent creates so two cannot exceed the container | inline | **done** |
 
 ## Log
 
@@ -223,3 +224,29 @@ binding row through ordinary SQL.
 Cost, so nobody schedules it wrong: one full replay per life. At 15 years that is ~150 s and ~1.5 GB, so this
 belongs in cron or CI, never anywhere near a request. It is the only place left that still proves
 "what is served is what the capsule regenerates".
+
+**L13** — P6 landed, closing the last production risk. Nothing capped CONCURRENT creates: each needs
+~2.07 GiB, so two at once exceed `mem_limit: 2560m` and the kernel kills the whole process, taking every
+in-flight read down with it. The per-IP rate limit (6/hour, 20/day) is not a concurrency bound - two different
+people, or one person with two tabs, reach it.
+
+`src/server/lifecycle-create-queue.ts` is the guardrail: `LIFECYCLE_CREATE_CONCURRENCY = 1` and
+`LIFECYCLE_CREATE_QUEUE_LIMIT = 4`. Beyond that the request is refused with **429** before a stream is opened,
+so the client gets an honest answer instead of an SSE that never starts. A queued request holds no slot and no
+memory; a client disconnect leaves the waiting list without stealing the running slot; `release()` is
+idempotent and always runs in a `finally`.
+
+Measured cost of the queue itself: none on the create. It only waits.
+
+Scope and limits, stated rather than implied:
+- **Lifecycle engine only.** The legacy `/api/worlds` create path is unchanged: it is far cheaper and was not
+  the measured risk.
+- **In-process only.** The deploy is a single container, so one Node process owns every create. A second
+  replica would make this bound silently ineffective and need a shared lease. If the deploy ever scales out,
+  this module is the thing to revisit.
+- A queued request still occupies an SSE connection for up to ~20 minutes (one running + four queued at
+  ~4 minutes each), which is why the waiting list is bounded at 4 instead of unbounded.
+
+Tests: 5 unit tests on the gate (serializes, refuses when full without consuming a slot, abort leaves the
+waiting list without stealing the running slot, already-aborted rejects immediately, throw releases and
+release is idempotent) plus one route test asserting the 429.
