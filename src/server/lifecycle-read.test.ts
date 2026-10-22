@@ -10,6 +10,7 @@ vi.mock("@/server/decision-engine", async () => {
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import type { Chronicle } from "@/contracts/life";
 import { createLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
+import { serializeCompactLifecycleDag } from "@/domain/e-lifecycle-dag";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
 import { simulate } from "@/domain/simulate";
@@ -79,11 +80,19 @@ async function registerLegacyLife(): Promise<{ lifeId: string; branchId: string 
   return { lifeId: life.id, branchId: life.originalBranchId };
 }
 
-/** One stored capsule row, addressed by its own `key` — the table may hold more than one life. */
-function storedCapsuleRow(db: DatabaseSync, key: Uint8Array): { key: Uint8Array; wire: Uint8Array } {
-  return db.prepare("SELECT key, wire FROM main.lifecycle_capsules_v1 WHERE key = ?").get(key) as { key: Uint8Array; wire: Uint8Array };
+/** One stored v2 row, addressed by its own `key` — the table may hold more than one life. */
+function storedCapsuleRow(db: DatabaseSync, key: Uint8Array): { key: Uint8Array; genesis_table: string } {
+  return db.prepare("SELECT key, genesis_table FROM main.lifecycle_capsules_v2 WHERE key = ?")
+    .get(key) as { key: Uint8Array; genesis_table: string };
 }
-const decodeWire = (wire: Uint8Array): string => Buffer.from(wire).toString("utf16le");
+/** A structurally valid genesis that is NOT this life's: regeneration must refuse the mismatch. */
+function foreignGenesisTable(): string {
+  const initialization = { seed: "ri1d-foreign-1", startYear: 1327, endYear: 1427, protagonist: { name: "Foreign", sex: "f" as const } };
+  const { world } = initializeWorld(initialization);
+  const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist",
+    resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+  return serializeCompactLifecycleDag(genesis);
+}
 
 let fresh: LifecycleCompactCapsule;
 let freshSource: LifecycleProjectionSource;
@@ -191,16 +200,12 @@ describe("lifecycle read path (RI1d)", () => {
     }
   }, 120_000);
 
-  it("serves the index for a tampered capsule and refuses it wherever the index cannot answer", async () => {
+  it("serves the index for a tampered genesis and refuses it wherever the index cannot answer", async () => {
     const db = getDb();
     const digest = (await new LifecycleRepository(db).load(LIFE, BRANCH))!.capsule.digest;
     const stored = storedCapsuleRow(db, Buffer.from(digest, "utf16le"));
-    const wire = decodeWire(stored.wire);
-    const envelope = JSON.parse(wire) as { digest: string };
-    envelope.digest = "0".repeat(64);
-    db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(
-      Buffer.from(JSON.stringify(envelope), "utf16le"), stored.key,
-    );
+    db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?")
+      .run(foreignGenesisTable(), stored.key);
     try {
       // P3's deliberate cost: the index is addressed by the capsule digest, so it still answers with
       // the view it was written from. A read no longer re-proves regeneration.
@@ -208,22 +213,23 @@ describe("lifecycle read path (RI1d)", () => {
       expect(indexed.error).toBeUndefined();
       expect(indexed.data).toEqual(expectedChronicle);
       expect((await listLifecycleSummaries("en"))[0]!.lifeId).toBe(LIFE);
-      // Every path that still replays refuses the same bytes, never repairs them.
+      // Every path that still replays refuses the same row, never repairs it.
       const sheet = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en");
       expect(sheet.data).toBeUndefined();
       expect(sheet.status).toBe(500);
-      expect(sheet.error).toMatch(/digest disagreement/i);
+      expect(sheet.error).toMatch(/binding\/capsule disagreement/i);
       // With the index gone, the replay path must refuse too.
       db.prepare("DELETE FROM main.lifecycle_projections_v1").run();
       const refused = await buildLifecycleChronicle(LIFE, undefined, "en");
       expect(refused.data).toBeUndefined();
       expect(refused.status).toBe(500);
-      expect(refused.error).toMatch(/digest disagreement/i);
-      await expect(listLifecycleSummaries("en")).rejects.toThrow(/digest disagreement/i);
+      expect(refused.error).toMatch(/binding\/capsule disagreement/i);
+      await expect(listLifecycleSummaries("en")).rejects.toThrow(/binding\/capsule disagreement/i);
     } finally {
-      db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(stored.wire, stored.key);
+      db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?")
+        .run(stored.genesis_table, stored.key);
     }
-    // Restored: the exact stored bytes read again as the same life, re-indexing on the miss.
+    // Restored: the stored genesis regenerates the same life again, re-indexing on the miss.
     const restored = await buildLifecycleChronicle(LIFE, undefined, "en");
     expect(restored.data).toEqual(expectedChronicle);
   }, 120_000);

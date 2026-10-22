@@ -5,6 +5,8 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createLifecycleCompactCapsule, LIFECYCLE_COMPACT_CAPSULE_MANIFEST, serializeLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
+import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "@/domain/e-lifecycle-dag";
+import { canonicalLifecycleData } from "@/domain/e-lifecycle-genesis";
 import { createLifecycleRuntime } from "@/domain/e-lifecycle-runtime";
 import { initializeWorld } from "@/domain/world-origin";
 import { openDb } from "./db";
@@ -111,7 +113,7 @@ describe("LifecycleRepository persistence (RI1a)", () => {
       // Authority rule: a rejected save leaves nothing behind.
       expect(repo.binding("life-1", "branch-1")).toBeUndefined();
       expect(count(db, "lifecycle_bindings")).toBe(0);
-      expect(count(db, "lifecycle_capsules_v1")).toBe(0);
+      expect(count(db, "lifecycle_capsules_v2")).toBe(0);
     } finally {
       db.close();
     }
@@ -127,7 +129,7 @@ describe("LifecycleRepository persistence (RI1a)", () => {
       const retry = await repo.publish(first);
       expect(retry).toEqual(written);
       expect(count(db, "lifecycle_bindings")).toBe(1);
-      expect(count(db, "lifecycle_capsules_v1")).toBe(1);
+      expect(count(db, "lifecycle_capsules_v2")).toBe(1);
       await expect(repo.publish(other)).rejects.toThrow("Conflicting immutable lifecycle binding");
       expect(count(db, "lifecycle_bindings")).toBe(1);
     } finally {
@@ -177,18 +179,43 @@ describe("LifecycleRepository persistence (RI1a)", () => {
     }
   });
 
-  it("refuses a tampered capsule payload before replay", async () => {
+  it("refuses a stored genesis that does not reproduce the bound capsule", async () => {
     const input = await publication("lifecycle-rb-tamper");
     const db = openDb(dbPath);
     try {
       const repo = new LifecycleRepository(db);
       const written = await repo.publish(input);
       const key = Buffer.from(written.capsuleDigest, "utf16le");
-      const row = db.prepare("SELECT wire FROM lifecycle_capsules_v1 WHERE key = ?").get(key) as { wire: Uint8Array };
-      const envelope = JSON.parse(Buffer.from(row.wire).toString("utf16le")) as { digest: string };
-      envelope.digest = "0".repeat(64);
-      db.prepare("UPDATE lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(Buffer.from(JSON.stringify(envelope), "utf16le"), key);
-      await expect(repo.load("life-1", "branch-1")).rejects.toThrow(/digest/i);
+      // v2 stores the INPUT, so a tampered payload is a genesis that regenerates a different life.
+      const foreign = (await publication("lifecycle-rb-foreign")).capsule.genesis;
+      db.prepare("UPDATE lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?")
+        .run(serializeCompactLifecycleDag(foreign), key);
+      await expect(repo.load("life-1", "branch-1")).rejects.toThrow(/binding\/capsule disagreement/i);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("stores the genesis input, not the regenerated years", async () => {
+    const input = await publication("lifecycle-rb-storage");
+    const db = openDb(dbPath);
+    try {
+      const written = await new LifecycleRepository(db).publish(input);
+      const key = Buffer.from(written.capsuleDigest, "utf16le");
+      const row = db.prepare("SELECT genesis_table, length(genesis_table) AS bytes, max_steps FROM lifecycle_capsules_v2 WHERE key = ?")
+        .get(key) as { genesis_table: string; bytes: number; max_steps: number };
+      expect(row.max_steps).toBe(1);
+      // The stored payload IS the capsule's genesis, decoded - not merely "some small string".
+      const stored = deserializeCompactLifecycleDag(row.genesis_table);
+      expect(canonicalLifecycleData(stored)).toBe(canonicalLifecycleData(input.capsule.genesis));
+      // It carries no years: the journal is regenerated, never persisted.
+      expect(row.genesis_table).not.toContain("journal");
+      expect(row.genesis_table).not.toContain("physicalSnapshot");
+      // And it is far smaller than the wire it replaces.
+      const wire = await serializeLifecycleCompactCapsule(input.capsule);
+      expect(row.bytes).toBeLessThan(Buffer.byteLength(wire, "utf8") / 2);
+      // Nothing is archived into v1 any more.
+      expect(count(db, "lifecycle_capsules_v1")).toBe(0);
     } finally {
       db.close();
     }
@@ -274,7 +301,7 @@ describe("LifecycleRepository persistence (RI1a)", () => {
       expect({ lives: count(db, "lives"), branches: count(db, "life_branches"), bindings: count(db, "canonical_branch_bindings") }).toEqual(before);
       expect(count(db, "lifecycle_lives")).toBe(1);
       expect(count(db, "lifecycle_bindings")).toBe(1);
-      expect(count(db, "lifecycle_capsules_v1")).toBe(1);
+      expect(count(db, "lifecycle_capsules_v2")).toBe(1);
     } finally {
       db.close();
     }

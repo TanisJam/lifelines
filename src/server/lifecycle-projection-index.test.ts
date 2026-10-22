@@ -111,7 +111,7 @@ describe("lifecycle projection index (P3)", () => {
     expect(count("SELECT count(*) AS n FROM main.lifecycle_lives WHERE id = ?", "tx-p3-1")).toBe(0);
     expect(count("SELECT count(*) AS n FROM main.lifecycle_bindings WHERE life_id = ?", "tx-p3-1")).toBe(0);
     const digest = payload.capsule.digest;
-    expect(count("SELECT count(*) AS n FROM main.lifecycle_capsules_v1 WHERE key = ?",
+    expect(count("SELECT count(*) AS n FROM main.lifecycle_capsules_v2 WHERE key = ?",
       Buffer.from(digest, "utf16le"))).toBe(0);
   }, 240_000);
 

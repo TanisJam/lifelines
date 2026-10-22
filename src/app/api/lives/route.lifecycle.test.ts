@@ -10,6 +10,7 @@ import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import type { Chronicle, LifeListItem, LifeSex, PersonSheet } from "@/contracts/life";
 import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
+import { serializeCompactLifecycleDag } from "@/domain/e-lifecycle-dag";
 import { createLifecycleRuntime } from "@/domain/e-lifecycle-runtime";
 import { simulate } from "@/domain/simulate";
 import { initializeWorld } from "@/domain/world-origin";
@@ -267,28 +268,32 @@ describe("GET /api/lives/:lifeId/people/:personId — sheet activation (RI1d)", 
 });
 
 describe("GET /api/lives/:lifeId — refused capsule (RI1d)", () => {
-  it("serves the index for a tampered capsule and refuses it once the index is gone", async () => {
+  it("serves the index for a tampered genesis and refuses it once the index is gone", async () => {
     const db = getDb();
     const digest = (await new LifecycleRepository(db).load(FIRST.lifeId, FIRST.branchId))!.capsule.digest;
     const key = Buffer.from(digest, "utf16le");
-    const stored = db.prepare("SELECT wire FROM main.lifecycle_capsules_v1 WHERE key = ?").get(key) as { wire: Uint8Array };
-    const envelope = JSON.parse(Buffer.from(stored.wire).toString("utf16le")) as { digest: string };
-    envelope.digest = "0".repeat(64);
-    db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(Buffer.from(JSON.stringify(envelope), "utf16le"), key);
+    const stored = db.prepare("SELECT genesis_table FROM main.lifecycle_capsules_v2 WHERE key = ?")
+      .get(key) as { genesis_table: string };
+    const foreignInitialization = { seed: "route-foreign-1", startYear: 1327, endYear: 1427, protagonist: { name: "Foreign", sex: "f" as const } };
+    const foreignWorld = initializeWorld(foreignInitialization).world;
+    const foreign = createLifecycleGenesis({ initialization: foreignInitialization, protagonistId: "protagonist",
+      resources: Object.fromEntries(Object.keys(foreignWorld.people).map((id) => [id, { grain: 2, effort: 3, need: 1 }])) });
+    db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?")
+      .run(serializeCompactLifecycleDag(foreign), key);
     try {
       // P3's deliberate cost: the index answers by capsule digest without re-proving regeneration.
       const indexed = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
       expect(indexed.status).toBe(200);
       expect((await indexed.json()) as Chronicle).toEqual(first.chronicle);
-      // Without the index, the replay path refuses the same bytes instead of repairing them.
+      // Without the index, the replay path refuses the same row instead of repairing it.
       db.prepare("DELETE FROM main.lifecycle_projections_v1").run();
       const response = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
       expect(response.status).toBe(500);
       const body = (await response.json()) as { error?: string; data?: unknown };
-      expect(body.error).toMatch(/digest disagreement/i);
+      expect(body.error).toMatch(/binding\/capsule disagreement/i);
       expect(body).toEqual({ error: body.error });
     } finally {
-      db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(stored.wire, key);
+      db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?").run(stored.genesis_table, key);
     }
     // Restored: the same request is the same life again, and the miss re-indexes it.
     const restored = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });

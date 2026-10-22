@@ -100,8 +100,16 @@ function jsonRequest(body: unknown): Request {
 
 /** Row counts of every table the two paths can write, so each request proves its own footprint. */
 function counts(): Record<string, number> {
-  const tables = ["lives", "life_branches", "lifecycle_lives", "lifecycle_bindings", "lifecycle_capsules_v1"];
-  return Object.fromEntries(tables.map((table) => [table, (getDb().prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n]));
+  const tables = ["lives", "life_branches", "lifecycle_lives", "lifecycle_bindings", "lifecycle_capsules_v2"];
+  // A table that has not been created yet counts as zero: `lifecycle_capsules_v2` only exists once a
+  // LifecycleRepository has been constructed, and these counts also run before the first request.
+  return Object.fromEntries(tables.map((table) => {
+    try {
+      return [table, (getDb().prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n];
+    } catch {
+      return [table, 0];
+    }
+  }));
 }
 
 interface SseFrame {
@@ -193,7 +201,7 @@ describe("POST /api/lives/stream — new-engine activation (RI1c)", () => {
       ...before,
       lifecycle_lives: before.lifecycle_lives! + 1,
       lifecycle_bindings: before.lifecycle_bindings! + 1,
-      lifecycle_capsules_v1: before.lifecycle_capsules_v1! + 1,
+      lifecycle_capsules_v2: before.lifecycle_capsules_v2! + 1,
     });
 
     // The lifecycle branch reuses the existing admission guard and never the legacy simulation path.

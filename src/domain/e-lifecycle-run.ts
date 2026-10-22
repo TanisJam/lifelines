@@ -70,6 +70,26 @@ function result(capsule: LifecycleCapsule, aborted: boolean): LifecycleRunResult
  * Cancellation observes closed boundaries only, never interrupts native/replay work.
  * Errors propagate unchanged; no failed execution is converted into cancellation.
  */
+/**
+ * Re-executes a stored genesis for its recorded number of years and returns the output, WITHOUT building
+ * the legacy capsule. This is the cold-reconstruction primitive: the genesis is the stored authority, and
+ * every year is regenerated from it under the current engine. No stored output, digest or record is used
+ * as an input - there is none to use.
+ */
+export async function regenerateLifecycleOutput(genesis: unknown, maxSteps: unknown): Promise<LifecycleCapsule["output"]> {
+  const admitted = admitLifecycleGenesis(genesis);
+  if (typeof maxSteps !== "number" || !Number.isSafeInteger(maxSteps) || maxSteps < 0 || Object.is(maxSteps, -0)) {
+    throw new Error("Invalid lifecycle reconstruction step budget");
+  }
+  const owner = createLifecycleRuntime(admitted);
+  for (let step = 0; step < maxSteps; step++) {
+    // Same stop rule as runLifecycle: a death inside the budget ends the run early, never overshoots.
+    if (owner.snapshot().status === "complete") break;
+    await owner.advance(owner.snapshot().frontier + 1);
+  }
+  return owner.snapshot();
+}
+
 export async function runLifecycle(input: unknown, options: LifecycleRunOptions): Promise<LifecycleRunResult> {
   const candidate = capture(input);
   const { maxSteps, aborted, onYear } = optionsFor(options);

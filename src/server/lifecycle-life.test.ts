@@ -196,7 +196,7 @@ describe("lifecycle create orchestration (RI1c)", () => {
       // never has to replay. Both rows carry the ADMITTED digest, not anything the caller claimed.
       expect(db.prepare("SELECT locale FROM main.lifecycle_projections_v1 WHERE capsule_digest = ? ORDER BY locale")
         .all(loaded!.capsule.digest).map((row) => (row as { locale: string }).locale)).toEqual(["en", "es"]);
-      expect(count(db, "lifecycle_capsules_v1")).toBe(1);
+      expect(count(db, "lifecycle_capsules_v2")).toBe(1);
       // The lifecycle path never writes the legacy tables.
       expect(count(db, "lives")).toBe(0);
       expect(count(db, "life_branches")).toBe(0);
@@ -221,7 +221,7 @@ describe("lifecycle create orchestration (RI1c)", () => {
       expect(wire.frames.map((frame) => frame.type)).toEqual(["start", "tick"]);
       expect(count(db, "lifecycle_lives")).toBe(0);
       expect(count(db, "lifecycle_bindings")).toBe(0);
-      expect(count(db, "lifecycle_capsules_v1")).toBe(0);
+      expect(count(db, "lifecycle_capsules_v2")).toBe(0);
     } finally {
       db.close();
     }
@@ -240,7 +240,7 @@ describe("lifecycle create orchestration (RI1c)", () => {
       expect(wire.frames.map((frame) => frame.type)).toEqual(["start"]);
       expect(count(db, "lifecycle_lives")).toBe(0);
       expect(count(db, "lifecycle_bindings")).toBe(0);
-      expect(count(db, "lifecycle_capsules_v1")).toBe(0);
+      expect(count(db, "lifecycle_capsules_v2")).toBe(0);
     } finally {
       db.close();
     }

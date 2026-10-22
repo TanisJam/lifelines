@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { serializeCompactLifecycleDag } from "@/domain/e-lifecycle-dag";
+import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
+import { initializeWorld } from "@/domain/world-origin";
 import { getDb } from "./db";
 import { streamLifecycleLife } from "./lifecycle-life";
 import { LIFECYCLE_VIEW_VERSION } from "./lifecycle-projection-store";
@@ -26,6 +29,15 @@ async function createLife(lifeId: string, branchId: string): Promise<void> {
 const issuesFor = (issues: readonly LifecycleVerificationIssue[], lifeId: string) =>
   issues.filter((issue) => issue.lifeId === lifeId);
 
+/** A structurally valid genesis that is NOT this life's: regeneration must refuse the mismatch. */
+function foreignGenesisTable(): string {
+  const initialization = { seed: "verify-foreign-1", startYear: 1327, endYear: 1427, protagonist: { name: "Foreign", sex: "f" as const } };
+  const { world } = initializeWorld(initialization);
+  const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist",
+    resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+  return serializeCompactLifecycleDag(genesis);
+}
+
 describe("lifecycle verification (P5)", () => {
   it("reports nothing for a healthy life", async () => {
     await createLife("verify-ok", "verify-ok-b");
@@ -34,24 +46,21 @@ describe("lifecycle verification (P5)", () => {
     expect(report.lives).toBeGreaterThan(0);
   }, 240_000);
 
-  it("refuses a capsule that no longer replays instead of trusting the index", async () => {
+  it("refuses a stored genesis that no longer regenerates the bound life", async () => {
     await createLife("verify-bad", "verify-bad-b");
     const db = getDb();
     const digest = (await new LifecycleRepository(db).load("verify-bad", "verify-bad-b"))!.capsule.digest;
     const key = Buffer.from(digest, "utf16le");
-    const stored = db.prepare("SELECT wire FROM main.lifecycle_capsules_v1 WHERE key = ?").get(key) as { wire: Uint8Array };
-    const envelope = JSON.parse(Buffer.from(stored.wire).toString("utf16le")) as { digest: string };
-    envelope.digest = "0".repeat(64);
-    db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?")
-      .run(Buffer.from(JSON.stringify(envelope), "utf16le"), key);
+    const stored = db.prepare("SELECT genesis_table FROM main.lifecycle_capsules_v2 WHERE key = ?")
+      .get(key) as { genesis_table: string };
+    db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?").run(foreignGenesisTable(), key);
     try {
-      // A read would have answered from the index; verification replays and refuses.
-      const report = await verifyLifecycleLives();
-      const issues = issuesFor(report.issues, "verify-bad");
+      // A read would have answered from the index; verification regenerates and refuses.
+      const issues = issuesFor((await verifyLifecycleLives()).issues, "verify-bad");
       expect(issues.map((issue) => issue.kind)).toEqual(["capsule-refused"]);
-      expect(issues[0]!.detail).toMatch(/digest disagreement/i);
+      expect(issues[0]!.detail).toMatch(/binding\/capsule disagreement/i);
     } finally {
-      db.prepare("UPDATE main.lifecycle_capsules_v1 SET wire = ? WHERE key = ?").run(stored.wire, key);
+      db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?").run(stored.genesis_table, key);
     }
     expect(issuesFor((await verifyLifecycleLives()).issues, "verify-bad")).toEqual([]);
   }, 240_000);

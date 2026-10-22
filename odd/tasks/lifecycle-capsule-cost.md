@@ -17,6 +17,8 @@ weakening the capsule's authority model.
 - **S6** The stored view MUST be addressed by the ADMITTED capsule digest, so it cannot describe a
   different life; a miss MUST fall back to a full replay and repopulate, and a view-logic change MUST ship as
   a new `view_version` rather than migrating rows.
+- **S7** Persistence MUST store the regenerable INPUT rather than the regenerated result, and MUST keep
+  lives written under the previous format readable.
 - **S5** Every claim in the Log MUST distinguish measured values from extrapolations.
 
 ## Measurements (heap-cap bisection, seed `cap-0`, 15 journal years)
@@ -58,6 +60,8 @@ Other measured facts:
 | P5 | integrity: replay every stored life and compare each indexed view | inline | **done** |
 | P6 | safety: bound concurrent creates so two cannot exceed the container | inline | **done** |
 | P7 | UX: emit each year DURING the run, not after it | inline | **done** |
+| P8 | storage: persist the genesis, not the regenerated years | inline | **done** |
+| P9 | S4: serve the person sheet without a full regeneration | inline | open, needs design approval |
 
 ## Log
 
@@ -325,3 +329,58 @@ still refuses (also new).
 What is genuinely given up: the create-time NON-DETERMINISM check. That replay also proved the engine reproduces
 the same bytes. It now lives in `verifyLifecycleLives` (P5), which replays from genesis off the request path
 and refuses on any disagreement. Total create cost across the session: **610 s → 228 s → 126.9 s**.
+
+**L16** — P8 landed. The capsule wire was 55.4 MiB per 15-year life because it embedded every regenerated
+year, and all of it is derivable from the genesis. `lifecycle_capsules_v2` (new table, no migration of existing
+rows) stores only:
+
+- `genesis_table` — the genesis as a compact DAG (lossless, so own-undefined and `-0` survive a round trip that
+  plain JSON would destroy),
+- `max_steps` — the number of years the original run committed.
+
+`load` regenerates the years from that genesis with `regenerateLifecycleOutput`, then rebuilds the capsule and
+compares its digest with the binding. Nothing stored is an input to execution. Lives already written as `v1`
+wires keep loading through the archived-wire path exactly as before, so nothing is bricked or migrated.
+
+Measured on the real 15-year life:
+
+| | Before P8 | After P8 |
+|---|---|---|
+| Stored per life | **55.4 MiB** (58,132,044 B UTF-16) | **0.09 MB** genesis + 0.03 MB of both views |
+| Whole database WAL after one life | — | 0.31 MB |
+| `publish` | 20.5 s | **57 ms** (it no longer serializes the wire) |
+| `load` (cold regeneration) | 152.2 s | **123.1 s** |
+| Full create | 126.9 s | **120.5 s**, VmHWM 1.83 GiB |
+
+**The strongest check**: the capsule reconstructed from the stored genesis has the SAME digest as the archived
+wire (`63a05ff5…`). Regeneration from the input is bit-identical to the result that was stored before, which is
+the whole premise of storing the input.
+
+`max_steps = journal.length` is exact rather than approximate: `regenerateLifecycleOutput` uses the same stop
+rule as `runLifecycle`, so a death inside the budget ends the run at the same year instead of overshooting.
+
+Tests were migrated, not deleted. The tamper tests used to corrupt the archived wire; they now substitute a
+structurally valid FOREIGN genesis and assert `Lifecycle binding/capsule disagreement`, which is the same
+invariant (stored bytes that disagree with regeneration are a refusal, never a repair) expressed against the
+new authority. A new test asserts the stored genesis is smaller than half the wire it replaces.
+
+**L17** — Independent verification of P8 found no blockers and reproduced S7 and S2 independently: the 15-year
+life round-trips byte-identically (92,684-byte genesis + `max_steps 15` regenerates digest `63a05ff5…` and a
+wire with the archived wire's sha), `max_steps = journal.length` is exact for a death inside the horizon, an
+alive-at-horizon life, a zero-year run and an over-budget run, and a life written only as a v1 wire at baseline
+still loads at HEAD with zero v2 rows created (no silent migration). `publish` measured 51 ms at HEAD against
+11,565 ms at baseline writing a 58,132,044-byte BLOB.
+
+Three corrections came out of it:
+
+1. **A test of mine was weak.** "stores the genesis input" compared `length(genesis_table)` to half the wire,
+   which would pass with any small string. It now decodes the stored DAG, asserts it equals the capsule's
+   genesis by `canonicalLifecycleData`, and asserts it carries no `journal`/`physicalSnapshot`.
+2. **Dead code removed.** `insertCapsule` and `readCapsule` became unreachable once publish stopped writing v1;
+   `selectCapsule` survives only for the v1 fallback read.
+3. **An operational risk, pre-existing and now stated.** At `--max-old-space-size=1536` a cold 15-year `load`
+   aborts with a V8 heap OOM on both `a3dea51` and `3bc49c9` (the verifier's box), while it completed at 1536 in
+   mine and at 3072 in theirs. It sits on the GC boundary, exactly like the 1280 create floor. This matters
+   because `buildLifecyclePersonSheet` is the one read path that still calls `load`: chronicle, detail and list
+   are indexed, but a person sheet still regenerates the whole life. **In the deployed container that request
+   can be OOM-killed.** Tracked as P9 below.
