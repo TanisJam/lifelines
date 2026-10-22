@@ -4,7 +4,7 @@ import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
 import { LOCALES, type Locale } from "@/domain/locale";
 import { initializeWorld } from "@/domain/world-origin";
-import { projectLifecycleChronicle, projectLifecycleTick } from "./lifecycle-projection";
+import { projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "./lifecycle-projection";
 import type { LifecyclePublication } from "./lifecycle-repository";
 
 /**
@@ -162,6 +162,20 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
       : (await projectLifecycleChronicle({ source, identity: { lifeId, branchId }, locale: target })).view,
   })));
 
+  // Person sheets are indexed too, so the LAST read path that used to regenerate the whole life stops
+  // doing it. It costs ~0.2 ms and ~400 B per person because the replay is already in memory here; the
+  // alternative was a full 123 s regeneration, and a V8 heap OOM, on a page load.
+  const personSheets = (
+    await Promise.all(LOCALES.map(async (target) => {
+      const sheets = [];
+      for (const personId of Object.keys(capsule.output.owned.people)) {
+        sheets.push({ locale: target, personId,
+          view: (await projectLifecyclePersonSheet({ source, personId, locale: target })).view });
+      }
+      return sheets;
+    }))
+  ).flat();
+
   // Both statuses persist: the compact capsule stores the run's own `status` and `frontier`, so an
   // alive life is loadable as alive at the horizon. Only a real failure above or here writes nothing.
   await repository.publish({
@@ -172,6 +186,7 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
     protagonistSex: resolvedSex,
     capsule: await createLifecycleCompactCapsule({ genesis: capsule.genesis, output: capsule.output }),
     projections,
+    personSheets,
   });
 
   // Only AFTER a successful publish is the life visible. An abort that arrives during the save

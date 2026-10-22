@@ -20,6 +20,10 @@ weakening the capsule's authority model.
 - **S7** Persistence MUST store the regenerable INPUT rather than the regenerated result, and MUST keep
   lives written under the previous format readable.
 - **S5** Every claim in the Log MUST distinguish measured values from extrapolations.
+- **S8** No read endpoint MUST regenerate the life on the request path. A life written before its index
+  existed MAY pay ONE bounded regeneration to heal, and that heal MUST index everything the read needs.
+- **S9** A read MUST NEVER answer "not found" from an index that cannot prove its own completeness. An
+  incomplete index is a MISS, never an absence.
 
 ## Measurements (heap-cap bisection, seed `cap-0`, 15 journal years)
 
@@ -61,7 +65,7 @@ Other measured facts:
 | P6 | safety: bound concurrent creates so two cannot exceed the container | inline | **done** |
 | P7 | UX: emit each year DURING the run, not after it | inline | **done** |
 | P8 | storage: persist the genesis, not the regenerated years | inline | **done** |
-| P9 | S4: serve the person sheet without a full regeneration | inline | open, needs design approval |
+| P9 | S4/S8: serve the person sheet without a full regeneration | inline | **done** |
 
 ## Log
 
@@ -384,3 +388,79 @@ Three corrections came out of it:
    because `buildLifecyclePersonSheet` is the one read path that still calls `load`: chronicle, detail and list
    are indexed, but a person sheet still regenerates the whole life. **In the deployed container that request
    can be OOM-killed.** Tracked as P9 below.
+
+**L18** — P9 landed. The person sheet was the LAST read path calling `load`, and that was a live container
+problem, not a theoretical one: at `--max-old-space-size=1536` a cold 15-year regeneration aborted with a V8
+heap OOM on the verifier's box, so `GET /api/lives/:id/people/:personId` could be OOM-killed in production.
+
+The sheet cannot be derived from the indexed chronicle. It needs the person's own record (job, birth and death
+years, `mind` for the portrait) and the whole event list to narrate a timeline, and the chronicle keeps only
+the entries it chose to tell. So the sheets themselves are indexed, in `lifecycle_person_sheets_v1`, written in
+the same publish transaction as the capsule and keyed by the same admitted digest. Separate table and separate
+`view_version` from the chronicle: a chronicle-only change must not invalidate 125 sheet rows per life, and a
+sheet change must not invalidate the chronicle.
+
+The projection is nearly free **because it already has the replay in memory**: 250 sheets (125 people x 2
+locales) in **54 ms**, and the whole publish with them in **78 ms**.
+
+| | Before P9 | After P9 |
+|---|---|---|
+| `GET .../people/:personId` | **123-152 s, OOM risk** | **2 ms** |
+| Heap needed | a full regeneration | none |
+| Stored per 15-year life | 0.088 MB genesis + 0.032 MB chronicle | + **0.099 MB** of sheets = 0.22 MB |
+| Whole database WAL | 0.31 MB | 0.51 MB |
+
+Still **252x smaller** than the 55.4 MiB wire, and now no read endpoint replays at all.
+
+Two design points that are load-bearing:
+
+1. **"Not indexed" is not "this person does not exist".** The store returns the whole sheet set for a locale,
+   because the route must distinguish "this life has no sheet rows" (regenerate once and heal every locale)
+   from "rows exist and this id is not among them" (the honest legacy 404). Two separate lookups would let a
+   half-written index report a real person as missing. A missing person is now answered from the index alone.
+2. **The heal is bounded and complete.** A cold miss regenerates ONE time and indexes every person of every
+   locale, not just the one that was asked for, so the cost is paid at most once per life rather than once per
+   (person, locale) pair.
+
+Verification was extended rather than duplicated: `verifyLifecycleLives` now compares every indexed sheet
+against a fresh projection of the same capsule, and reports `sheet-view-missing` for a life that predates the
+index exactly as it already reported `view-missing` for a missing chronicle. The read tests use the same
+sentinel technique as the chronicle test: a row no regeneration could ever produce, proving the endpoint does
+not regenerate.
+
+**L19** — Independent verification of P9 found a real BLOCKER, and it was mine in the worst way: the code
+comment I wrote said "answering those two from separate lookups would let a half-written index report a real
+person as missing", and then the implementation treated any NON-EMPTY row set as complete. Delete one row, or
+fail the heal halfway on a full disk, and a real person answered `404 Person not found.` in 2 ms with zero
+`load` calls, while the baseline answered `200` after a full replay. `verifyLifecycleLives` caught it, the
+request path never did.
+
+The fix has three parts, and none of them is "be careful":
+
+1. **A completeness marker.** `lifecycle_person_sheet_sets_v1` holds one row per (life, branch, version,
+   locale) with `person_count`. `readComplete` answers only when the marker agrees with the stored row count;
+   anything else is a miss. A partial set now identifies ITSELF as partial, whatever made it partial -
+   a failed write, a manual delete, a disk that filled up.
+2. **An atomic heal.** The 250 inserts ran outside a transaction and swallowed their error, which is how a
+   68-of-250 index was left looking valid. The heal now runs in one `withTransaction`, so a failure leaves
+   ZERO rows, which reads as a miss and heals again. The publish path was already transactional.
+3. **A heal that can overwrite.** `ON CONFLICT DO NOTHING` meant an unparseable row was never replaced, so
+   every read of that locale paid a 100 s regeneration forever. The heal passes `{ replace: true }`; a create
+   still keeps the first bytes it wrote.
+
+The verifier's own reproduction became a regression test in `lifecycle-read.test.ts`: delete one sheet row,
+read that person, require `200` plus exactly one `load` call. Two more were added for the unparseable-row case
+and for the `404` path, which now asserts `load` was never called - the original test would have passed while
+regenerating, which is exactly the kind of test that hides this bug.
+
+New spec: **S9**. An index that cannot prove its completeness is a miss, never an absence. That is the
+general rule the blocker taught, and it applies to any future indexed read in this codebase.
+
+The scoped recheck reproduced every part of the blocker and passed all six items: one deleted row now yields
+200 with a single 100 s heal and then a 1 ms index hit; a mid-write `SQLITE_FULL` (112 of 250 rows, forced with
+`PRAGMA max_page_count`) rolls back to ZERO rows and no marker, and the next read still serves 200; an
+unparseable row is replaced, and the second read calls `load` zero times. It also found one more asymmetry,
+which was fixed rather than deferred: the heal replaced rows with `INSERT OR REPLACE` but the completeness
+marker was still `DO NOTHING`, so a marker carrying a stale digest was never repaired and that locale
+re-regenerated the whole life on EVERY read. The marker now follows the same rule as the rows. When it was
+wrong before this fix, it did so 100 s at a time.

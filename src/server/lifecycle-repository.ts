@@ -12,7 +12,12 @@ import { requireFavorData } from "../domain/effects";
 import type { LifeSex } from "../contracts/life";
 import type { WorldConfig } from "../domain/types";
 import { withTransaction } from "./db";
-import { LifecycleProjectionStore, type LifecycleProjectionWrite } from "./lifecycle-projection-store";
+import {
+  LifecyclePersonSheetStore,
+  LifecycleProjectionStore,
+  type LifecyclePersonSheetWrite,
+  type LifecycleProjectionWrite,
+} from "./lifecycle-projection-store";
 
 /**
  * Physical format v1 mirrors `favor_records_v1` (`sqlite-favor-records.ts`): the digest key and the
@@ -74,6 +79,10 @@ export interface LifecyclePublication {
    * nothing is indexed and reads of this life keep taking the full replay. Never authority — the rows
    * are keyed by the ADMITTED capsule digest computed here, not by anything the caller claims. */
   readonly projections?: readonly LifecycleProjectionWrite[];
+  /** Derived person sheets to index alongside the capsule. OPTIONAL for the same reason as
+   * `projections`: absent means nothing is indexed and the person-sheet read keeps taking the full
+   * regeneration. One entry per (locale, person). */
+  readonly personSheets?: readonly LifecyclePersonSheetWrite[];
 }
 
 export interface LoadedLifecycle {
@@ -136,6 +145,7 @@ export class LifecycleRepository {
   private readonly selectGenesis: StatementSync;
   private readonly insertGenesis: StatementSync;
   private readonly projections: LifecycleProjectionStore;
+  private readonly personSheets: LifecyclePersonSheetStore;
 
   constructor(private readonly db: DatabaseSync) {
     const [selectBinding, selectCapsule, selectGenesis, insertGenesis] = this.transaction(() => {
@@ -168,6 +178,7 @@ export class LifecycleRepository {
     this.selectGenesis = selectGenesis;
     this.insertGenesis = insertGenesis;
     this.projections = new LifecycleProjectionStore(db);
+    this.personSheets = new LifecyclePersonSheetStore(db);
   }
 
   /** Reads and validates the binding row, enforcing the exact frozen key set and its recognized
@@ -271,6 +282,11 @@ export class LifecycleRepository {
           }
           this.projections.write({ lifeId: captured.lifeId, branchId: captured.branchId,
             capsuleDigest: admitted.digest }, input.projections);
+        }
+        // Same transaction, same admitted digest: a sheet can never outlive or precede its capsule.
+        if (input.personSheets !== undefined && input.personSheets.length !== 0) {
+          this.personSheets.write({ lifeId: captured.lifeId, branchId: captured.branchId,
+            capsuleDigest: admitted.digest }, input.personSheets);
         }
       }
       return binding;

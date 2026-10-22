@@ -1,7 +1,7 @@
 import { LOCALES } from "../domain/locale";
 import { getDb } from "./db";
-import { projectLifecycleChronicle } from "./lifecycle-projection";
-import { LifecycleProjectionStore } from "./lifecycle-projection-store";
+import { projectLifecycleChronicle, projectLifecyclePersonSheet } from "./lifecycle-projection";
+import { LifecyclePersonSheetStore, LifecycleProjectionStore } from "./lifecycle-projection-store";
 import { LifecycleRepository } from "./lifecycle-repository";
 
 /**
@@ -22,7 +22,10 @@ export type LifecycleVerificationIssueKind =
   | "capsule-refused"
   | "index-unreadable"
   | "view-missing"
-  | "view-disagreement";
+  | "view-disagreement"
+  | "sheet-index-unreadable"
+  | "sheet-view-missing"
+  | "sheet-view-disagreement";
 
 export interface LifecycleVerificationIssue {
   readonly lifeId: string;
@@ -98,6 +101,44 @@ export async function verifyLifecycleLives(): Promise<LifecycleVerificationRepor
       if (canonicalView(stored) !== canonicalView(fresh.view)) {
         issues.push({ lifeId: row.id, kind: "view-disagreement",
           detail: `the indexed ${locale} view disagrees with a fresh regeneration of the same capsule` });
+      }
+    }
+    // The person sheets are the other indexed read path, so they get the same treatment: a life that
+    // predates the sheet index reports `sheet-view-missing` exactly like a missing chronicle view.
+    for (const locale of LOCALES) {
+      let stored: Map<string, unknown>;
+      let complete: Map<string, unknown> | undefined;
+      try {
+        const store = new LifecyclePersonSheetStore(db);
+        const key = { lifeId: identity.lifeId, branchId: identity.branchId,
+          capsuleDigest: loaded.binding.capsuleDigest, locale };
+        stored = store.readAll(key);
+        complete = store.readComplete(key);
+      } catch (error) {
+        issues.push({ lifeId: row.id, kind: "sheet-index-unreadable", detail: `${locale}: ${messageOf(error)}` });
+        continue;
+      }
+      if (stored.size === 0) {
+        issues.push({ lifeId: row.id, kind: "sheet-view-missing", detail: `no indexed person sheets for ${locale}` });
+        continue;
+      }
+      // Rows without an agreeing completeness marker are a PARTIAL index: the read path treats them
+      // as a miss and heals, so reporting them here is the only way to see the condition at all.
+      if (complete === undefined) {
+        issues.push({ lifeId: row.id, kind: "sheet-view-missing",
+          detail: `${locale}: incomplete sheet set (${stored.size} rows, marker absent or disagreeing)` });
+        continue;
+      }
+      for (const personId of Object.keys(loaded.capsule.output.owned.people)) {
+        const fresh = (await projectLifecyclePersonSheet({ source, personId, locale })).view;
+        const indexed = stored.get(personId);
+        if (indexed === undefined) {
+          issues.push({ lifeId: row.id, kind: "sheet-view-missing",
+            detail: `${locale}: no indexed sheet for ${personId}` });
+        } else if (canonicalView(indexed) !== canonicalView(fresh)) {
+          issues.push({ lifeId: row.id, kind: "sheet-view-disagreement",
+            detail: `${locale}: the indexed sheet for ${personId} disagrees with a fresh regeneration` });
+        }
       }
     }
   }

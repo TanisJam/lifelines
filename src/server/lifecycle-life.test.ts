@@ -197,6 +197,12 @@ describe("lifecycle create orchestration (RI1c)", () => {
       expect(db.prepare("SELECT locale FROM main.lifecycle_projections_v1 WHERE capsule_digest = ? ORDER BY locale")
         .all(loaded!.capsule.digest).map((row) => (row as { locale: string }).locale)).toEqual(["en", "es"]);
       expect(count(db, "lifecycle_capsules_v2")).toBe(1);
+      // P9: every person's sheet is indexed for every locale, in that same transaction, so a page
+      // load never regenerates the life again.
+      const people = Object.keys(loaded!.capsule.output.owned.people).length;
+      expect(count(db, "lifecycle_person_sheets_v1")).toBe(people * 2);
+      expect((db.prepare("SELECT count(*) AS n FROM main.lifecycle_person_sheets_v1 WHERE capsule_digest = ?")
+        .get(loaded!.capsule.digest) as { n: number }).n).toBe(people * 2);
       // The lifecycle path never writes the legacy tables.
       expect(count(db, "lives")).toBe(0);
       expect(count(db, "life_branches")).toBe(0);

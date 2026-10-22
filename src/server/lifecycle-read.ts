@@ -1,9 +1,9 @@
-import type { Chronicle, LifeListItem } from "@/contracts/life";
-import { DEFAULT_LOCALE, type Locale } from "@/domain/locale";
-import { getDb } from "./db";
+import type { Chronicle, LifeListItem, PersonSheet } from "@/contracts/life";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "@/domain/locale";
+import { getDb, withTransaction } from "./db";
 import type { ChronicleResult, PersonSheetResult } from "./life-chronicle";
 import { projectLifecycleChronicle, projectLifecyclePersonSheet } from "./lifecycle-projection";
-import { LifecycleProjectionStore } from "./lifecycle-projection-store";
+import { LifecyclePersonSheetStore, LifecycleProjectionStore } from "./lifecycle-projection-store";
 import { LifecycleRepository, type LoadedLifecycle } from "./lifecycle-repository";
 
 /**
@@ -55,29 +55,6 @@ function storedBranchId(lifeId: string): string | undefined {
   return row?.branch_id;
 }
 
-type Opened =
-  | { readonly kind: "life"; readonly loaded: LoadedLifecycle }
-  | { readonly kind: "missing" }
-  | { readonly kind: "refused"; readonly error: string };
-
-/**
- * Resolves the life's own branch, then cold-admits and FULLY replays its capsule. A different
- * branch id is simply not this life (the engine has one branch), and a life with no row is the
- * legacy not-found. A loader refusal is returned, never retried, coerced or replaced.
- */
-async function openLifecycleLife(lifeId: string, branchIdParam: string | undefined): Promise<Opened> {
-  const stored = storedBranchId(lifeId);
-  if (stored === undefined) return { kind: "missing" };
-  const branchId = branchIdParam ?? stored;
-  if (branchId !== stored) return { kind: "missing" };
-  try {
-    const loaded = await new LifecycleRepository(getDb()).load(lifeId, branchId);
-    return loaded === undefined ? { kind: "missing" } : { kind: "life", loaded };
-  } catch (error) {
-    return { kind: "refused", error: messageOf(error) };
-  }
-}
-
 /** The stored view, admitted only when it claims the life the binding owns. */
 function storedChronicle(value: unknown, lifeId: string): Chronicle {
   const record = value as { readonly lifeId?: unknown; readonly protagonist?: Record<string, unknown> } | null;
@@ -112,6 +89,40 @@ function indexView(lifeId: string, branchId: string, capsuleDigest: string, loca
     new LifecycleProjectionStore(getDb()).write({ lifeId, branchId, capsuleDigest }, [{ locale, view }]);
   } catch {
     // A cache that cannot write is a slower read, not a failed one.
+  }
+}
+
+/**
+ * The COMPLETE indexed sheet set of one life and locale, or undefined when it cannot be trusted.
+ *
+ * "Cannot be trusted" covers both an absent index and a partial one: the store only answers when its
+ * completeness marker agrees with the stored row count. Treating any non-empty set as complete is what
+ * turned one missing row into a 404 for a person who exists, which is never an acceptable answer.
+ */
+function readIndexedSheets(lifeId: string, branchId: string, capsuleDigest: string, locale: Locale): Map<string, unknown> | undefined {
+  try {
+    return new LifecyclePersonSheetStore(getDb()).readComplete({ lifeId, branchId, capsuleDigest, locale });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Best-effort indexing after a successful regeneration: the caller already holds the derived sheets.
+ * The write runs in ONE transaction so a failure leaves no rows at all - a partial set with no
+ * completeness marker reads as a miss and heals again, while a partial set that was committed would
+ * have looked complete and answered 404s forever.
+ */
+function indexSheets(
+  lifeId: string, branchId: string, capsuleDigest: string,
+  sheets: readonly { readonly locale: Locale; readonly personId: string; readonly view: unknown }[],
+): void {
+  try {
+    const db = getDb();
+    withTransaction(db, () => new LifecyclePersonSheetStore(db).write(
+      { lifeId, branchId, capsuleDigest }, sheets, { replace: true }));
+  } catch {
+    // Rolled back: a cache that cannot write is a slower read, not a failed one.
   }
 }
 
@@ -182,20 +193,51 @@ export async function buildLifecyclePersonSheet(
   branchId?: string,
   locale: Locale = DEFAULT_LOCALE,
 ): Promise<PersonSheetResult> {
-  const opened = await openLifecycleLife(lifeId, branchId);
-  if (opened.kind === "missing") return { ...LIFE_NOT_FOUND };
-  if (opened.kind === "refused") return { error: opened.error, status: 500 };
-  const { loaded } = opened;
+  const stored = storedBranchId(lifeId);
+  if (stored === undefined) return { ...LIFE_NOT_FOUND };
+  const branch = branchId ?? stored;
+  if (branch !== stored) return { ...LIFE_NOT_FOUND };
+  const repository = new LifecycleRepository(getDb());
+  let binding;
+  try {
+    binding = repository.binding(lifeId, branch);
+  } catch (error) {
+    return { error: messageOf(error), status: 500 };
+  }
+  if (binding === undefined) return { ...LIFE_NOT_FOUND };
+
+  // Index-first: a life published with its sheets never regenerates a year to answer this.
+  const indexed = readIndexedSheets(lifeId, branch, binding.capsuleDigest, locale);
+  if (indexed !== undefined) {
+    const sheet = indexed.get(personId);
+    // Rows exist for this life and locale, so an absent id means the person is genuinely not in it.
+    return sheet === undefined ? { ...PERSON_NOT_FOUND } : { data: sheet as PersonSheet };
+  }
+
+  // Cold: this life predates the sheet index (or its rows were never written). ONE regeneration heals
+  // every locale at once, which is the same bounded cost the chronicle miss already pays.
+  let loaded: LoadedLifecycle | undefined;
+  try {
+    loaded = await repository.load(lifeId, branch);
+  } catch (error) {
+    return { error: messageOf(error), status: 500 };
+  }
+  if (loaded === undefined) return { ...LIFE_NOT_FOUND };
   // Existence is read from the same regenerated output the sheet is derived from: an unknown person
   // is the honest legacy not-found, never a fabricated sheet.
   if (!Object.hasOwn(loaded.capsule.output.owned.people, personId)) return { ...PERSON_NOT_FOUND };
+  const source = { genesis: loaded.capsule.genesis, output: loaded.capsule.output };
   try {
-    const projection = await projectLifecyclePersonSheet({
-      source: { genesis: loaded.capsule.genesis, output: loaded.capsule.output },
-      personId,
-      locale,
-    });
-    return { data: projection.view };
+    const sheets: { locale: Locale; personId: string; view: unknown }[] = [];
+    for (const target of LOCALES) {
+      for (const id of Object.keys(loaded.capsule.output.owned.people)) {
+        sheets.push({ locale: target, personId: id,
+          view: (await projectLifecyclePersonSheet({ source, personId: id, locale: target })).view });
+      }
+    }
+    indexSheets(loaded.binding.lifeId, loaded.binding.branchId, loaded.binding.capsuleDigest, sheets);
+    const sheet = sheets.find((entry) => entry.locale === locale && entry.personId === personId);
+    return sheet === undefined ? { ...PERSON_NOT_FOUND } : { data: sheet.view as PersonSheet };
   } catch (error) {
     return { error: messageOf(error), status: 500 };
   }

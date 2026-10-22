@@ -3,12 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createLifecycleCompactCapsule, LIFECYCLE_COMPACT_CAPSULE_MANIFEST, serializeLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
+import { createLifecycleCompactCapsule, LIFECYCLE_COMPACT_CAPSULE_MANIFEST, serializeLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "@/domain/e-lifecycle-dag";
 import { canonicalLifecycleData } from "@/domain/e-lifecycle-genesis";
 import { createLifecycleRuntime } from "@/domain/e-lifecycle-runtime";
 import { initializeWorld } from "@/domain/world-origin";
+import { projectLifecyclePersonSheet } from "./lifecycle-projection";
 import { openDb } from "./db";
 import { EBranchRepository } from "./e-branch-repository";
 import { LIFECYCLE_BINDING_VERSION, LifecycleRepository, type LifecycleBranchBinding } from "./lifecycle-repository";
@@ -52,6 +53,14 @@ function seedLegacyLife(db: DatabaseSync, lifeId = "life-1", branchId = "branch-
     .run(lifeId, "Alice", "f", "{}", branchId, branchId, 0);
   db.prepare("INSERT INTO life_branches (id, life_id, label, result_json, snapshots_blob, created_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run(branchId, lifeId, "Original life", Buffer.from([0]), Buffer.from([0]), 0);
+}
+
+/** The every-person sheet set a create route indexes alongside the capsule. */
+async function sheetsFor(capsule: LifecycleCompactCapsule, locale: "en" | "es" = "en") {
+  const source = { genesis: capsule.genesis, output: capsule.output };
+  return Promise.all(Object.keys(capsule.output.owned.people).map(async (personId) => ({
+    locale, personId, view: (await projectLifecyclePersonSheet({ source, personId, locale })).view,
+  })));
 }
 
 function count(db: DatabaseSync, table: string): number {
@@ -216,6 +225,40 @@ describe("LifecycleRepository persistence (RI1a)", () => {
       expect(row.bytes).toBeLessThan(Buffer.byteLength(wire, "utf8") / 2);
       // Nothing is archived into v1 any more.
       expect(count(db, "lifecycle_capsules_v1")).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("indexes every person sheet under the admitted digest inside the same transaction", async () => {
+    const input = await publication("lifecycle-rb-sheets");
+    const db = openDb(dbPath);
+    try {
+      const sheets = await sheetsFor(input.capsule);
+      const written = await new LifecycleRepository(db).publish({ ...input, personSheets: sheets });
+      const rows = db.prepare("SELECT person_id, capsule_digest FROM main.lifecycle_person_sheets_v1").all() as
+        { person_id: string; capsule_digest: string }[];
+      expect(rows.map((row) => row.person_id).sort()).toEqual(sheets.map((sheet) => sheet.personId).sort());
+      // Keyed by the digest the repository recomputed, never by anything the caller supplied.
+      expect(rows.every((row) => row.capsule_digest === written.capsuleDigest)).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses a person sheet that claims a different person than its key", async () => {
+    const input = await publication("lifecycle-rb-sheet-mismatch");
+    const db = openDb(dbPath);
+    try {
+      const repo = new LifecycleRepository(db);
+      await expect(repo.publish({ ...input, personSheets: [
+        { locale: "en", personId: "protagonist", view: { personId: "somebody-else" } },
+      ] })).rejects.toThrow(/identity disagreement/i);
+      // The refusal is the whole transaction: no life, no capsule, no half-written index.
+      expect(count(db, "lifecycle_lives")).toBe(0);
+      expect(count(db, "lifecycle_capsules_v2")).toBe(0);
+      expect(count(db, "lifecycle_person_sheets_v1")).toBe(0);
+      expect(count(db, "lifecycle_projections_v1")).toBe(0);
     } finally {
       db.close();
     }

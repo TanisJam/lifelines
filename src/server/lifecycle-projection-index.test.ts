@@ -4,9 +4,9 @@ import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycle } from "@/domain/e-lifecycle-run";
 import { initializeWorld } from "@/domain/world-origin";
-import { getDb } from "./db";
+import { getDb, withTransaction } from "./db";
 import { streamLifecycleLife } from "./lifecycle-life";
-import { LIFECYCLE_VIEW_VERSION } from "./lifecycle-projection-store";
+import { LIFECYCLE_PERSON_SHEET_SETS_TABLE, LIFECYCLE_PERSON_SHEET_TABLE, LifecyclePersonSheetStore, LIFECYCLE_VIEW_VERSION } from "./lifecycle-projection-store";
 import { buildLifecycleChronicle, listLifecycleSummaries } from "./lifecycle-read";
 import { LifecycleRepository } from "./lifecycle-repository";
 
@@ -125,3 +125,24 @@ describe("lifecycle projection index (P3)", () => {
     expect(count("SELECT count(*) AS n FROM main.lifecycle_lives WHERE id = ?", "id-p3-2")).toBe(0);
   }, 240_000);
 });
+
+  it("writes a sheet set all-or-nothing: a failure in the last entry leaves none", async () => {
+    // The heal that repopulates a missing sheet index runs in ONE transaction. If it did not, a
+    // failure halfway would leave rows that look like a complete index and turn a real person into
+    // a 404 - the exact defect the completeness marker exists to prevent.
+    await createLife("index-sheets-atomic", "index-sheets-atomic-b", "Alice");
+    const db = getDb();
+    const key = { lifeId: "index-sheets-atomic", branchId: "index-sheets-atomic-b",
+      capsuleDigest: "d".repeat(64) };
+    expect(count(`SELECT count(*) AS n FROM main.${LIFECYCLE_PERSON_SHEET_TABLE} WHERE life_id = ?`, key.lifeId)).toBeGreaterThan(1);
+    db.prepare(`DELETE FROM main.${LIFECYCLE_PERSON_SHEET_TABLE} WHERE life_id = ?`).run(key.lifeId);
+    db.prepare(`DELETE FROM main.${LIFECYCLE_PERSON_SHEET_SETS_TABLE} WHERE life_id = ?`).run(key.lifeId);
+    expect(() => withTransaction(db, () => new LifecyclePersonSheetStore(db).write(key, [
+      { locale: "en", personId: "a", view: { personId: "a" } },
+      { locale: "en", personId: "b", view: { personId: "b" } },
+      { locale: "es", personId: "c", view: { personId: "somebody-else" } },
+    ]))).toThrow(/identity disagreement/i);
+    // Nothing committed - not one row, not one marker.
+    expect(count(`SELECT count(*) AS n FROM main.${LIFECYCLE_PERSON_SHEET_TABLE} WHERE life_id = ?`, key.lifeId)).toBe(0);
+    expect(count(`SELECT count(*) AS n FROM main.${LIFECYCLE_PERSON_SHEET_SETS_TABLE} WHERE life_id = ?`, key.lifeId)).toBe(0);
+  }, 120_000);

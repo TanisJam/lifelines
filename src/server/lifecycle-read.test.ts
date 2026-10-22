@@ -16,6 +16,7 @@ import { runLifecycle } from "@/domain/e-lifecycle-run";
 import { simulate } from "@/domain/simulate";
 import { initializeWorld } from "@/domain/world-origin";
 import { generateWorld } from "@/domain/worldgen";
+import { LOCALES, type Locale } from "@/domain/locale";
 import { getDb } from "./db";
 import { buildLifeChronicle } from "./life-chronicle";
 import { LIFECYCLE_MAX_STEPS, streamLifecycleLife } from "./lifecycle-life";
@@ -213,17 +214,21 @@ describe("lifecycle read path (RI1d)", () => {
       expect(indexed.error).toBeUndefined();
       expect(indexed.data).toEqual(expectedChronicle);
       expect((await listLifecycleSummaries("en"))[0]!.lifeId).toBe(LIFE);
+      // P9 made the sheet an indexed read too, so it answers from the index for the same reason.
+      const indexedSheet = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en");
+      expect(indexedSheet.error).toBeUndefined();
+      expect(indexedSheet.data!.personId).toBe("protagonist");
       // Every path that still replays refuses the same row, never repairs it.
-      const sheet = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en");
-      expect(sheet.data).toBeUndefined();
-      expect(sheet.status).toBe(500);
-      expect(sheet.error).toMatch(/binding\/capsule disagreement/i);
-      // With the index gone, the replay path must refuse too.
       db.prepare("DELETE FROM main.lifecycle_projections_v1").run();
+      db.prepare("DELETE FROM main.lifecycle_person_sheets_v1").run();
       const refused = await buildLifecycleChronicle(LIFE, undefined, "en");
       expect(refused.data).toBeUndefined();
       expect(refused.status).toBe(500);
       expect(refused.error).toMatch(/binding\/capsule disagreement/i);
+      const refusedSheet = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en");
+      expect(refusedSheet.data).toBeUndefined();
+      expect(refusedSheet.status).toBe(500);
+      expect(refusedSheet.error).toMatch(/binding\/capsule disagreement/i);
       await expect(listLifecycleSummaries("en")).rejects.toThrow(/binding\/capsule disagreement/i);
     } finally {
       db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?")
@@ -258,6 +263,165 @@ describe("lifecycle read path (RI1d)", () => {
     expect(healed.data!.protagonist.name).toBe(expectedChronicle.protagonist.name);
     expect(db.prepare("SELECT locale FROM main.lifecycle_projections_v1 WHERE locale = ?").all("es")).toHaveLength(1);
   }, 120_000);
+
+  it("answers a person sheet from the index without regenerating the life", async () => {
+    const db = getDb();
+    // Warm "es" so the sentinel is the only variable.
+    expect((await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "es")).error).toBeUndefined();
+    const digest = (await new LifecycleRepository(db).load(LIFE, BRANCH))!.capsule.digest;
+    const sentinel = { personId: "protagonist", name: "Sentinel Sheet", relation: "self", birthYear: 1,
+      deathYear: null, job: null, blurb: "sentinel", moments: [] };
+    db.prepare(`UPDATE main.lifecycle_person_sheets_v1 SET view_json = ?
+      WHERE capsule_digest = ? AND locale = ? AND person_id = ?`)
+      .run(JSON.stringify(sentinel), digest, "es", "protagonist");
+    try {
+      // A sheet no regeneration could ever produce: if the read replays, this cannot come back.
+      const result = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "es");
+      expect(result.error).toBeUndefined();
+      expect(result.data!.name).toBe("Sentinel Sheet");
+    } finally {
+      db.prepare("DELETE FROM main.lifecycle_person_sheets_v1 WHERE locale = ?").run("es");
+    }
+    // The miss regenerates ONCE and indexes every person of that locale, not just the one asked for.
+    const healed = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "es");
+    expect(healed.error).toBeUndefined();
+    const healedName = healed.data!.name;
+    const english = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en");
+    expect(healedName).toBe(english.data!.name);
+    const rows = db.prepare("SELECT count(*) AS n FROM main.lifecycle_person_sheets_v1 WHERE locale = ?")
+      .get("es") as { n: number };
+    expect(rows.n).toBeGreaterThan(1);
+    // Every indexed person is answerable without another regeneration.
+    const indexed = db.prepare("SELECT person_id FROM main.lifecycle_person_sheets_v1 WHERE locale = ?")
+      .all("es") as { person_id: string }[];
+    for (const { person_id } of indexed) {
+      expect((await buildLifecyclePersonSheet(LIFE, person_id, undefined, "es")).data).toBeDefined();
+    }
+  }, 240_000);
+
+  it("answers an unknown person from the index as the legacy not-found, without regenerating", async () => {
+    expect((await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en")).error).toBeUndefined();
+    const load = vi.spyOn(LifecycleRepository.prototype, "load");
+    try {
+      const result = await buildLifecyclePersonSheet(LIFE, "person-that-never-existed", undefined, "en");
+      expect(result).toEqual({ error: "Person not found.", status: 404 });
+      // A 404 that came from a regeneration would be as slow as the life is long, and would prove
+      // nothing about the index. This pins the answer to the index.
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      load.mockRestore();
+    }
+  });
+
+  it("never reports a real person as missing when a sheet row is gone", async () => {
+    // A partial index must read as a MISS, never as "this person does not exist". The completeness
+    // marker is what makes a partial set identify itself; before it, one missing row was a 404.
+    const db = getDb();
+    const row = db.prepare(`SELECT person_id FROM main.lifecycle_person_sheets_v1
+      WHERE life_id = ? AND locale = 'en' ORDER BY person_id LIMIT 1`).get(LIFE) as { person_id: string };
+    db.prepare("DELETE FROM main.lifecycle_person_sheets_v1 WHERE life_id = ? AND locale = 'en' AND person_id = ?")
+      .run(LIFE, row.person_id);
+    const load = vi.spyOn(LifecycleRepository.prototype, "load");
+    try {
+      const sheet = await buildLifecyclePersonSheet(LIFE, row.person_id, undefined, "en");
+      expect(sheet.error).toBeUndefined();
+      expect(sheet.data!.personId).toBe(row.person_id);
+      // The miss healed, once, instead of answering 404 forever.
+      expect(load).toHaveBeenCalledTimes(1);
+    } finally {
+      load.mockRestore();
+    }
+    const stored = db.prepare("SELECT count(*) AS n FROM main.lifecycle_person_sheets_v1 WHERE life_id = ? AND locale = 'en'")
+      .get(LIFE) as { n: number };
+    const marker = db.prepare("SELECT person_count FROM main.lifecycle_person_sheet_sets_v1 WHERE life_id = ? AND locale = 'en'")
+      .get(LIFE) as { person_count: number };
+    expect(marker.person_count).toBe(stored.n);
+    // And the restored row is the real sheet, not a placeholder.
+    expect((await buildLifecyclePersonSheet(LIFE, row.person_id, undefined, "en")).data!.personId).toBe(row.person_id);
+  }, 240_000);
+
+  it("heals a locale whose sheet rows cannot be parsed instead of regenerating forever", async () => {
+    const db = getDb();
+    db.prepare("UPDATE main.lifecycle_person_sheets_v1 SET view_json = ? WHERE life_id = ? AND locale = 'es'")
+      .run("{not json", LIFE);
+    const first = vi.spyOn(LifecycleRepository.prototype, "load");
+    try {
+      const sheet = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "es");
+      expect(sheet.error).toBeUndefined();
+      // Unparseable rows are a miss, and the heal OVERWRITES them; keeping them would make every
+      // later read miss and regenerate the whole life again.
+      expect(first).toHaveBeenCalledTimes(1);
+    } finally {
+      first.mockRestore();
+    }
+    const second = vi.spyOn(LifecycleRepository.prototype, "load");
+    try {
+      expect((await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "es")).error).toBeUndefined();
+      expect(second).not.toHaveBeenCalled();
+    } finally {
+      second.mockRestore();
+    }
+  }, 240_000);
+
+  it("restores a completeness marker left with a foreign capsule digest", async () => {
+    // A marker that no longer matches the binding is a miss, and the heal must REPLACE it. With
+    // DO NOTHING the rows healed but the marker stayed wrong, so every read re-regenerated the life.
+    const db = getDb();
+    expect((await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en")).error).toBeUndefined();
+    db.prepare("UPDATE main.lifecycle_person_sheet_sets_v1 SET capsule_digest = ? WHERE life_id = ? AND locale = 'en'")
+      .run("f".repeat(64), LIFE);
+    const first = vi.spyOn(LifecycleRepository.prototype, "load");
+    try {
+      expect((await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en")).data).toBeDefined();
+      expect(first).toHaveBeenCalledTimes(1);
+    } finally {
+      first.mockRestore();
+    }
+    const second = vi.spyOn(LifecycleRepository.prototype, "load");
+    try {
+      expect((await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en")).data).toBeDefined();
+      expect(second).not.toHaveBeenCalled();
+    } finally {
+      second.mockRestore();
+    }
+  }, 240_000);
+
+  it("keeps the sheets of two identical-capsule lives independent", async () => {
+    // Two lives created from the same seed, name and sex have IDENTICAL capsule bytes and therefore the
+    // same digest. The chronicle index already had to be keyed by the life for this reason; the sheets
+    // must not inherit that bug.
+    const db = getDb();
+    const twinId = "life-twin-sheets";
+    const twinBranch = "branch-twin-sheets";
+    const config = JSON.parse((db.prepare("SELECT config_json FROM main.lifecycle_lives WHERE id = ?")
+      .get(LIFE) as { config_json: string }).config_json) as unknown;
+    const source = freshSource;
+    const projections = await Promise.all(LOCALES.map(async (target) => ({
+      locale: target,
+      view: (await projectLifecycleChronicle({ source, identity: { lifeId: twinId, branchId: twinBranch }, locale: target })).view,
+    })));
+    const personSheets: { locale: Locale; personId: string; view: unknown }[] = [];
+    for (const target of LOCALES) {
+      for (const personId of Object.keys(fresh.output.owned.people)) {
+        personSheets.push({ locale: target, personId,
+          view: (await projectLifecyclePersonSheet({ source, personId, locale: target })).view });
+      }
+    }
+    await new LifecycleRepository(db).publish({ lifeId: twinId, branchId: twinBranch, config: config as never,
+      protagonistName: "Alice", protagonistSex: "f", capsule: fresh, projections, personSheets });
+    // Same capsule digest, two independent bindings.
+    const digests = db.prepare("SELECT DISTINCT json_extract(binding_json, '$.capsuleDigest') AS d FROM main.lifecycle_bindings WHERE life_id IN (?, ?)")
+      .all(LIFE, twinId) as { d: string }[];
+    expect(digests).toHaveLength(1);
+
+    const sentinel = { personId: "protagonist", name: "SENTINEL", relation: "self", birthYear: 1,
+      deathYear: null, job: null, blurb: "s", moments: [] };
+    db.prepare(`UPDATE main.lifecycle_person_sheets_v1 SET view_json = ?
+      WHERE life_id = ? AND locale = 'en' AND person_id = 'protagonist'`)
+      .run(JSON.stringify(sentinel), twinId);
+    expect((await buildLifecyclePersonSheet(twinId, "protagonist", undefined, "en")).data!.name).toBe("SENTINEL");
+    expect((await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en")).data!.name).not.toBe("SENTINEL");
+  }, 240_000);
 
   it("keeps the legacy builder serving a legacy life and never a lifecycle life", async () => {
     const legacyResult = await buildLifeChronicle(legacy.lifeId, legacy.branchId);
