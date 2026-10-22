@@ -9,7 +9,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "determinism": "tsx scripts/determinism.ts"
+    "determinism": "tsx scripts/determinism.ts",
+    "verify:lifecycles": "tsx scripts/verify-lifecycles.ts"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",

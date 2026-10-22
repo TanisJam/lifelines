@@ -55,6 +55,7 @@ Other measured facts:
 | P2 | S1: set a measured `--max-old-space-size` for the container | inline | **done** |
 | P3 | S4: serve reads from a persisted projection | inline | **done** |
 | P4 | S3: drop the remaining intra-request replay inside `runLifecycle` | inline | open |
+| P5 | integrity: replay every stored life and compare each indexed view | inline | **done** |
 
 ## Log
 
@@ -202,3 +203,23 @@ selecting an older version, a refused projection rolls back capsule/binding/life
 The verifier's independent measurement of the index hit: 1.95 ms (en) / 0.38 ms (es) / 0.5 ms (list) at RSS
 102 MB under a 192 MB heap cap, while the same life with the index deleted OOMs at that cap (exit 134). L10's
 central claim holds; its key design did not.
+
+**L12** — P5 landed, closing the integrity debt P3 created. `src/server/lifecycle-verification.ts` replays every
+stored lifecycle capsule under current authority (`LifecycleRepository.load`, which cold-admits, fully replays
+and re-checks digest, schema and genesis agreement) and compares each indexed view against a fresh
+`projectLifecycleChronicle` of the same regenerated output. It never runs in a request and never repairs: it
+reports and sets exit code 1.
+
+Run with `pnpm verify:lifecycles`. Verified end to end against the real 15-year life:
+`Verified 1 lifecycle life: every capsule replayed and every indexed view matches.` (exit 0), under a 1536 MB
+heap cap, which also proves the indexed views round-trip through JSON byte-equivalently - `canonicalView`
+sorts keys so a key-order difference cannot raise a false disagreement.
+
+Issue kinds: `missing-binding`, `missing-capsule`, `capsule-refused`, `index-unreadable`, `view-missing`,
+`view-disagreement`. `missing-binding` is defense in depth rather than a tested path: the schema's own triggers
+refuse to delete lifecycle history ("Lifecycle history cannot be deleted"), so a bound life cannot lose its
+binding row through ordinary SQL.
+
+Cost, so nobody schedules it wrong: one full replay per life. At 15 years that is ~150 s and ~1.5 GB, so this
+belongs in cron or CI, never anywhere near a request. It is the only place left that still proves
+"what is served is what the capsule regenerates".
