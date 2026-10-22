@@ -51,11 +51,11 @@ The wall those bytes produce, all measured:
 | ID | Spec | Route | Status |
 |---|---|---|---|
 | P1 | S2: stop retaining per-year data nothing reads (compact journal mode) | inline | **done** |
-| P2 | S3: capsule schema `cb2` over the compact journal, with `cb1` still loadable | inline | open |
-| P3 | S3: incremental digest so the table is never one string | inline | open |
-| P4 | S4: migration command that regenerates stored lives from their genesis | inline | open |
-| P5 | S1: run the 15-year fixture to a real death and verify the views | inline | open |
-| P6 | S5: re-verify index-served reads after the journal change | inline | open |
+| P2 | S3: capsule schema `cb2` over the compact journal, with `cb1` still loadable | inline | **done** |
+| P3 | S3: incremental digest so the table is never one string | inline | **not needed (measured)** |
+| P4 | S4: migration command that regenerates stored lives from their genesis | inline | **not needed (proven)** |
+| P5 | S1: run the fixture to a real death and verify the views | inline | **done** |
+| P6 | S5: re-verify index-served reads after the journal change | inline | **done** |
 
 ## Log
 
@@ -106,4 +106,65 @@ Still required before this reaches the product path (P2-P4):
 - The compact capsule currently reuses the `cb1` manifest while carrying a different journal shape, so
   `deserializeLifecycleCompactCapsule` would replay it in audit mode and refuse. P2 must version it.
 - `verifyLifecycleLives` and the read paths must regenerate in compact mode for compact lives.
+
+**L6** — P2/P5/P6 landed. `streamLifecycleLife` no longer calls `runLifecycle`: it uses the new
+`runLifecycleOutput` (same run loop, no legacy capsule) and certifies with `createLifecycleCompactCapsule
+(..., "compact")`, which writes manifest `lifecycle-capsule-compact-cb2-1`. `load` reads the schema the
+binding records and regenerates in that journal mode, so `cb1` lives are still reproduced exactly.
+
+The default budget is now `LIFECYCLE_MAX_STEPS` (the world span), not `LIFECYCLE_HORIZON_YEARS`: a life
+runs until its protagonist dies. `LIFECYCLE_HORIZON_YEARS` survives only as an explicit short budget for
+fixtures and tools.
+
+Measured end to end through the REAL create path, seed `cap-0`, at the deployed
+`--max-old-space-size=1536`:
+
+| | Value |
+|---|---|
+| Years | **57**, then `status: complete` (death at 1383) |
+| Ticks streamed | 57 |
+| Create wall time | **499 s** |
+| Peak VmHWM | **1.51 GiB** (inside `mem_limit: 2560m`) |
+| Stored per life | genesis 0.09 MB + chronicle 0.11 MB + sheets 0.17 MB = **0.37 MB** |
+| Chronicle | 61 entries, 218 people |
+| Person sheet | **1 ms** |
+| Cold `load` | 485 s, 1.43 GiB, reproduces 57 years and the same digest |
+| `verifyLifecycleLives` | 513 s, 1 life, **0 issues**, 1.62 GiB |
+
+**P3 is not needed**: at 57 years the compact capsule wire is 11.8 MB and the digest is computed over
+it directly. The table never approaches the ~512 MB string cap, so an incremental digest would be
+machinery for a wall that no longer exists. Revisit only if a life's wire approaches that cap.
+
+**P4 is not needed**: `cb1` lives still load, because `load` regenerates them in audit mode from their
+stored genesis and reproduces their bound digest exactly. `lifecycle-repository.test.ts` publishes a
+`cb1` capsule and reloads it on every run, so this is pinned, not assumed.
+
+The cost moved, it did not vanish: a full 57-year life takes ~8 minutes to create instead of ~2 minutes
+for a truncated 15-year one. That is the product decision S1 asks for, and it is now serialized by the
+create gate (concurrency 1, queue 4).
+
+**L7** — Independent verification reproduced every L6 number and found one real BLOCKER, now fixed.
+
+`replayOrReuse` reused any branded runtime output whose `genesisDigest` matched, WITHOUT checking that
+its journal shape matched the mode being certified. `createLifecycleCompactCapsule({ genesis, output },
+"compact")` therefore accepted an AUDIT output and minted a `cb2` capsule carrying
+`physicalSnapshot`/`economics`/`positions`; `publish` stored it with a cb2 binding, and every later
+`load` refused it with `Lifecycle binding/capsule disagreement`. A branded output proves provenance, not
+shape, and the two entry paths to `publish` disagreed about the same bytes: cold admission refused them,
+in-process creation accepted them. The defect produced UNREADABLE PERSISTED DATA instead of an error at
+creation time, which is the worst shape a schema bug can take.
+
+The fix refuses the mismatch at creation: `journalModeOfOutput` classifies a non-empty journal as audit
+(has all three per-year blocks), compact (has none), or mixed (refused), and `replayOrReuse` refuses when
+the declared mode disagrees. A zero-year journal is valid in BOTH modes and proves nothing, so it is not
+classified.
+
+The verifier also noted no test in the suite asserted anything about `cb2`, which is why the defect
+survived the full run. `src/domain/e-lifecycle-journal-mode.test.ts` now covers S1-S6 in nine cases:
+the default reaching death, the boundary budgets, identical chronicle/ticks/sheets from both journal
+modes, cb1 and cb2 living side by side, manifest-swap refusal, and a re-signed journal that drops or
+reorders a year being refused. Its S6 case is the RED test for the blocker.
+
+Two documentation defects it also raised are fixed: the stale `LIFECYCLE_MAX_STEPS` comment and the
+create-queue rationale that still quoted a 15-year create.
 

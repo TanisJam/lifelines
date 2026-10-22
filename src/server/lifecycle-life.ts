@@ -1,7 +1,7 @@
 import type { Chronicle, LifeSex, LifeStreamEvent } from "@/contracts/life";
 import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
-import { runLifecycle } from "@/domain/e-lifecycle-run";
+import { runLifecycleOutput } from "@/domain/e-lifecycle-run";
 import { LOCALES, type Locale } from "@/domain/locale";
 import { initializeWorld } from "@/domain/world-origin";
 import { projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "./lifecycle-projection";
@@ -21,16 +21,16 @@ import type { LifecyclePublication } from "./lifecycle-repository";
 /** Mirrors the legacy create route's `START_YEAR`: the run begins at the start of the 1327–1361 period. */
 export const LIFECYCLE_START_YEAR = 1327;
 /**
- * The initialised world's declared span (the legacy `MAX_LIFESPAN_YEARS`). It is NOT the run budget
- * and carries no completion semantics: the run stops at `LIFECYCLE_HORIZON_YEARS` below, and a
- * protagonist still alive there is persisted as alive, never as a death (spec S1).
+ * The run budget AND the world's declared span (the legacy `MAX_LIFESPAN_YEARS`). A life runs until its
+ * protagonist dies or this budget is spent, whichever comes first; a protagonist still alive at the
+ * end is persisted as alive, never as a death (S1 of `lifecycle-full-lifetime.md`).
  */
 export const LIFECYCLE_MAX_STEPS = 100;
 /**
- * The product horizon: a life is the protagonist's chronicle up to 15 journal years (spec S1).
- * Completion and horizon are different states — a death inside the horizon yields a `complete`
- * life, while a protagonist still alive here yields an `incomplete` life that IS persisted. This is
- * a run budget, never a death year: nothing is forced, reseeded or manufactured (spec S2).
+ * An explicit SHORT budget, for fixtures and for callers that deliberately ask for a partial life.
+ * It is NOT the product default any more: a life runs to its protagonist's death, bounded only by the
+ * world's own span (S1 of `lifecycle-full-lifetime.md`). Kept because tests and tools legitimately
+ * need a cheap partial run.
  */
 export const LIFECYCLE_HORIZON_YEARS = 15;
 const LIFECYCLE_END_YEAR = LIFECYCLE_START_YEAR + LIFECYCLE_MAX_STEPS;
@@ -82,7 +82,8 @@ export interface LifecycleLifeRequest {
  */
 export async function streamLifecycleLife(request: LifecycleLifeRequest): Promise<void> {
   const { repository, lifeId, branchId, name, sex, seed, locale, signal, emit, flushFrame } = request;
-  const maxSteps = request.maxSteps ?? LIFECYCLE_HORIZON_YEARS;
+  // A life runs until its protagonist dies or the world span ends, never to a fixed year (S1).
+  const maxSteps = request.maxSteps ?? LIFECYCLE_MAX_STEPS;
   const startedAt = performance.now();
 
   // World initialisation is the ONLY source of the village name and of the resolved sex; the
@@ -119,7 +120,10 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
   // instead of waiting for the whole run and then receiving every year in one burst. Quiet years are
   // never skipped and no year is reordered or invented; each frame is flushed before the next year
   // executes. Observation cannot alter the run - the context is the frontier just committed.
-  const result = await runLifecycle({ kind: "start", genesis }, {
+  // The COMPACT run: no legacy capsule, because `createLifecycleCapsule` builds a canonical string
+  // about 15x the payload that throws past ~17 years. The compact journal is what lets a life run to
+  // its protagonist's death instead of to a year horizon.
+  const run = await runLifecycleOutput({ kind: "start", genesis }, {
     maxSteps,
     signal,
     onYear: async (output) => {
@@ -128,10 +132,10 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
       emit({ type: "tick", ...projection.view });
       await flushFrame();
     },
-  });
-  if (result.status === "aborted") return;
+  }, "compact");
+  if (run.aborted) return;
 
-  const capsule = result.capsule;
+  const capsule = { genesis: run.genesis, output: run.output };
   const source = { genesis: capsule.genesis, output: capsule.output };
 
   // The chronicle is projected BEFORE anything is persisted, for BOTH states: a death inside the
@@ -184,7 +188,7 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
     config: world.config,
     protagonistName: protagonist.name,
     protagonistSex: resolvedSex,
-    capsule: await createLifecycleCompactCapsule({ genesis: capsule.genesis, output: capsule.output }),
+    capsule: await createLifecycleCompactCapsule({ genesis: capsule.genesis, output: capsule.output }, "compact"),
     projections,
     personSheets,
   });

@@ -59,8 +59,9 @@ export interface LifecycleYearRecord {
  * `"compact"` retains only what the views consume, which is what makes a life longer than ~17 years
  * possible: the audit fields alone exceed V8's string limit at that point.
  */
+export type LifecycleJournalMode = "audit" | "compact";
 export interface LifecycleRuntimeOptions {
-  readonly journal?: "audit" | "compact";
+  readonly journal?: LifecycleJournalMode;
 }
 export interface LifecycleOutput extends LifecycleState {
   versions: LifecycleGenesis["versions"];

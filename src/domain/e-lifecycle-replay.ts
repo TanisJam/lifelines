@@ -1,5 +1,5 @@
 import { canonicalLifecycleDataEqual } from "./e-lifecycle-genesis";
-import { createLifecycleRuntime } from "./e-lifecycle-runtime";
+import { createLifecycleRuntime, type LifecycleJournalMode } from "./e-lifecycle-runtime";
 import { requireFavorData } from "./effects";
 import { requireFields } from "./obligations";
 
@@ -13,7 +13,7 @@ function record(value: unknown): asserts value is Record<string, unknown> {
  * instructions to execute. Return the regenerated owner's frozen graph so its
  * people/log aliases and genesis registry traversal survive canonical sorting.
  */
-export async function replayLifecycleRuntime(input: unknown) {
+export async function replayLifecycleRuntime(input: unknown, journal: LifecycleJournalMode = "audit") {
   // Check the WHOLE borrowed envelope before any read, clone, hash or await.
   requireFavorData(input, true);
   record(input);
@@ -23,7 +23,7 @@ export async function replayLifecycleRuntime(input: unknown) {
   const candidate = structuredClone(input);
   record(candidate.output);
   if (!Array.isArray(candidate.output.journal)) throw new Error("Expected lifecycle journal");
-  const runtime = createLifecycleRuntime(candidate.genesis); // complete LR1a semantic regeneration
+  const runtime = createLifecycleRuntime(candidate.genesis, { journal }); // complete LR1a semantic regeneration
   let nextYear = runtime.initial.frontier + 1;
   for (const entry of candidate.output.journal) {
     record(entry);

@@ -12,7 +12,7 @@ import type { Chronicle } from "@/contracts/life";
 import { createLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { serializeCompactLifecycleDag } from "@/domain/e-lifecycle-dag";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
-import { runLifecycle } from "@/domain/e-lifecycle-run";
+import { runLifecycleOutput } from "@/domain/e-lifecycle-run";
 import { simulate } from "@/domain/simulate";
 import { initializeWorld } from "@/domain/world-origin";
 import { generateWorld } from "@/domain/worldgen";
@@ -62,9 +62,9 @@ function resourcesFor(world: ReturnType<typeof initializeWorld>["world"]) {
 async function freshCapsule(): Promise<LifecycleCompactCapsule> {
   const { world } = initializeWorld(initialization);
   const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", resources: resourcesFor(world) });
-  const run = await runLifecycle({ kind: "start", genesis }, { maxSteps: LIFECYCLE_MAX_STEPS });
-  if (run.status !== "complete") throw new Error(`fixture life did not end: ${run.status}`);
-  return createLifecycleCompactCapsule({ genesis: run.capsule.genesis, output: run.capsule.output });
+  const run = await runLifecycleOutput({ kind: "start", genesis }, { maxSteps: LIFECYCLE_MAX_STEPS }, "compact");
+  if (run.output.status !== "complete") throw new Error(`fixture life did not end: ${run.output.status}`);
+  return createLifecycleCompactCapsule({ genesis: run.genesis, output: run.output }, "compact");
 }
 
 /** A real legacy life, registered through the legacy store exactly as the legacy create route does. */

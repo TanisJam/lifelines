@@ -3,7 +3,7 @@ import { admitLifecycleGenesis, canonicalLifecycleData, LIFECYCLE_GENESIS_VERSIO
   type LifecycleGenesis } from "./e-lifecycle-genesis";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "./e-lifecycle-dag";
 import { replayLifecycleRuntime } from "./e-lifecycle-replay";
-import { isLifecycleRuntimeOutput } from "./e-lifecycle-runtime";
+import { isLifecycleRuntimeOutput, type LifecycleJournalMode } from "./e-lifecycle-runtime";
 import { requireFavorData } from "./effects";
 import { requireFields } from "./obligations";
 
@@ -68,13 +68,39 @@ const certifiedOutputs = new WeakSet<object>();
  * proved that re-running the engine reproduces the same bytes. That check now lives in
  * `verifyLifecycleLives` (task P5), which replays every stored life off the request path.
  */
-function replayOrReuse(genesis: LifecycleGenesis, output: unknown) {
+/**
+ * The journal retention an output actually carries, or undefined for a zero-year journal (which is
+ * valid in BOTH modes and therefore proves nothing). A record must be fully audit or fully compact;
+ * a mixed one is refused rather than guessed.
+ */
+function journalModeOfOutput(output: unknown): LifecycleJournalMode | undefined {
+  const journal = (output as { readonly journal?: unknown } | null)?.journal;
+  if (!Array.isArray(journal) || journal.length === 0) return undefined;
+  let mode: LifecycleJournalMode | undefined;
+  for (const record of journal) {
+    if (record === null || typeof record !== "object") throw new Error("Invalid lifecycle journal record");
+    const value = record as Record<string, unknown>;
+    const present = [value.physicalSnapshot, value.economics, value.positions].filter((part) => part !== undefined).length;
+    if (present !== 0 && present !== 3) throw new Error("Mixed lifecycle journal record");
+    const recordMode: LifecycleJournalMode = present === 3 ? "audit" : "compact";
+    if (mode !== undefined && mode !== recordMode) throw new Error("Mixed lifecycle journal modes");
+    mode = recordMode;
+  }
+  return mode;
+}
+function replayOrReuse(genesis: LifecycleGenesis, output: unknown, journal: LifecycleJournalMode = "audit") {
+  // A branded output proves provenance, NOT shape. Reusing an audit output while declaring a compact
+  // schema would mint a cb2 capsule carrying audit bytes: `publish` would store it happily and every
+  // later `load` would refuse it as a binding/capsule disagreement. Refuse the mismatch HERE, at the
+  // point of creation, where it is still an error instead of unreadable persisted data.
+  const declared = journalModeOfOutput(output);
+  if (declared !== undefined && declared !== journal) throw new Error("Lifecycle journal mode disagreement");
   if (typeof output === "object" && output !== null
     && (output as { genesisDigest?: unknown }).genesisDigest === genesis.digest
     && (certifiedOutputs.has(output) || isLifecycleRuntimeOutput(output))) {
     return output as Awaited<ReturnType<typeof replayLifecycleRuntime>>;
   }
-  return replayLifecycleRuntime({ genesis, output });
+  return replayLifecycleRuntime({ genesis, output }, journal);
 }
 function checkedRecord(input: unknown, fields: string[]): Record<string, unknown> {
   // WHOLE borrowed graph before any field read, hashing, cloning or await.
@@ -217,7 +243,20 @@ export const LIFECYCLE_COMPACT_CAPSULE_MANIFEST = Object.freeze({
   codec: "canonical-dag-dictionary-cb1-1",
   ...LIFECYCLE_GENESIS_VERSIONS,
 });
-export type LifecycleCompactCapsuleManifest = typeof LIFECYCLE_COMPACT_CAPSULE_MANIFEST;
+/**
+ * `cb2` carries the COMPACT journal (`{ year, final }` only), so a life is no longer bounded by the
+ * per-year audit evidence nobody reads. It is a separate schema, not a flag: `cb1` capsules keep
+ * loading, and are regenerated in audit mode, because their bytes embed the audit journal.
+ */
+export const LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2 = Object.freeze({
+  capsuleSchema: "lifecycle-capsule-compact-cb2-1",
+  codec: "canonical-dag-dictionary-cb1-1",
+  ...LIFECYCLE_GENESIS_VERSIONS,
+});
+export type LifecycleCompactCapsuleManifest =
+  | typeof LIFECYCLE_COMPACT_CAPSULE_MANIFEST
+  | typeof LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2;
+
 export interface LifecycleCompactCapsule {
   readonly manifest: LifecycleCompactCapsuleManifest;
   readonly digest: string;
@@ -225,10 +264,36 @@ export interface LifecycleCompactCapsule {
   readonly output: LifecycleCapsule["output"];
 }
 const COMPACT_DOMAIN = "lifecycle-compact-capsule-cb1-1";
-function requireCompactManifest(value: unknown): void {
-  if (canonicalLifecycleData(value) !== canonicalLifecycleData(LIFECYCLE_COMPACT_CAPSULE_MANIFEST)) {
+const COMPACT_DOMAIN_V2 = "lifecycle-compact-capsule-cb2-1";
+function requireCompactManifest(value: unknown, expected: LifecycleCompactCapsuleManifest): void {
+  if (canonicalLifecycleData(value) !== canonicalLifecycleData(expected)) {
     throw new Error("Unsupported lifecycle compact capsule manifest");
   }
+}
+/** Maps a manifest to the schema it declares, refusing anything else. */
+function compactManifestOf(value: unknown): LifecycleCompactCapsuleManifest {
+  const schema = (value as { readonly capsuleSchema?: unknown } | null)?.capsuleSchema;
+  if (schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema) {
+    requireCompactManifest(value, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2);
+    return LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2;
+  }
+  if (schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST.capsuleSchema) {
+    requireCompactManifest(value, LIFECYCLE_COMPACT_CAPSULE_MANIFEST);
+    return LIFECYCLE_COMPACT_CAPSULE_MANIFEST;
+  }
+  throw new Error("Unsupported lifecycle compact capsule manifest");
+}
+/** The manifest a create writes: `cb2` for a compact journal, `cb1` otherwise. */
+export function compactManifestForJournal(journal: LifecycleJournalMode): LifecycleCompactCapsuleManifest {
+  return journal === "compact" ? LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2 : LIFECYCLE_COMPACT_CAPSULE_MANIFEST;
+}
+/** The journal retention a schema declares. Anything unrecognized reads as audit, the stricter mode. */
+export function journalModeOfSchema(schema: unknown): LifecycleJournalMode {
+  return schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema ? "compact" : "audit";
+}
+/** The journal retention a schema's bytes were produced with, for regeneration and replay. */
+export function journalModeOfManifest(manifest: LifecycleCompactCapsuleManifest): LifecycleJournalMode {
+  return manifest.capsuleSchema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema ? "compact" : "audit";
 }
 function compactPayload(genesis: unknown, output: unknown): string {
   // The canonical COMPACT dictionary wire, never the unfolded tagged grammar.
@@ -236,9 +301,13 @@ function compactPayload(genesis: unknown, output: unknown): string {
 }
 function compactDigest(manifest: unknown, table: string): string {
   // Domain-separated from the legacy frame: a different prefix and arity mean
-  // no legacy bytes can be replayed as a compact capsule, or the reverse.
+  // no legacy bytes can be replayed as a compact capsule, or the reverse. Each
+  // schema version also gets its own domain, so cb1 bytes can never satisfy a
+  // cb2 digest or the reverse.
+  const domain = (manifest as { readonly capsuleSchema?: unknown }).capsuleSchema
+    === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema ? COMPACT_DOMAIN_V2 : COMPACT_DOMAIN;
   const hash = createHash("sha256");
-  hash.update(`["${COMPACT_DOMAIN}",${JSON.stringify(canonicalLifecycleData(manifest))},"`, "utf8");
+  hash.update(`["${domain}",${JSON.stringify(canonicalLifecycleData(manifest))},"`, "utf8");
   hashEscaped(hash, table);
   hash.update('\"]', "utf8");
   return hash.digest("hex");
@@ -248,29 +317,36 @@ function requireCompactDigest(value: unknown, manifest: unknown, table: string):
     throw new Error("Lifecycle compact capsule digest disagreement");
   }
 }
-async function regenerateCompact(candidate: Record<string, unknown>): Promise<LifecycleCompactCapsule> {
+async function regenerateCompact(candidate: Record<string, unknown>,
+  declared: LifecycleCompactCapsuleManifest = LIFECYCLE_COMPACT_CAPSULE_MANIFEST): Promise<LifecycleCompactCapsule> {
   // Same authority rule as the legacy format: digest is integrity only, genesis
-  // is re-admitted and every native/economic year is fully replayed here.
+  // is re-admitted and every native/economic year is fully replayed here - in the
+  // SAME journal mode the schema declares, or the comparison would compare a
+  // compact record against an audit one.
   const genesis = admitLifecycleGenesis(candidate.genesis);
-  const output = await replayOrReuse(genesis, candidate.output);
+  const output = await replayOrReuse(genesis, candidate.output, journalModeOfManifest(declared));
   certifiedOutputs.add(output);
-  const manifest = freeze(structuredClone(LIFECYCLE_COMPACT_CAPSULE_MANIFEST));
+  const manifest = freeze(structuredClone(declared));
   const table = compactPayload(genesis, output);
   const capsule = Object.freeze({ manifest, digest: compactDigest(manifest, table), genesis, output });
   certifiedLexicon.compact.add(capsule);
   return capsule;
 }
 /** Required closed input { genesis, output }, identical admission to the legacy format. */
-export async function createLifecycleCompactCapsule(input: unknown): Promise<LifecycleCompactCapsule> {
-  return regenerateCompact(checkedRecord(input, ["genesis", "output"]));
+export async function createLifecycleCompactCapsule(
+  input: unknown,
+  journal: LifecycleJournalMode = "audit",
+): Promise<LifecycleCompactCapsule> {
+  if (journal !== "audit" && journal !== "compact") throw new Error("Invalid lifecycle journal mode");
+  return regenerateCompact(checkedRecord(input, ["genesis", "output"]), compactManifestForJournal(journal));
 }
 /** Cold admission re-derives the compact table from regenerated data, not from trust. */
 export async function admitLifecycleCompactCapsule(input: unknown): Promise<LifecycleCompactCapsule> {
   if (isCertified<LifecycleCompactCapsule>("compact", input)) return input;
   const candidate = checkedRecord(input, ["manifest", "digest", "genesis", "output"]);
-  requireCompactManifest(candidate.manifest);
-  requireCompactDigest(candidate.digest, candidate.manifest, compactPayload(candidate.genesis, candidate.output));
-  return regenerateCompact(candidate);
+  const manifest = compactManifestOf(candidate.manifest);
+  requireCompactDigest(candidate.digest, manifest, compactPayload(candidate.genesis, candidate.output));
+  return regenerateCompact(candidate, manifest);
 }
 function compactWire(capsule: LifecycleCompactCapsule): string {
   return JSON.stringify({ manifest: capsule.manifest,
@@ -285,7 +361,7 @@ export async function deserializeLifecycleCompactCapsule(input: unknown): Promis
   requireFavorData(envelope, true);
   record(envelope);
   requireFields(envelope, ["manifest", "table", "digest"]);
-  requireCompactManifest(envelope.manifest);
+  const manifest = compactManifestOf(envelope.manifest);
   if (typeof envelope.table !== "string") throw new Error("Expected lifecycle compact table string");
   requireCompactDigest(envelope.digest, envelope.manifest, envelope.table);
   // Complete closed dictionary decode BEFORE any current-authority replay: a
@@ -295,8 +371,8 @@ export async function deserializeLifecycleCompactCapsule(input: unknown): Promis
   requireFields(candidate, ["genesis", "output"]);
   // JSON.parse alone loses duplicates and syntax variants. Require exact bytes,
   // including manifest declaration order, escapes and outer envelope field order.
-  const canonicalWire = JSON.stringify({ manifest: LIFECYCLE_COMPACT_CAPSULE_MANIFEST,
+  const canonicalWire = JSON.stringify({ manifest,
     table: envelope.table, digest: envelope.digest });
   if (canonicalWire !== input) throw new Error("Noncanonical lifecycle compact capsule wire");
-  return regenerateCompact(candidate);
+  return regenerateCompact(candidate, manifest);
 }

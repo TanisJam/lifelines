@@ -2,8 +2,10 @@ import type { DatabaseSync, StatementSync } from "node:sqlite";
 import {
   admitLifecycleCompactCapsule,
   createLifecycleCompactCapsule,
+  journalModeOfSchema,
   deserializeLifecycleCompactCapsule,
   LIFECYCLE_COMPACT_CAPSULE_MANIFEST,
+  LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2,
   type LifecycleCompactCapsule,
 } from "../domain/e-lifecycle-capsule";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "../domain/e-lifecycle-dag";
@@ -191,7 +193,8 @@ export class LifecycleRepository {
     requireFavorData(binding);
     if (!same(Object.keys(binding).sort(), [...BINDING_KEYS])
       || binding.version !== LIFECYCLE_BINDING_VERSION
-      || binding.capsuleSchema !== LIFECYCLE_COMPACT_CAPSULE_MANIFEST.capsuleSchema
+      || (binding.capsuleSchema !== LIFECYCLE_COMPACT_CAPSULE_MANIFEST.capsuleSchema
+        && binding.capsuleSchema !== LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema)
       || binding.lifeId !== lifeId || binding.branchId !== branchId) throw new Error("Corrupt lifecycle binding");
     key(binding.capsuleDigest); key(binding.genesisDigest);
     return frozen(binding);
@@ -209,8 +212,11 @@ export class LifecycleRepository {
     const stored = this.readGenesis(binding.capsuleDigest);
     if (stored !== undefined) {
       const genesis = deserializeCompactLifecycleDag(stored.genesisTable);
-      const output = await regenerateLifecycleOutput(genesis, stored.maxSteps);
-      const capsule = await createLifecycleCompactCapsule({ genesis, output });
+      // The binding records which schema produced this life, and therefore which journal retention
+      // must be regenerated: a cb1 life embeds the audit journal, a cb2 life the compact one.
+      const journal = journalModeOfSchema(binding.capsuleSchema);
+      const output = await regenerateLifecycleOutput(genesis, stored.maxSteps, journal);
+      const capsule = await createLifecycleCompactCapsule({ genesis, output }, journal);
       this.requireBindingAgreement(binding, capsule);
       return Object.freeze({ binding, capsule });
     }

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import type { LifeStreamEvent } from "@/contracts/life";
 import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
-import { runLifecycle } from "@/domain/e-lifecycle-run";
+import { runLifecycleOutput } from "@/domain/e-lifecycle-run";
 import { createMind } from "@/domain/mind";
 import type { SimulateReport } from "@/domain/simulate";
 import { initializeWorld } from "@/domain/world-origin";
@@ -89,9 +89,10 @@ async function freshCompact() {
     initialization, protagonistId: "protagonist",
     resources: Object.fromEntries(Object.keys(world.people).map((id) => [id, { grain: 2, effort: 3, need: 1 }])),
   });
-  const run = await runLifecycle({ kind: "start", genesis }, { maxSteps: 100 });
-  if (run.status !== "complete") throw new Error(`fixture life did not end: ${run.status}`);
-  return createLifecycleCompactCapsule({ genesis: run.capsule.genesis, output: run.capsule.output });
+  // Mirrors the create path: the compact run and the compact capsule, not the legacy audit format.
+  const run = await runLifecycleOutput({ kind: "start", genesis }, { maxSteps: 100 }, "compact");
+  if (run.output.status !== "complete") throw new Error(`fixture life did not end: ${run.output.status}`);
+  return createLifecycleCompactCapsule({ genesis: run.genesis, output: run.output }, "compact");
 }
 
 function jsonRequest(body: unknown): Request {

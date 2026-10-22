@@ -1,8 +1,9 @@
 /**
  * The single-process gate around lifecycle creation.
  *
- * A 15-year lifecycle create needs ~2.07 GiB of RSS and ~228 s of CPU (measured; see
- * `odd/tasks/lifecycle-capsule-cost.md` L5/L9). The deployed container is bounded at `mem_limit: 2560m`,
+ * A full lifecycle create - the protagonist's whole life, 57 years at seed `cap-0` - needs ~1.51 GiB of
+ * RSS and ~507 s (measured; see `odd/tasks/lifecycle-full-lifetime.md` L6). The deployed container is
+ * bounded at `mem_limit: 2560m`,
  * so a SECOND concurrent create exceeds the cgroup and the kernel kills the whole process - taking every
  * in-flight read down with it. This gate is therefore a memory guardrail, not a scheduler: at most ONE
  * create runs, and at most `LIFECYCLE_CREATE_QUEUE_LIMIT` more wait behind it. Anything beyond that is

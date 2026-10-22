@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LifeStreamEvent } from "@/contracts/life";
 import { createLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
-import { runLifecycle } from "@/domain/e-lifecycle-run";
+import { runLifecycleOutput } from "@/domain/e-lifecycle-run";
 import { initializeWorld } from "@/domain/world-origin";
 import { openDb } from "./db";
 import {
@@ -38,8 +38,9 @@ async function freshCapsule(maxSteps: number): Promise<LifecycleCompactCapsule> 
   const genesis = createLifecycleGenesis({
     initialization, protagonistId: "protagonist", resources: resourcesFor(world),
   });
-  const run = await runLifecycle({ kind: "start", genesis }, { maxSteps });
-  return createLifecycleCompactCapsule({ genesis: run.capsule.genesis, output: run.capsule.output });
+  // Mirrors the create path exactly: the compact run, then the compact capsule.
+  const run = await runLifecycleOutput({ kind: "start", genesis }, { maxSteps }, "compact");
+  return createLifecycleCompactCapsule({ genesis: run.genesis, output: run.output }, "compact");
 }
 
 function database(): { db: DatabaseSync; repository: LifecycleRepository } {
