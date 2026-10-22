@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { expect, it } from "vitest";
 import { canonicalLifecycleData, createLifecycleGenesis } from "./e-lifecycle-genesis";
-import { createLifecycleRuntime } from "./e-lifecycle-runtime";
+import { createLifecycleRuntime, auditRecord } from "./e-lifecycle-runtime";
 import { createLifecycleCapsule, serializeLifecycleCapsule, deserializeLifecycleCapsule } from "./e-lifecycle-capsule";
 import { initializeWorld } from "./world-origin";
 import type { LifecycleState } from "./e-lifecycle-runtime";
@@ -43,7 +43,8 @@ function traversal(actual: Output, expected: Output): void {
   }
   expect(Object.keys(actual.canonicalYearSnapshot.people)).toEqual(Object.keys(expected.canonicalYearSnapshot.people));
   for (let i = 0; i < expected.journal.length; i++) {
-    expect(Object.keys(actual.journal[i].physicalSnapshot.people)).toEqual(Object.keys(expected.journal[i].physicalSnapshot.people));
+    expect(Object.keys(auditRecord(actual.journal[i]).physicalSnapshot.people))
+      .toEqual(Object.keys(auditRecord(expected.journal[i]).physicalSnapshot.people));
   }
 }
 function aliases(output: Output): void {

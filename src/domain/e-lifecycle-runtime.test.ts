@@ -5,7 +5,7 @@ import { createLifecycleCapsule, serializeLifecycleCapsule } from "./e-lifecycle
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import { createLifecycleGenesis } from "./e-lifecycle-genesis";
 import { initializeWorld } from "./world-origin";
-import { createLifecycleRuntime } from "./e-lifecycle-runtime";
+import { createLifecycleRuntime, auditRecord } from "./e-lifecycle-runtime";
 import { simulateYears, type LegacyOwnedRunState } from "./simulate";
 import * as kernel from "./legacy-year";
 import * as sourceModule from "./e-year-source";
@@ -121,12 +121,12 @@ async function publicParity(options: GenerateWorldOptions, throughYear: number, 
       const actual = await runtime.advance(year);
       const record = actual.journal.at(-1)!;
       // PRIMARY ASSERTIONS: complete public native snapshots/actual state BEFORE economics.
-      fidelity(record.physicalSnapshot, step.value.snapshot, `year${year}`);
+      fidelity(auditRecord(record).physicalSnapshot, step.value.snapshot, `year${year}`);
       // The single retained annual state keeps the native registry/log aliases.
       expect(record.final.owned.people).toBe(record.final.favors.people);
       expect(record.final.owned.events).toBe(record.final.favors.legacyEvents);
       const economics = economy(view, independent.config.seed, year);
-      fidelity(record.economics, economics, `year${year}.economics`);
+      fidelity(auditRecord(record).economics, economics, `year${year}.economics`);
       fidelity(actual.owned, publicOwned, `year${year}.final.owned`);
       fidelity(actual.favors, view, `year${year}.final.favors`);
       fidelity(record.final, { owned: publicOwned, favors: view }, `year${year}.final`);
@@ -258,7 +258,7 @@ describe("native lifecycle annual transaction", () => {
     expect(output.owned.counters.decisionCalls).toBeGreaterThan(0);
     expect(output.owned.people).toBe(output.favors.people);
     expect(output.owned.events).toBe(output.favors.legacyEvents);
-    expect(output.journal[0].physicalSnapshot.year).toBe(1327);
+    expect(auditRecord(output.journal[0]).physicalSnapshot.year).toBe(1327);
     expect(output.canonicalYearSnapshot.people).toEqual(output.owned.people);
     expect(output.versions).toEqual(input.versions);
     expect(output.journal[0].versions).toEqual(input.versions);
@@ -301,7 +301,7 @@ describe("native lifecycle annual transaction", () => {
     const deathYear = final.journal.find(record => record.year === maternal.year)!;
     const mother = maternal.actors[0];
     expect(deathYear.final.owned.people[mother].deathYear).toBe(maternal.year);
-    expect(deathYear.economics.resources.some(op => op.actor === mother)).toBe(false);
+    expect(auditRecord(deathYear).economics.resources.some(op => op.actor === mother)).toBe(false);
     const prior = final.journal.find(record => record.year === maternal.year - 1);
     expect(deathYear.final.favors.grain[mother]).toBe(prior?.final.favors.grain[mother] ?? admitted.resources[mother].grain);
     const widowed = deathYear.final.owned.events.find(event => event.kind === "widowed" && event.causes.includes(maternal.id))!;
@@ -319,7 +319,7 @@ describe("native lifecycle annual transaction", () => {
       expect(child.mind.values).toBeDefined();
       expect(child.socialClass).toBeDefined();
       expect(Object.hasOwn(born.final.favors.grain, childId)).toBe(false);
-      expect(born.economics.resources.some(op => op.actor === childId)).toBe(false);
+      expect(auditRecord(born).economics.resources.some(op => op.actor === childId)).toBe(false);
     }
   }, 30000);
 
@@ -330,14 +330,14 @@ describe("native lifecycle annual transaction", () => {
     const final = outputs.at(-1)!;
     const newbornIds = new Set(final.owned.events.filter(event => event.kind === "birth"
       && event.year >= admitted.initial.config.startYear && !Object.hasOwn(admitted.initial.people, event.actors[0])).map(event => event.actors[0]));
-    const allocations = final.journal.flatMap(record => record.economics.resources
+    const allocations = final.journal.flatMap(record => auditRecord(record).economics.resources
       .filter(op => op.kind === "allocate" && newbornIds.has(op.actor)).map(op => ({ op, record })));
     expect(allocations.length).toBeGreaterThan(0);
     for (const { op, record } of allocations) {
       expect(record.year - record.final.owned.people[op.actor].birthYear).toBe(16);
       const born = final.journal.find(year => year.year === record.final.owned.people[op.actor].birthYear)!;
       expect(Object.hasOwn(born.final.favors.grain, op.actor)).toBe(false);
-      expect(record.economics.entries.some(entry => entry.kind === "allocate" && entry.actors[0] === op.actor)).toBe(true);
+      expect(auditRecord(record).economics.entries.some(entry => entry.kind === "allocate" && entry.actors[0] === op.actor)).toBe(true);
     }
   }, 30000);
 
@@ -359,11 +359,11 @@ describe("native lifecycle annual transaction", () => {
       const retained = ownData(record.final.owned.people);
       // The economic Mind mutation is absent from the pre-economic snapshot, present in
       // the retained annual state AND therefore in the published actual registry.
-      return retained !== ownData(record.physicalSnapshot.people) && retained === ownData(output.owned.people);
+      return retained !== ownData(auditRecord(record).physicalSnapshot.people) && retained === ownData(output.owned.people);
     });
     expect(changed).toBeDefined();
     expect(ownData(changed!.canonicalYearSnapshot.people)).toBe(ownData(changed!.owned.people));
-    expect(changed!.journal.at(-1)!.economics.entries.filter(entry => entry.kind === "help-response").every(entry => entry.authority?.source === "rules")).toBe(true);
+    expect(auditRecord(changed!.journal.at(-1)!).economics.entries.filter(entry => entry.kind === "help-response").every(entry => entry.authority?.source === "rules")).toBe(true);
   });
 
   it("records separate ordered positions, causes, stable creditors and both current slots", async () => {
@@ -374,10 +374,10 @@ describe("native lifecycle annual transaction", () => {
     let sawRevalidation = false;
     let sawCompetingDebtors = false;
     for (const record of records) {
-      expect(record.economics.creditors).toEqual([...record.economics.creditors].sort(annualPolicy.stableAnnualIdOrder));
-      expect(record.economics.slots.map(({ creditor, slot }) => [creditor, slot])).toEqual(
-        record.economics.creditors.flatMap(creditor => [[creditor, 0], [creditor, 1]]));
-      const { positions, economics } = record;
+      expect(auditRecord(record).economics.creditors).toEqual([...auditRecord(record).economics.creditors].sort(annualPolicy.stableAnnualIdOrder));
+      expect(auditRecord(record).economics.slots.map(({ creditor, slot }) => [creditor, slot])).toEqual(
+        auditRecord(record).economics.creditors.flatMap(creditor => [[creditor, 0], [creditor, 1]]));
+      const { positions, economics } = auditRecord(record);
       expect(economics.entries.map(entry => entry.position)).toEqual(
         Array.from({ length: economics.entries.length }, (_, i) => positions.economic.start + i));
       expect(positions.economic.end - positions.economic.start).toBe(economics.entries.length);
@@ -470,7 +470,7 @@ describe("native lifecycle annual transaction", () => {
     expect(death.owned.people.protagonist.deathYear).toBe(death.frontier);
     expect(death.owned.events.some(event => event.kind === "death" && event.actors[0] === "protagonist")).toBe(true);
     expect(death.journal.at(-1)!.final.favors).toEqual(death.favors);
-    expect(death.journal.at(-1)!.economics.resources.length).toBeGreaterThan(0);
+    expect(auditRecord(death.journal.at(-1)!).economics.resources.length).toBeGreaterThan(0);
     const source = vi.spyOn(sourceModule, "createRulesYearSource");
     await expect(runtime.advance(death.frontier + 1)).rejects.toThrow(/dead/);
     expect(source).not.toHaveBeenCalled();
@@ -484,7 +484,7 @@ describe("native lifecycle annual transaction", () => {
       let expected: Output | undefined;
       for (let year = 1327; year <= 1333; year++) {
         const output = await reference.advance(year);
-        const economic = output.journal.at(-1)!.economics;
+        const economic = auditRecord(output.journal.at(-1)!).economics;
         const matching = phase === "grant" ? economic.entries.some(entry => entry.kind === "grain-grant")
           : phase === "help" || phase === "slot" ? economic.requests.length > 0 : true;
         if (matching) { expected = output; break; }
@@ -633,4 +633,36 @@ describe("native lifecycle annual transaction", () => {
     expect(ownData(first)).toBe(retained);
     expect(ownData(runtime.initial)).toBe(initial);
   });
+
+  it("compact journal mode retains only what the views read", async () => {
+    const input = genesis({ ...defaults, seed: "baseline-1327-1", founderCount: 12 });
+    // Each owner instantiates its own graph: sharing one admitted input would alias their state.
+    const audit = createLifecycleRuntime(structuredClone(input));
+    const compact = createLifecycleRuntime(structuredClone(input), { journal: "compact" });
+    for (const year of [1327, 1328, 1329]) {
+      const full = await audit.advance(year);
+      const lean = await compact.advance(year);
+      const fullRecord = full.journal.at(-1)!;
+      const leanRecord = lean.journal.at(-1)!;
+      // Same life: the state every view and every comparison reads is identical.
+      expect(ownData(leanRecord.final)).toBe(ownData(fullRecord.final));
+      // Every state-bearing field matches; only the retained evidence differs.
+      expect(ownData(lean.owned)).toBe(ownData(full.owned));
+      expect(ownData(lean.favors)).toBe(ownData(full.favors));
+      expect(ownData(lean.canonicalYearSnapshot)).toBe(ownData(full.canonicalYearSnapshot));
+      expect(lean.frontier).toBe(full.frontier);
+      expect(lean.status).toBe(full.status);
+      // And nothing no reader consumes is retained.
+      expect(leanRecord.economics).toBeUndefined();
+      expect(leanRecord.physicalSnapshot).toBeUndefined();
+      expect(leanRecord.positions).toBeUndefined();
+    }
+    // The audit journal is what makes a long life impossible; compact removes the bulk of it.
+    const auditBytes = Buffer.byteLength(JSON.stringify(audit.snapshot().journal), "utf8");
+    const compactBytes = Buffer.byteLength(JSON.stringify(compact.snapshot().journal), "utf8");
+    expect(compactBytes).toBeLessThan(auditBytes / 4);
+    // Audit stays the default and an unknown mode is a refusal, never a silent fallback.
+    expect(audit.snapshot().journal.at(-1)!.economics).toBeDefined();
+    expect(() => createLifecycleRuntime(structuredClone(input), { journal: "lean" as never })).toThrow(/journal mode/);
+  }, 30_000);
 });

@@ -24,12 +24,19 @@ export interface LifecycleHelpSlot {
   /** null means only "no request planned"; the planner exposes no activation reason. */
   request: RequestIntention | null;
 }
+/**
+ * Per-year audit evidence. `physicalSnapshot`, `economics` and `positions` are retained only in
+ * `"audit"` mode: no production reader consumes them (the views read `final.owned`), and they are
+ * 90%+ of a life's bytes. `economics.entries` alone embeds, per operation, a clone of the whole
+ * obligations/ties ledgers plus every prior operation id, which is O(operations x history) per year
+ * and quadratic over a life. See `odd/tasks/lifecycle-full-lifetime.md`.
+ */
 export interface LifecycleYearRecord {
   year: number;
   versions: LifecycleGenesis["versions"];
   /** Pre-economic people/events/decisions. The pre-economic favor ledger copy is NOT retained. */
-  physicalSnapshot: YearSnapshot;
-  economics: {
+  physicalSnapshot?: YearSnapshot;
+  economics?: {
     resources: ResourceOperation[];
     grants: GrantIntention[];
     creditors: string[];
@@ -38,13 +45,22 @@ export interface LifecycleYearRecord {
     entries: RuntimeEntry[];
   };
   /** Life-log indices and economic positions are deliberately separate namespaces. */
-  positions: {
+  positions?: {
     life: { start: number; end: number };
     decisions: { start: number; end: number };
     economic: { start: number; end: number };
   };
   /** The year's actual post-economics state; the only full state copy retained per year. */
   final: LifecycleState;
+}
+
+/**
+ * `"audit"` (default) retains every per-year field, including the planning evidence no reader uses.
+ * `"compact"` retains only what the views consume, which is what makes a life longer than ~17 years
+ * possible: the audit fields alone exceed V8's string limit at that point.
+ */
+export interface LifecycleRuntimeOptions {
+  readonly journal?: "audit" | "compact";
 }
 export interface LifecycleOutput extends LifecycleState {
   versions: LifecycleGenesis["versions"];
@@ -80,11 +96,35 @@ function requireYear(year: number): void {
  * match the genesis being certified.
  */
 const runtimeOutputs = new WeakSet<object>();
+/**
+ * Narrows a journal record to the audit shape. Audit fields are optional because compact mode omits
+ * them, and they have no production reader; this exists so tests and tooling that DO inspect the
+ * retained evidence cannot silently read an absent block.
+ */
+export function auditRecord(record: unknown): {
+  physicalSnapshot: YearSnapshot;
+  economics: NonNullable<LifecycleYearRecord["economics"]>;
+  positions: NonNullable<LifecycleYearRecord["positions"]>;
+} {
+  const value = record as Partial<LifecycleYearRecord> | null;
+  if (value === null || typeof value !== "object" || value.physicalSnapshot === undefined
+    || value.economics === undefined || value.positions === undefined) {
+    throw new Error("Expected an audit-mode journal record");
+  }
+  return value as {
+    physicalSnapshot: YearSnapshot;
+    economics: NonNullable<LifecycleYearRecord["economics"]>;
+    positions: NonNullable<LifecycleYearRecord["positions"]>;
+  };
+}
+
 export function isLifecycleRuntimeOutput(value: unknown): boolean {
   return typeof value === "object" && value !== null && runtimeOutputs.has(value);
 }
 
-export function createLifecycleRuntime(input: unknown) {
+export function createLifecycleRuntime(input: unknown, options: LifecycleRuntimeOptions = {}) {
+  const journalMode = options.journal ?? "audit";
+  if (journalMode !== "audit" && journalMode !== "compact") throw new Error("Invalid lifecycle journal mode");
   const { genesis, config, protagonistId, owned, favors } = instantiateLifecycleGenesis(input);
   const initialFrontier = config.startYear - 1;
   requireYear(initialFrontier);
@@ -156,16 +196,20 @@ export function createLifecycleRuntime(input: unknown) {
           }
         }
       }
-      const record: LifecycleYearRecord = {
-        year, versions: genesis.versions, physicalSnapshot,
-        economics: { resources: allowances.resources, grants: allowances.grants, creditors, slots, requests, entries },
-        positions: {
-          life: { start: lifeStart, end: draft.owned.events.length },
-          decisions: { start: decisionStart, end: draft.owned.decisions.length },
-          economic: { start: economicStart, end: draft.favors.events.length },
-        },
-        final: structuredClone(draft),
-      };
+      // Compact mode omits ONLY fields no production reader consumes; `final` is what the chronicle,
+      // the person sheets and the replay comparison all read, so it is never dropped.
+      const record: LifecycleYearRecord = journalMode === "compact"
+        ? { year, versions: genesis.versions, final: structuredClone(draft) }
+        : {
+          year, versions: genesis.versions, physicalSnapshot,
+          economics: { resources: allowances.resources, grants: allowances.grants, creditors, slots, requests, entries },
+          positions: {
+            life: { start: lifeStart, end: draft.owned.events.length },
+            decisions: { start: decisionStart, end: draft.owned.decisions.length },
+            economic: { start: economicStart, end: draft.favors.events.length },
+          },
+          final: structuredClone(draft),
+        };
       // Detach only the NEW annual record. Reuse the privately frozen version
       // tuple to preserve its aliases across annual evidence/publication frames.
       const newRecord = structuredClone(record);

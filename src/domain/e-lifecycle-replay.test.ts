@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { canonicalLifecycleData, createLifecycleGenesis } from "./e-lifecycle-genesis";
-import { createLifecycleRuntime } from "./e-lifecycle-runtime";
+import { createLifecycleRuntime, auditRecord } from "./e-lifecycle-runtime";
 import { initializeWorld } from "./world-origin";
 import { replayLifecycleRuntime } from "./e-lifecycle-replay";
 import * as genesisModule from "./e-lifecycle-genesis";
@@ -153,7 +153,7 @@ describe("cold native lifecycle replay", () => {
     expect(favor).toHaveBeenCalledTimes(2);
     for (const call of favor.mock.calls) {
       expect(call[0]).not.toBe(candidate.output.favors);
-      expect(call[2]).not.toBe(candidate.output.journal[0].economics.entries);
+      expect(call[2]).not.toBe(auditRecord(candidate.output.journal[0]).economics.entries);
     }
   });
 
@@ -164,7 +164,7 @@ describe("cold native lifecycle replay", () => {
     const replayed = await replayLifecycleRuntime(candidate);
     expect(replayed.status).toBe("complete");
     expect(replayed.owned.people.protagonist.deathYear).toBe(replayed.frontier);
-    expect(replayed.journal.at(-1)!.economics.resources.length).toBeGreaterThan(0);
+    expect(auditRecord(replayed.journal.at(-1)!).economics.resources.length).toBeGreaterThan(0);
     fidelity(replayed, candidate.output);
     const extra = structuredClone(candidate.output.journal.at(-1)!);
     extra.year = candidate.output.frontier + 1;
@@ -217,7 +217,7 @@ describe("cold native lifecycle replay", () => {
       return { ...source, execute: async year => {
         const result = await source.execute(year);
         candidate.output.owned.people.protagonist.mind.stress = 999;
-        candidate.output.journal[0].economics.resources.length = 0;
+        auditRecord(candidate.output.journal[0]).economics.resources.length = 0;
         candidate.genesis.initial.people.protagonist.name = "changed during await";
         changed = true;
         return result;
@@ -253,22 +253,21 @@ describe("cold native lifecycle replay", () => {
 describe("complete evidence rejection without a duplicated Person/Mind schema", () => {
   const mutations: [string, (c: Envelope) => void][] = [
     ["annual versions", c => define(c.output.journal[0].versions, "runtime", "unknown")],
-    ["physical snapshot", c => { c.output.journal[0].physicalSnapshot.people.protagonist.name = "forged"; }],
-    ["physical snapshot extension", c => define(c.output.journal[0].physicalSnapshot, "extension", undefined)],
-    ["economic resource plan", c => { c.output.journal[0].economics.resources.pop(); }],
-    ["economic grant plan", c => { c.output.journal[0].economics.grants.push({ id: "forged", creditor: "p001", debtor: "p002", causes: [] }); }],
-    ["creditor order", c => { c.output.journal[0].economics.creditors.push("protagonist"); }],
-    ["slot observations", c => define(c.output.journal[0].economics, "slots", [{ creditor: "p001", slot: 0, opportunities: [], request: null }])],
-    ["request plan", c => define(c.output.journal[0].economics, "requests", [{ id: "forged" }])],
-    ["entry effects", c => define(c.output.journal[0].economics.entries[0], "effects", [])],
-    ["entry authority", c => define(c.output.journal[0].economics.entries[0], "authority", { source: "human" })],
-    ["entry reason", c => define(c.output.journal[0].economics.entries[0], "reason", "forged")],
-    ["entry causes", c => { c.output.journal[0].economics.entries[0].causes.push("forged"); }],
-    ["entry position", c => { c.output.journal[0].economics.entries[0].position++; }],
-    ["life range", c => { c.output.journal[0].positions.life.end++; }],
-    ["decision range", c => { c.output.journal[0].positions.decisions.start++; }],
-    ["economic range", c => { c.output.journal[0].positions.economic.end++; }],
-    ["annual final Mind", c => { c.output.journal[0].final.owned.people.protagonist.mind.stress++; }],
+    ["physical snapshot", c => { (auditRecord(c.output.journal[0]).physicalSnapshot.people.protagonist as { name: string }).name = "forged"; }],
+    ["physical snapshot extension", c => define(auditRecord(c.output.journal[0]).physicalSnapshot, "extension", undefined)],
+    ["economic resource plan", c => { auditRecord(c.output.journal[0]).economics.resources.pop(); }],
+    ["economic grant plan", c => { auditRecord(c.output.journal[0]).economics.grants.push({ id: "forged", creditor: "p001", debtor: "p002", causes: [] }); }],
+    ["creditor order", c => { auditRecord(c.output.journal[0]).economics.creditors.push("protagonist"); }],
+    ["slot observations", c => define(auditRecord(c.output.journal[0]).economics, "slots", [{ creditor: "p001", slot: 0, opportunities: [], request: null }])],
+    ["request plan", c => define(auditRecord(c.output.journal[0]).economics, "requests", [{ id: "forged" }])],
+    ["entry effects", c => define(auditRecord(c.output.journal[0]).economics.entries[0], "effects", [])],
+    ["entry authority", c => define(auditRecord(c.output.journal[0]).economics.entries[0], "authority", { source: "human" })],
+    ["entry reason", c => define(auditRecord(c.output.journal[0]).economics.entries[0], "reason", "forged")],
+    ["entry causes", c => { auditRecord(c.output.journal[0]).economics.entries[0].causes.push("forged"); }],
+    ["entry position", c => { auditRecord(c.output.journal[0]).economics.entries[0].position++; }],
+    ["life range", c => { auditRecord(c.output.journal[0]).positions.life.end++; }],
+    ["decision range", c => { auditRecord(c.output.journal[0]).positions.decisions.start++; }],
+    ["economic range", c => { auditRecord(c.output.journal[0]).positions.economic.end++; }],
     ["annual final ledger", c => { c.output.journal[0].final.favors.need.protagonist++; }],
     ["annual unknown field", c => define(c.output.journal[0], "overrides", [])],
     ["output versions", c => define(c.output.versions, "annualPolicy", "unknown")],
@@ -353,24 +352,24 @@ describe("real competing HELP evidence, not candidate execution instructions", (
   it("regenerates ordered creditors, both slots, null observations and complete ledgers", async () => {
     const replayed = await replayLifecycleRuntime(competing);
     fidelity(replayed, competing.output);
-    const economics = replayed.journal.flatMap(record => record.economics.slots);
+    const economics = replayed.journal.flatMap(record => auditRecord(record).economics.slots);
     expect(economics.some(slot => slot.request === null)).toBe(true);
     expect(economics.some(slot => slot.request !== null)).toBe(true);
     expect(replayed.favors.obligations.length).toBeGreaterThan(0);
     expect(replayed.favors.ties.length).toBeGreaterThan(0);
-    expect(replayed.journal.some(record => record.economics.entries.some(entry => entry.kind === "help-response"))).toBe(true);
+    expect(replayed.journal.some(record => auditRecord(record).economics.entries.some(entry => entry.kind === "help-response"))).toBe(true);
   });
   it.each(["grant", "creditors", "slots", "null", "opportunity", "request", "authority", "effects", "evidence",
     "debt", "tie", "native-human", "final-history"])("rejects forged %s in genuine economic history", async kind => {
     const candidate = structuredClone(competing);
-    const record = candidate.output.journal.find(r => r.economics.entries.some(e => e.kind === "help-response"))!;
-    const response = record.economics.entries.find(e => e.kind === "help-response")!;
-    const request = record.economics.requests[0];
-    const slot = record.economics.slots.find(s => s.request !== null)!;
-    if (kind === "grant") candidate.output.journal.find(r => r.economics.grants.length)!.economics.grants[0].creditor = "forged";
-    if (kind === "creditors") record.economics.creditors.unshift("forged");
-    if (kind === "slots") record.economics.slots.reverse();
-    if (kind === "null") candidate.output.journal.flatMap(r => r.economics.slots).find(s => s.request === null)!.request = request;
+    const record = candidate.output.journal.find(r => auditRecord(r).economics.entries.some(e => e.kind === "help-response"))!;
+    const response = auditRecord(record).economics.entries.find(e => e.kind === "help-response")!;
+    const request = auditRecord(record).economics.requests[0];
+    const slot = auditRecord(record).economics.slots.find(s => s.request !== null)!;
+    if (kind === "grant") candidate.output.journal.find(r => auditRecord(r).economics.grants.length)!.economics!.grants[0].creditor = "forged";
+    if (kind === "creditors") auditRecord(record).economics.creditors.unshift("forged");
+    if (kind === "slots") auditRecord(record).economics.slots.reverse();
+    if (kind === "null") candidate.output.journal.flatMap(r => auditRecord(r).economics.slots).find(s => s.request === null)!.request = request;
     if (kind === "opportunity") define(slot.opportunities[0], "reason", "forged");
     if (kind === "request") request.noise = 0.999;
     if (kind === "authority") define(response.authority!, "source", "human");

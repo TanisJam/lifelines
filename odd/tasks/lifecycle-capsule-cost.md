@@ -464,3 +464,39 @@ which was fixed rather than deferred: the heal replaced rows with `INSERT OR REP
 marker was still `DO NOTHING`, so a marker carrying a stale digest was never repaired and that locale
 re-regenerated the whole life on EVERY read. The marker now follows the same rule as the rows. When it was
 wrong before this fix, it did so 100 s at a time.
+
+**L20 — THE 15-YEAR HORIZON IS AN ARCHITECTURAL CEILING, NOT A PRODUCT DECISION.**
+
+Raised by the user: "las vidas son de toda la vida, no solo 15". Checked instead of assuming.
+
+`LIFECYCLE_HORIZON_YEARS = 15` is hardcoded in `lifecycle-life.ts`, pinned by a test
+(`expect(LIFECYCLE_HORIZON_YEARS).toBe(15)`) and specified in `narrative-lifecycle-horizon.md` S1. It
+predates this work; every measurement above was taken at that horizon. The 15-year fixture also never
+died: it ended `incomplete` with `horizonYear 1341`, i.e. the horizon CUT a living protagonist.
+
+Why 15 and not more - measured by running the runtime directly, with an 8 GB heap so memory could not be
+the explanation:
+
+| Years | Simulation | VmHWM | `JSON.stringify(journal)` | `canonicalLifecycleData` |
+|---|---|---|---|---|
+| 15 | 89 s | 0.88 GiB | **345 MB** | **444 MB** (fits) |
+| 17 | 124 s | 1.25 GiB | 444 MB | **THROWS `Invalid string length`** |
+| 20 | 190 s | 1.76 GiB | **THROWS** | THROWS |
+
+V8 caps a single string at ~512 MB. At 17 years the canonical payload crosses it, so `runLifecycle`
+cannot even finish: `createLifecycleCapsule` builds `canonicalLifecycleData` unconditionally. At 20 years
+the journal alone no longer fits in a string. **The simulation was never the limit** - 20 years runs in
+190 s and 1.76 GiB.
+
+So "15 years" is the largest life the current SERIALIZATION can express, not the largest life the product
+wants. Any amount of RAM leaves it unchanged.
+
+Making lives run to a real death therefore requires, at minimum:
+
+1. stop retaining `journal` (one cumulative snapshot per year) in memory - emit each year and drop it, so
+   the run is bounded by state size and not by history size;
+2. an incremental/Merkle digest over the table instead of one hash over one giant string, which is a new
+   capsule schema and therefore invalidates or versions every stored digest.
+
+That is a redesign of the capsule/codec layer, not a horizon parameter. It is NOT in scope of this
+feature and needs an explicit product decision.

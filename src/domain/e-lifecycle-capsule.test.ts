@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { canonicalLifecycleData, createLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS } from "./e-lifecycle-genesis";
-import { createLifecycleRuntime, isLifecycleRuntimeOutput } from "./e-lifecycle-runtime";
+import { createLifecycleRuntime, isLifecycleRuntimeOutput, auditRecord } from "./e-lifecycle-runtime";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "./e-lifecycle-dag";
 import { initializeWorld } from "./world-origin";
 import * as sourceModule from "./e-year-source";
@@ -158,7 +158,7 @@ describe("full trusted lifecycle capsule", () => {
       : kind === "admit" ? admitLifecycleCapsule(candidate) : serializeLifecycleCapsule(candidate);
     candidate.genesis.initial.people.protagonist.name = "mutated after return";
     candidate.output.owned.people.protagonist.mind.stress = 999;
-    candidate.output.journal[0].economics.resources.length = 0;
+    auditRecord(candidate.output.journal[0]).economics.resources.length = 0;
     define(candidate.manifest, "codec", "mutated after return");
     candidate.digest = "0".repeat(64);
     for (const root of [input, candidate]) {
@@ -261,7 +261,7 @@ describe("full trusted lifecycle capsule", () => {
       return { ...source, execute: async year => {
         const output = await source.execute(year);
         candidate.output.owned.people.protagonist.mind.stress = 999;
-        candidate.output.journal[0].economics.resources.length = 0;
+        auditRecord(candidate.output.journal[0]).economics.resources.length = 0;
         candidate.genesis.initial.people.protagonist.name = "mutated during await";
         changed = true;
         return output;
@@ -276,9 +276,9 @@ describe("full trusted lifecycle capsule", () => {
 
 describe("digest is not authority", () => {
   const mutations: [string, (c: Candidate) => void][] = [
-    ["resource plan", c => { c.output.journal[0].economics.resources.pop(); }],
-    ["slot evidence", c => define(c.output.journal[0].economics, "slots", [{ creditor: "p001", slot: 0, request: null }])],
-    ["economic authority", c => define(c.output.journal[0].economics.entries[0], "authority", { source: "human" })],
+    ["resource plan", c => { auditRecord(c.output.journal[0]).economics.resources.pop(); }],
+    ["slot evidence", c => { const e = auditRecord(c.output.journal[0]).economics; define(e, "slots", [{ creditor: "p001", slot: 0, request: null }]); }],
+    ["economic authority", c => { const e = auditRecord(c.output.journal[0]).economics; define(e.entries[0], "authority", { source: "human" }); }],
     ["final ledger", c => { c.output.favors.grain.protagonist++; }],
     ["final unknown", c => define(c.output.owned.people.protagonist.mind, "unknown", undefined)],
     ["annual unknown", c => define(c.output.journal[0], "unknown", undefined)],
