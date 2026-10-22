@@ -10,10 +10,18 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Measured, not guessed (odd/tasks/lifecycle-capsule-cost.md): a 15-year create needs more than
+      # 1280 MB of JS heap (exit 134) and passes at 1536 MB. Without an explicit cap V8 sizes the heap
+      # from the HOST instead of this cgroup limit, so it never collects, reaches ~4.6 GB and dies.
+      NODE_OPTIONS: --max-old-space-size=1536
     # Bounds the container's total memory (the app's own STORE_CACHE_SIZE bounds the two in-process
     # life/world LRU caches, but this is the outer guardrail against the whole container's usage —
-    # Node's own overhead, request buffering, etc.) — generous for a single-instance homelab deploy.
-    mem_limit: 2g
+    # Node's own overhead, request buffering, etc.).
+    # MEASURED, not assumed: with the 1536 MB heap cap above, a 15-year create peaks at 2.07 GiB RSS
+    # (VmHWM), so the previous 2g bound would have OOM-killed exactly the request we were sizing for.
+    # 2560m leaves ~0.4 GiB over the measured peak. Re-measure before lowering this or the heap cap.
+    mem_limit: 2560m
     volumes:
       - lifelines-data:/data
     networks:

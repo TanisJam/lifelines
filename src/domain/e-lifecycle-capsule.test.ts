@@ -552,3 +552,68 @@ describe("compact lifecycle capsule (CA1b)", () => {
       genesis: compact.genesis })).rejects.toThrow();
   });
 });
+
+describe("certified capsule identity memo", () => {
+  // The create path admits the same capsule three times (create -> publish -> serialize).
+  // Each admission used to re-run the complete replay: four executions of one deterministic
+  // run for a single life. Re-admitting OUR OWN frozen capsule must be O(1), while caller
+  // data must still be fully regenerated.
+  it("re-admits a capsule this process created instead of regenerating it", async () => {
+    const evidence = await fixture();
+    const compact = await createLifecycleCompactCapsule(evidence);
+    expect(await admitLifecycleCompactCapsule(compact)).toBe(compact);
+    const legacy = await createLifecycleCapsule(evidence);
+    expect(await admitLifecycleCapsule(legacy)).toBe(legacy);
+  });
+
+  it("serializes a certified capsule to the same bytes as an uncertified copy of it", async () => {
+    const evidence = await fixture();
+    const compact = await createLifecycleCompactCapsule(evidence);
+    // Same fields, different top-level identity: not in the memo, so it takes the cold path.
+    const cold = { manifest: compact.manifest, digest: compact.digest,
+      genesis: compact.genesis, output: compact.output };
+    expect(await serializeLifecycleCompactCapsule(compact)).toBe(await serializeLifecycleCompactCapsule(cold));
+  });
+
+  it("never reuses a certified output bound to a different genesis", async () => {
+    const first = await fixture();
+    const compact = await createLifecycleCompactCapsule(first);
+    const other = await fixture("baseline-1327-2");
+    // The output was certified for `first`, not for `other`: the pair check must force a replay,
+    // and that replay must refuse the disagreement instead of certifying it.
+    await expect(createLifecycleCompactCapsule({ genesis: other.genesis, output: compact.output })).rejects.toThrow();
+  });
+
+  it("re-plays a structuredClone of a certified capsule instead of trusting it", async () => {
+    const evidence = await fixture();
+    const compact = await createLifecycleCompactCapsule(evidence);
+    const clone = structuredClone(compact);
+    const admitted = await admitLifecycleCompactCapsule(clone);
+    expect(admitted).not.toBe(clone);
+    expect(admitted.output).not.toBe(clone.output);
+    expect(admitted.digest).toBe(compact.digest);
+    expect(await serializeLifecycleCompactCapsule(admitted))
+      .toBe(await serializeLifecycleCompactCapsule(compact));
+  });
+
+  it("serializes a cold replay of the same evidence to identical compact and legacy bytes", async () => {
+    const evidence = await fixture();
+    const compact = await createLifecycleCompactCapsule(evidence);
+    const cold = await createLifecycleCompactCapsule(structuredClone(evidence));
+    expect(cold).not.toBe(compact);
+    expect(await serializeLifecycleCompactCapsule(cold))
+      .toBe(await serializeLifecycleCompactCapsule(compact));
+    const legacy = await createLifecycleCapsule(evidence);
+    const legacyCold = await createLifecycleCapsule(structuredClone(evidence));
+    expect(await serializeLifecycleCapsule(legacyCold))
+      .toBe(await serializeLifecycleCapsule(legacy));
+  });
+
+  it("still refuses a caller object the memo never saw", async () => {
+    const evidence = await fixture();
+    const compact = await createLifecycleCompactCapsule(evidence);
+    const forged = { manifest: compact.manifest, digest: "0".repeat(64),
+      genesis: compact.genesis, output: compact.output };
+    await expect(admitLifecycleCompactCapsule(forged)).rejects.toThrow(/digest disagreement/i);
+  });
+});
