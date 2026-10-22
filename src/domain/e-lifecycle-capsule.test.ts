@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { canonicalLifecycleData, createLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS } from "./e-lifecycle-genesis";
-import { createLifecycleRuntime } from "./e-lifecycle-runtime";
+import { createLifecycleRuntime, isLifecycleRuntimeOutput } from "./e-lifecycle-runtime";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "./e-lifecycle-dag";
 import { initializeWorld } from "./world-origin";
 import * as sourceModule from "./e-year-source";
@@ -185,7 +185,11 @@ describe("full trusted lifecycle capsule", () => {
     const serialized = await serializeLifecycleCapsule(candidate);
     const restored = await deserializeLifecycleCapsule(serialized);
     const created = await createLifecycleCapsule(evidence);
-    expect(native).toHaveBeenCalledTimes(4); // every boundary replays, not a branded-object shortcut
+    // Three boundaries replay. `createLifecycleCapsule(evidence)` deliberately does NOT: `evidence.output`
+    // was published by a live runtime whose `genesisDigest` is this genesis, so replaying it would
+    // re-execute every year only to compare the result with itself (task P4). The shortcut is
+    // provenance-gated, and the next test proves a caller-assembled copy still replays.
+    expect(native).toHaveBeenCalledTimes(3);
     for (const result of [admitted, restored, created]) {
       fidelity(result, capsule);
       frozen(result);
@@ -441,6 +445,51 @@ function compactHash(manifest: unknown, table: string): string {
   hasher.update('\"]', "utf8");
   return hasher.digest("hex");
 }
+
+describe("certification skips only engine-produced output", () => {
+  it("still replays a caller-assembled copy of a runtime output", async () => {
+    const native = vi.spyOn(sourceModule, "createRulesYearSource");
+    // Same data, different provenance: a clone never carries the runtime's brand.
+    const copy = structuredClone(evidence as unknown) as Evidence;
+    await createLifecycleCapsule(copy);
+    expect(native).toHaveBeenCalledTimes(evidence.output.journal.length);
+  });
+
+  it("still replays every caller-assembled copy, and refuses one that was quietly altered", async () => {
+    const native = vi.spyOn(sourceModule, "createRulesYearSource");
+    const clone = structuredClone(evidence as unknown) as Evidence;
+    expect(isLifecycleRuntimeOutput(evidence.output)).toBe(true);
+    expect(isLifecycleRuntimeOutput(clone.output)).toBe(false);
+    expect(isLifecycleRuntimeOutput({ ...clone.output })).toBe(false);
+    expect(isLifecycleRuntimeOutput(JSON.parse(JSON.stringify(evidence.output)))).toBe(false);
+    await createLifecycleCapsule({ genesis: clone.genesis, output: { ...clone.output } });
+    expect(native).toHaveBeenCalledTimes(evidence.output.journal.length);
+    const altered = structuredClone(evidence as unknown) as Evidence;
+    (altered.output as unknown as { owned: { people: Record<string, { mind: { stress: number } }> } })
+      .owned.people.protagonist.mind.stress = 999;
+    await expect(createLifecycleCapsule(altered)).rejects.toThrow(/disagreement/i);
+  });
+
+  it("keeps wire and digest identical whether a branded output was reused or cold-replayed", async () => {
+    const reusedLegacy = await createLifecycleCapsule(evidence);
+    const coldLegacy = await createLifecycleCapsule(structuredClone(evidence as unknown) as Evidence);
+    expect(reusedLegacy.output).toBe(evidence.output);
+    expect(coldLegacy.output).not.toBe(evidence.output);
+    expect(reusedLegacy.digest).toBe(coldLegacy.digest);
+    expect(await serializeLifecycleCapsule(reusedLegacy)).toBe(await serializeLifecycleCapsule(coldLegacy));
+    const reusedCompact = await createLifecycleCompactCapsule(evidence);
+    const coldCompact = await createLifecycleCompactCapsule(structuredClone(evidence as unknown) as Evidence);
+    expect(reusedCompact.digest).toBe(coldCompact.digest);
+    expect(await serializeLifecycleCompactCapsule(reusedCompact))
+      .toBe(await serializeLifecycleCompactCapsule(coldCompact));
+  });
+
+  it("still refuses a runtime output whose genesis digest belongs to another genesis", async () => {
+    const other = await fixture("baseline-1327-2");
+    // `evidence.output` is a genuine runtime output, but it was published for `evidence.genesis`.
+    await expect(createLifecycleCapsule({ genesis: other.genesis, output: evidence.output })).rejects.toThrow();
+  });
+});
 
 describe("compact lifecycle capsule (CA1b)", () => {
   let compact: LifecycleCompactCapsule;

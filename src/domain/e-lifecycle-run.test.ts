@@ -282,7 +282,9 @@ describe("controller", () => {
     expect(result.status).toBe("aborted");
     expect(result.capsule.output.status).toBe("complete");
     expect(result.capsule.output.frontier).toBe(1328);
-    expect(executions).toBe(4); // two committed native years, then two more regenerating the capsule
+    // Two committed native years only: certifying the capsule reuses the runtime's own output for this
+    // genesis instead of re-executing the run to compare it with itself (task P4).
+    expect(executions).toBe(2);
   });
   it("abort during certification and completed resume remains producer cancellation", async () => {
     const completed = await runLifecycle({ kind: "start", genesis: deathGenesis() }, { maxSteps: 4 });
@@ -472,3 +474,26 @@ it("LIFErepresentative predeclared default62 cohort: unforced lives and cold cer
       reason: "no >=60-year unforced complete cold-replayed member", trackedAs: "CQ1" })}\n`);
   }
 }, 600000);
+
+describe("certification reuses only this run's own output", () => {
+  it("produces the same legacy and compact wire as a cold replay of the same evidence", async () => {
+    const result = await runLifecycle({ kind: "start", genesis: deathGenesis() }, { maxSteps: 4 });
+    const source = { genesis: result.capsule.genesis, output: result.capsule.output };
+    const cold = await capsuleModule.createLifecycleCapsule(structuredClone(source));
+    expect(await capsuleModule.serializeLifecycleCapsule(result.capsule))
+      .toBe(await capsuleModule.serializeLifecycleCapsule(cold));
+    const compact = await capsuleModule.createLifecycleCompactCapsule(source);
+    const coldCompact = await capsuleModule.createLifecycleCompactCapsule(structuredClone(source));
+    expect(await capsuleModule.serializeLifecycleCompactCapsule(compact))
+      .toBe(await capsuleModule.serializeLifecycleCompactCapsule(coldCompact));
+  });
+
+  it("still replays a caller capsule on resume, and refuses a rehashed tamper", async () => {
+    const completed = await runLifecycle({ kind: "start", genesis: deathGenesis() }, { maxSteps: 4 });
+    const tampered = structuredClone(completed.capsule as unknown) as Mutable<Capsule>;
+    tampered.output.owned.people.protagonist.mind.stress = 999;
+    rehash(tampered);
+    await expect(runLifecycle({ kind: "resume", capsule: tampered }, { maxSteps: 0 }))
+      .rejects.toThrow(/disagreement/i);
+  });
+});

@@ -3,6 +3,7 @@ import { admitLifecycleGenesis, canonicalLifecycleData, LIFECYCLE_GENESIS_VERSIO
   type LifecycleGenesis } from "./e-lifecycle-genesis";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "./e-lifecycle-dag";
 import { replayLifecycleRuntime } from "./e-lifecycle-replay";
+import { isLifecycleRuntimeOutput } from "./e-lifecycle-runtime";
 import { requireFavorData } from "./effects";
 import { requireFields } from "./obligations";
 
@@ -57,9 +58,20 @@ function isCertified<T extends object>(format: keyof typeof certifiedLexicon, va
  * still fully replayed instead of certified.
  */
 const certifiedOutputs = new WeakSet<object>();
+/**
+ * An output needs no replay when this process ALREADY regenerated it, or when a live runtime published
+ * it for this exact genesis. The replay would re-execute the years only to compare the result with
+ * itself, which is what made one create cost two full simulations.
+ *
+ * Alignment is enforced by `genesisDigest`, so an output from runtime A can never be certified as
+ * genesis B. What is genuinely given up here is the create-time NON-DETERMINISM check: the replay also
+ * proved that re-running the engine reproduces the same bytes. That check now lives in
+ * `verifyLifecycleLives` (task P5), which replays every stored life off the request path.
+ */
 function replayOrReuse(genesis: LifecycleGenesis, output: unknown) {
-  if (typeof output === "object" && output !== null && certifiedOutputs.has(output)
-    && (output as { genesisDigest?: unknown }).genesisDigest === genesis.digest) {
+  if (typeof output === "object" && output !== null
+    && (output as { genesisDigest?: unknown }).genesisDigest === genesis.digest
+    && (certifiedOutputs.has(output) || isLifecycleRuntimeOutput(output))) {
     return output as Awaited<ReturnType<typeof replayLifecycleRuntime>>;
   }
   return replayLifecycleRuntime({ genesis, output });

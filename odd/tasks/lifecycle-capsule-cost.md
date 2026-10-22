@@ -54,7 +54,7 @@ Other measured facts:
 | P1 | S3: stop re-admitting capsules this process already regenerated and froze | inline | **done** |
 | P2 | S1: set a measured `--max-old-space-size` for the container | inline | **done** |
 | P3 | S4: serve reads from a persisted projection | inline | **done** |
-| P4 | S3: drop the remaining intra-request replay inside `runLifecycle` | inline | open |
+| P4 | S3: drop the remaining intra-request replay inside `runLifecycle` | inline | **done** |
 | P5 | integrity: replay every stored life and compare each indexed view | inline | **done** |
 | P6 | safety: bound concurrent creates so two cannot exceed the container | inline | **done** |
 | P7 | UX: emit each year DURING the run, not after it | inline | **done** |
@@ -283,3 +283,45 @@ run before a second year executes.
 61% is the certification replay plus the compact encode and publish - exactly what P4 removes. So P4 is no
 longer "make creates faster"; it is "stop the viewer from waiting 60% of the run after they have already seen
 the whole life".
+
+**L15** — P4 landed: the create path no longer replays years it just executed. `e-lifecycle-runtime.ts` brands
+every output its own `publish` returns; `e-lifecycle-capsule.ts` reuses a branded output instead of replaying
+it, but ONLY when `output.genesisDigest === genesis.digest`. The brand proves provenance; the digest check
+proves alignment. `runLifecycle` therefore certifies the snapshot its own runtime produced without re-executing
+the run to compare the result with itself.
+
+Measured on the real 15-year life, `--max-old-space-size=1536`:
+
+| Step | Before P4 | After P4 |
+|---|---|---|
+| `runLifecycle` (simulation + certification) | 204.2 s | **103.7 s** |
+| `createLifecycleCompactCapsule` | 12.6 s | 12.2 s |
+| `publish` admission | 0 ms | 0 ms |
+| `publish` serialize | 10.8 s | 10.9 s |
+| **Total create** | **228.0 s** | **126.9 s** |
+| Peak RSS (VmHWM) | ~2.07 GiB | **1,826-1,897 MB** |
+| Heap floor | 1536 MB | **1280 and 1536 both pass; 768 fails** |
+
+**My prediction was wrong and the measurement says so.** I expected the peak to fall to ~1 GiB. It did not:
+the compact encode is now the single peak, so the peak is roughly unchanged (2,110 -> 1,826-1,897 MB) while
+time roughly halved. The deploy configuration is therefore untouched
+(`NODE_OPTIONS=--max-old-space-size=1536`, `mem_limit: 2560m`).
+
+Independent verification corrected one more of my numbers: the "1280 MB still fails" floor was STALE. At this
+commit a 15-year create passes at `--max-old-space-size=1280` (122.0 s, VmHWM 1,826 MB), and it failed at 1280
+in an earlier run of the same probe - the value sits on a GC-timing boundary and is not reproducible run to run.
+1536 stays the deployed value because it is the conservative one, not because 1280 is impossible. 768 fails.
+
+Two further notes from that review: the create path now returns the runtime's own output object
+(`capsule.output === evidence.output`), so `regenerate`'s "detached" wording only applies to the replay path;
+and `isLifecycleRuntimeOutput` is also true for a replayed output, because replay returns `runtime.snapshot()`
+- the predicate means "the engine published this", not "this run published this".
+
+Two tests pinned the old "every authority boundary replays" invariant and were rewritten to pin the narrower
+rule, with the reason in place: three boundaries still replay, and a caller-assembled `structuredClone` of a
+runtime output still replays (asserted by a new test). A runtime output presented with ANOTHER genesis's digest
+still refuses (also new).
+
+What is genuinely given up: the create-time NON-DETERMINISM check. That replay also proved the engine reproduces
+the same bytes. It now lives in `verifyLifecycleLives` (P5), which replays from genesis off the request path
+and refuses on any disagreement. Total create cost across the session: **610 s → 228 s → 126.9 s**.

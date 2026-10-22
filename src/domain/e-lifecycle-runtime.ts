@@ -73,6 +73,17 @@ function requireYear(year: number): void {
  * physical-plan port. A consumer may stop BETWEEN closed steps; execute is not interruptible.
  * Journal data supports later replay work but is not a replay certificate or durable codec.
  */
+/**
+ * Outputs a live runtime published. Module-private provenance: `publish` is the only producer, so a
+ * branded object was produced by the engine from an admitted genesis rather than assembled by a caller.
+ * It proves provenance, NOT alignment - the capsule layer still requires `output.genesisDigest` to
+ * match the genesis being certified.
+ */
+const runtimeOutputs = new WeakSet<object>();
+export function isLifecycleRuntimeOutput(value: unknown): boolean {
+  return typeof value === "object" && value !== null && runtimeOutputs.has(value);
+}
+
 export function createLifecycleRuntime(input: unknown) {
   const { genesis, config, protagonistId, owned, favors } = instantiateLifecycleGenesis(input);
   const initialFrontier = config.startYear - 1;
@@ -94,7 +105,13 @@ export function createLifecycleRuntime(input: unknown) {
     });
     if (publishedVersions) frame.versions = publishedVersions;
     const frozenFrame = freeze(frame, new Set<object>(publishedVersions ? [publishedVersions] : []));
-    return Object.freeze({ ...frozenFrame, journal });
+    const published = Object.freeze({ ...frozenFrame, journal });
+    // Provenance brand for THIS module: the object came out of a live runtime, advanced by the engine.
+    // Certifying such an output does not need to replay it against itself (see e-lifecycle-capsule).
+    // Every output this module ever returns is branded, so the mark alone proves nothing about which
+    // genesis produced it - callers must also match `genesisDigest`.
+    runtimeOutputs.add(published);
+    return published;
   }
 
   // One pointer owns the entire committed frontier/state/journal/publication boundary.
