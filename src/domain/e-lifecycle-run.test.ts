@@ -55,6 +55,50 @@ function identity(value: unknown) {
 }
 afterEach(() => vi.restoreAllMocks());
 
+describe("per-year observation inside the run loop", () => {
+  it("reports every committed frontier, in order, before the run is certified", async () => {
+    const seen: number[] = [];
+    const result = await runLifecycle({ kind: "start", genesis: genesis("observe-1", false, 1332) }, {
+      maxSteps: 3,
+      onYear: (output) => { seen.push(output.frontier); },
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    // One report per committed year, contiguous and ascending, ending on the certified frontier.
+    expect(seen).toEqual(seen.map((_, index) => seen[0]! + index));
+    expect(seen.at(-1)).toBe(result.capsule.output.frontier);
+    expect(seen).toEqual(result.capsule.output.journal.map(entry => entry.year));
+  });
+
+  it("observes the same frontiers a fresh run regenerates, and cannot alter the capsule", async () => {
+    const seen: number[] = [];
+    const observed = await runLifecycle({ kind: "start", genesis: genesis("observe-2", false, 1332) }, {
+      maxSteps: 3,
+      onYear: (output) => { seen.push(output.frontier); },
+    });
+    const plain = await runLifecycle({ kind: "start", genesis: genesis("observe-2", false, 1332) }, { maxSteps: 3 });
+    expect(canonicalLifecycleData(observed.capsule)).toBe(canonicalLifecycleData(plain.capsule));
+    expect(seen).toEqual(plain.capsule.output.journal.map(entry => entry.year));
+  });
+
+  it("refuses a non-function observer instead of ignoring it", async () => {
+    await expect(runLifecycle({ kind: "start", genesis: genesis() },
+      { maxSteps: 1, onYear: "not a function" as never })).rejects.toThrow(/year observer/i);
+  });
+
+  it("stops observing once the client aborts", async () => {
+    const controller = new AbortController();
+    const seen: number[] = [];
+    const result = await runLifecycle({ kind: "start", genesis: genesis("observe-3", false, 1332) }, {
+      maxSteps: 5,
+      signal: controller.signal,
+      onYear: (output) => { seen.push(output.frontier); controller.abort(); },
+    });
+    expect(result.status).toBe("aborted");
+    // The abort inside the first observation stops the run before a second year executes.
+    expect(seen).toHaveLength(1);
+  });
+});
+
 describe("controller", () => {
   it("certifies zero budget without manufacturing a year or completion", async () => {
     const g = genesis();

@@ -8,6 +8,13 @@ export interface LifecycleRunOptions {
   /** New committed years only; admission and reconstruction do not consume budget. */
   readonly maxSteps: number;
   readonly signal?: AbortSignal;
+  /**
+   * Observes each committed year INSIDE the run loop, with that frontier's published output, before
+   * the next year executes. A streaming caller emits its frame here, so a viewer watches the life
+   * unfold instead of waiting for the whole run and receiving every year in one burst. Like `signal`,
+   * this is a capability, never serializable authority: it observes the run and cannot alter it.
+   */
+  readonly onYear?: (output: LifecycleCapsule["output"]) => Promise<void> | void;
 }
 export type LifecycleRunResult =
   | { readonly status: "complete"; readonly capsule: LifecycleCapsule }
@@ -27,7 +34,7 @@ function capture(input: unknown): Record<string, unknown> {
   return structuredClone(input);
 }
 const nativeAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "aborted")!.get!;
-function optionsFor(input: unknown): { maxSteps: number; aborted: () => boolean } {
+function optionsFor(input: unknown): { maxSteps: number; aborted: () => boolean; onYear: LifecycleRunOptions["onYear"] } {
   // The signal is a native capability, not serializable execution authority.
   // Inspect only root descriptors; never traverse a signal or call caller getters.
   record(input);
@@ -35,7 +42,8 @@ function optionsFor(input: unknown): { maxSteps: number; aborted: () => boolean 
   if (prototype !== null && prototype !== Object.prototype) throw new Error("Expected plain lifecycle run options");
   for (const key of Reflect.ownKeys(input)) {
     const descriptor = Object.getOwnPropertyDescriptor(input, key)!;
-    if ((key !== "maxSteps" && key !== "signal") || !descriptor.enumerable || !("value" in descriptor)) {
+    if ((key !== "maxSteps" && key !== "signal" && key !== "onYear")
+      || !descriptor.enumerable || !("value" in descriptor)) {
       throw new Error("Invalid lifecycle run option descriptor");
     }
   }
@@ -47,7 +55,9 @@ function optionsFor(input: unknown): { maxSteps: number; aborted: () => boolean 
   const signal = input.signal;
   const aborted = signal === undefined ? () => false : () => nativeAborted.call(signal) as boolean;
   aborted(); // Native brand check before asynchronous work, including zero budget.
-  return { maxSteps, aborted };
+  const onYear = input.onYear;
+  if (onYear !== undefined && typeof onYear !== "function") throw new Error("Invalid lifecycle year observer");
+  return { maxSteps, aborted, onYear: onYear as LifecycleRunOptions["onYear"] };
 }
 function result(capsule: LifecycleCapsule, aborted: boolean): LifecycleRunResult {
   // Producer cancellation wins even if the last committed runtime year was death.
@@ -62,7 +72,7 @@ function result(capsule: LifecycleCapsule, aborted: boolean): LifecycleRunResult
  */
 export async function runLifecycle(input: unknown, options: LifecycleRunOptions): Promise<LifecycleRunResult> {
   const candidate = capture(input);
-  const { maxSteps, aborted } = optionsFor(options);
+  const { maxSteps, aborted, onYear } = optionsFor(options);
   const admitted = candidate.kind === "resume" ? await admitLifecycleCapsule(candidate.capsule) : undefined;
   const genesis = admitted?.genesis ?? admitLifecycleGenesis(candidate.genesis);
   // Full cold admission already certified a complete capsule; never advance it.
@@ -79,6 +89,11 @@ export async function runLifecycle(input: unknown, options: LifecycleRunOptions)
     observedAbort = aborted();
     if (observedAbort) break;
     await owner.advance(owner.snapshot().frontier + 1);
+    observedAbort = aborted();
+    if (observedAbort) break;
+    // Per-year observation happens after this year is committed and before the next one starts, so a
+    // streaming caller's frame reflects real progress rather than a finished run.
+    if (onYear !== undefined) await onYear(owner.snapshot());
     observedAbort = aborted();
     if (observedAbort) break;
     // A real timer turn lets disconnect/abort timers run despite native microtasks.

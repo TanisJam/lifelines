@@ -115,20 +115,24 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
     resources: Object.fromEntries(Object.keys(world.people).map((id) => [id, REPRESENTATIVE_ALLOCATION])),
   });
 
-  const result = await runLifecycle({ kind: "start", genesis }, { maxSteps, signal });
+  // One tick per committed year, emitted INSIDE the run loop: the viewer watches the life unfold
+  // instead of waiting for the whole run and then receiving every year in one burst. Quiet years are
+  // never skipped and no year is reordered or invented; each frame is flushed before the next year
+  // executes. Observation cannot alter the run - the context is the frontier just committed.
+  const result = await runLifecycle({ kind: "start", genesis }, {
+    maxSteps,
+    signal,
+    onYear: async (output) => {
+      const projection = await projectLifecycleTick({ source: { genesis, output }, year: output.frontier, locale });
+      if (signal.aborted) return;
+      emit({ type: "tick", ...projection.view });
+      await flushFrame();
+    },
+  });
   if (result.status === "aborted") return;
 
   const capsule = result.capsule;
   const source = { genesis: capsule.genesis, output: capsule.output };
-
-  // One tick per regenerated journal year, in journal order: quiet years are never skipped and no
-  // year is reordered or invented. Each year is flushed before the next one is projected.
-  for (const record of capsule.output.journal) {
-    const projection = await projectLifecycleTick({ source, year: record.year, locale });
-    if (signal.aborted) return;
-    emit({ type: "tick", ...projection.view });
-    await flushFrame();
-  }
 
   // The chronicle is projected BEFORE anything is persisted, for BOTH states: a death inside the
   // horizon yields a `complete` life, and a protagonist still alive at the horizon yields an

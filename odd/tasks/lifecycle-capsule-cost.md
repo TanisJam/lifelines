@@ -57,6 +57,7 @@ Other measured facts:
 | P4 | S3: drop the remaining intra-request replay inside `runLifecycle` | inline | open |
 | P5 | integrity: replay every stored life and compare each indexed view | inline | **done** |
 | P6 | safety: bound concurrent creates so two cannot exceed the container | inline | **done** |
+| P7 | UX: emit each year DURING the run, not after it | inline | **done** |
 
 ## Log
 
@@ -250,3 +251,35 @@ Scope and limits, stated rather than implied:
 Tests: 5 unit tests on the gate (serializes, refuses when full without consuming a slot, abort leaves the
 waiting list without stealing the running slot, already-aborted rejects immediately, throw releases and
 release is idempotent) plus one route test asserting the 429.
+
+**L14** — P7 landed, and it was a product defect rather than a performance one. `streamLifecycleLife` emitted
+`start`, then awaited the ENTIRE run, and only then looped over the finished journal emitting every `tick`. A
+viewer saw 46 ms of `start`, ~228 s of silence on a 15-year life, and then all fifteen years in one burst. The
+SSE machinery, `flushFrame` and the "one tick per year, flushed before the next" comment were all real - they
+just ran after the simulation was already over.
+
+Fix: `runLifecycle` gained an optional `onYear` observer, called after each year is committed and before the
+next one executes, with that frontier's published output. `streamLifecycleLife` builds each tick inside it
+instead of after the run. Like `signal`, `onYear` is a CAPABILITY, not serializable authority: it observes and
+cannot alter the run, and `optionsFor` still refuses any other unknown option key (a non-function observer is
+refused, not ignored).
+
+Measured on a 6-year life (seed `cap-0`, real engine, real publish):
+
+| Marker | Time | Share of run |
+|---|---|---|
+| `start` | 46 ms | 0.1% |
+| **first `tick`** | **391 ms** | **1.1%** (old behaviour: ~100%) |
+| last `tick` | 14,073 ms | 38.8% |
+| `done` | 36,227 ms | 100% |
+
+Tick gaps: 391 / 1,880 / 2,329 / 1,976 / 3,998 / 3,499 ms - the frames are spread across the simulation
+instead of bunched at the end. Proven by tests that (a) the observer reports every committed frontier, in
+journal order, ending on the certified frontier, (b) the capsule from an observed run is byte-identical
+(`canonicalLifecycleData`) to one from a plain run, and (c) an abort raised inside one observation stops the
+run before a second year executes.
+
+**The remaining tail is visible in the same table**: the last tick is at 38.8% and `done` at 100%. That last
+61% is the certification replay plus the compact encode and publish - exactly what P4 removes. So P4 is no
+longer "make creates faster"; it is "stop the viewer from waiting 60% of the run after they have already seen
+the whole life".
