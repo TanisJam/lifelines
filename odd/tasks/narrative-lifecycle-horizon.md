@@ -44,8 +44,8 @@ S7. Evidence: focused tests per unit; the full suite at the single pre-existing 
 |----|-------|-------|--------|
 | T1 | capacity profile from the 15-year measurement | measurement + delegated writer | DONE `dd0727a` |
 | T2 | horizon 15 + persist incomplete lives (engine constant + create route) | delegated writer | DONE `dd0727a` |
-| T3 | honest display of alive lives (projection, list, detail) | delegated writer | PENDING — blocked the `done` frame |
-| T4 | whole-unit evidence (suite, typecheck, eslint, browser + restart) | inline | pending |
+| T3 | honest display of alive lives (projection, list, detail) | inline — one coherent behavior (contract + projection + read + display + tests); no writer trigger holds | DONE `11c9c6f` |
+| T4 | whole-unit evidence (suite, typecheck, eslint, browser + restart) | inline | pending — suite baseline is THREE pre-existing failures (`maternal-check-37`, `lockout-check-12`, `route.quiet`), not one |
 
 ### T1/T2 evidence
 - 15-year measurement (seed `cap-0`, 125 people): capsule 29,066,054 B, run 93 s / 646 MB heap,
@@ -61,12 +61,50 @@ S7. Evidence: focused tests per unit; the full suite at the single pre-existing 
   gone; abort, projection refusal and persistence errors still write nothing. Tests 231 + 32 green,
   typecheck and eslint clean.
 
-### Known gap opened by T1/T2 (T3 must close it)
-An alive-at-horizon life is persisted but emits NO `done` frame, because
-`projectLifecycleChronicle` still refuses `status !== "complete"` and `Chronicle.protagonist.deathYear`
-is a required number. So a horizon life is durable but not yet viewable; the SSE client gets no
-`done`/`onSaved` for it. T3 must make the contract represent an alive life honestly (no invented
-death year or cause) and then `lifecycle-life.ts` must project for the incomplete status too.
+### T3 implementation record (2026-10-21)
+- Contract: `ProtagonistInfo.deathYear`/`ageAtDeath`/`causeOfDeath` are now explicitly nullable and
+  `horizonYear?: number` carries the horizon of an alive life; `LifeListItem` mirrors it (and keeps
+  `horizonYear` absent on every completed/legacy row, so the legacy list wire is unchanged).
+  Invariant, enforced by the projection and pinned by tests: `deathYear === null` ⇔ `horizonYear`.
+- Projection: the `status !== "complete"` refusals are gone from both `projectLifecycleChronicle` and
+  `projectLifecycleProtagonist`. An alive life gets `epilogue: []` (no "lived on after her passing"),
+  the existing honest "still living" `lifeSummary`, no death entry and `scene.span.end === null`.
+  A status that disagrees with the protagonist's own record still refuses in both directions.
+- Create path: the chronicle is projected for BOTH statuses before the persist, so an alive-at-horizon
+  life finally emits its `done` frame (the T1/T2 gap) and the client gets `onSaved`.
+- Display: the list renders `still alive in <horizon>` (en/es) with an open-ended `born–…` span and
+  never borrows a death; the detail's intro panel renders no epitaph for an alive life (it falls back
+  to the motto), and the sky's timeline is bounded by the horizon. The live streaming stand-in no
+  longer fabricates `deathYear = birthYear`, `ageAtDeath = 0`, `causeOfDeath = ""`.
+
+### Known gap opened by T1/T2 — CLOSED by T3
+An alive-at-horizon life used to be persisted but emit NO `done` frame, because
+`projectLifecycleChronicle` refused `status !== "complete"` and `Chronicle.protagonist.deathYear`
+was a required number. T3 made the contract represent an alive life honestly (null death fields plus
+the horizon) and `lifecycle-life.ts` now projects and emits `done` for both statuses.
+
+### T3 evidence (commit `11c9c6f`)
+- Focused, all green: `lifecycle-projection.test.ts` 13/13 (new: an alive life projects with
+  `deathYear`/`ageAtDeath`/`causeOfDeath` null, `horizonYear` = frontier, `epilogue` empty, no death
+  entry, "still living" summary; a status disagreeing with the protagonist refuses both ways),
+  `lifecycle-life.test.ts` 7/7 (new: the alive-at-horizon run emits `done` with that chronicle),
+  `lifecycle-read.test.ts` 7/7 (new: list + detail + side sheet for a persisted alive life, and the
+  completed row keeps its death with no `horizonYear`), `route.lifecycle.test.ts` 6/6 (new: the list
+  and the detail wire preserve the three nulls and the horizon), `live-model.test.ts` +
+  `dictionary.test.ts` 13/13 (the streaming stand-in invents no death).
+- `pnpm typecheck` clean; `npx eslint` clean over every changed file.
+- Baseline verification for the full suite: the two `legacy-year.test.ts` canonical pins
+  (`maternal-check-37`, `lockout-check-12`) and `route.quiet.test.ts` fail IDENTICALLY on the T3 base
+  commit `8aefb23` in a scratch worktree (same seeds, same diff), so they are pre-existing and not
+  caused by T3. That means the baseline has THREE failures, not the single `route.quiet` S7 names.
+  The two hash pins most likely fell behind decision 085 (the mortality fix changed
+  `gatherCandidatesForYear`, and 085 re-pinned only the runtime/memory canon); re-pinning them needs
+  a fresh measurement and is NOT authorized inside a display unit, so they are reported, untouched.
+- Full suite after T3: 130 files, 2866 passed, 1 skipped, 3 failed — exactly the three baseline
+  failures above, none new.
+- Native assessment of `8aefb23..HEAD` (`--committed-only`): risk `medium` (`executable_change` in
+  `scripts/richness-stats.ts`), `review_due: false`, reason `under_budget` (448 changed lines), so no
+  native review started and the reviewed boundary stays at `8aefb23`.
 
 ## Log
 
@@ -87,3 +125,16 @@ and then refused to persist. S1 replaces that with a bounded horizon.
 L4 (2026-10-21) — capacity context from CP1: `postNative` was dropped from the journal record
 (`05b82b0`), so a 20-year life now costs 49,191,002 B of wire and a 4,912 MB / 5,277 MB encode peak
 (10 years: 13,774,890 B and 3,022 / 3,370 MB). The 15-year point is being measured for T1.
+
+L5 (2026-10-21) — T3 landed as `11c9c6f`: the contract now has two honest protagonist states (a
+complete life's real death, or an alive-at-horizon life's explicit nulls plus `horizonYear`), the
+projection serves both, the create stream emits `done` for both, and the list/detail/streaming
+surfaces invent no death. Route: inline, because this is ONE coherent behavior (contract + projection
++ read + display + tests) with no parallel units and no context backstop; the `delegated writer` in
+the T3 row was a forecast, not a trigger. Evidence in "T3 evidence" above. New baseline fact found
+while verifying: the full suite has THREE pre-existing failures at `8aefb23`, not the single
+`route.quiet` S7 names — the two extra are `legacy-year` canonical pins (`maternal-check-37`,
+`lockout-check-12`), reproduced byte-identically on the base commit in a scratch worktree. T4 must
+record them as baseline; re-pinning them needs a fresh measurement and a decision, and is not part of
+the display unit.
+
