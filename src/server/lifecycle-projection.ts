@@ -356,17 +356,26 @@ async function chronicleEntries(trusted: Trusted, scene: LifeScene, locale: Loca
   return withCauseLinks(entries, trusted.events);
 }
 
+/**
+ * The protagonist block for both the chronicle and the list. Two states, never merged: a life that
+ * ended in a death inside its horizon reports that death; a life still alive at its horizon reports
+ * an explicit absence in every death field plus the horizon year it reached (specs S1/S5). A status
+ * that disagrees with the protagonist's own record is a refusal, not a repaired view.
+ */
 function protagonistInfoOf(trusted: Trusted, locale: Locale): ProtagonistInfo {
   const { protagonist } = trusted;
   const deathYear = protagonist.deathYear;
-  if (deathYear === undefined) fail("this life has not ended, so it has no protagonist death year");
+  const base = { name: protagonist.name, sex: protagonist.sex, birthYear: protagonist.birthYear };
+  if (deathYear === undefined) {
+    if (trusted.output.status !== "incomplete") fail("a complete lifecycle output must record the protagonist's death");
+    return { ...base, deathYear: null, ageAtDeath: null, causeOfDeath: null, horizonYear: trusted.output.frontier };
+  }
+  if (trusted.output.status !== "complete") fail("an incomplete lifecycle output cannot carry the protagonist's death");
   const deathEvent = trusted.events.find((event) => event.kind === "death" && event.actors[0] === trusted.protagonistId);
   const causeCode = deathEvent && typeof deathEvent.payload.cause === "string" ? deathEvent.payload.cause as DeathCause : undefined;
   const causeOfDeath = causeCode && causeCode in DEATH_CAUSE_PHRASE ? deathCauseDisplay(locale, causeCode) : locale === "es" ? "mala fortuna" : "misfortune";
   return {
-    name: protagonist.name,
-    sex: protagonist.sex,
-    birthYear: protagonist.birthYear,
+    ...base,
     deathYear,
     ageAtDeath: ageInYear(protagonist.birthYear, deathYear),
     causeOfDeath,
@@ -380,7 +389,6 @@ export function projectLifecycleProtagonist(input: ProjectLifecycleProtagonistIn
   const root = requireRecord(input, "protagonist projection input");
   const locale = admitLocale(root.locale);
   const trusted = admitSource(root.source);
-  if (trusted.output.status !== "complete") fail("this life has not ended; the protagonist block requires a completed regeneration");
   return { view: protagonistInfoOf(trusted, locale), gaps: protagonistGaps() };
 }
 
@@ -390,7 +398,6 @@ export async function projectLifecycleChronicle(input: ProjectLifecycleChronicle
   const identity = admitIdentity(root.identity);
   const locale = admitLocale(root.locale);
   const trusted = admitSource(root.source);
-  if (trusted.output.status !== "complete") fail("this life has not ended; a chronicle view requires a completed regeneration");
   const protagonist = protagonistInfoOf(trusted, locale);
 
   const scene = sceneOf(trusted);
@@ -407,7 +414,10 @@ export async function projectLifecycleChronicle(input: ProjectLifecycleChronicle
       protagonist,
       summary: summary.text,
       summaryLinks: summary.links,
-      epilogue: buildEpilogue(trusted.protagonist, trusted.people, trusted.config.town.name, locale),
+      // An alive life has no aftermath: the "lived on after her passing" lines belong to a death.
+      epilogue: trusted.output.status === "complete"
+        ? buildEpilogue(trusted.protagonist, trusted.people, trusted.config.town.name, locale)
+        : [],
       entries,
       branches: [],
       cast: castOf(trusted.protagonist, trusted.people),

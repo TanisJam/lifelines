@@ -72,9 +72,12 @@ describe("buildLifeChronicle — contract shape (fixture-free, a real simulated 
   });
 
   it("protagonist info is internally consistent, with a non-empty causeOfDeath", () => {
-    expect(chronicle.protagonist.ageAtDeath).toBe(chronicle.protagonist.deathYear - chronicle.protagonist.birthYear);
-    expect(chronicle.protagonist.causeOfDeath.length).toBeGreaterThan(0);
-    expect(chronicle.protagonist.deathYear).toBeGreaterThanOrEqual(chronicle.protagonist.birthYear);
+    const { deathYear, birthYear, ageAtDeath, causeOfDeath } = chronicle.protagonist;
+    if (deathYear === null) throw new Error("A legacy chronicle is always completed.");
+    expect(ageAtDeath).toBe(deathYear - birthYear);
+    expect(causeOfDeath).not.toBeNull();
+    expect(causeOfDeath!.length).toBeGreaterThan(0);
+    expect(deathYear).toBeGreaterThanOrEqual(birthYear);
   });
 
   it("carries the scene, and gives every entry a time inside its year and scene-resolvable people", () => {
@@ -85,7 +88,7 @@ describe("buildLifeChronicle — contract shape (fixture-free, a real simulated 
       expect(entry.at).toBeLessThan(entry.year + 1);
       for (const id of entry.who) expect(ids.has(id)).toBe(true);
     }
-    expect(chronicle.scene.span.end).toBeCloseTo(chronicle.protagonist.deathYear, -1);
+    expect(chronicle.scene.span.end).toBeCloseTo(chronicle.protagonist.deathYear!, -1);
   });
 
   it("has a non-empty branches list, with the original branch labeled 'Original life'", () => {
@@ -264,7 +267,9 @@ describe("buildLifeChronicle — NPC-decided turns are labeled (fixture)", () =>
         expect(result.data).toBeDefined();
         const chronicle = result.data!;
         const years = new Set(chronicle.entries.map((e) => e.year));
-        for (let year = chronicle.protagonist.birthYear; year <= chronicle.protagonist.deathYear; year++) {
+        const deathYear = chronicle.protagonist.deathYear;
+        if (deathYear === null) throw new Error("A legacy chronicle is always completed.");
+        for (let year = chronicle.protagonist.birthYear; year <= deathYear; year++) {
           expect(years.has(year)).toBe(true);
         }
         expect(chronicle.entries.some((e) => e.kind === "period")).toBe(false);

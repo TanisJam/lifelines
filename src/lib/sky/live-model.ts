@@ -73,11 +73,19 @@ export function liveChronicle(state: LiveLifeState): Chronicle | null {
   if (!header || !model) return null;
   const self = model.scene.people.find((p) => p.group === "self");
   const { protagonist } = header;
+  // Spec S5: the stand-in invents no death. Until the scene carries one, every death field is an
+  // explicit absence; once it does, the year and age come from the scene's own record.
+  const diedAt = self?.diedAt;
   return {
     lifeId: header.lifeId,
     branchId: header.branchId,
     villageName: header.villageName,
-    protagonist: { ...protagonist, deathYear: Math.floor(self?.diedAt ?? protagonist.birthYear), ageAtDeath: 0, causeOfDeath: "" },
+    protagonist: {
+      ...protagonist,
+      deathYear: diedAt === undefined ? null : Math.floor(diedAt),
+      ageAtDeath: diedAt === undefined || self === undefined ? null : Math.floor(diedAt - self.born),
+      causeOfDeath: null,
+    },
     summary: "",
     summaryLinks: [],
     epilogue: [],

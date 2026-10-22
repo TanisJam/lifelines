@@ -119,8 +119,10 @@ describe("lifecycle create orchestration (RI1c)", () => {
       expect(done.chronicle.villageName).toBe(start.villageName);
       expect(done.chronicle.protagonist.name).toBe("Alice");
       expect(done.chronicle.protagonist.birthYear).toBe(1327);
-      expect(done.chronicle.protagonist.deathYear).toBe(ticks.at(-1)!.year);
-      expect(ticks.length).toBe(done.chronicle.protagonist.deathYear - done.chronicle.protagonist.birthYear + 1);
+      const doneDeathYear = done.chronicle.protagonist.deathYear;
+      if (doneDeathYear === null) throw new Error("This seed died inside the horizon; the life is complete.");
+      expect(doneDeathYear).toBe(ticks.at(-1)!.year);
+      expect(ticks.length).toBe(doneDeathYear - done.chronicle.protagonist.birthYear + 1);
       // The new engine makes no Jev calls: its own counters are zero, never borrowed or estimated.
       expect(done.stats).toEqual({ jevCalls: 0, cacheHits: 0, wallTimeMs: expect.any(Number) });
       expect(Number.isInteger(done.stats.wallTimeMs)).toBe(true);
@@ -158,6 +160,18 @@ describe("lifecycle create orchestration (RI1c)", () => {
       // The superseded "This life has not yet ended." refusal is gone: no error frame.
       expect(wire.frames.filter((frame) => frame.type === "error")).toEqual([]);
       expect(ticksOf(wire.frames)).toHaveLength(1);
+
+      // Specs S1/S5: the horizon life is also VIEWABLE — the client gets its `done` with an honest
+      // alive chronicle, not an invented death and not a silent end.
+      const done = doneOf(wire.frames.at(-1));
+      expect(done.chronicle.lifeId).toBe(LIFE);
+      expect(done.chronicle.branchId).toBe(BRANCH);
+      expect(done.chronicle.protagonist).toMatchObject({
+        name: "Alice", birthYear: 1327, deathYear: null, ageAtDeath: null, causeOfDeath: null, horizonYear: 1327,
+      });
+      expect(done.chronicle.epilogue).toEqual([]);
+      expect(done.chronicle.entries.some((entry) => entry.kind === "death")).toBe(false);
+      expect(wire.log.at(-1)).toBe("done");
 
       const loaded = await repository.load(LIFE, BRANCH);
       expect(loaded).toBeDefined();

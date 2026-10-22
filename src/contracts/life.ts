@@ -157,14 +157,26 @@ export interface BranchInfo {
   readonly forkYear: number | null;
 }
 
+/**
+ * The protagonist block shared by the chronicle and the "Your lives" list.
+ *
+ * COMPLETION AND HORIZON ARE DIFFERENT STATES (spec S1). A `complete` life ended in a death inside
+ * its horizon and carries that death's own year, age and cause. A life still alive at its horizon is
+ * `incomplete`: it carries an explicit `null` in all three death fields — never a borrowed year, a
+ * zero age or an empty cause — and the last chronicled year in `horizonYear`. The invariant is
+ * `deathYear === null` if and only if `horizonYear` is present.
+ */
 export interface ProtagonistInfo {
   readonly name: string;
   readonly sex: LifeSex;
   readonly birthYear: number;
-  readonly deathYear: number;
-  readonly ageAtDeath: number;
-  /** Short cause: "a winter fever", "childbirth", "old age". */
-  readonly causeOfDeath: string;
+  /** The real death year of a `complete` life; `null` while the protagonist is alive at the horizon. */
+  readonly deathYear: number | null;
+  readonly ageAtDeath: number | null;
+  /** Short cause: "a winter fever", "childbirth", "old age". `null` while alive. */
+  readonly causeOfDeath: string | null;
+  /** `incomplete` only: the last chronicled year — the horizon this life reached alive. Absent when the life ended in a death. */
+  readonly horizonYear?: number;
 }
 
 export interface Chronicle {
@@ -203,9 +215,12 @@ export interface LifeListItem {
   readonly lifeId: string;
   readonly name: string;
   readonly birthYear: number;
-  readonly deathYear: number;
-  readonly ageAtDeath: number;
-  readonly causeOfDeath: string;
+  /** `null` while the life is still alive at its horizon (spec S5); a completed life keeps its real death. */
+  readonly deathYear: number | null;
+  readonly ageAtDeath: number | null;
+  readonly causeOfDeath: string | null;
+  /** Alive-at-horizon rows only: the last chronicled year. Absent on every completed or legacy row, whose wire shape is unchanged. */
+  readonly horizonYear?: number;
   readonly branchCount: number;
 }
 

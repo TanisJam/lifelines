@@ -79,9 +79,9 @@ async function registerLegacyLife(): Promise<{ lifeId: string; branchId: string 
   return { lifeId: life.id, branchId: life.originalBranchId };
 }
 
-/** The capsule table's single row, read as the stored bytes it actually holds. */
-function storedCapsuleRow(db: DatabaseSync): { key: Uint8Array; wire: Uint8Array } {
-  return db.prepare("SELECT key, wire FROM main.lifecycle_capsules_v1").get() as { key: Uint8Array; wire: Uint8Array };
+/** One stored capsule row, addressed by its own `key` — the table may hold more than one life. */
+function storedCapsuleRow(db: DatabaseSync, key: Uint8Array): { key: Uint8Array; wire: Uint8Array } {
+  return db.prepare("SELECT key, wire FROM main.lifecycle_capsules_v1 WHERE key = ?").get(key) as { key: Uint8Array; wire: Uint8Array };
 }
 const decodeWire = (wire: Uint8Array): string => Buffer.from(wire).toString("utf16le");
 
@@ -193,7 +193,8 @@ describe("lifecycle read path (RI1d)", () => {
 
   it("surfaces a refused capsule as the error envelope instead of a view", async () => {
     const db = getDb();
-    const stored = storedCapsuleRow(db);
+    const digest = (await new LifecycleRepository(db).load(LIFE, BRANCH))!.capsule.digest;
+    const stored = storedCapsuleRow(db, Buffer.from(digest, "utf16le"));
     const wire = decodeWire(stored.wire);
     const envelope = JSON.parse(wire) as { digest: string };
     envelope.digest = "0".repeat(64);
@@ -229,5 +230,59 @@ describe("lifecycle read path (RI1d)", () => {
     expect(isLifecycleLife(legacy.lifeId)).toBe(false);
     await expect(buildLifecycleChronicle(legacy.lifeId)).resolves.toEqual({ error: "Life not found.", status: 404 });
     await expect(buildLifecyclePersonSheet(legacy.lifeId, "protagonist")).resolves.toEqual({ error: "Life not found.", status: 404 });
+  }, 120_000);
+
+  it("serves a life alive at its horizon as alive, in the list and in the detail", async () => {
+    // Specs S1/S5: the horizon life is persisted (T2) and must now be VIEWABLE as alive. A one-year
+    // budget reaches the same `incomplete` state the 15-year product horizon reaches, cheaply.
+    const aliveId = "life-ri1d-alive";
+    const aliveBranch = "branch-ri1d-alive";
+    await streamLifecycleLife({
+      repository: new LifecycleRepository(getDb()),
+      lifeId: aliveId,
+      branchId: aliveBranch,
+      name: "Alice",
+      sex: "f",
+      seed: SEED,
+      locale: "en",
+      signal: new AbortController().signal,
+      emit: () => {},
+      flushFrame: async () => {},
+      maxSteps: 1,
+    });
+
+    // The list row reuses the projection's honest block: an explicit absence, never a borrowed year
+    // or a fabricated cause, plus the horizon it reached.
+    const items = await listLifecycleSummaries("en");
+    expect(items.find((candidate) => candidate.lifeId === aliveId)).toEqual({
+      lifeId: aliveId,
+      name: "Alice",
+      birthYear: 1327,
+      deathYear: null,
+      ageAtDeath: null,
+      causeOfDeath: null,
+      horizonYear: 1327,
+      branchCount: 1,
+    });
+    // The completed life next to it keeps its real death, untouched.
+    expect(items.find((candidate) => candidate.lifeId === LIFE)).toMatchObject({
+      deathYear: expectedChronicle.protagonist.deathYear,
+      causeOfDeath: expectedChronicle.protagonist.causeOfDeath,
+    });
+    expect(items.find((candidate) => candidate.lifeId === LIFE)).not.toHaveProperty("horizonYear");
+
+    const detail = await buildLifecycleChronicle(aliveId, undefined, "en");
+    expect(detail.error).toBeUndefined();
+    expect(detail.data!.protagonist).toEqual({
+      name: "Alice", sex: "f", birthYear: 1327,
+      deathYear: null, ageAtDeath: null, causeOfDeath: null, horizonYear: 1327,
+    });
+    expect(detail.data!.epilogue).toEqual([]);
+    expect(detail.data!.entries.some((entry) => entry.kind === "death")).toBe(false);
+    expect(detail.data!.summary).toContain("still living");
+
+    // The side sheet for the protagonist is honest too: no death year is invented.
+    const sheet = await buildLifecyclePersonSheet(aliveId, "protagonist", undefined, "en");
+    expect(sheet.data!.deathYear).toBeNull();
   }, 120_000);
 });

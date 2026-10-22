@@ -126,9 +126,10 @@ export async function buildLifecyclePersonSheet(
  * `GET /api/lives`'s lifecycle rows: one per lifecycle life, newest first by the life's own
  * `created_at`. Every field comes from that life's own full replay, and `branchCount` is `1` because
  * the engine makes exactly one branch — never an invented count. `causeOfDeath` is the projection's
- * display text, produced by the same `deathCauseDisplay` mapping the legacy list uses today. A
- * refusal propagates: a listing that cannot be regenerated is not quietly dropped or filled from the
- * stored row.
+ * display text, produced by the same `deathCauseDisplay` mapping the legacy list uses today. A life
+ * alive at its horizon keeps an explicit `null` in every death field plus its `horizonYear` (spec
+ * S5); a completed life carries its own death and no horizon year. A refusal propagates: a listing
+ * that cannot be regenerated is not quietly dropped or filled from the stored row.
  */
 export async function listLifecycleSummaries(locale: Locale = DEFAULT_LOCALE): Promise<LifeListItem[]> {
   const rows = getDb()
@@ -150,6 +151,7 @@ export async function listLifecycleSummaries(locale: Locale = DEFAULT_LOCALE): P
       deathYear: protagonist.deathYear,
       ageAtDeath: protagonist.ageAtDeath,
       causeOfDeath: protagonist.causeOfDeath,
+      ...(protagonist.horizonYear === undefined ? {} : { horizonYear: protagonist.horizonYear }),
       branchCount: 1,
     });
   }

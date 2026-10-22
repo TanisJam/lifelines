@@ -79,8 +79,32 @@ async function publishLifecycleLife(lifeId: string, branchId: string, seed: stri
   return { lifeId, branchId, source, chronicle };
 }
 
-async function registerLegacyLife(): Promise<{ lifeId: string; branchId: string }> {
-  const { config, people, events } = generateWorld({
+/** One lifecycle life still alive at its horizon: a one-year advance, the state specs S1/S5 display. */
+async function aliveSource(seed: string, name: string): Promise<LifecycleProjectionSource> {
+  const { world } = initializeWorld(initialization(seed, name));
+  const genesis = createLifecycleGenesis({
+    initialization: initialization(seed, name),
+    protagonistId: "protagonist",
+    resources: Object.fromEntries(Object.keys(world.people).map((id) => [id, { grain: 2, effort: 3, need: 1 }])),
+  });
+  const output = await createLifecycleRuntime(genesis).advance(1327);
+  if (output.status !== "incomplete") throw new Error(`fixture life did not stay alive: ${output.status}`);
+  return { genesis, output };
+}
+
+async function publishAliveLifecycleLife(lifeId: string, branchId: string, seed: string, name: string): Promise<void> {
+  const { world } = initializeWorld(initialization(seed, name));
+  await new LifecycleRepository(getDb()).publish({
+    lifeId,
+    branchId,
+    config: world.config,
+    protagonistName: world.people.protagonist!.name,
+    protagonistSex: world.people.protagonist!.sex as LifeSex,
+    capsule: await createLifecycleCompactCapsule(await aliveSource(seed, name)),
+  });
+}
+
+async function registerLegacyLife(): Promise<{ lifeId: string; branchId: string }> {  const { config, people, events } = generateWorld({
     seed: "ri1d-route-legacy-1", startYear: 1500, endYear: 1600, founderCount: 10,
     protagonist: { name: "Testa", sex: "random" },
   });
@@ -143,6 +167,7 @@ describe("GET /api/lives — list activation (RI1d)", () => {
       causeOfDeath: expect.any(String),
       branchCount: summary.branchCount,
     });
+    if (legacyItem.causeOfDeath === null) throw new Error("A legacy list row always carries a cause.");
     expect(legacyItem.causeOfDeath.length).toBeGreaterThan(0);
 
     // Lifecycle rows follow, newest first by their own `created_at`, each derived from its replay.
@@ -158,6 +183,29 @@ describe("GET /api/lives — list activation (RI1d)", () => {
         causeOfDeath: first.chronicle.protagonist.causeOfDeath, branchCount: 1,
       },
     ]);
+  }, 120_000);
+
+  it("serves a life alive at its horizon as alive, in the list and in the detail", async () => {
+    // Specs S1/S5: the wire carries an explicit absence for every death field, never a borrowed
+    // death year, age or cause, plus the horizon the life reached alive.
+    const alive = { lifeId: "life-ri1d-route-alive", branchId: "branch-ri1d-route-alive", seed: "ri1d-route-alive", name: "Clara" };
+    await publishAliveLifecycleLife(alive.lifeId, alive.branchId, alive.seed, alive.name);
+
+    const listed = (await (await getLives(listRequest())).json()) as LifeListItem[];
+    expect(listed.find((item) => item.lifeId === alive.lifeId)).toEqual({
+      lifeId: alive.lifeId, name: alive.name, birthYear: 1327,
+      deathYear: null, ageAtDeath: null, causeOfDeath: null, horizonYear: 1327, branchCount: 1,
+    });
+
+    const response = await getLife(lifeRequest(alive.lifeId), { params: Promise.resolve({ lifeId: alive.lifeId }) });
+    expect(response.status).toBe(200);
+    const chronicle = (await response.json()) as Chronicle;
+    expect(chronicle.protagonist).toEqual({
+      name: alive.name, sex: "f", birthYear: 1327,
+      deathYear: null, ageAtDeath: null, causeOfDeath: null, horizonYear: 1327,
+    });
+    expect(chronicle.epilogue).toEqual([]);
+    expect(chronicle.entries.some((entry) => entry.kind === "death")).toBe(false);
   }, 120_000);
 });
 

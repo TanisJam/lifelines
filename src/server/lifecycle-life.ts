@@ -130,23 +130,21 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
     await flushFrame();
   }
 
-  // A `complete` life (a death inside the horizon) projects its chronicle BEFORE anything is
-  // persisted, so an admission or projection refusal still writes nothing. A life still alive at
-  // the horizon has no death and therefore no completion chronicle: its trusted output is
-  // persisted as-is, alive, and is NEVER coerced into a death to satisfy a view (specs S1/S2).
-  let chronicle: Chronicle | undefined;
-  if (result.status === "complete") {
-    try {
-      const projection = await projectLifecycleChronicle({ source, identity: { lifeId, branchId }, locale });
-      // `projection.gaps` is honest and expected: a view-model field the trusted output cannot
-      // supply is reported (see RI1b), never invented, and never a reason to fail the request.
-      chronicle = projection.view;
-    } catch (error) {
-      // A projection REFUSAL (malformed or foreign input) is an error event, not a silent success.
-      if (signal.aborted) return;
-      emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
-      return;
-    }
+  // The chronicle is projected BEFORE anything is persisted, for BOTH states: a death inside the
+  // horizon yields a `complete` life, and a protagonist still alive at the horizon yields an
+  // `incomplete` life whose view says so honestly (specs S1/S5). An admission or projection refusal
+  // still writes nothing.
+  let chronicle: Chronicle;
+  try {
+    const projection = await projectLifecycleChronicle({ source, identity: { lifeId, branchId }, locale });
+    // `projection.gaps` is honest and expected: a view-model field the trusted output cannot
+    // supply is reported (see RI1b), never invented, and never a reason to fail the request.
+    chronicle = projection.view;
+  } catch (error) {
+    // A projection REFUSAL (malformed or foreign input) is an error event, not a silent success.
+    if (signal.aborted) return;
+    emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    return;
   }
   if (signal.aborted) return;
 
@@ -164,9 +162,6 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
   // Only AFTER a successful publish is the life visible. An abort that arrives during the save
   // leaves a saved life but no `done` frame: the client that asked is already gone.
   if (signal.aborted) return;
-  // An alive life is persisted but has no `done` yet: the honest alive chronicle is a read-side
-  // view (spec S5) that this unit does not build, and inventing one here is forbidden.
-  if (chronicle === undefined) return;
   emit({
     type: "done",
     chronicle,

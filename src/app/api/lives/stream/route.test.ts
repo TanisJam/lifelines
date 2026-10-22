@@ -198,7 +198,7 @@ describe("POST /api/lives/stream — incremental-simulation capability: live SSE
     const tickFrames = frames.filter((f) => f.event === "tick") as { event: string; data: Extract<LifeStreamEvent, { type: "tick" }> }[];
     expect(tickFrames.length).toBeGreaterThan(0);
     expect(tickFrames.every((f) => frames.indexOf(f) < doneIndex)).toBe(true);
-    const expectedYears = Array.from({ length: chronicle.protagonist.deathYear - chronicle.protagonist.birthYear + 1 }, (_, i) => chronicle.protagonist.birthYear + i);
+    const expectedYears = Array.from({ length: chronicle.protagonist.deathYear! - chronicle.protagonist.birthYear + 1 }, (_, i) => chronicle.protagonist.birthYear + i);
     expect(tickFrames.map((f) => f.data.year)).toEqual(expectedYears);
     for (const f of tickFrames) expect(f.data.scene.people.some((p) => p.id === "protagonist")).toBe(true);
     const lastScene = tickFrames[tickFrames.length - 1]!.data.scene;

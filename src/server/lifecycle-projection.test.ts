@@ -334,7 +334,18 @@ describe("lifecycle view projection (RI1b)", () => {
     for (const refusal of refusals) {
       await expect(projectLifecycleChronicle(refusal as never)).rejects.toThrow(/Lifecycle projection/);
     }
-    await expect(projectLifecycleChronicle({ source: unfinished, identity })).rejects.toThrow(/Lifecycle projection/);
+    // A valid incomplete pair is not a refusal any more: it is exactly the horizon life (specs S1/S5).
+    await expect(projectLifecycleChronicle({ source: unfinished, identity })).resolves.toHaveProperty("view.protagonist.deathYear", null);
+    // A status that disagrees with the protagonist's own record is still refused: the two states are
+    // never merged, in either direction.
+    const completeWithoutDeath = forgeable(source);
+    delete (completeWithoutDeath.output.owned.people[protagonistId] as { deathYear?: number }).deathYear;
+    const incompleteWithDeath = forgeable(source);
+    (incompleteWithDeath.output as { status: string }).status = "incomplete";
+    await expect(projectLifecycleChronicle({ source: completeWithoutDeath as LifecycleProjectionSource, identity }))
+      .rejects.toThrow(/must record the protagonist's death/);
+    await expect(projectLifecycleChronicle({ source: incompleteWithDeath as LifecycleProjectionSource, identity }))
+      .rejects.toThrow(/cannot carry the protagonist's death/);
     await expect(projectLifecycleChronicle({ source, identity: { lifeId: "", branchId: "branch" } })).rejects.toThrow(/Lifecycle projection/);
     await expect(projectLifecycleTick({ source, year: 1.5 })).rejects.toThrow(/Lifecycle projection/);
   }, 240_000);
@@ -395,5 +406,47 @@ describe("lifecycle view projection (RI1b)", () => {
     expect(otherSheet.view.blurb).toBe(renderPortrait(people[other.id]!.name, people[other.id]!.mind, (id) => people[id]?.name ?? id));
 
     await expect(projectLifecyclePersonSheet({ source, personId: "not-a-person" })).rejects.toThrow(/Lifecycle projection/);
+  }, 240_000);
+
+  it("projects a life alive at its horizon honestly, inventing no death", async () => {
+    // Specs S1/S5: a protagonist still alive at the horizon yields an `incomplete` life that is
+    // viewable as alive. The one-year advance reaches the same state fast; the state itself is the
+    // runtime's own, never hand-built.
+    const { world } = initializeWorld(initialization);
+    const aliveGenesis = createLifecycleGenesis({
+      initialization, protagonistId: "protagonist",
+      resources: Object.fromEntries(Object.keys(world.people).map((id) => [id, { grain: 2, effort: 3, need: 1 }])),
+    });
+    const aliveRuntime = createLifecycleRuntime(aliveGenesis);
+    const aliveOutput = await aliveRuntime.advance(initialization.startYear);
+    expect(aliveOutput.status).toBe("incomplete");
+    const aliveSource: LifecycleProjectionSource = { genesis: aliveGenesis, output: aliveOutput };
+    const alivePerson = aliveOutput.owned.people.protagonist!;
+    expect(alivePerson.deathYear).toBeUndefined();
+
+    const aliveChronicle = (await projectLifecycleChronicle({ source: aliveSource, identity, locale: "en" })).view;
+    // The horizon is the last chronicled year; every death field is an explicit absence, never a
+    // number borrowed from the horizon or the birth year.
+    expect(aliveChronicle.protagonist).toEqual({
+      name: alivePerson.name,
+      sex: alivePerson.sex,
+      birthYear: alivePerson.birthYear,
+      deathYear: null,
+      ageAtDeath: null,
+      causeOfDeath: null,
+      horizonYear: aliveOutput.frontier,
+    });
+    expect(aliveChronicle.scene.span.end).toBeNull();
+    expect(aliveChronicle.entries.some((entry) => entry.kind === "death")).toBe(false);
+    // An alive life has no aftermath: no "lived on after her passing" line is invented for it.
+    expect(aliveChronicle.epilogue).toEqual([]);
+    // The summary is the existing honest one for a living protagonist.
+    expect(aliveChronicle.summary).toContain("still living");
+
+    // The same block serves the "Your lives" list.
+    expect(projectLifecycleProtagonist({ source: aliveSource, locale: "en" }).view).toEqual(aliveChronicle.protagonist);
+    // A complete life still reports its real death and carries no horizon year.
+    expect(chronicle.view.protagonist.deathYear).toBe(PEOPLE[protagonistId]!.deathYear);
+    expect(chronicle.view.protagonist).not.toHaveProperty("horizonYear");
   }, 240_000);
 });

@@ -78,6 +78,13 @@ describe("liveReducer", () => {
     expect(mid.protagonist).toMatchObject({ name: "Elin Marrow", sex: "f", birthYear: Math.floor(birth) });
   });
 
+  it("invents no death for the live stand-in while the protagonist is still alive", () => {
+    // Spec S5: the streaming stand-in never borrows the birth year as a death year, nor a zero age
+    // or an empty cause. A life with no death yet carries an explicit absence in every death field.
+    const alive = liveChronicle(run([start]))!;
+    expect(alive.protagonist).toMatchObject({ deathYear: null, ageAtDeath: null, causeOfDeath: null });
+  });
+
   it("carries the protagonist's death into the live chronicle once the scene knows it", () => {
     const last = liveChronicle(run(events))!;
     expect(last.protagonist.deathYear).toBe(Math.floor(scene.people.find((p) => p.group === "self")!.diedAt!));

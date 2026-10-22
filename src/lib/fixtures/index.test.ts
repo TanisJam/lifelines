@@ -23,6 +23,7 @@ describe("fixture parity with the live contract", () => {
     it(`${label}: one tick per year (quiet years included), scene on every tick, timed entries`, async () => {
       const { ticks, done } = await create(name, seed);
       const { birthYear, deathYear } = done.chronicle.protagonist;
+      if (deathYear === null) throw new Error("Fixture lives are completed.");
       expect(ticks.map((t) => t.year)).toEqual(Array.from({ length: deathYear - birthYear + 1 }, (_, i) => birthYear + i));
       expect(ticks.some((t) => t.entries.length === 0)).toBe(label === "Elin");
       const finalIds = new Set(done.chronicle.scene.people.map((p) => p.id));
