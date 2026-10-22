@@ -34,9 +34,10 @@ real death.
 S6. No legacy behavior change: legacy lives, legacy requests, the legacy list and the legacy detail
 keep today's semantics. The two engines' storage stays disjoint.
 
-S7. Evidence: focused tests per unit; the full suite at the single pre-existing failure
-(`route.quiet`); typecheck and eslint clean; and a real production-build check that creates a
-15-year life, shows it, survives a restart, and reloads identically.
+S7. Evidence: focused tests per unit; the full suite green except its pre-existing failures (`legacy-year`
+pins `maternal-check-37`/`lockout-check-12` and `route.quiet` — three, measured at the base commit);
+typecheck and eslint clean; and a real production-build check that creates a 15-year life, shows it,
+survives a restart, and reloads identically.
 
 ## Tasks
 
@@ -45,7 +46,7 @@ S7. Evidence: focused tests per unit; the full suite at the single pre-existing 
 | T1 | capacity profile from the 15-year measurement | measurement + delegated writer | DONE `dd0727a` |
 | T2 | horizon 15 + persist incomplete lives (engine constant + create route) | delegated writer | DONE `dd0727a` |
 | T3 | honest display of alive lives (projection, list, detail) | inline — one coherent behavior (contract + projection + read + display + tests); no writer trigger holds | DONE `11c9c6f` |
-| T4 | whole-unit evidence (suite, typecheck, eslint, browser + restart) | inline | pending — suite baseline is THREE pre-existing failures (`maternal-check-37`, `lockout-check-12`, `route.quiet`), not one |
+| T4 | whole-unit evidence (suite, typecheck, eslint, browser + restart) | inline | DONE — evidence complete in "T4 evidence"; ONE open decision blocks shipping (container memory) |
 
 ### T1/T2 evidence
 - 15-year measurement (seed `cap-0`, 125 people): capsule 29,066,054 B, run 93 s / 646 MB heap,
@@ -106,6 +107,43 @@ the horizon) and `lifecycle-life.ts` now projects and emits `done` for both stat
   `scripts/richness-stats.ts`), `review_due: false`, reason `under_budget` (448 changed lines), so no
   native review started and the reviewed boundary stays at `8aefb23`.
 
+### T4 evidence — real production build, browser, restart (2026-10-22)
+Runner: `DECISION_ENGINE=rules pnpm build`, then the standalone server exactly as the Dockerfile
+assembles it (`.next/standalone` + copied `.next/static` and `public`, `node server.js`,
+`NODE_ENV=production`, fresh `DATA_DIR`). Seed `cap-0`, name Tess, sex f, `engine: "lifecycle"`,
+default world (125 people).
+- Create (`POST /api/lives/stream`): start + 15 `tick` + `done`, curl exit 0, **610 s** wall.
+  `done.chronicle.protagonist` = `deathYear: null, ageAtDeath: null, causeOfDeath: null,
+  horizonYear: 1341`, 15 entries, `epilogue: []`, summary "Tess is still living, in Netherfield.",
+  `scene.span.end: null`, stats `jevCalls: 0` / `wallTimeMs: 609746`. The T1/T2 gap is closed in the
+  real build: an alive life now gets its `done`.
+- Reads (each one cold admission + full replay; nothing cached): list 121 s then 135 s, detail 127 s
+  then 133 s. List row: `deathYear/ageAtDeath/causeOfDeath: null`, `horizonYear: 1341`; detail keeps
+  the same protagonist block, 0 death entries, empty epilogue.
+- Restart: server killed and started again from the same standalone build and DB. `GET /api/lives`
+  and `GET /api/lives/:id` are **byte-identical** before and after: list SHA-256
+  `2a77acba…bdb7171c`, detail `bacacc80…4780a935`. One stored life = 58 MB DB + 58 MB WAL (the
+  ~29 MB capsule stored as UTF-16).
+- Browser (Playwright/Chromium against the standalone server): `/en/lives` loaded in 162 s and the
+  row reads `Tess | 1327–… | Still alive in 1341, aged 14. 1 version of this life.` with zero
+  "Died at" text; `/en/life/<id>` loaded in 143 s and the intro shows the motto ("People make a
+  life. / Time gives it meaning.") with **zero** epitaphs and no load error. Screenshots in the
+  session scratch (`browser-list.png`, `browser-detail.png`).
+- Suite/typecheck/eslint (S7): full suite 130 files, 2866 passed, 1 skipped, 3 failed — exactly the
+  three baseline failures, none new; `pnpm typecheck` clean; eslint clean over every changed file.
+
+### Open decision — blocks shipping, not the evidence
+The measured process high-water mark is **4.6 GB RSS for the create** and **2.7 GB for a read** of
+this 15-year life, while `deploy/compose.yaml` sets `mem_limit: 2g`. In the deployed container both
+requests would be OOM-killed (Node's default heap is sized from the host, not the cgroup). T1's own
+encode measurement (2,164 MB heap) already exceeded 2g. S4 forbids raising a limit without a
+measurement; the measurement now exists, so the choice is:
+1. raise `mem_limit` (~6g) in `deploy/compose.yaml`, justified by this measurement, if the host has
+   the RAM; or
+2. reduce what a 15-year life retains/encodes (engineering task: stream or spill the encode), or
+   reduce the default population for this engine (product change).
+Nothing in `deploy/` was changed. This is a delivery/product decision, not a code defect found late.
+
 ## Log
 
 L1 (2026-10-21) — human decisions, verbatim, in order: `Sí: revertir tramos y hacer C + perfil
@@ -126,8 +164,7 @@ L4 (2026-10-21) — capacity context from CP1: `postNative` was dropped from the
 (`05b82b0`), so a 20-year life now costs 49,191,002 B of wire and a 4,912 MB / 5,277 MB encode peak
 (10 years: 13,774,890 B and 3,022 / 3,370 MB). The 15-year point is being measured for T1.
 
-L5 (2026-10-21) — T3 landed as `11c9c6f`: the contract now has two honest protagonist states (a
-complete life's real death, or an alive-at-horizon life's explicit nulls plus `horizonYear`), the
+L5 (2026-10-21) — T3 landed as `11c9c6f`: the contract now has two honest protagonist states (a complete life's real death, or an alive-at-horizon life's explicit nulls plus `horizonYear`), the
 projection serves both, the create stream emits `done` for both, and the list/detail/streaming
 surfaces invent no death. Route: inline, because this is ONE coherent behavior (contract + projection
 + read + display + tests) with no parallel units and no context backstop; the `delegated writer` in
@@ -137,4 +174,10 @@ while verifying: the full suite has THREE pre-existing failures at `8aefb23`, no
 `lockout-check-12`), reproduced byte-identically on the base commit in a scratch worktree. T4 must
 record them as baseline; re-pinning them needs a fresh measurement and a decision, and is not part of
 the display unit.
+
+L6 (2026-10-22) — T4 evidence is complete (production standalone build, browser, restart). Two
+corrections to the record: the suite baseline is three pre-existing failures, not one (S7 updated
+factually), and the real 15-year life peaks at 4.6 GB RSS to create / 2.7 GB to read, above the
+deployed `mem_limit: 2g`. The second one is an OPEN DECISION for the human, recorded above; the
+evidence unit closed without touching `deploy/`. Human stopped the session for the night.
 
