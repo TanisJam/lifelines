@@ -277,7 +277,7 @@ describe("buildLifeChronicle — NPC-decided turns are labeled (fixture)", () =>
         deleteLife(life.id);
       }
     }
-  });
+  }, 60_000); // many real simulated lives: tens of seconds under parallel load.
 });
 
 describe("finishAtDeath", () => {

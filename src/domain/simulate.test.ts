@@ -230,7 +230,7 @@ describe("population", () => {
     expect(endCount).toBeGreaterThan(startCount);
     const aliveAtEnd = Object.values(report.result.people).filter((p) => p.deathYear === undefined).length;
     expect(aliveAtEnd).toBeGreaterThan(0);
-  });
+  }, 60_000); // full-span simulation across seeds: ~7 s isolated, 60 s under parallel load.
 });
 
 describe("decision records", () => {
@@ -273,7 +273,7 @@ describe("decision 056: canMarry / class inheritance", () => {
         for (const actorId of marriage.actors) expect(clergyIds.has(actorId)).toBe(false);
       }
     }
-  });
+  }, 60_000); // full-span simulation across seeds: ~7 s isolated, 60 s under parallel load.
 
   it("a child born during the simulation inherits its class from its father", async () => {
     const { config, people } = generateWorld({ seed: "birth-class-check", startYear: 1498, endYear: 1540, founderCount: 20 });
@@ -341,7 +341,7 @@ describe("decision 050: recalibrated mortality and class multiplier", () => {
     expect(wellOffAges.length).toBeGreaterThan(0);
     const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
     expect(avg(cottarAges)).toBeLessThan(avg(wellOffAges));
-  }, 15000); // decision 080: the carrying-capacity feedback (fertilityDampingFactor) bounds population growth, bringing this back down from decision 079's 30000ms -- measured 7.0s post-fix, ~2x margin kept for slower machines.
+  }, 60_000); // full-span simulation across seeds: ~7 s isolated, 60 s under parallel load.
 });
 
 describe("PR5: Black Death and second pestilence (dated shocks, 1327-1361 window)", () => {

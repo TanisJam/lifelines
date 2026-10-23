@@ -37,7 +37,7 @@ describe("real bounded E fixtures", () => {
     assertEquivalent(deserializeAnnualRuntimeCapsule(wires.at(-1)!).output, first.runtime.final(), "cold fidelity");
     expect(measured.fork.frontier).toBe(first.input.plans[0].year);
     expect(measured.fork.parity).toBe(true);
-  });
+  }, 60_000); // full corpus fixture: whole-run canon + wire round-trip, 60 s budget under load.
 
   it("separates quiet gapped executed plans from calendar span and rejects a changed second run", () => {
     const fixture = CORPUS[0];

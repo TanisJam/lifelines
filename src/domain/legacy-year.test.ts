@@ -559,10 +559,15 @@ const seeded = [
   ["lockout-check-12", 24],
 ] as const;
 // Captured from the unextracted public API at 4df561a, then rerun before moving source.
+// RE-PINNED after 2c9d1f4 ("give founder newborns the same single first mortality roll as in-sim
+// children"): that fix deliberately changed two of these seeds, so their hashes moved with it. Every
+// other seed kept its original pin, which is what makes this a targeted re-pin rather than a blanket
+// rewrite. If a future change moves a pin, explain WHICH behaviour moved - never just paste the new
+// hash.
 const pins: Record<string, { years: string; final: string }> = {
-  "maternal-check-37": { years: "e6b28ed0e44cb6ff65066d46d212b5ba42e569b59b7e6913cc6ba9726dbc5a6c", final: "5f89559cd1b109896d1ead3ca88ccdfe80a604ccbd03da6c2615c19b1be9d107" },
+  "maternal-check-37": { years: "11d4db6b468aa690e986655ae887111613776de41b23ed6576787ae51eda1d43", final: "070b8b285015c77240b49480a16e0cc06a266269240a9f2c9d22d1c4b3674385" },
   "artisan-widow-trade-dec083-1": { years: "3c8358d49c84317d943a04d7027c4e93ae81c0bb401ce87741fe6f00a2f283fa", final: "dc1955c0c17592997b1e8e807aeb6c220bda506783c88bc3dafa63d6b56db81e" },
-  "lockout-check-12": { years: "09201227246f2fda5a26b7093825b0ca86a5643ca721e8ed580e76f8b5406e30", final: "1181d26015a10d833b14b9eb169f622cb0ab498953e51cda6ffd0c904690837e" },
+  "lockout-check-12": { years: "aa69be2a103581c43f8ea3bc420bb46448da6b17b9c1f62a8e325b6b23a8144a", final: "87442307817ca7efc923db4f1b2f84d43eaae5eecc21e336e905a838ac1d48cc" },
   "illness-death-widow": { years: "d4a1bffb9f88e526ba823b4d42e053398871e0a85a17896f6efdc2d4c3fd8dfa", final: "aa5e71d6ee9ebfa88fffcd8fcb946aa2707f8f9ecdc5dc4d8f18c1aaa66112a5" },
   "dead-suitors": { years: "354fd6bcecc9116be4f91192e7745d35673e528c731924e98c52a9ae75b346c5", final: "eef68ccdf78546b54f7e8171f8dfa0e2c5a4060b33f4a3bcfbce17f9bf9c8c05" },
   "arranged-departure": { years: "531399aad4a8193897f21102739b3dcd543cf050f502ae71fd311cf1026f48b3", final: "b2d61a5645d97f2d1dabcbdba47da766d30ccb35a4065dfc263f8c1589a7e127" },
