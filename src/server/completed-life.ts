@@ -34,8 +34,15 @@ export function assertCompletedLife(result: SimulationResult, snapshots: Readonl
   }
   for (const [year, snapshot] of snapshots) {
     if (!Number.isSafeInteger(year) || snapshot.year !== year || year > deathYear ||
-        (year < deathYear && snapshot.people.protagonist?.deathYear !== undefined) ||
-        snapshot.events.some((event) => !Number.isSafeInteger(event.year) || event.year > year) ||
+        (year < deathYear && snapshot.people.protagonist?.deathYear !== undefined)) {
+      throw new Error("Invalid or post-death completed-life frontier.");
+    }
+    // The synthetic PRE-START baseline (`startYear - 1`) is captured from the initialised world, which
+    // already carries its seeded history - including events dated inside the first simulated year (a
+    // `period-marker` at 1327, founding marriages, etc.). It is not a simulated year, so the
+    // "this year's history only" rule below does not apply to it.
+    if (year < startYear) continue;
+    if (snapshot.events.some((event) => !Number.isSafeInteger(event.year) || event.year > year) ||
         snapshot.decisions.some((decision) => !Number.isSafeInteger(decision.year) || decision.year > year)) {
       throw new Error("Invalid or post-death completed-life frontier.");
     }
