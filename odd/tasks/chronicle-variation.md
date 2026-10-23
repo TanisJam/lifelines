@@ -49,6 +49,9 @@ L6 — The 2× in L5 was an artifact: the exhaustion check had been added only t
 
 L7 — After 3eaf0da (feast day, market day, a neighbor in need, an old debt and the aches of age at six phrasings): the synthetic 73-year life shows 71 distinct entries of 80, and no vignette repeats more than twice. The residual is season stranding — `hard-winter` only exists in winter and `poor-harvest`/`good-harvest` only in autumn, so an unused phrasing of theirs cannot fill a summer year, and the pool can be empty for that year even while phrasings remain elsewhere. Closing to zero needs season-balanced content, not more variants on the backbone five. The only 4× left is `decided to have a child`, a `child` event outside the vignette scope (S6).
 
+L8 — Release impact: the lifecycle engine's annual source goes through `legacy-year`, so occurrence-indexed vignette selection changes its deterministic output too. Two golden test files re-pinned with measured values (`lifecycle-perf-identity.test.ts` digest/journal/chronicle/sheets, `e-lifecycle-memory.test.ts` wireBytes/canonicalHash/wireHash). Existing stored capsules are unaffected — they carry their journal and replay from it — but lives created after this change differ from earlier ones. Production had zero lifecycle lives at deploy time, so no stored data is invalidated.
+
+
 
 
 
