@@ -5,10 +5,9 @@ import { verifyTurnstile } from "./turnstile";
 import type { DecisionMaker } from "@/domain/decisions";
 
 /**
- * The single guard every simulation-triggering Route Handler calls before doing any simulation
- * work (or opening an SSE stream): per-IP rate limiting, then (if configured) Turnstile
- * verification. Keeps the hexagonal seam clean — route handlers stay thin ("call guardSimulation,
- * branch on the result") and never duplicate rate-limit/Turnstile logic themselves.
+ * Shared admission for simulation-triggering requests: per-IP rate limiting, then (if
+ * configured) Turnstile verification. Access-only callers do not acquire a decision provider;
+ * existing routes keep the engine-returning guardSimulation wrapper.
  */
 
 export interface SimulationEngine {
@@ -23,8 +22,11 @@ export interface SimulationGuardBody {
   readonly turnstileToken?: string;
 }
 
-export interface SimulationGuardOk {
+export interface SimulationAccessOk {
   readonly ok: true;
+}
+
+export interface SimulationGuardOk extends SimulationAccessOk {
   readonly engine: SimulationEngine;
 }
 
@@ -33,12 +35,11 @@ function jsonResponse(body: unknown, status: number, extraHeaders?: Record<strin
 }
 
 /**
- * Runs the rate-limit + Turnstile checks for one simulation-triggering request. Returns
- * `{ ok: true, engine }` when it's clear to proceed (`engine` is just `getDecisionMaker()` +
- * `activeEngineName()`, bundled here so every guarded route reads it from one place), or a
- * `Response` the route handler should return as-is (429 with `Retry-After`, or 403).
+ * Consumes one rate-limit attempt, then verifies Turnstile. Returns `{ ok: true }` without
+ * calling any decision-engine export, or a Response to return as-is (429 with Retry-After,
+ * or 403). Dependency exceptions propagate; admission does not choose policy or authenticate.
  */
-export async function guardSimulation(request: Request, body: SimulationGuardBody): Promise<SimulationGuardOk | Response> {
+export async function guardSimulationAccess(request: Request, body: SimulationGuardBody): Promise<SimulationAccessOk | Response> {
   const ip = getClientIp(request);
 
   const rate = getIpRateLimiter().consume(ip);
@@ -51,6 +52,14 @@ export async function guardSimulation(request: Request, body: SimulationGuardBod
   if (!turnstile.ok) {
     return jsonResponse({ error: "verification_failed" }, 403);
   }
+
+  return { ok: true };
+}
+
+/** Legacy routes acquire their engine only after shared admission succeeds. */
+export async function guardSimulation(request: Request, body: SimulationGuardBody): Promise<SimulationGuardOk | Response> {
+  const access = await guardSimulationAccess(request, body);
+  if (access instanceof Response) return access;
 
   return { ok: true, engine: { decisionMaker: getDecisionMaker(), engineSource: activeEngineName(), backgroundDecisionMaker: getBackgroundDecisionMaker() } };
 }

@@ -230,7 +230,7 @@ describe("population", () => {
     expect(endCount).toBeGreaterThan(startCount);
     const aliveAtEnd = Object.values(report.result.people).filter((p) => p.deathYear === undefined).length;
     expect(aliveAtEnd).toBeGreaterThan(0);
-  });
+  }, 60_000); // full-span simulation across seeds: ~7 s isolated, 60 s under parallel load.
 });
 
 describe("decision records", () => {
@@ -273,7 +273,7 @@ describe("decision 056: canMarry / class inheritance", () => {
         for (const actorId of marriage.actors) expect(clergyIds.has(actorId)).toBe(false);
       }
     }
-  });
+  }, 60_000); // full-span simulation across seeds: ~7 s isolated, 60 s under parallel load.
 
   it("a child born during the simulation inherits its class from its father", async () => {
     const { config, people } = generateWorld({ seed: "birth-class-check", startYear: 1498, endYear: 1540, founderCount: 20 });
@@ -341,7 +341,7 @@ describe("decision 050: recalibrated mortality and class multiplier", () => {
     expect(wellOffAges.length).toBeGreaterThan(0);
     const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
     expect(avg(cottarAges)).toBeLessThan(avg(wellOffAges));
-  }, 15000); // decision 080: the carrying-capacity feedback (fertilityDampingFactor) bounds population growth, bringing this back down from decision 079's 30000ms -- measured 7.0s post-fix, ~2x margin kept for slower machines.
+  }, 60_000); // full-span simulation across seeds: ~7 s isolated, 60 s under parallel load.
 });
 
 describe("PR5: Black Death and second pestilence (dated shocks, 1327-1361 window)", () => {
@@ -508,7 +508,6 @@ describe("decision 051: maternal mortality at childbirth", () => {
 describe("decision 055: birth spacing", () => {
   it("consecutive births to the same mother are never closer than her class's minimum spacing, unless the previous child died in infancy", async () => {
     let checkedPairs = 0;
-    let infantDeathResetPairs = 0;
     for (const seed of ["spacing-check-1", "spacing-check-2", "spacing-check-3", "spacing-check-4"]) {
       const { config, people } = generateWorld({ seed, startYear: 1498, endYear: 1558, founderCount: 24 });
       const report = await simulate(config, people, [], { decisionMaker: new RuleDecisionMaker(), engineSource: "rules" });
@@ -536,19 +535,19 @@ describe("decision 055: birth spacing", () => {
           // Fixed after review (R3-002): `eligibleForAnotherChild` itself now resets on `<= 1`
           // (matching the engine's actual first-death-evaluation timing), not the never-true `< 1`
           // this predicate used to mirror — kept in sync so this test still means what it says.
+          // Decision 085 removed the duplicated age-0 roll, so an infant death is now always at
+          // age 1: for a non-gentry mother the ordinary two-year floor already allows the next
+          // birth by the year after that death, which is why this test no longer claims a
+          // "reset fired" count (its only in-run witness was the age-0 death decision 085 deleted;
+          // `eligibleForAnotherChild`'s own unit test still proves the reset branch directly).
           const previousDiedInInfancy = previous.deathYear !== undefined && previous.deathYear - previous.birthYear <= 1;
           if (!previousDiedInInfancy) {
             expect(gap).toBeGreaterThanOrEqual(minSpacing);
-          } else if (gap < minSpacing) {
-            infantDeathResetPairs++;
           }
         }
       }
     }
     expect(checkedPairs).toBeGreaterThan(0);
-    // Proves the reset branch actually FIRED somewhere across these runs — before the R3-002 fix,
-    // `< 1` was unreachable in practice, so this count would always have been 0.
-    expect(infantDeathResetPairs).toBeGreaterThan(0);
   }, 10000); // decision 080: brought back down from decision 079's 20000ms now that fertilityDampingFactor bounds population growth -- measured 4.2s post-fix.
 
   it("eligibleForAnotherChild resets the spacing floor when the last child died at its very first death-evaluation (age 1), but not when it died later", () => {
@@ -1714,5 +1713,35 @@ describe("decision 083: arranged gentry marriages", () => {
       checked += 1;
     }
     expect(checked).toBeGreaterThan(0);
+  }, 60000);
+});
+
+describe("decision 085: a newborn's first biology roll is at age 1, never age 0", () => {
+  it("offers neither illness nor death to a person in their own birth year, and both at age 1", () => {
+    // A founder newborn is the only person in the registry at literal age 0 when the start year's
+    // candidates are gathered: `gatherCandidatesForYear` runs BEFORE that year's births, so a child
+    // born in simulation is never in its own birth year's snapshot. Giving the founder an extra
+    // age-0 roll in the age<2 band (0.30) doubled her infancy exposure (0.7 * 0.7 = 0.49 survival)
+    // against decision 069's ~30% mortality BY age 1, i.e. exactly ONE 0.30 roll.
+    const newborn: Person = { id: "newborn", name: "Newborn", sex: "f", birthYear: 1327, traits: [], job: "none", founder: false, socialClass: "cottar", mind: createMind("age-zero", "newborn", 1327, []) };
+    const atBirth = gatherCandidatesForYear(1327, { [newborn.id]: newborn }, [], "age-zero");
+    expect(atBirth.filter((c) => c.personId === newborn.id && (c.kind === "death" || c.kind === "illness"))).toEqual([]);
+    const oneYearOld: Person = { ...newborn, id: "toddler", birthYear: 1326, mind: createMind("age-one", "toddler", 1326, []) };
+    const atOne = gatherCandidatesForYear(1327, { [oneYearOld.id]: oneYearOld }, [], "age-one");
+    expect(atOne.filter((c) => c.personId === oneYearOld.id && (c.kind === "death" || c.kind === "illness")).map((c) => c.kind).sort()).toEqual(["death", "illness"]);
+  });
+
+  it("never kills the founder protagonist in its birth year, across 24 fixed seeds", async () => {
+    // The duplicated roll killed ~30% of these seeds at age 0 (measured: 8 of 24) before the fix.
+    const seeds = Array.from({ length: 24 }, (_, i) => `age0-probe-${i + 1}`);
+    const diedAtBirth: string[] = [];
+    for (const seed of seeds) {
+      const { config, people, events } = generateWorld({ seed, startYear: 1500, endYear: 1540, founderCount: 10, protagonist: { name: "Testa", sex: "f" } });
+      const report = await simulate(config, people, events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: "protagonist" });
+      const protagonist = report.result.people.protagonist!;
+      expect(protagonist.birthYear).toBe(config.startYear);
+      if (protagonist.deathYear === config.startYear) diedAtBirth.push(seed);
+    }
+    expect(diedAtBirth).toEqual([]);
   }, 60000);
 });

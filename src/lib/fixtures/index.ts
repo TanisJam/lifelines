@@ -114,7 +114,9 @@ export async function streamCreateLife(req: CreateLifeRequest, onEvent: StreamEm
     protagonist: { name: chronicle.protagonist.name, sex: chronicle.protagonist.sex, birthYear: chronicle.protagonist.birthYear },
   });
 
-  for (const [year, entries] of yearTicks(chronicle.entries, chronicle.protagonist.birthYear, chronicle.protagonist.deathYear)) {
+  const deathYear = chronicle.protagonist.deathYear;
+  if (deathYear === null) throw new Error("The fixture chronicle has no death year.");
+  for (const [year, entries] of yearTicks(chronicle.entries, chronicle.protagonist.birthYear, deathYear)) {
     if (signal?.aborted) return;
     await delay(entries.length > 0 ? 160 : 60);
     onEvent({ type: "tick", year, entries, scene: sceneAt(chronicle.scene, year) });
@@ -179,6 +181,11 @@ function computeGenericRewrite(from: Chronicle, divergenceEntry: ChronicleEntry,
   };
   const beforeEntries = from.entries.filter((e) => e.year < divergenceEntry.year);
   const p = from.protagonist;
+  // The fixture lives are completed, so a rewrite always has a real death year to reshape. An
+  // alive-at-horizon fixture would have no divergence future to build, and inventing one is not
+  // this layer's job.
+  const deathYear = p.deathYear;
+  if (deathYear === null) throw new Error("The fixture life has no death year to rewrite from.");
   const firstName = p.name.split(" ")[0];
   const pronoun = p.sex === "f" ? "she" : "he";
   const Pronoun = p.sex === "f" ? "She" : "He";
@@ -198,7 +205,7 @@ function computeGenericRewrite(from: Chronicle, divergenceEntry: ChronicleEntry,
     };
     afterEntries = [lifeGoesOn];
   } else {
-    const span = Math.max(3, Math.round((p.deathYear - divergenceEntry.year) / 3));
+    const span = Math.max(3, Math.round((deathYear - divergenceEntry.year) / 3));
     const newShape: ChronicleEntry = {
       id: `${divergenceEntry.id}-a1`,
       year: divergenceEntry.year + span,
@@ -212,16 +219,16 @@ function computeGenericRewrite(from: Chronicle, divergenceEntry: ChronicleEntry,
     };
     const newDeath: ChronicleEntry = {
       id: `${divergenceEntry.id}-death`,
-      year: p.deathYear,
+      year: deathYear,
       level: 3,
       kind: "death",
       title: `${p.name}'s life reaches its end`,
       prose: `In time, ${firstName}'s own body finally gives out — though the years between were lived differently this time.`,
       links: [],
-      at: p.deathYear + 0.5,
+      at: deathYear + 0.5,
       who: [],
       turn: {
-        decisionId: `dec-${p.deathYear}-death-${newBranchId}`,
+        decisionId: `dec-${deathYear}-death-${newBranchId}`,
         decidedBy: "Chance",
         deciderId: "chance",
         chosen: { optionId: "dies", label: `${Pronoun} dies of old age` },
@@ -234,7 +241,7 @@ function computeGenericRewrite(from: Chronicle, divergenceEntry: ChronicleEntry,
   }
 
   const entries = [...beforeEntries, updatedDivergence, ...afterEntries];
-  const lastYear = entries[entries.length - 1]?.year ?? p.deathYear;
+  const lastYear = entries[entries.length - 1]?.year ?? deathYear;
   const newBranchInfo = { branchId: newBranchId, label: `Changed in ${divergenceEntry.year}`, parentBranchId: from.branchId, forkYear: divergenceEntry.year } as const;
   const chronicle: Chronicle = {
     ...from,
@@ -282,8 +289,10 @@ export async function streamRewrite(lifeId: string, req: RewriteRequest, onEvent
     : computeGenericRewrite(from, divergenceEntry, req.optionId, newLabel);
 
   const newEntries = target.entries.filter((e) => e.year >= divergenceEntry.year && !from.entries.some((f) => f.id === e.id && f.year === e.year && f.title === e.title));
+  const targetDeathYear = target.protagonist.deathYear;
+  if (targetDeathYear === null) throw new Error("The fixture rewrite target has no death year.");
 
-  for (const [year, entries] of yearTicks(newEntries, divergenceEntry.year, target.protagonist.deathYear)) {
+  for (const [year, entries] of yearTicks(newEntries, divergenceEntry.year, targetDeathYear)) {
     if (signal?.aborted) return;
     await delay(entries.length > 0 ? 220 : 80);
     onEvent({ type: "tick", year, entries, scene: sceneAt(target.scene, year) });

@@ -3087,3 +3087,52 @@ It now records a `reflection` ("kept-chasing-a-dream"), like every other protago
 **Measured** (60 seeds): gentry women 16.7 (band 14–18), literacy 8.0%. **All 15 calibration
 assertions pass**, a first for the Follett targets. Adult age at death, 5 seeds, 1498–1558: gentry
 and clergy 63.8, cottars 57.3.
+
+## 085 — A newborn's first mortality roll is at age 1, never age 0
+
+`simulate.ts` gathers a year's biology candidates from the registry as it stands at the START of the
+year (`gatherCandidatesForYear`), before that year's births are applied. A child born during the
+simulation is therefore never in its own birth year's candidates, and its first death/illness roll
+is the following year, at `ageInYear` 1. A FOUNDER newborn was the exception: `worldgen.ts` creates
+the protagonist at literal age 0 (`birthYear === startYear`) and `makeChild` can roll age 0 for any
+other founder child, so that baby WAS in the registry at the start of the start year and took an
+extra roll in `MORTALITY_BY_AGE_BAND`'s age<2 band (0.30, decision 069).
+
+The protagonist therefore faced the same 0.30 hazard twice — age 0 and age 1 — for survival to age 2
+of `0.7 * 0.7 = 0.49` and a median lifespan of 1-2 years. Decision 050's note that the age<2 band
+exists because of the timing gap (and decision 069's recalibration against it) assumed ONE roll; the
+founder case quietly doubled it. On a fixed 24-seed probe list, 8 of 24 protagonists (33%) died in
+their birth year, and the year-1327 decision log carried a `death:protagonist:1327` and an
+`illness:protagonist:1327` that no in-sim child ever gets.
+
+**Fix.** `gatherCandidatesForYear` now skips any person whose `ageInYear` is 0 before pushing either
+the `illness:` or the `death:` candidate, so every child's first exposure is the age-1 one an
+in-sim child already gets. No calibrated constant changed: `MORTALITY_BY_AGE_BAND`,
+`CLASS_MORTALITY_MULTIPLIER`, the illness x3 and hardship/plague multipliers, the cause assignment
+and the life-state slot bookkeeping are all untouched. `livingIds` stays unfiltered, so the
+immigration cap still counts newborns exactly as before, and a founder newborn still ages, marries
+and dies normally from age 1 on. This restores the ~30%-by-age-1 target decision 069 set against
+decision 050's table (exactly one 0.30 roll), and keeps decision 075's age 5-14 band and decision
+079's population tuning reading the table as written.
+
+**Measured** (24 fixed seeds, `age0-probe-1..24`, 1500-1540, rule engine): protagonist age at death
+min/median/max **0/1/28 -> 1/2/36**; deaths in the birth year **8/24 -> 0/24** (10 of 24 die inside
+the 40-year window after the fix, 6 of them before age 5; 14 are still alive at 1540). The
+demographics gate keeps its verdict: `tsx scripts/check-demographics.ts --stats 40 --assert` —
+**all 15 assertions pass**, with infantMortality 29.34% (band 25-35), lifeExpectancyAtBirth 28.6
+(band 18-32) and under15DeathShare 23.7 (band 20-30). Founder newborns are a tiny share of the
+~7,000 births the gate aggregates, so the village-wide numbers move little; in the probe the
+protagonist's own infancy more than halved (12/24 -> 5/24 dying by age 1).
+
+Two consequences recorded rather than hidden. The canonical/wire pins in
+`e-lifecycle-runtime.test.ts` (mainline bytes 442,369 -> 434,793) and `e-lifecycle-memory.test.ts`
+(wire 51,659,639 -> 51,610,673 bytes, plus both SHA-256s) were re-pinned from fresh measurements, not
+hand-edited — the year-1327 native year no longer records the founder newborn's roll. And decision
+055's "reset the birth-spacing floor when the last child died before its first birthday" branch is
+now unreachable in a normal run: the earliest possible death is age 1, and by the year AFTER it the
+ordinary two-year floor already allows another birth. The branch stays (documented rule, unit-tested
+directly); its old in-run witness in the birth-spacing test was exactly the duplicated age-0 death
+this decision removed.
+
+Cross-references: 050 (the mortality table and its timing-gap note), 069 (the ~30%-by-age-1
+calibration), 075 (the age 5-14 band), 079 (population-growth tuning on top of these hazards).

@@ -1,82 +1,36 @@
-import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
-import { mapWithConcurrency } from "./concurrency";
-import { candidateMatchesSubject, decisionSubject, mintDecisionId, type MintedId } from "./decision-id";
-import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
-import { activeFeudPair, activeRomancePair, activeRomancePairs, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, makeEventId, pairKey, recentUnresolvedBreakup } from "./events";
-import { advanceSlot, applyLifeTransition, EMPTY_SLOTS, ensureLifeState, markMarriageable } from "./life-state";
-import { article } from "./narrate";
-import { addMemory, applyCoreMemoryShift, compactMindState, computeMood, createMind, decayMindForYear, DREAM_GOALS, dreamGerund, type DreamGoal, type Facet, pushThought, renderPortrait, updateRelationship } from "./mind";
+import { ageInYear, isAdult, isFertileAge, isWorkingAge } from "./actuarial";
+import { captureLegacyYear, runLegacyYear, type LegacyRunContext, type ResolvedDecision } from "./legacy-year";
+import { dreamGoalSatisfiedBy, livingChildId, livingSiblingId, relationshipTargetId, resolveCourtshipOnDeath } from "./legacy-year-mechanics";
+export { conceptionProbability, fertilityDampingFactor } from "./legacy-year-mechanics";
+import type { MintedId } from "./decision-id";
+import type { DecisionMaker, DecisionOption, DecisionQuestion, DecisionRecord } from "./decisions";
+import { activeFeudPair, activeRomancePair, awayMoveYear, eventsFor, hasMovedAway, isAlive, lastIllnessYear, pairKey } from "./events";
+import { biologyDistribution } from "./life-course-rules";
+import { ensureLifeState, markMarriageable } from "./life-state";
+import { compactMindState, computeMood, type DreamGoal, renderPortrait } from "./mind";
 import type { Locale } from "./locale";
-import { determineDeathCause, type MortalityContext } from "./mortality";
-import { storyCircle } from "./story-circle";
-import { FEMALE_NAMES, MALE_NAMES, pickName, SURNAMES } from "./names";
 import {
-  ARRANGED_GENTRY_MATCH_PROBABILITY,
-  CONCEPTION_PROBABILITY_BANDS,
-  FERTILITY_DAMPING_FLOOR,
-  IMMIGRATION_ANNUAL_PROBABILITY,
-  IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE,
   IMMIGRATION_POPULATION_CAP_RATIO,
-  IMMIGRATION_POST_PLAGUE_END_YEAR,
-  IMMIGRATION_POST_PLAGUE_YEAR,
   MARRIAGE_FLOORS,
   RETURN_HOME_MIN_AWAY_YEARS,
-  RETURN_HOME_PROBABILITY,
-  VILLAGE_CARRYING_CAPACITY_RATIO,
 } from "./params/demography";
 import { FALLBACK_CLASS } from "./period/classes";
 import {
   BLACK_DEATH_YEARS,
-  blackDeathMortalityForYear,
-  datedNationalEventTypesForYear,
-  isHundredYearsWarLevyYear,
   SECOND_PESTILENCE_YEARS,
-  secondPestilenceMortalityForYear,
 } from "./period/events";
-import { isLeyrwiteEligible, isUnfree, manorialFinePayload, shouldPresentLeyrwite } from "./period/markers";
 import { minEligibleAge } from "./hazards";
 import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
-import { TRAIT_POOL, type Event, type EventKind, type JsonValue, type Job, type Override, type Person, type Sex, type SimulationResult, type SocialClass, type Trait, type WorldConfig, type YearSnapshot } from "./types";
-import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext, type VignetteRelationshipTarget } from "./vignettes";
-import { isLiterate, pickCommonClass, pickJobForClass, pickTraits } from "./worldgen";
+import type { Event, EventKind, JsonValue, Job, Override, Person, Sex, SimulationResult, SocialClass, WorldConfig, YearSnapshot } from "./types";
+import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext } from "./vignettes";
+import { pickJobForClass } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
 
 /** Round 11 (decision 044): how many people's person-year batches to request in parallel within a single simulated year. Distinct from `DEFAULT_CONCURRENCY_LIMIT` (biology/legacy per-candidate calls) — this is the fan-out width across people, throttled further by the adapter's own rate limiter. */
 const DEFAULT_YEAR_BATCH_CONCURRENCY = 64;
-
-/**
- * A decision gets persisted into the log if it produced a real outcome, OR
- * if the road not taken had at least this much probability mass — i.e. it
- * was a genuine crossroads, not a coin so weighted it could only ever land
- * one way. Below this, a "did nothing happen" record for every person,
- * every year, would dwarf the actually-interesting decisions (see decision
- * 007). Applies to biology decisions (illness, death, immigration); social
- * decisions are always recorded once asked, since (round 12, decision 045)
- * eligibility is now the only code-side filter — Jev's per-person-year
- * event-selection Choice, not a code-level probability gate, decides which
- * eligible candidate (if any) actually happens.
- */
-const RECORD_THRESHOLD = 0.05;
-
-/** The kind of settlement a protagonist who leaves home might settle in (decision 040). */
-const SETTLEMENT_KINDS = ["market town", "port town", "city"] as const;
-
-/**
- * Deterministically names the place a protagonist settles after leaving home (decision 040) —
- * keyed by seed + the year they left, reusing the `SURNAMES` pool (already town-name-shaped) so
- * no new name list is needed. `full` is the one-time introduction ("Millbrook, a market town");
- * `name` alone is used for every later reference.
- */
-function pickAwayDestination(seed: string, year: number): { name: string; kind: string; full: string } {
-  const nameIdx = Math.floor(keyedDraw(seed, "away-destination", year, "name") * SURNAMES.length);
-  const kindIdx = Math.floor(keyedDraw(seed, "away-destination", year, "kind") * SETTLEMENT_KINDS.length);
-  const name = SURNAMES[nameIdx]!;
-  const kind = SETTLEMENT_KINDS[kindIdx]!;
-  return { name, kind, full: `${name}, a ${kind}` };
-}
 
 export interface SimulateOptions {
   readonly decisionMaker: DecisionMaker;
@@ -350,12 +304,6 @@ export async function drainSimulation(
   }
 }
 
-function pushEvent(events: Event[], year: number, kind: EventKind, actors: readonly string[], payload: Record<string, JsonValue>, causes: readonly string[]): Event {
-  const event: Event = { id: makeEventId(events, year, kind, actors), year, kind, actors, payload, causes };
-  events.push(event);
-  return event;
-}
-
 function isRelated(a: Person, b: Person): boolean {
   if (a.id === b.id) return true;
   if (a.motherId === b.id || a.fatherId === b.id || b.motherId === a.id || b.fatherId === a.id) return true;
@@ -474,89 +422,17 @@ function mourningOver(person: Person, events: readonly Event[], year: number): b
 }
 
 /**
- * Decision 054's widowhood handling, extracted (fixed after review, R3-001) so BOTH death paths
- * that can end a marriage — the general biology death-resolution block AND decision 051's
- * maternal-death-in-childbirth roll, which previously skipped it entirely, leaving a widower's
- * `spouseId` set forever and no `widowed` event for him — share one source of truth. Clears
- * `spouseId` on both sides, records a `widowed` event causally linked to the death, and lets an
- * artisan's widow keep the shop (only when SHE doesn't already have a trade of her own) exactly as
- * decision 054 specified. No-ops (returns no event ids) when `deceased` has no living spouse.
- */
-function resolveWidowhood(
-  seed: string,
-  events: Event[],
-  people: Record<string, Person>,
-  deceased: Person,
-  deceasedSocialClass: SocialClass,
-  year: number,
-  deathEventId: string,
-): readonly string[] {
-  if (!deceased.spouseId) return [];
-  const survivor = people[deceased.spouseId];
-  if (!survivor || survivor.deathYear !== undefined) return [];
-  // Read BEFORE clearing spouseId below — see the marriage-side note in the `A1` case for why.
-  const survivorState = ensureLifeState(survivor, events);
-  survivor.spouseId = undefined;
-  deceased.spouseId = undefined;
-  survivor.lifeState = applyLifeTransition(survivorState, { axis: "marital", to: "widowed" }, year);
-  const keepsTrade = deceasedSocialClass === "artisan" && deceased.job !== "none" && survivor.sex === "f" && survivor.job === "none";
-  if (keepsTrade) {
-    survivor.job = deceased.job;
-    survivor.socialClass = "artisan";
-  }
-  const widowedEvent = pushEvent(events, year, "widowed", [survivor.id, deceased.id], keepsTrade ? { keptTrade: true } : {}, [deathEventId]);
-  pushThought(survivor.mind, "grief", `losing ${deceased.name}`, 75, 8, year, "lovePropensity", deceased.id);
-  addMemory(seed, survivor.id, year, survivor.mind, `was widowed when ${deceased.name} died in ${year}`, "grief", deceased.id);
-  return [widowedEvent.id];
-}
-
-/**
- * PR6 corrective (validator finding, engram #6280 "the dead-suitor lockout"): `activeRomancePair`
- * (events.ts) only treats a romance as resolved once a `breakup` or `marriage` event exists for that
- * exact pair — a partner's DEATH never resolved it, so the survivor stayed permanently barred from
- * Y1 (`!person.spouseId && activeRomancePair(...) === undefined`) and from A1 (which needs a living
- * partner). Measured: 26 of 53 romances ended this way, 18 of 91 unmarried adults locked out ~12.9
- * years on average. Called for EVERY death (general biology and decision 051's maternal-death path
- * both), regardless of the deceased's own marital status — a still-unresolved romance can persist
- * even for someone who separately married someone else (the pre-existing multi-suitor property; see
- * decision 065's "Real pre-existing bugs" note), so this always attempts to close it. No-ops when
- * the deceased had no unresolved romance, or its partner is dead or already resolved otherwise.
- *
- * Decision 079: resolves EVERY simultaneous unresolved romance the deceased had (`activeRomancePairs`),
- * not just one — found via a real 60-seed run (`lockout-check-12`) where a person had two SAME-YEAR
- * romances; the original single-partner version (`activeRomancePair`) only ever closed the first one
- * found, leaving the OTHER suitor permanently locked out — the exact "dead-suitor lockout" bug this
- * function exists to fix, just for the second (and later) simultaneous suitor instead of the first.
- * Higher population/marriage activity from decision 079's own population-growth tuning made this
- * pre-existing multi-suitor gap common enough to trip the curated invariant test below for the first
- * time (see that test's own doc comment for the exact reproduction).
- */
-function resolveCourtshipOnDeath(events: Event[], people: Record<string, Person>, deceased: Person, year: number, deathEventId: string): readonly string[] {
-  const resultingIds: string[] = [];
-  for (const partnerId of activeRomancePairs(events, deceased.id)) {
-    const partner = people[partnerId];
-    if (!partner || partner.deathYear !== undefined) continue;
-    const partnerState = ensureLifeState(partner, events);
-    // Only reset the marital AXIS if this romance was actually the survivor's current relationship
-    // (`"courting"`) — a stale, never-resolved thread from years ago shouldn't overwrite a partner who
-    // has since gone on to marry someone else; the `breakup` event alone is enough to unblock them.
-    if (partnerState.marital.status === "courting") {
-      partner.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "single" }, year);
-    }
-    const breakupEvent = pushEvent(events, year, "breakup", [deceased.id, partnerId], { causeOfDeath: true }, [deathEventId]);
-    resultingIds.push(breakupEvent.id);
-  }
-  return resultingIds;
-}
-
-/**
  * Decision 055: birth spacing. A married woman isn't eligible for another A2 "try" this soon after
  * her last birth — ~2 years generally (Davenport 2019's 30-33 month intervals round down slightly
  * for the engine's whole-year granularity, and this is meant as a floor under the probabilistic
  * conception roll below, not the target average interval itself), shortened to ~1 year for gentry
  * (the same source's "elite... wet-nursing shortens intervals" finding — 24.6 vs 30.3 months).
  * Reset entirely (no cooldown) if her most recent child died before its first birthday, matching
- * Davenport's "the interval shortens when an infant dies before weaning."
+ * Davenport's "the interval shortens when an infant dies before weaning." Decision 085 made that
+ * reset unreachable in a normal run: with no age-0 biology roll, a child's earliest death is age 1,
+ * which the year AFTER it is already >= the 2-year floor (and gentry's floor is 1). Kept because it
+ * is the documented rule and is unit-tested directly; it would matter again for any earlier death
+ * the engine might add (a backfilled founder death, a future shock).
  */
 function eligibleForAnotherChild(mother: Person, people: Readonly<Record<string, Person>>, year: number): boolean {
   const children = Object.values(people).filter((c) => c.motherId === mother.id);
@@ -571,38 +447,6 @@ function eligibleForAnotherChild(mother: Person, people: Readonly<Record<string,
   if (infantDied) return true;
   const spacingYears = (mother.socialClass ?? "cottar") === "gentry" ? 1 : 2;
   return year - lastChild.birthYear >= spacingYears;
-}
-
-/**
- * Decision 055 / PR14 STEP 2 (decision 076): conception probability given a real "try" this year —
- * replaces the old 100%. Looks up `params/demography.ts#CONCEPTION_PROBABILITY_BANDS` — see that
- * constant's own doc comment (and `provenance.ts`) for the Davenport-interval rationale and the
- * measured evidence behind PR14's raise.
- */
-export function conceptionProbability(age: number): number {
-  const band = CONCEPTION_PROBABILITY_BANDS.find((b) => age < b.maxAge) ?? CONCEPTION_PROBABILITY_BANDS[CONCEPTION_PROBABILITY_BANDS.length - 1]!;
-  return band.probability;
-}
-
-/**
- * Decision 080: a carrying-capacity feedback on conception, closing the population-ceiling gap
- * `IMMIGRATION_POPULATION_CAP_RATIO` never covered (see `VILLAGE_CARRYING_CAPACITY_RATIO`'s own doc
- * comment, `params/demography.ts`, for the full root-cause story). Below capacity (the village's own
- * founder headcount times `VILLAGE_CARRYING_CAPACITY_RATIO`), returns 1 — no change from today's
- * behavior. Past it, tapers hyperbolically toward `FERTILITY_DAMPING_FLOOR` as `capacity / livingCount`
- * — smooth (no cliff at the boundary, unlike the immigration candidate's hard cutoff) and monotonic
- * (more overcrowding always dampens at least as much as less). Multiplies directly into the "try"
- * conceive roll at the call site below, rather than gating A2's ELIGIBILITY — a couple can still be
- * asked and still try, exactly as before; only the odds of success shrink, matching how
- * `conceptionProbability` itself already expresses "probability of success", not "eligible at all".
- */
-export function fertilityDampingFactor(people: Readonly<Record<string, Person>>): number {
-  const founderCount = Object.values(people).filter((p) => p.founder).length;
-  const capacity = founderCount * VILLAGE_CARRYING_CAPACITY_RATIO;
-  if (capacity <= 0) return 1;
-  const livingCount = Object.values(people).filter((p) => p.deathYear === undefined && !p.away).length;
-  if (livingCount <= capacity) return 1;
-  return Math.max(FERTILITY_DAMPING_FLOOR, capacity / livingCount);
 }
 
 /** The eldest LIVING son sharing this person's father (decision 056's holding-inheritance rule) — true only for `person` itself. */
@@ -729,86 +573,8 @@ function townEventMortalityMultiplier(townEvent: TownEventType | undefined, age:
   return 1;
 }
 
-/**
- * Decision 058 (keys renamed 1:1 by decision 063): who actually bore feudal/tax dues (research.md,
- * Economy §"Taxes, housing, diet" — tithe of 10%, rent and entry fines) — a DESIGN ASSUMPTION (no
- * sourced per-class ratio exists), same disclosed-assumption pattern as `CLASS_MORTALITY_MULTIPLIER`
- * (decision 050). Cottars/villeins paid the most relative to their means; gentry/clergy bore feudal
- * dues far more lightly, when at all. PR5 spikes this during the Hundred Years' War levy years
- * (1337-47, `isHundredYearsWarLevyYear`) instead of decision 058's Tudor-era Lay Subsidy years.
- */
-const LEVY_CLASS_MULTIPLIER: Readonly<Record<SocialClass, number>> = {
-  cottar: 1.3,
-  villein: 1.15,
-  freeholder: 1.0,
-  artisan: 0.9,
-  merchant: 0.8,
-  clergy: 0.5,
-  gentry: 0.4,
-};
-
-/** Defensive `?? FALLBACK_CLASS` — same rationale as `minMarriageAge` above (decision 063 follow-up). */
-function levyClassMultiplier(socialClass: SocialClass): number {
-  return LEVY_CLASS_MULTIPLIER[socialClass] ?? LEVY_CLASS_MULTIPLIER[FALLBACK_CLASS];
-}
-
-/**
- * Matches by `(kind, subject)`, not exact id string (decision-identity capability): `subject` here
- * is always the candidate's own `personId` — the SAME identity `mintId`/`commitId` below mint
- * against — not its internal within-year bookkeeping key (which, for a paired candidate like `Y1`,
- * embeds a `pairKey`, not a bare personId, and would never match a minted id's subject). `overrides`
- * come from the caller and may carry either a legacy year-embedded id or a new ordinal one;
- * `decisionSubject` parses both the same way, so only the override side needs parsing at all.
- *
- * `isOverrideYear` gates this to the run's own start year (a fork/rewrite's `fromYear`, always the
- * target decision's own year — see `fork.ts`): dropping the year from the matched id would
- * otherwise force this SAME (kind, subject) at every later year of the re-simulation too, not just
- * the one the override actually targets.
- *
- * `partnerId`, when the candidate has one, lets a LEGACY pairKey-shaped override id (a paired social
- * kind like `Y1`, minted before ordinal ids existed) still match (fixed after review, R3-001) — see
- * `decision-id.ts#candidateMatchesSubject`.
- */
-function overrideFor(overrides: readonly Override[], kind: string, subject: string, isOverrideYear: boolean, partnerId?: string): Override | undefined {
-  if (!isOverrideYear) return undefined;
-  return overrides.find((o) => {
-    const parsed = decisionSubject(o.decisionId);
-    return parsed.kind === kind && candidateMatchesSubject(parsed.subject, subject, partnerId);
-  });
-}
-
-/**
- * Peeks the next id for `(kind, subject)` without mutating anything — safe to call before deciding
- * whether the resulting decision will actually be recorded (biology's `RECORD_THRESHOLD` gate runs
- * AFTER this). `subject === "world"` (immigration) needs no `people` lookup at all (see
- * `mintDecisionId`).
- */
-function mintId(people: Readonly<Record<string, Person>>, kind: string, subject: string, year: number): MintedId {
-  const slots = subject === "world" ? EMPTY_SLOTS : (people[subject]?.lifeState?.slots ?? EMPTY_SLOTS);
-  return mintDecisionId(kind, subject, year, slots);
-}
-
-/**
- * Commits a minted id's slot advance onto its subject's `lifeState.slots` (see
- * `life-state.ts#advanceSlot`) — call exactly once per minted id, with `occurred` reflecting
- * whether the decision it belongs to was actually recorded. A `world` subject needs no commit (its
- * ordinal is the year itself, never persisted state). Reads through `ensureLifeState` first so a
- * subject's very first commit this run bootstraps the rest of `lifeState` from their real history
- * (see `life-state.ts`) instead of overwriting it with a slots-only fragment.
- */
-function commitId(people: Record<string, Person>, events: readonly Event[], subject: string, minted: MintedId, occurred: boolean): void {
-  if (subject === "world") return;
-  const person = people[subject];
-  if (!person) return;
-  const state = ensureLifeState(person, events);
-  person.lifeState = { ...state, slots: advanceSlot(state.slots, minted.key, occurred) };
-}
-
 /** Years a person is "immune" from another illness roll after falling ill, so illness doesn't spam a handful of bad-luck years. */
 const ILLNESS_COOLDOWN_YEARS = 3;
-
-/** Decision 051: maternal mortality per birth (research.md, "Maternal mortality" — Schofield 1986's Elizabethan 9.3/1000 anchor, ~0.9-1.0%; applied across the whole 1498-1558 window with low confidence, since the source is just after it). */
-const MATERNAL_DEATH_PROBABILITY = 0.0095;
 
 /**
  * Round 5 fix (decision 022, "monotone loops" — Orla Cinderfell's chronicle
@@ -856,28 +622,6 @@ const DREAM_RELATED_EVENT_KINDS: Record<DreamGoal, readonly EventKind[]> = {
   "found something lasting": ["marriage", "job", "birth"],
 };
 
-/**
- * Whether `goal` is already backed by a real event on `personId`'s own log
- * — the gate for A8's "push-harder" outcome (decision 023, "dream realized
- * without the act"): the underlying act has to have actually happened
- * (a real move, a real marriage/child, a real career change) before code
- * will let Jev's "push harder" roll flip the dream to realized.
- */
-function dreamGoalSatisfiedBy(goal: DreamGoal, events: readonly Event[], personId: string): boolean {
-  switch (goal) {
-    case "leave for the city":
-      return events.some((e) => e.kind === "move" && e.actors[0] === personId && e.payload.away === true);
-    case "start a family":
-      return events.some((e) => e.kind === "birth" && e.actors.slice(1).includes(personId));
-    case "master a craft":
-      return events.some((e) => e.kind === "job" && e.actors[0] === personId && !e.payload.forced);
-    case "found something lasting":
-      return events.some((e) => (e.kind === "marriage" || e.kind === "birth") && e.actors.includes(personId));
-    default:
-      return false;
-  }
-}
-
 /** Every person this `personId` has ever had a `feud` or `reconciliation` event with, resolved or not. */
 function feudPairHistory(events: readonly Event[], personId: string): Set<string> {
   const partners = new Set<string>();
@@ -888,13 +632,6 @@ function feudPairHistory(events: readonly Event[], personId: string): Set<string
     }
   }
   return partners;
-}
-
-function baseIllnessChance(age: number): number {
-  if (age < 5) return 0.012;
-  if (age < 50) return 0.007;
-  if (age < 70) return 0.02;
-  return 0.05;
 }
 
 /**
@@ -919,13 +656,27 @@ function gatherCandidatesForYear(
   // Lightweight away-NPCs (decision 040) are narrative props for the protagonist's own away
   // catalog below, not full villagers — they never face their own illness/death/immigration-cap
   // accounting, and never turn up as a match for anyone else's courtship.
-  const livingIds = Object.values(people)
+  const livingSorted = Object.values(people)
     .filter((p) => p.deathYear === undefined && !p.away)
-    .map((p) => p.id)
-    .sort();
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // The ids alone, in the same code-unit order the old `.sort()` produced (`livingSorted` keeps the
+  // person next to its id, so callers whose `people` map keys are NOT the person ids still work).
+  const livingIds = livingSorted.map((p) => p.id);
 
   // Biology: illness and death are decision opportunities for every living person, every year.
-  for (const id of livingIds) {
+  for (const person of livingSorted) {
+    const id = person.id;
+    // Decision 085: a newborn's FIRST biology roll is the FOLLOWING year, at `ageInYear` = 1.
+    // This snapshot is gathered before the year's own births are applied (see the doc comment
+    // above), so a child born in simulation never appears here in its birth year — but a FOUNDER
+    // newborn is generated at literal age 0 and IS in the registry at the start of the start year.
+    // Unguarded, she took an extra roll in `MORTALITY_BY_AGE_BAND`'s age<2 band (0.30) on top of
+    // her age-1 roll: survival to age 2 of 0.7 * 0.7 = 0.49, where decision 069 targets ~30%
+    // mortality BY age 1 — exactly ONE 0.30 roll. So no `illness:` or `death:` candidate at age 0
+    // for anyone; every child's first exposure is the one an in-sim child already gets.
+    // `livingIds` itself stays unfiltered: the immigration cap below counts newborns exactly as
+    // before, and a founder newborn still ages, marries and dies normally from age 1 on.
+    if (ageInYear(person.birthYear, year) === 0) continue;
     const movedAway = hasMovedAway(events, id);
     if (!movedAway) {
       const lastIllness = lastIllnessYear(events, id);
@@ -1966,15 +1717,6 @@ function buildQuestion(descriptor: CandidateDescriptor, year: number, config: Wo
   };
 }
 
-interface ResolvedDecision {
-  readonly jevRaw?: Distribution;
-  readonly prior?: Distribution;
-  readonly final: Distribution;
-  readonly source: DecisionSource;
-  /** Round 11 (decision 044): how likely `decideYear`'s batch said this situation was to happen this year. Absent for the legacy per-candidate `decide()` path, which asks no occurrence question. */
-  readonly occurrenceProbability?: number;
-}
-
 /**
  * Resolves the distribution a decision samples from. Per decision 016
  * (superseding 013): when the engine is Jev, `final` IS `jevRaw` — no
@@ -1991,27 +1733,6 @@ async function resolveSocialDecision(question: DecisionQuestion, decisionMaker: 
   // `ruleDistribution` returns raw relative weights for some kinds (e.g. career-change), not necessarily summing to 1.
   const prior = normalizeDistribution(ruleDistribution(question) as Record<string, number>);
   return { prior, final: prior, source: "rules" };
-}
-
-/** The protagonist's first living sibling (shares a mother or father), if any — used for `D1`'s `sibling-quarrel` vignette. */
-function livingSiblingId(people: Readonly<Record<string, Person>>, person: Person): string | undefined {
-  return Object.values(people).find((p) => p.id !== person.id && p.deathYear === undefined && ((person.motherId && p.motherId === person.motherId) || (person.fatherId && p.fatherId === person.fatherId)))?.id;
-}
-
-/** The protagonist's first living child, if any — used for `D1`'s `teaching-a-child` vignette. */
-function livingChildId(people: Readonly<Record<string, Person>>, person: Person): string | undefined {
-  return Object.values(people).find((p) => (p.motherId === person.id || p.fatherId === person.id) && p.deathYear === undefined)?.id;
-}
-
-/** Resolves a `VignetteOutcome.relationshipTarget` tag to a concrete person id — only `simulate.ts` knows the protagonist's actual spouse/parent/sibling/child, so this stays out of the (pure, person-agnostic) vignette pool itself. */
-function relationshipTargetId(target: VignetteRelationshipTarget, person: Person, people: Readonly<Record<string, Person>>): string | undefined {
-  if (target === "spouse") return person.spouseId;
-  if (target === "child") return livingChildId(people, person);
-  if (target === "sibling") return livingSiblingId(people, person);
-  // "parent": prefer a living mother, then a living father.
-  if (person.motherId && people[person.motherId]?.deathYear === undefined) return person.motherId;
-  if (person.fatherId && people[person.fatherId]?.deathYear === undefined) return person.fatherId;
-  return undefined;
 }
 
 /**
@@ -2119,169 +1840,56 @@ function buildDailyLifeVignetteCandidates(
   });
 }
 
-/**
- * "At least one entry per year" (round 10, decision 042): called once per year, ONLY when the
- * protagonist produced zero events of their own that year (checked by the caller, after every
- * other biology/social decision for the year has already resolved) — presents ONE everyday-life
- * `D1` vignette, a real DecisionMaker call sampled exactly like any other social decision, never
- * throttled by `LIFE_DECISION_BUDGET` (it's always about the protagonist). `overrides` still apply
- * (a `D1:<protagonistId>:<year>` id), so a rewrite can change what the protagonist did with an
- * otherwise-quiet year too.
- */
-async function resolveDailyLifeVignette(
-  protagonist: Person,
-  year: number,
-  seed: string,
-  config: WorldConfig,
-  people: Record<string, Person>,
-  events: Event[],
-  townEventType: TownEventType | undefined,
-  decisionMaker: DecisionMaker,
-  engineSource: "jev" | "rules",
-  overrides: readonly Override[],
-  /** Round 12 continuation (decision 046): the whole eligible-vignette pool this protagonist-year offered, and which one (if any) the cross-batch `vignette-pick` sample chose. */
-  d1Candidates: readonly { readonly descriptor: CandidateDescriptor; readonly vignette: Vignette; readonly deciderId: string }[],
-  finalVignetteWinner: string | undefined,
-  /** Round 11 (decision 044): a result already fetched as part of the decider's per-person-year batch — when present, no extra `DecisionMaker` call is made here at all. */
-  preFetched?: ResolvedDecision,
-  isOverrideYear = false,
-): Promise<{ decision: DecisionRecord; wasRealCall: boolean }> {
-  const decisionId = `D1:${protagonist.id}:${year}`;
-  const forced = overrideFor(overrides, "D1", protagonist.id, isOverrideYear);
-
-  let vignette: Vignette;
-  let deciderId: string;
-  if (forced) {
-    // A forked/overridden D1 decision (decision 043): resolve which vignette OWNS the forced option
-    // rather than assuming whichever one won selection — option ids are unique across the pool.
-    vignette = getVignetteForOption(forced.optionId) ?? d1Candidates[0]?.vignette ?? buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType).vignette;
-    deciderId = vignette.decidedByParent ? (relationshipTargetId("parent", protagonist, people) ?? protagonist.id) : protagonist.id;
-  } else {
-    const winner = finalVignetteWinner ? d1Candidates.find((c) => c.descriptor.decisionId === finalVignetteWinner) : undefined;
-    if (winner) {
-      vignette = winner.vignette;
-      deciderId = winner.deciderId;
-    } else {
-      // Legacy fallback: no batched `decideYear` result (an adapter that only implements `decide()`)
-      // — fall back to the old single RNG pick, exactly as before decision 044.
-      const picked = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEventType);
-      vignette = picked.vignette;
-      deciderId = picked.deciderId;
-    }
-  }
-
-  const options = Object.keys(vignette.outcomes);
-  const descriptor: CandidateDescriptor = {
-    decisionId,
-    kind: "D1",
-    personId: deciderId,
-    ...(deciderId !== protagonist.id ? { partnerId: protagonist.id } : {}),
-    options,
-    extra: { vignette: vignette.id },
-  };
-  const decider = people[deciderId] ?? protagonist;
-  const question = buildQuestion(descriptor, year, config, people);
-
-  let final: Distribution;
-  let jevRaw: Distribution | undefined;
-  let prior: Distribution | undefined;
-  let occurrenceProbability: number | undefined;
-  let source: DecisionSource;
-  let chosen: string;
-  let noise: Record<string, number> = {};
-  let fragility: number;
-  let surprise: boolean;
-  let wasRealCall = false;
-
-  if (forced) {
-    chosen = forced.optionId;
-    final = { [chosen]: 1 };
-    source = "forced";
-    fragility = NOT_FRAGILE;
-    surprise = false;
-  } else {
-    // Already answered as part of this person's batched `decideYear` request this year — no extra
-    // call. Otherwise (a legacy adapter without `decideYear`, or a caller that didn't prefetch),
-    // fall back to one dedicated `decide()` call, exactly as before decision 044.
-    const result = preFetched ?? (await resolveSocialDecision(question, decisionMaker, engineSource));
-    wasRealCall = !preFetched && engineSource === "jev";
-    jevRaw = result.jevRaw;
-    prior = result.prior;
-    occurrenceProbability = result.occurrenceProbability;
-    final = result.final;
-    source = result.source;
-    const sample = sampleGumbelMax(final as Record<string, number>, seed, protagonist.id, year, "D1");
-    chosen = sample.chosen;
-    noise = sample.noise;
-    fragility = decisionFragility(sample.scores);
-    surprise = isSurprise(final, chosen);
-  }
-
-  const outcome = vignette.outcomes[chosen]!;
-  // An infant/toddler vignette (decision 043) is still lived by the protagonist — the thought, the
-  // memory, the relationship nudge all still land on their mind — only `deciderId` (below) credits
-  // the parent who actually made the call, same split `AP1` already makes.
-  const cause = outcome.cause(protagonist.name, config.town.name);
-  const actors = deciderId !== protagonist.id ? [deciderId, protagonist.id] : [protagonist.id];
-  const event = pushEvent(events, year, "vignette", actors, { vignette: vignette.id, outcome: chosen }, []);
-  pushThought(protagonist.mind, outcome.emotion, cause, outcome.intensity, outcome.duration, year, outcome.facet as Facet | undefined);
-  if (outcome.memorable) addMemory(seed, protagonist.id, year, protagonist.mind, cause, outcome.emotion);
-  if (outcome.relationshipTarget) {
-    const targetId = relationshipTargetId(outcome.relationshipTarget, protagonist, people);
-    const target = targetId ? people[targetId] : undefined;
-    if (target) updateRelationship(protagonist.mind, target.id, target.mind.values, outcome.relationshipDelta ?? 10);
-  }
-
-  const decisionOptions: DecisionOption[] = options.map((id) => ({ id, label: optionLabel("D1", id, decider.name) }));
-  // D1's minted subject is always the PROTAGONIST (matching its legacy `D1:<protagonistId>:<year>`
-  // shape), even when `deciderId` is a parent (decision 043) — it's fundamentally the protagonist's
-  // day. Always pushed by the caller (`simulate()`'s "at least one entry per year" guarantee), so the
-  // slot commits unconditionally as an occurrence.
-  const minted = mintId(people, "D1", protagonist.id, year);
-  commitId(people, events, protagonist.id, minted, true);
-  const decision: DecisionRecord = {
-    id: minted.id,
-    personId: deciderId,
-    partnerId: descriptor.partnerId,
-    year,
-    kind: "D1",
-    // Decision 059: always English here, deliberately — `DecisionRecord.question` is computed once
-    // at simulate time and persisted (unlike `narrate.ts`'s prose, which is re-derived fresh from
-    // structured events every render), so it can't be re-localized per viewer without either storing
-    // both languages or growing `DecisionRecord` with the raw params needed to rebuild it. The
-    // chronicle's own reader-facing prose/title (what the proposal calls "per-locale narration") goes
-    // through `narrate.ts`'s `locale` parameter instead, at render time, per the reader's locale.
-    question: vignette.question("en", config.town.name),
-    options: decisionOptions,
-    jevRaw,
-    prior,
-    final,
-    noise,
-    chosen,
-    fragility,
-    surprise,
-    source,
-    causes: [],
-    resultingEventIds: [event.id],
-    occurrenceProbability,
-  };
-  return { decision, wasRealCall };
+export interface LegacyOwnedRunState {
+  readonly people: Record<string, Person>;
+  readonly events: Event[];
+  readonly decisions: DecisionRecord[];
+  readonly counters: { decisionCalls: number };
 }
 
-function biologyDistribution(kind: string, p: number): Distribution {
-  if (kind === "illness") return { illness: p, healthy: 1 - p };
-  if (kind === "death") return { die: p, survive: 1 - p };
-  if (kind === "return") return { return: p, stay: 1 - p };
-  if (kind === "arranged-match") return { arrange: p, "no-match": 1 - p };
-  // Decision 058: pre-existing bug found while adding the levy class multiplier — "levy" (options
-  // `["impose", "spare"]`) fell through to this function's `arrive`/`no-arrival` default (meant for
-  // "immigration"/"away-arrival", which happen to share the "arrive" label by coincidence), so
-  // `sampleGumbelMax` could never actually choose `"impose"` and the death-resolution loop's
-  // `if (record.chosen === "impose")` check was permanently unreachable — the lord's levy has never
-  // fired an event since it was introduced (decision 035). Fixed here rather than filed as a
-  // separate follow-up, since 058's own levy class-multiplier/Lay Subsidy work is otherwise inert.
-  if (kind === "levy") return { impose: p, spare: 1 - p };
-  return { arrive: p, "no-arrival": 1 - p };
+export type LegacySimulationRunContext = LegacyRunContext<CandidateDescriptor, MarriageFunnelCollector>;
+
+interface LegacyRunBindings {
+  readonly seed: string;
+  readonly originalOverrideYear: number;
+  readonly protagonistId: string | undefined;
+  readonly debug: MarriageFunnelCollector | undefined;
+  readonly overrides: readonly Override[];
+  readonly concurrencyLimit: number;
+  readonly yearBatchConcurrency: number;
+}
+
+/** Borrow owned state and LIVE options; catalog ports retain the original implementations. */
+export function createLegacyRunContext(
+  config: WorldConfig,
+  owned: LegacyOwnedRunState,
+  options: SimulateOptions,
+  bindings: LegacyRunBindings = {
+    seed: config.seed,
+    originalOverrideYear: options.fromYear ?? config.startYear,
+    protagonistId: options.protagonistId,
+    debug: options.marriageFunnelDebug,
+    overrides: options.overrides ?? [],
+    concurrencyLimit: options.concurrencyLimit ?? DEFAULT_CONCURRENCY_LIMIT,
+    yearBatchConcurrency: options.yearBatchConcurrency ?? DEFAULT_YEAR_BATCH_CONCURRENCY,
+  },
+): LegacySimulationRunContext {
+  const { people, events, decisions, counters } = owned;
+  const { seed, originalOverrideYear, protagonistId, debug: marriageFunnelDebug, overrides, concurrencyLimit, yearBatchConcurrency } = bindings;
+  return {
+    config, people, events, decisions, originalOverrideYear, protagonistId, counters,
+    debug: marriageFunnelDebug, marriageFunnelDebug, options, overrides,
+    captureCandidates: (capturedYear, debug) => gatherCandidatesForYear(
+      capturedYear, people, events, seed, options.protagonistId,
+      debug ? { collector: debug, startYear: config.startYear } : undefined,
+    ),
+    resolveBiologyDecision, mortalityMultiplier: townEventMortalityMultiplier, townEventForYear,
+    isSocialKind: (kind) => SOCIAL_KINDS.has(kind),
+    inMarriageFunnelCohort, buildQuestion, optionLabel, questionText,
+    buildDailyLifeVignetteCandidates, buildDailyLifeVignetteDescriptor, getVignetteForOption,
+    personSummary, resolveSocialDecision,
+    decisionBudget: LIFE_DECISION_BUDGET, concurrencyLimit, yearBatchConcurrency,
+  };
 }
 
 /**
@@ -2308,7 +1916,7 @@ export async function* simulateYears(
   const yearBatchConcurrency = options.yearBatchConcurrency ?? DEFAULT_YEAR_BATCH_CONCURRENCY;
   const seed = config.seed;
   const snapshots = new Map<number, YearSnapshot>();
-  let decisionCalls = 0;
+  const counters = { decisionCalls: 0 };
   // Decision 047: captured once, outside the per-candidate loop below, because that loop shadows
   // `options` with a local `DecisionOption[]` of the same name (its `decisions.push({ options, ... })`
   // shorthand) — referencing `options.protagonistId` inside that loop would hit the TDZ instead of
@@ -2320,1276 +1928,15 @@ export async function* simulateYears(
 
   const startYear = options.fromYear ?? config.startYear;
 
-  snapshots.set(startYear - 1, { year: startYear - 1, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) });
+  snapshots.set(startYear - 1, captureLegacyYear({ people, events, decisions }, startYear - 1));
 
   for (let year = startYear; year <= config.endYear; year++) {
-    // Yearly mind decay (spec step 2): every living person's thoughts lose a
-    // year and expire at 0; stress drains ~20%/year (slower for the
-    // anxious), rising first with the last year's negative mood. Done
-    // before this year's situations are gathered, so an A11 breakdown
-    // trigger or an A8 dream check reflects the decayed value for THIS
-    // year, not a stale one.
-    for (const person of Object.values(people)) {
-      if (person.deathYear === undefined) decayMindForYear(person.mind);
-    }
-
-    const candidates = gatherCandidatesForYear(
-      year,
-      people,
-      events,
-      seed,
-      options.protagonistId,
-      marriageFunnelDebug ? { collector: marriageFunnelDebug, startYear: config.startYear } : undefined,
-    );
-    const biologyCandidates = candidates.filter(
-      (c) => c.kind === "illness" || c.kind === "death" || c.kind === "immigration" || c.kind === "levy" || c.kind === "away-arrival" || c.kind === "return" || c.kind === "arranged-match",
-    );
-    // D1 is excluded here even though it's in `SOCIAL_KINDS` (used for `validate-override.ts`'s
-    // reconstruction, round 10 decision 043) — it has its own dedicated call site below
-    // (`resolveDailyLifeVignette`, gated on "no event yet this year"), never the generic per-kind loop.
-    let socialCandidates = candidates.filter((c) => SOCIAL_KINDS.has(c.kind) && c.kind !== "D1");
-
-    // Town event (decision 025): pushed once here, at most once per year, deterministically —
-    // `townEventForYear` is the exact same pure function `gatherCandidatesForYear` used to decide
-    // whether to offer every adult an A5 decision this year, so the two can never disagree.
-    const townEvent = townEventForYear(seed, year);
-    let townEventId: string | undefined;
-    if (townEvent) {
-      const event = pushEvent(events, year, "town", [], { eventType: townEvent }, []);
-      townEventId = event.id;
-    }
-
-    // Engine life course PR5: dated national events (the Hundred Years' War's opening, the
-    // Ordinance and Statute of Labourers) — pushed unconditionally, independent of
-    // `townEventForYear`'s single random/dated-shock slot above (see `period/events.ts`'s
-    // `DATED_NATIONAL_EVENTS` doc comment for why these don't compete for that slot).
-    for (const periodType of datedNationalEventTypesForYear(year)) {
-      pushEvent(events, year, "town", [], { eventType: periodType, period: true }, []);
-    }
-    // --- Biology: synchronous, no AI calls ----------------------------------
-    // Illness is processed before death for the same person (in `gatherCandidatesForYear`'s
-    // sort order, "death" < "illness" alphabetically would be wrong — we sort by kind name,
-    // so re-sort biology explicitly: illness first, so a same-year illness can raise the death odds).
-    biologyCandidates.sort((a, b) => {
-      if (a.personId !== b.personId) return a.kind === "immigration" ? 1 : b.kind === "immigration" ? -1 : a.personId.localeCompare(b.personId);
-      return a.kind === "illness" ? -1 : b.kind === "illness" ? 1 : 0;
+    const context = createLegacyRunContext(config, { people, events, decisions, counters }, options, {
+      seed, originalOverrideYear: startYear, protagonistId, debug: marriageFunnelDebug,
+      overrides, concurrencyLimit, yearBatchConcurrency,
     });
+    const snapshot = await runLegacyYear(context, year);
 
-    const illnessResultByPerson = new Map<string, Event | undefined>();
-
-    const isOverrideYear = year === startYear;
-    // Decision 083: daughters who marry out of the village this year (resolved in this biology loop),
-    // so their social candidates, gathered before they left, are dropped below like a same-year death.
-    const leftVillageThisYear = new Set<string>();
-    for (const descriptor of biologyCandidates) {
-      const forced = overrideFor(overrides, descriptor.kind, descriptor.personId, isOverrideYear);
-      const minted = mintId(people, descriptor.kind, descriptor.personId, year);
-      let record: DecisionRecord;
-
-      if (descriptor.kind === "illness") {
-        const age = ageInYear(people[descriptor.personId]!.birthYear, year);
-        const p = baseIllnessChance(age);
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        let illnessEvent: Event | undefined;
-        if (record.chosen === "illness") {
-          illnessEvent = pushEvent(events, year, "illness", [descriptor.personId], { age }, []);
-        }
-        illnessResultByPerson.set(descriptor.personId, illnessEvent);
-        record = { ...record, resultingEventIds: illnessEvent ? [illnessEvent.id] : [] };
-        // Recording threshold (decision 007): always record if it actually
-        // happened, or if the road not taken (illness) had a real chance.
-        const pushed = record.chosen === "illness" || p >= RECORD_THRESHOLD || record.source === "forced";
-        if (pushed) decisions.push(record);
-        commitId(people, events, descriptor.personId, minted, pushed);
-      } else if (descriptor.kind === "death") {
-        const person = people[descriptor.personId]!;
-        const age = ageInYear(person.birthYear, year);
-        const illnessEvent = illnessResultByPerson.get(descriptor.personId);
-        const socialClass: SocialClass = person.socialClass ?? "cottar";
-        // Decision 050: the protagonist-only mortality bonus (mortality.ts's old
-        // `protagonistMortalityBonus`) is REMOVED — the protagonist now faces the exact same,
-        // recalibrated actuarial curve, class multiplier and town-event multiplier as any NPC. What
-        // decision 035 was protecting (a 15-20% pre-15 protagonist death share) is now a property of
-        // the general population's own recalibrated curve (see `actuarial.ts#deathProbabilityAtAge`
-        // and docs/decisions.md 050's measured figures), not a per-protagonist patch.
-        const shockMultiplier = townEventMortalityMultiplier(townEvent, age, person.sex, socialClass);
-        const illnessMultiplier = illnessEvent ? 3 : 1;
-        // Engine life course PR5: the Black Death/second pestilence are combined as an ABSOLUTE
-        // per-year probability (competing risk with the base rate above), not a multiplier — see
-        // `townEventMortalityMultiplier`'s own doc comment for why a flat multiplier can't reliably
-        // hit their documented scale across every age band.
-        const pandemicMortality = blackDeathMortalityForYear(year) ?? secondPestilenceMortalityForYear(year, age);
-        const basePandemic = Math.min(0.9, deathProbabilityAtAge(age) * classMortalityMultiplier(socialClass) * shockMultiplier * illnessMultiplier);
-        const p = pandemicMortality === undefined ? basePandemic : Math.min(0.9, 1 - (1 - basePandemic) * (1 - pandemicMortality));
-        // Decision 050: `hasActiveFeud` (and therefore the "feud-violence" cause) is now computed for
-        // EVERY person, not just the protagonist — `activeFeudPair` already reads the general event
-        // log by personId, so this was never protagonist-specific machinery, only protagonist-gated.
-        const hasActiveFeud = activeFeudPair(events, person.id) !== undefined;
-        const mortalityContext: MortalityContext = { age, sex: person.sex, hadIllness: !!illnessEvent, townEventType: townEvent, hasActiveFeud };
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, person.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "die") {
-          person.deathYear = year;
-          // Decision 050: every death now carries a `cause` (not just the protagonist's) —
-          // `determineDeathCause` was already a pure function of context available for anyone.
-          const cause = determineDeathCause(mortalityContext);
-          const deathEvent = pushEvent(
-            events,
-            year,
-            "death",
-            [descriptor.personId],
-            { age, awayFromTown: hasMovedAway(events, descriptor.personId), cause },
-            illnessEvent ? [illnessEvent.id] : [],
-          );
-          resultingEventIds.push(deathEvent.id);
-          // Decision 054: widowhood — `spouseId` was previously NEVER cleared on death (the bug the
-          // decision fixes), which made remarriage impossible for anyone whose spouse died. Handled
-          // by the shared `resolveWidowhood` helper (fixed after review, R3-001) so this general
-          // death path and decision 051's maternal-death path below can never disagree.
-          resultingEventIds.push(...resolveWidowhood(seed, events, people, person, socialClass, year, deathEvent.id));
-          // PR6 corrective: close any unresolved romance the deceased leaves behind (the
-          // dead-suitor lockout fix — see `resolveCourtshipOnDeath`'s own doc comment).
-          resultingEventIds.push(...resolveCourtshipOnDeath(events, people, person, year, deathEvent.id));
-          // PR5's heriot marker (design's markers table: "villein/cottar tenant death") — the
-          // deceased's best beast, owed to the lord, on the death of an unfree tenant. Excluded for
-          // the protagonist specifically: their own death is a pre-existing, load-bearing contract
-          // ("the LAST entry is ALWAYS the protagonist's death, level 3" — `life-chronicle.test.ts`)
-          // that a same-year, causally-later event would break by sorting after it.
-          if (isUnfree(socialClass) && person.id !== protagonistId) {
-            const heriotEvent = pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("heriot", person.id), [deathEvent.id]);
-            resultingEventIds.push(heriotEvent.id);
-          }
-        } else if (illnessEvent) {
-          (illnessEvent.payload as Record<string, JsonValue>).recovered = true;
-        }
-        const deathCauses = [...(illnessEvent ? [illnessEvent.id] : []), ...((shockMultiplier > 1 || pandemicMortality !== undefined) && townEventId ? [townEventId] : [])];
-        record = { ...record, causes: deathCauses, resultingEventIds };
-        const pushed = record.chosen === "die" || p >= RECORD_THRESHOLD || record.source === "forced";
-        if (pushed) decisions.push(record);
-        commitId(people, events, descriptor.personId, minted, pushed);
-      } else if (descriptor.kind === "levy") {
-        // Decision 058: a class-specific multiplier (research.md, Economy §"Taxes, housing, diet" —
-        // tithe, rent and the levy fell on tenants and labourers; gentry/clergy bore feudal dues far
-        // more lightly, when at all) — a DESIGN ASSUMPTION, no sourced per-class ratio exists, same
-        // disclosed-assumption pattern as decision 050's `CLASS_MORTALITY_MULTIPLIER`. Engine life
-        // course PR5 spikes this during the Hundred Years' War's own levy/taxation years (1337-47,
-        // research.md's event list) instead of decision 058's Tudor-era Lay Subsidy years — the levy
-        // candidate is protagonist-only (see the `SimulateOptions` doc comment), so this never
-        // touches the general village.
-        const levySocialClass: SocialClass = people[descriptor.personId]!.socialClass ?? "cottar";
-        const hywLevyYear = isHundredYearsWarLevyYear(year);
-        const p = Math.min(0.9, 0.045 * (townEvent === "famine" ? 1.4 : 1) * levyClassMultiplier(levySocialClass) * (hywLevyYear ? 1.8 : 1));
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "impose") {
-          const event = pushEvent(events, year, "levy", [descriptor.personId], {}, []);
-          resultingEventIds.push(event.id);
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "impose" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      } else if (descriptor.kind === "away-arrival") {
-        // A lightweight newcomer joining the away cast (decision 040) — code-rolled, exactly like
-        // immigration, and resolved here (before social `buildQuestion` runs) so a real Person
-        // already exists for the SAME year's Y1/Y5 candidates to reference by id.
-        const p = 0.4;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "arrive") {
-          const newPerson = spawnAwayPerson(seed, year, people);
-          people[newPerson.id] = newPerson;
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      } else if (descriptor.kind === "return") {
-        // Returning home (decision 040; generalized to the whole village by PR10/decision 071 — see
-        // `RETURN_HOME_PROBABILITY`'s own doc comment) — a small yearly chance, not a considered
-        // choice, so it's code-rolled like immigration/levy rather than sent to a DecisionMaker.
-        const p = RETURN_HOME_PROBABILITY;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "return") {
-          const returning = people[descriptor.personId]!;
-          returning.lifeState = applyLifeTransition(ensureLifeState(returning, events), { axis: "residence", to: "home" }, year);
-          const event = pushEvent(events, year, "move", [descriptor.personId], { away: false, returned: true, destination: config.town.name }, []);
-          resultingEventIds.push(event.id);
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "return" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      } else if (descriptor.kind === "arranged-match") {
-        // Decision 083: fires straight to a marriage — no courtship phase at all, unlike every other
-        // Y1/A1-driven marriage. An arranged match IS the decision (made by her family, off-screen),
-        // not a suitor she spends years courting.
-        const p = ARRANGED_GENTRY_MATCH_PROBABILITY;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, people[descriptor.personId]!.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "arrange") {
-          const daughter = people[descriptor.personId]!;
-          // Decision 083: a villager's daughter marries OUT — her suitor stays an off-screen `away`
-          // prop and she moves to his manor, so the village never gains a new gentry household
-          // (letting suitors move in multiplied the class: literacy 12.9%, adult gentry -9 years).
-          // Only the protagonist stays home, so the match never writes her out of her own story.
-          const marriesOut = descriptor.personId !== options.protagonistId;
-          const suitor = spawnGentrySuitor(seed, year, daughter.id, people, marriesOut);
-          people[suitor.id] = suitor;
-          // Read each lifeState BEFORE setting spouseId below (same ordering reason as A1's own
-          // "propose" case above — `ensureLifeState` derives a missing state from `spouseId`).
-          const daughterState = ensureLifeState(daughter, events);
-          const suitorState = ensureLifeState(suitor, events);
-          daughter.spouseId = suitor.id;
-          suitor.spouseId = daughter.id;
-          daughter.lifeState = applyLifeTransition(daughterState, { axis: "marital", to: "married", partnerId: suitor.id }, year);
-          suitor.lifeState = applyLifeTransition(suitorState, { axis: "marital", to: "married", partnerId: daughter.id }, year);
-          // Both spouses are gentry by construction (`spawnGentrySuitor` always mints gentry) — no
-          // merchet (decision 080's `classesAtMarriage` mechanism), since merchet is an unfree-tenant
-          // due, and gentry are free (`isUnfree` is always false for this class).
-          const classesAtMarriage: Record<string, SocialClass> = { [daughter.id]: "gentry", [suitor.id]: "gentry" };
-          const event = pushEvent(events, year, "marriage", [daughter.id, suitor.id], { classesAtMarriage, arranged: true }, []);
-          resultingEventIds.push(event.id);
-          if (marriesOut) {
-            const dest = pickAwayDestination(seed, year);
-            daughter.lifeState = applyLifeTransition(ensureLifeState(daughter, events), { axis: "residence", to: "away", place: dest.full }, year);
-            const move = pushEvent(events, year, "move", [daughter.id], { away: true, destination: dest.full, arranged: true }, [event.id]);
-            resultingEventIds.push(move.id);
-            leftVillageThisYear.add(daughter.id);
-          }
-          for (const [self, other] of [[daughter, suitor] as const, [suitor, daughter] as const]) {
-            pushThought(self.mind, "joy", `marrying ${other.name}`, 70, 6, year, "lovePropensity", other.id);
-            const core = addMemory(seed, self.id, year, self.mind, `married ${other.name} in ${year}`, "joy", other.id);
-            if (core) applyCoreMemoryShift(seed, self.id, year, self.mind, "trust", 1);
-            updateRelationship(self.mind, other.id, other.mind.values, 40, "spouse");
-          }
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "arrange" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      } else {
-        // PR9 (partner-scarcity fix, engram #6142/#6311): named/documented in params/demography.ts
-        // -- was a hardcoded, undocumented `0.05` literal. See that constant's own doc comment for
-        // the measured before/after and the tradeoff this raise carries.
-        // Decision 079 (Follett-plausible population growth): the rate rises for the bounded
-        // [IMMIGRATION_POST_PLAGUE_YEAR, IMMIGRATION_POST_PLAGUE_END_YEAR) recovery window only, then
-        // reverts -- own doc comment on `IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE` has the full
-        // reasoning, including why this is bounded rather than left on for the rest of the run.
-        const isPostPlagueWindow = year >= IMMIGRATION_POST_PLAGUE_YEAR && year < IMMIGRATION_POST_PLAGUE_END_YEAR;
-        const p = isPostPlagueWindow ? IMMIGRATION_ANNUAL_PROBABILITY_POST_PLAGUE : IMMIGRATION_ANNUAL_PROBABILITY;
-        record = resolveBiologyDecision(descriptor, year, p, seed, forced, config.town.name, config.town.name, minted);
-        const resultingEventIds: string[] = [];
-        if (record.chosen === "arrive") {
-          const newPerson = spawnImmigrant(seed, year, people);
-          people[newPerson.id] = newPerson;
-          const event = pushEvent(events, year, "move", [newPerson.id], { away: false, arrived: true }, []);
-          resultingEventIds.push(event.id);
-        }
-        record = { ...record, resultingEventIds };
-        {
-          const pushed = record.chosen === "arrive" || p >= RECORD_THRESHOLD || record.source === "forced";
-          if (pushed) decisions.push(record);
-          commitId(people, events, descriptor.personId, minted, pushed);
-        }
-      }
-
-      // Piggyback the (deterministic, no-alternative) school event on the
-      // once-per-living-person "death" pass rather than giving it its own
-      // decision — starting school at 6 has no real alternative outcome.
-      if (descriptor.kind === "death" && !hasMovedAway(events, descriptor.personId)) school(events, people, descriptor.personId, year);
-    }
-
-    // PR5's leyrwite presentment (design's markers table): a keyed side draw, evaluated once per
-    // calendar year for every living, unfree, currently-courting woman — OUTSIDE the categorical
-    // event-pick below, on its own dedicated key, so it never perturbs any other person-year draw.
-    // PR6: now reads `lifeState.marital.status === "courting"` directly (design's own literal
-    // wording), since PR6 wires the Y1 "encourage" outcome into that transition — PR5 fell back to
-    // `activeRomancePair` because PR3 never fired it (see the Y1 case's own comment above).
-    for (const person of Object.values(people)) {
-      if (person.deathYear !== undefined || person.away || hasMovedAway(events, person.id)) continue;
-      const isCourting = ensureLifeState(person, events).marital.status === "courting";
-      if (!isLeyrwiteEligible(person, isCourting)) continue;
-      if (shouldPresentLeyrwite(seed, person.id, year)) {
-        pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("leyrwite", person.id), []);
-      }
-    }
-
-    // Round 12 (decision 045): `socialCandidates` was gathered BEFORE biology ran this year, so it
-    // can still name someone (as `personId` or `partnerId`) who biology just killed above — with the
-    // old code-side probability gates, that coincidence was rare enough to never surface; with
-    // eligibility now unconditional, it happened routinely (a person "confronting a rival" or
-    // "dividing their inheritance" the same year they died — see the `life-chronicle.test.ts`
-    // "death is always the LAST entry" contract this broke). A decision about someone who is no
-    // longer alive by the time it would be applied is dropped here rather than asked at all.
-    // PR6 fix: `deathYear === year` (not merely "any deathYear set") — a partner who died in an
-    // EARLIER year is exactly C2's own premise ("fires the year after a parent's death"); the old
-    // unconditional check silently dropped every C2 candidate ever built, since by the time C2 fires
-    // its dead parent's `deathYear` is always already set from a prior year. Caught by task 6.5's own
-    // one-decision-per-(kind,person)-per-year test, which needs C2 to actually reach resolution.
-    const goneThisYear = (id: string): boolean => people[id]?.deathYear === year || leftVillageThisYear.has(id);
-    if (marriageFunnelDebug !== undefined) {
-      // PR12 (STEP 1 diagnostic): a Y1 candidate offered earlier this year (before biology ran) can
-      // be dropped right here when the seeker or the partner died this same year — it never reaches
-      // `situationIds`/the "event-pick" sample below, so it's neither a win nor an observable loss to
-      // another kind. Tallied explicitly so `y1LosesTo`'s sum still equals
-      // `partnerFoundPersonYears - y1WonDraw` exactly, instead of silently under-counting.
-      for (const c of socialCandidates) {
-        if (c.kind !== "Y1") continue;
-        const person = people[c.personId];
-        if (!person || !inMarriageFunnelCohort(person, config.startYear)) continue;
-        const died = people[c.personId]?.deathYear === year || (c.partnerId !== undefined && people[c.partnerId]?.deathYear === year);
-        const left = leftVillageThisYear.has(c.personId) || (c.partnerId !== undefined && leftVillageThisYear.has(c.partnerId));
-        const reason = died ? "died-same-year" : left ? "left-village-same-year" : undefined;
-        if (reason) marriageFunnelDebug.y1LosesTo[reason] = (marriageFunnelDebug.y1LosesTo[reason] ?? 0) + 1;
-      }
-    }
-    socialCandidates = socialCandidates.filter((c) => !goneThisYear(c.personId) && (!c.partnerId || !goneThisYear(c.partnerId)));
-
-    // --- Social decisions: batch per person-year, then apply -----------------------------------
-    // Round 11 (decision 044): one Jev request per person per year, not one per candidate. Every
-    // candidate a person faces this year (their `socialCandidates`, plus their `D1` daily-life
-    // candidate if they're the protagonist — see below) is bundled into a single `PersonYearBatch`
-    // and answered with a single `decideYear` call, so the mind/portrait state is paid for once.
-    const questions = socialCandidates.map((c) => buildQuestion(c, year, config, people));
-    const forcedFlags = socialCandidates.map((c) => overrideFor(overrides, c.kind, c.personId, isOverrideYear, c.partnerId));
-    // Budget priority (round 9, decision 037): once the running total of REAL DecisionMaker calls
-    // hits LIFE_DECISION_BUDGET, any further social decision NOT about the protagonist is answered
-    // with the deterministic rule heuristic instead — the protagonist's own decisions, and
-    // decisions ABOUT them (like AP1), are never throttled. No-op (always false) with no
-    // `protagonistId`, so the general village simulation is unaffected.
-    const fallbackFlags = socialCandidates.map((c, i) => {
-      if (forcedFlags[i] || !options.protagonistId) return false;
-      const aboutProtagonist = c.personId === options.protagonistId || c.partnerId === options.protagonistId;
-      return !aboutProtagonist && decisionCalls >= LIFE_DECISION_BUDGET;
-    });
-
-    // The protagonist's `D1` daily-life candidate (round 10, decisions 042/043) rides along in the
-    // SAME per-person batch as their other social candidates this year — speculative fan-out
-    // (docs.typesafe.ai/patterns/fan-out.md): asked every year regardless of whether it turns out
-    // to be needed, consumed only if the year is otherwise quiet (see the guarantee block below).
-    // Kept out of `socialCandidates` itself (unchanged from decision 043) so it's never
-    // double-resolved through the generic per-kind loop below.
-    // Round 12 continuation (decision 046): the WHOLE eligible-vignette pool, one candidate per
-    // vignette — not one RNG-picked winner (see `buildDailyLifeVignetteCandidates`). Can span two
-    // deciders (the protagonist, and a living parent for the `decidedByParent` pool), so it's a flat
-    // array rather than a single `{descriptor, question}` like decision 044's `d1`.
-    let d1Candidates: readonly { readonly descriptor: CandidateDescriptor; readonly question: DecisionQuestion; readonly vignette: Vignette; readonly deciderId: string }[] = [];
-    if (options.protagonistId && !overrideFor(overrides, "D1", options.protagonistId, isOverrideYear)) {
-      const protagonist = people[options.protagonistId];
-      if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
-        d1Candidates = buildDailyLifeVignetteCandidates(protagonist, year, seed, people, events, townEvent).map((c) => ({ ...c, question: buildQuestion(c.descriptor, year, config, people) }));
-      }
-    }
-
-    const batchable = typeof options.decisionMaker.decideYear === "function";
-    const resultByDecisionId = new Map<string, ResolvedDecision>();
-    // Round 12 continuation (decision 046): every batch's raw `vignetteSelection` weights, merged
-    // (decision ids are globally unique, so this is a safe union) into ONE pool for the single,
-    // canonical "which vignette actually happens" sample below — and each batch's own normalized
-    // `"everyday"` share, keyed by that batch's `personId`, for the winner's `occurrenceProbability`.
-    const vignetteSelectionRaw: Record<string, number> = {};
-    const everydayShareByPerson = new Map<string, number>();
-    let finalVignetteWinner: string | undefined;
-
-    if (batchable) {
-      const batchesByPerson = new Map<string, Record<string, PersonYearSituation>>();
-      for (let i = 0; i < socialCandidates.length; i++) {
-        if (forcedFlags[i] || fallbackFlags[i]) continue;
-        const c = socialCandidates[i]!;
-        const situations = batchesByPerson.get(c.personId) ?? {};
-        situations[c.decisionId] = { kind: c.kind as DecisionQuestion["kind"], question: questions[i]! };
-        batchesByPerson.set(c.personId, situations);
-      }
-      for (const c of d1Candidates) {
-        const situations = batchesByPerson.get(c.descriptor.personId) ?? {};
-        situations[c.descriptor.decisionId] = { kind: "D1", question: c.question };
-        batchesByPerson.set(c.descriptor.personId, situations);
-      }
-
-      // One real request per person-year batch (not per situation) — this replaces the old
-      // per-candidate accounting below, which counted every social candidate as its own call.
-      decisionCalls += batchesByPerson.size;
-
-      const personIds = Array.from(batchesByPerson.keys());
-      // Decision 084: only the protagonist's story circle goes to `decisionMaker`; everyone else goes
-      // to `backgroundDecisionMaker` when one is given. No protagonist means an empty circle.
-      const circle = options.backgroundDecisionMaker ? storyCircle(options.protagonistId, people, events) : new Set<string>();
-      await mapWithConcurrency(personIds, yearBatchConcurrency, async (personId) => {
-        const situations = batchesByPerson.get(personId)!;
-        const situationIds = Object.keys(situations);
-        const self: Record<string, JsonValue> = personSummary(people[personId]!, year, people);
-        const isProtagonist = personId === options.protagonistId;
-        const inBackground = circle.size > 0 && !circle.has(personId);
-        const decider = inBackground ? options.backgroundDecisionMaker! : options.decisionMaker;
-        const deciderSource = inBackground ? "rules" : options.engineSource;
-        const result = await decider.decideYear!({ personId, year, self, situations, isProtagonist });
-
-        if (result.vignetteSelection && Object.keys(result.vignetteSelection).length > 0) {
-          Object.assign(vignetteSelectionRaw, result.vignetteSelection);
-        }
-
-        // Jev (or RuleDecisionMaker's offline equivalent) only JUDGES the joint event-selection
-        // distribution — the domain engine samples it itself with Gumbel-max, exactly like every
-        // other decision (a DecisionMaker never rolls dice), keyed `(seed, personId, year,
-        // "event-pick")` so it's deterministic and reproducible across identical-seed runs/forks.
-        // Round 12 continuation (decision 046): `"everyday"` stands in for every `D1` vignette
-        // candidate this batch had — WHICH one actually wins is a second, nested sample (below,
-        // after every batch has reported in), not decided here.
-        let selectedId: string | undefined;
-        let normalizedSelection: Record<string, number> | undefined;
-        if (situationIds.length > 0 && Object.keys(result.selection).length > 0) {
-          normalizedSelection = normalizeDistribution(result.selection as Record<string, number>);
-          const sample = sampleGumbelMax(normalizedSelection, seed, personId, year, "event-pick");
-          if (sample.chosen === "everyday") {
-            everydayShareByPerson.set(personId, normalizedSelection.everyday!);
-          } else if (sample.chosen !== "nothing") {
-            selectedId = sample.chosen;
-          }
-
-          // PR12 (STEP 1 diagnostic, `sdd/engine-life-course/state`): of a person-year that offered a
-          // Y1 candidate but did NOT let it win this exact `"event-pick"` draw, tally what won
-          // instead — the other kind's name, `"nothing"` (the residual), or `"everyday"` (a D1
-          // vignette). This is the SAME draw `y1WonDraw` already counts a win from (below, at the Y1
-          // occurrence site) — reusing `sample.chosen` here rather than re-deriving it keeps both
-          // counters reading the identical, single Gumbel-max sample for this person-year.
-          if (marriageFunnelDebug !== undefined) {
-            const y1Id = situationIds.find((id) => situations[id]!.kind === "Y1");
-            if (y1Id !== undefined && inMarriageFunnelCohort(people[personId]!, config.startYear) && sample.chosen !== y1Id) {
-              const winnerKind = sample.chosen === "nothing" || sample.chosen === "everyday" ? sample.chosen : situations[sample.chosen]!.kind;
-              marriageFunnelDebug.y1LosesTo[winnerKind] = (marriageFunnelDebug.y1LosesTo[winnerKind] ?? 0) + 1;
-            }
-          }
-        }
-
-        for (const id of situationIds) {
-          const jevRaw = result.response[id];
-          if (!jevRaw) continue;
-          // Round 12 (decision 045): only the SELECTED situation carries an `occurrenceProbability`
-          // (its normalized share of the selection distribution) — every other candidate this
-          // person-year stays undefined, same as a forced decision or the legacy fallback below. A
-          // vignette candidate's `occurrenceProbability` is finalized just below instead (round 12
-          // continuation, decision 046 — it depends on the cross-batch vignette-pick winner).
-          const occurrenceProbability = id === selectedId ? normalizedSelection![id] : undefined;
-          resultByDecisionId.set(
-            id,
-            deciderSource === "jev" ? { jevRaw, final: jevRaw, source: "jev", occurrenceProbability } : { prior: jevRaw, final: jevRaw, source: "rules", occurrenceProbability },
-          );
-        }
-      });
-
-      // Round 12 continuation (decision 046): the SECOND, nested sample — "of every eligible
-      // vignette across every batch that offered one, which actually happens?" — keyed
-      // `(seed, protagonistId, year, "vignette-pick")`, exactly like `"event-pick"` above. Only the
-      // winning candidate's `occurrenceProbability` is set, and only when the batch that owns it
-      // (its `deciderId`) actually landed on `"everyday"` — P(everyday) x P(this vignette | everyday).
-      if (Object.keys(vignetteSelectionRaw).length > 0) {
-        const normalizedVignetteSelection = normalizeDistribution(vignetteSelectionRaw);
-        finalVignetteWinner = sampleGumbelMax(normalizedVignetteSelection, seed, options.protagonistId ?? "world", year, "vignette-pick").chosen;
-        const winnerCandidate = d1Candidates.find((c) => c.descriptor.decisionId === finalVignetteWinner);
-        const everydayShare = winnerCandidate ? everydayShareByPerson.get(winnerCandidate.descriptor.personId) : undefined;
-        if (winnerCandidate && everydayShare !== undefined) {
-          const existing = resultByDecisionId.get(finalVignetteWinner!);
-          if (existing) resultByDecisionId.set(finalVignetteWinner!, { ...existing, occurrenceProbability: everydayShare * normalizedVignetteSelection[finalVignetteWinner!]! });
-        }
-      }
-    } else {
-      // Legacy fallback: an adapter that doesn't implement `decideYear` (e.g. a minimal test
-      // double) still gets one `decide()` call per candidate, exactly as before decision 044.
-      decisionCalls += questions.filter((_, i) => !forcedFlags[i] && !fallbackFlags[i]).length;
-    }
-
-    const resolved = await mapWithConcurrency(questions, concurrencyLimit, async (q, i) => {
-      if (forcedFlags[i]) return undefined; // forced: never ask the DecisionMaker
-      if (fallbackFlags[i]) {
-        const prior = normalizeDistribution(ruleDistribution(q) as Record<string, number>);
-        return { prior, final: prior, source: "rules" as DecisionSource };
-      }
-      if (batchable) return resultByDecisionId.get(q.id);
-      return resolveSocialDecision(q, options.decisionMaker, options.engineSource);
-    });
-
-    // PR6 (design Open Questions, task 6.5/6.6): "(kind, subject) uniqueness per year must be
-    // asserted" — the competing-risk categorical draw picks at most ONE situation id per person-year
-    // to occur, but a person can face the SAME kind twice under two different partners this year
-    // (e.g. C2 for both a mother and a father who died the same prior year). This guards that at
-    // most one of them ever actually OCCURS — a violation is a programming error in the selection
-    // pipeline, never a data-quality issue, so it throws rather than degrading silently.
-    const occurredKindPerPerson = new Set<string>();
-
-    for (let i = 0; i < socialCandidates.length; i++) {
-      const descriptor = socialCandidates[i]!;
-      const forced = forcedFlags[i];
-      const minted = mintId(people, descriptor.kind, descriptor.personId, year);
-      const person = people[descriptor.personId]!;
-      const partner = descriptor.partnerId ? people[descriptor.partnerId] : undefined;
-
-      let final: Distribution;
-      let jevRaw: Distribution | undefined;
-      let prior: Distribution | undefined;
-      let source: DecisionSource;
-      let chosen: string;
-      let noise: Record<string, number> = {};
-      let fragility: number;
-      let surprise: boolean;
-
-      if (forced) {
-        chosen = forced.optionId;
-        final = { [chosen]: 1 };
-        source = "forced";
-        fragility = NOT_FRAGILE;
-        surprise = false;
-      } else {
-        const result = resolved[i]!;
-        jevRaw = result.jevRaw;
-        prior = result.prior;
-        final = result.final;
-        source = result.source;
-        const sample = sampleGumbelMax(final as Record<string, number>, seed, descriptor.personId, year, descriptor.kind);
-        chosen = sample.chosen;
-        noise = sample.noise;
-        fragility = decisionFragility(sample.scores);
-        surprise = isSurprise(final, chosen);
-      }
-
-      // Round 12 (decision 045): whether this candidate is the one that actually happens this
-      // person-year. `resolved[i]?.occurrenceProbability` is set ONLY on the situation id that
-      // person's event-selection Choice picked (see the batch-resolution loop above) — so
-      // "occurrence data was reported, and it names ME" is exactly what "occurs" should mean. A
-      // forced decision always occurs (the user picked it); a candidate that never went through the
-      // joint selection at all (a legacy non-`decideYear` adapter, or the `LIFE_DECISION_BUDGET`
-      // rules-heuristic throttle) has no selection signal to withhold occurrence on, so it applies
-      // unconditionally, exactly as it did before decision 044/045 introduced selection at all.
-      const occurrenceProbability = resolved[i]?.occurrenceProbability;
-      const wentThroughSelection = batchable && !forced && !fallbackFlags[i];
-      const occurs = !!forced || !wentThroughSelection || occurrenceProbability !== undefined;
-
-      if (occurs) {
-        const occurrenceKey = `${descriptor.kind}:${descriptor.personId}`;
-        if (occurredKindPerPerson.has(occurrenceKey)) {
-          throw new Error(`PR6 invariant violated: (${descriptor.kind}, ${descriptor.personId}) occurred more than once in year ${year}.`);
-        }
-        occurredKindPerPerson.add(occurrenceKey);
-      }
-
-      const options: DecisionOption[] = descriptor.options.map((id) => ({ id, label: optionLabel(descriptor.kind, id, person.name, partner?.name, descriptor.opportunityJob, person.sex) }));
-      const resultingEventIds: string[] = [];
-      const causes: string[] = [];
-
-      // Decision 051: `person.deathYear === undefined` guards against a candidate for someone who
-      // died from an EARLIER candidate's outcome THIS SAME year's apply loop — new with maternal
-      // mortality (A2's "try" case below can now kill the mother mid-loop, same year), since the
-      // upfront `socialCandidates` filter above only removes people biology already killed BEFORE
-      // this loop started, not someone who dies partway through it.
-      if (occurs && person.deathYear === undefined) {
-      switch (descriptor.kind) {
-        case "Y1": {
-          // PR11 (STEP 1) diagnostic: reaching this `case` body means `occurs` was true (see the
-          // guard around this whole switch) — i.e. this Y1 candidate WON its person-year's
-          // competing-risk draw. `marriageFunnelDebug` is `undefined` for every existing caller.
-          const funnelInCohort = marriageFunnelDebug !== undefined && inMarriageFunnelCohort(person, config.startYear);
-          if (funnelInCohort) {
-            marriageFunnelDebug!.y1WonDraw++;
-            marriageFunnelDebug!.y1Outcomes[chosen as "encourage" | "decline" | "wait"]++;
-          }
-          if (chosen === "encourage" && !person.spouseId && !partner!.spouseId) {
-            if (funnelInCohort) marriageFunnelDebug!.romancesCreated++;
-            const causeA = recentUnresolvedBreakup(events, person.id, year, 3);
-            const causeB = recentUnresolvedBreakup(events, partner!.id, year, 3);
-            for (const c of [causeA, causeB]) if (c) causes.push(c.id);
-            const event = pushEvent(events, year, "romance", [person.id, partner!.id], {}, causes);
-            resultingEventIds.push(event.id);
-            // PR6 (reconciling PR5's deviation note): "courting" is now actually wired into lifeState
-            // at the point courtship begins — PR3 never fired this transition, so PR5's leyrwite
-            // eligibility fell back to `activeRomancePair` instead (see the leyrwite call site below,
-            // now updated to read `lifeState.marital.status` directly).
-            person.lifeState = applyLifeTransition(ensureLifeState(person, events), { axis: "marital", to: "courting", partnerId: partner!.id }, year);
-            partner!.lifeState = applyLifeTransition(ensureLifeState(partner!, events), { axis: "marital", to: "courting", partnerId: person.id }, year);
-            pushThought(person.mind, "hope", `courting ${partner!.name}`, 55, 4, year, "lovePropensity", partner!.id);
-            pushThought(partner!.mind, "hope", `courting ${person.name}`, 55, 4, year, "lovePropensity", person.id);
-            addMemory(seed, person.id, year, person.mind, `began courting ${partner!.name} in ${year}`, "hope", partner!.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, 20, "lover");
-            updateRelationship(partner!.mind, person.id, person.mind.values, 20, "lover");
-          } else if (chosen === "decline") {
-            pushThought(person.mind, "relief", `turning away ${partner!.name}`, 25, 2, year);
-            pushThought(partner!.mind, "shame", `being turned away by ${person.name}`, 40, 3, year, "stressVulnerability", person.id);
-          } else {
-            pushThought(person.mind, "hope", `being unsure about ${partner!.name}`, 20, 1, year);
-          }
-          // Decision 047: "decline"/"wait" are real story beats for the protagonist, not silence —
-          // an NPC's no-op stays event-free, matching the pre-047 behavior everyone else keeps.
-          if (person.id === protagonistId && chosen !== "encourage") {
-            const note = chosen === "decline" ? "declined-a-suitor" : "stayed-unsure-about-a-suitor";
-            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        case "A1": {
-          // PR11 (STEP 1) diagnostic: same reasoning as the Y1 case above — reaching this body means
-          // this A1 candidate won its own person-year's competing-risk draw.
-          const funnelInCohort = marriageFunnelDebug !== undefined && inMarriageFunnelCohort(person, config.startYear);
-          if (funnelInCohort) {
-            marriageFunnelDebug!.a1WonDraw++;
-            marriageFunnelDebug!.a1Outcomes[chosen as "propose" | "delay" | "end-it"]++;
-          }
-          const romanceEvent = events.filter((e) => e.kind === "romance" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
-          if (romanceEvent) causes.push(romanceEvent.id);
-          if (chosen === "propose" && !person.spouseId && !partner!.spouseId) {
-            if (funnelInCohort) marriageFunnelDebug!.married++;
-            // Read each lifeState BEFORE setting spouseId below — `ensureLifeState` derives a
-            // missing lifeState from `spouseId` (see `life-state.ts#deriveLifeState`), so deriving
-            // AFTER the assignment would already see "married" and make the transition a no-op self-loop.
-            const personState = ensureLifeState(person, events);
-            const partnerState = ensureLifeState(partner!, events);
-            person.spouseId = partner!.id;
-            partner!.spouseId = person.id;
-            person.lifeState = applyLifeTransition(personState, { axis: "marital", to: "married", partnerId: partner!.id }, year);
-            partner!.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "married", partnerId: person.id }, year);
-            // Decision 080: record each spouse's social class AT MARRIAGE TIME on the marriage event
-            // itself. `Person.socialClass` can be reclassified LATER (decision 054's "widow keeps the
-            // trade" turns a surviving spouse "artisan" after a later widowhood), so reading it back
-            // from the final `Person` at simulation end no longer tells you what it was when the
-            // merchet decision below was actually made. `classesAtMarriage` is the ground truth for
-            // that decision, independent of anything that happens to either spouse afterwards.
-            const classesAtMarriage: Record<string, SocialClass> = {
-              [person.id]: person.socialClass ?? FALLBACK_CLASS,
-              [partner!.id]: partner!.socialClass ?? FALLBACK_CLASS,
-            };
-            const event = pushEvent(events, year, "marriage", [person.id, partner!.id], { classesAtMarriage }, causes);
-            resultingEventIds.push(event.id);
-            for (const [self, other] of [[person, partner!] as const, [partner!, person] as const]) {
-              pushThought(self.mind, "joy", `marrying ${other.name}`, 80, 8, year, "lovePropensity", other.id);
-              const core = addMemory(seed, self.id, year, self.mind, `married ${other.name} in ${year}`, "joy", other.id);
-              if (core) applyCoreMemoryShift(seed, self.id, year, self.mind, "trust", 1);
-              updateRelationship(self.mind, other.id, other.mind.values, 40, "spouse");
-            }
-            // PR5's merchet marker (design's markers table: "villein/cottar marriage") — one fine per
-            // unfree spouse (a villein marrying an artisan only pays for the unfree side; a villein
-            // marrying a villein pays twice, once per household's own tenancy).
-            for (const spouse of [person, partner!]) {
-              if (isUnfree(spouse.socialClass)) {
-                const merchetEvent = pushEvent(events, year, "manorial-fine", [spouse.id], manorialFinePayload("merchet", spouse.id), [event.id]);
-                resultingEventIds.push(merchetEvent.id);
-              }
-            }
-          } else if (chosen === "end-it") {
-            const event = pushEvent(events, year, "breakup", [person.id, partner!.id], {}, causes);
-            resultingEventIds.push(event.id);
-            // PR6: a breakup returns each side to what they were before THIS courtship — a widow(er)
-            // re-entering the Y1 pool (design's "separate base" hazard) whose new courtship fails is
-            // still a widow(er), not newly "single" (a survivor who never remarries should keep
-            // reading "widowed", per the life-state invariant); anyone who was never widowed goes back
-            // to plain "single". Also closes the `courting -> courting` self-loop gap: without this,
-            // a later, DIFFERENT courtship's "courting" transition would illegally fire from an
-            // already-"courting" state.
-            for (const side of [person, partner!]) {
-              const backTo = events.some((e) => e.kind === "widowed" && e.actors[0] === side.id) ? "widowed" : "single";
-              side.lifeState = applyLifeTransition(ensureLifeState(side, events), { axis: "marital", to: backTo }, year);
-            }
-            for (const [self, other] of [[person, partner!] as const, [partner!, person] as const]) {
-              pushThought(self.mind, "grief", `the courtship with ${other.name} ending`, 60, 5, year, "lovePropensity", other.id);
-              addMemory(seed, self.id, year, self.mind, `the courtship with ${other.name} ended in ${year}`, "grief", other.id);
-              updateRelationship(self.mind, other.id, other.mind.values, -20);
-            }
-          } else {
-            pushThought(person.mind, "hope", `still weighing marriage to ${partner!.name}`, 20, 1, year);
-          }
-          if (person.id === protagonistId && chosen !== "propose" && chosen !== "end-it") {
-            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note: "put-off-a-marriage-decision", otherName: partner!.name }, []);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        case "A3": {
-          if (chosen === "seize") {
-            const job = (descriptor.opportunityJob ?? person.job) as Job;
-            person.job = job;
-            person.lifeState = applyLifeTransition(ensureLifeState(person, events), { axis: "vocation", to: "working" }, year);
-            const event = pushEvent(events, year, "job", [person.id], { job }, []);
-            resultingEventIds.push(event.id);
-            pushThought(person.mind, "pride", `becoming ${article(job)} ${job}`, 45, 3, year, "ambition");
-          } else if (chosen === "pass") {
-            pushThought(person.mind, "contentment", "helping a friend get ahead", 25, 2, year, "altruism");
-            const friend = person.mind.relationships.find((r) => r.bond === "friend");
-            if (friend) updateRelationship(person.mind, friend.personId, undefined, 10);
-          }
-          if (person.id === protagonistId && chosen !== "seize") {
-            const note = chosen === "pass" ? "passed-an-opportunity-to-a-friend" : "ignored-an-opportunity";
-            const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        case "A2": {
-          if (chosen === "try") {
-            // Decision 055: conception is no longer guaranteed on "try" — a probabilistic roll
-            // (Davenport 2019's birth-interval evidence implies real sub-fecund periods even among
-            // couples actively trying), keyed distinctly from every other A2 draw so it doesn't
-            // correlate with the eligibility/spacing checks above or the maternal-death roll below.
-            const conceiveDraw = keyedDraw(seed, pairKey(person.id, partner!.id), year, "conceive");
-            // Decision 080: `fertilityDampingFactor` is 1 (no change) until the village outgrows its
-            // own carrying capacity; see that function's own doc comment for the full mechanism.
-            if (conceiveDraw < conceptionProbability(ageInYear(person.birthYear, year)) * fertilityDampingFactor(people)) {
-              const marriageEvent = events.filter((e) => e.kind === "marriage" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
-              if (marriageEvent) causes.push(marriageEvent.id);
-              let child = spawnChild(seed, year, person, partner!, people);
-              // A child born to an away couple (decision 040) is itself part of the lightweight away
-              // cast, not a home villager — otherwise they'd wrongly enter the home village's own
-              // illness/death/courtship pools despite never having set foot in it.
-              if (person.away || partner!.away) child = { ...child, away: true };
-              people[child.id] = child;
-              const childEvent = pushEvent(events, year, "child", [person.id, partner!.id], { childId: child.id }, causes);
-              const birthEvent = pushEvent(events, year, "birth", [child.id, person.id, partner!.id], {}, [childEvent.id]);
-              resultingEventIds.push(childEvent.id, birthEvent.id);
-              for (const self of [person, partner!]) {
-                pushThought(self.mind, "joy", `welcoming ${child.name} into the family`, 60, 5, year, "lovePropensity", child.id);
-                addMemory(seed, self.id, year, self.mind, `${child.name} was born in ${year}`, "joy", child.id);
-              }
-              // Decision 051: maternal mortality — an independent ~1% (0.9-1.0%) risk of death for
-              // the mother, the SAME year as the birth (Schofield 1986). This can't ride the general
-              // per-person "death" biology decision above — that already resolved for this year
-              // before this birth existed — so it's its own keyed roll, applied immediately after
-              // the birth. The `person.deathYear === undefined` guard added to the apply loop above
-              // is what keeps any LATER candidate this same year from still applying an outcome for
-              // her once this fires.
-              const maternalDraw = keyedDraw(seed, person.id, year, "maternal-death");
-              if (maternalDraw < MATERNAL_DEATH_PROBABILITY) {
-                person.deathYear = year;
-                const motherAge = ageInYear(person.birthYear, year);
-                const deathEvent = pushEvent(events, year, "death", [person.id], { age: motherAge, awayFromTown: hasMovedAway(events, person.id), cause: "childbirth" }, [childEvent.id, birthEvent.id]);
-                resultingEventIds.push(deathEvent.id);
-                // Fixed after review (R3-001): this maternal-death path previously never went
-                // through decision 054's widowhood handling — the same shared helper the general
-                // biology death path uses below, so a husband whose wife dies in childbirth is
-                // widowed exactly like anyone else.
-                resultingEventIds.push(...resolveWidowhood(seed, events, people, person, person.socialClass ?? "cottar", year, deathEvent.id));
-                resultingEventIds.push(...resolveCourtshipOnDeath(events, people, person, year, deathEvent.id));
-              }
-            } else {
-              pushThought(person.mind, "longing", "hoping for a child, still", 15, 1, year);
-              if (person.id === protagonistId) {
-                const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note: "tried-for-a-child-without-success", otherName: partner!.name }, []);
-                resultingEventIds.push(event.id);
-              }
-            }
-          } else if (chosen === "refuse") {
-            pushThought(person.mind, "regret", "choosing not to have a child this year", 20, 2, year);
-          }
-          if (person.id === protagonistId && chosen !== "try") {
-            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note: "chose-not-to-have-a-child", otherName: partner!.name }, []);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        case "Y4": {
-          if (chosen === "confront") {
-            const event = pushEvent(events, year, "feud", [person.id, partner!.id], {}, []);
-            resultingEventIds.push(event.id);
-            for (const [self, other] of [[person, partner!] as const, [partner!, person] as const]) {
-              pushThought(self.mind, "anger", `clashing with ${other.name}`, 55, 4, year, "anger", other.id);
-              addMemory(seed, self.id, year, self.mind, `clashed with ${other.name} in ${year}`, "anger", other.id);
-              updateRelationship(self.mind, other.id, other.mind.values, -40, "grudge");
-            }
-          } else if (chosen === "forgive") {
-            pushThought(person.mind, "relief", `letting go of the slight from ${partner!.name}`, 15, 1, year);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, 10);
-          } else {
-            pushThought(person.mind, "bitterness", `silently resenting ${partner!.name}`, 40, 6, year, "stressVulnerability", partner!.id);
-            addMemory(seed, person.id, year, person.mind, `began to resent ${partner!.name} in ${year}`, "bitterness", partner!.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, -25, "grudge");
-          }
-          if (person.id === protagonistId && chosen !== "confront") {
-            const note = chosen === "forgive" ? "let-go-of-a-slight" : "silently-resented-someone";
-            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        case "A6": {
-          const feudEvent = events.filter((e) => e.kind === "feud" && e.actors.includes(person.id) && e.actors.includes(partner!.id)).sort((x, y) => y.year - x.year)[0];
-          if (feudEvent) causes.push(feudEvent.id);
-          if (chosen === "reconcile") {
-            const event = pushEvent(events, year, "reconciliation", [person.id, partner!.id], {}, causes);
-            resultingEventIds.push(event.id);
-            for (const [self, other] of [[person, partner!] as const, [partner!, person] as const]) {
-              pushThought(self.mind, "relief", `making peace with ${other.name}`, 45, 4, year, "altruism", other.id);
-              // A reconciliation is now durable (round 5 fix, decision 022): it writes a memory
-              // (so it can surface again later, "…remembering the peace they made") on top of
-              // raising relationship strength, rather than just a thought that decays away —
-              // and per the Y4 fix above, code won't pick this same pair for a fresh grudge again.
-              addMemory(seed, self.id, year, self.mind, `made peace with ${other.name} in ${year}, ending years of feuding`, "relief", other.id);
-              updateRelationship(self.mind, other.id, other.mind.values, 60, "friend");
-            }
-          } else if (chosen === "sabotage") {
-            const event = pushEvent(events, year, "feud", [person.id, partner!.id], { escalated: true }, causes);
-            resultingEventIds.push(event.id);
-            pushThought(person.mind, "anger", `sabotaging ${partner!.name}`, 50, 4, year, "anger", partner!.id);
-            pushThought(partner!.mind, "betrayal", `being sabotaged by ${person.name}`, 70, 6, year, "trust", person.id);
-            addMemory(seed, partner!.id, year, partner!.mind, `was sabotaged by ${person.name} in ${year}`, "betrayal", person.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, -30, "grudge");
-            updateRelationship(partner!.mind, person.id, person.mind.values, -50, "grudge");
-          } else {
-            pushThought(person.mind, "anger", `the feud with ${partner!.name} dragging on`, 30, 2, year, "anger", partner!.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, -10, "grudge");
-          }
-          if (person.id === protagonistId && chosen !== "reconcile" && chosen !== "sabotage") {
-            const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note: "let-a-feud-drag-on", otherName: partner!.name }, []);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        case "Y3": {
-          if (chosen === "leave") {
-            const breakup = recentUnresolvedBreakup(events, person.id, year, 3);
-            if (breakup) causes.push(breakup.id);
-            // Decision 040: a real, deterministically-named destination (keyed by seed + year, so
-            // a fork that changes an earlier decision but not this one still lands in the same
-            // place) instead of the old placeholder "a distant town" — the protagonist keeps
-            // living a real life there, not falling off the edge of the story.
-            const dest = pickAwayDestination(seed, year);
-            person.lifeState = applyLifeTransition(ensureLifeState(person, events), { axis: "residence", to: "away", place: dest.full }, year);
-            const event = pushEvent(events, year, "move", [person.id], { away: true, destination: dest.full }, causes);
-            resultingEventIds.push(event.id);
-            pushThought(person.mind, "hope", `leaving home for ${dest.name}`, 40, 3, year, "curiosity");
-            addMemory(seed, person.id, year, person.mind, `left for ${dest.name} in ${year}`, "hope");
-            if (person.spouseId) {
-              const spouse = people[person.spouseId];
-              if (spouse) pushThought(spouse.mind, "loneliness", `being left behind by ${person.name}`, 50, 4, year, "anxiety", person.id);
-            }
-            // PR5's chevage marker (design's markers table: "unfree Y3 away") — the licence an
-            // unfree person needed to live off the manor.
-            if (isUnfree(person.socialClass)) {
-              const chevageEvent = pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("chevage", person.id), [event.id]);
-              resultingEventIds.push(chevageEvent.id);
-            }
-          } else if (person.id === protagonistId) {
-            // Decision 047: "stay" used to be entirely silent (no thought, no event) — the
-            // handoff's own example of a turn ("Tomas asks her to leave → She stays") demands one.
-            const event = pushEvent(events, year, "reflection", [person.id], { note: "chose-to-stay-home" }, []);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        case "A8": {
-          if (chosen === "push-harder") {
-            const realizeRoll = keyedDraw(seed, person.id, year, "dream-realize");
-            const chance = (person.mind.facets.ambition + person.mind.facets.perseverance) / 400; // up to 0.5
-            // Round 5 fix (decision 023, "dream realized without the act"): rolling well isn't
-            // enough by itself — the goal must ALSO already be backed by a real event on this
-            // person's own log (see `dreamGoalSatisfiedBy`). A good roll with no qualifying event
-            // yet just reads as "getting closer", not "realized" — the dream can't come true from
-            // a die roll alone, only from something that actually happened in the world.
-            if (realizeRoll < chance && dreamGoalSatisfiedBy(person.mind.dream.goal, events, person.id)) {
-              person.mind.dream.status = "realized";
-              const event = pushEvent(events, year, "dream", [person.id], { goal: person.mind.dream.goal, outcome: "realized" }, []);
-              resultingEventIds.push(event.id);
-              pushThought(person.mind, "pride", `their dream of ${dreamGerund(person.mind.dream.goal)} being realized`, 85, 10, year, "ambition");
-              const core = addMemory(seed, person.id, year, person.mind, `their dream of ${dreamGerund(person.mind.dream.goal)} was realized in ${year}`, "pride");
-              if (core) applyCoreMemoryShift(seed, person.id, year, person.mind, "ambition", 1);
-            } else {
-              pushThought(person.mind, "hope", `still chasing the dream of ${dreamGerund(person.mind.dream.goal)}`, 20, 2, year, "perseverance");
-              // Decision 047's rule, for a branch it missed: a protagonist's choice that changes nothing
-              // is still a story beat, so it gets a reflection instead of leaving the year silent.
-              if (person.id === protagonistId) {
-                const event = pushEvent(events, year, "reflection", [person.id], { note: "kept-chasing-a-dream", goal: person.mind.dream.goal }, []);
-                resultingEventIds.push(event.id);
-              }
-            }
-          } else if (chosen === "adjust-it") {
-            const pool = person.mind.dream.goal;
-            const options2 = DREAM_GOALS.filter((g) => g !== pool);
-            const newGoal = options2[Math.floor(keyedDraw(seed, person.id, year, "dream-adjust") * options2.length)];
-            if (newGoal) person.mind.dream = { goal: newGoal, status: "pursuing", since: year };
-            // Round 7 fix (decision 030): the cause rides along so the chronicle can say WHY the
-            // dream changed ("After marrying, she began to dream of...") instead of just
-            // announcing a new one — `adjust-it` is only ever offered when there IS a real cause
-            // (see the A8 trigger above), so `extra.dreamChangeCause` is always present here.
-            const cause = typeof descriptor.extra?.dreamChangeCause === "string" ? descriptor.extra.dreamChangeCause : undefined;
-            const event = pushEvent(events, year, "dream", [person.id], { goal: newGoal ?? pool, outcome: "adjusted", ...(cause ? { cause } : {}) }, []);
-            resultingEventIds.push(event.id);
-            addMemory(seed, person.id, year, person.mind, `set aside the dream of ${dreamGerund(pool)} in ${year}, after ${cause ?? "much thought"}`, "hope");
-          } else {
-            person.mind.dream.status = "abandoned";
-            const event = pushEvent(events, year, "dream", [person.id], { goal: person.mind.dream.goal, outcome: "abandoned" }, []);
-            resultingEventIds.push(event.id);
-            pushThought(person.mind, "despair", `abandoning their dream of ${dreamGerund(person.mind.dream.goal)}`, 55, 6, year, "perseverance");
-            addMemory(seed, person.id, year, person.mind, `abandoned their dream of ${dreamGerund(person.mind.dream.goal)} in ${year}`, "despair");
-          }
-          break;
-        }
-        case "A11": {
-          const kind = descriptor.breakdownKind ?? "withdrawal";
-          const event = pushEvent(events, year, "breakdown", [person.id], { kind, response: chosen }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "master-it") {
-            person.mind.stress = Math.max(0, person.mind.stress - 40);
-            pushThought(person.mind, "pride", "overcoming a breaking point", 40, 4, year, "perseverance");
-            const core = addMemory(seed, person.id, year, person.mind, `overcame a breaking point (${kind}) in ${year}`, "pride");
-            if (core) applyCoreMemoryShift(seed, person.id, year, person.mind, "perseverance", 1);
-          } else {
-            person.mind.stress = Math.max(0, person.mind.stress - 15);
-            pushThought(person.mind, kind === "rage" ? "anger" : kind === "despair" ? "despair" : "loneliness", `giving in to it (${kind})`, 50, 4, year);
-            if (kind === "rage" && person.mind.relationships.length > 0) {
-              const worst = person.mind.relationships[0]!;
-              updateRelationship(person.mind, worst.personId, undefined, -20);
-            }
-          }
-          break;
-        }
-        case "C2": {
-          // Round 7 fix (decision 030, "thin chronicles"): C2/O2/O4 used to be mind-only, with no
-          // event of their own — invisible in the actual chronicle UI, which reads the EVENT log,
-          // not the decision log. Each branch now pushes a `reflection` event (a generic kind for
-          // an internal, non-relational moment) so it actually shows up.
-          const parentName = partner?.name ?? "their parent";
-          let note: string;
-          if (chosen === "grieve-openly") {
-            note = "grieved-openly";
-            pushThought(person.mind, "grief", `losing ${parentName}`, 70, 8, year, "lovePropensity", partner?.id);
-            const core = addMemory(seed, person.id, year, person.mind, `grieved openly when ${parentName} died in ${year}`, "grief", partner?.id);
-            if (core) applyCoreMemoryShift(seed, person.id, year, person.mind, "anxiety", 1);
-          } else if (chosen === "harden") {
-            note = "hardened";
-            pushThought(person.mind, "bitterness", `losing ${parentName} and having to be strong`, 55, 8, year, "stressVulnerability", partner?.id);
-            const core = addMemory(seed, person.id, year, person.mind, `hardened after ${parentName} died in ${year}`, "bitterness", partner?.id);
-            if (core) applyCoreMemoryShift(seed, person.id, year, person.mind, "trust", -1);
-          } else {
-            note = "leaned-on-family";
-            pushThought(person.mind, "hope", `leaning on what family remains after losing ${parentName}`, 45, 6, year, "gregariousness", partner?.id);
-            const otherParentId = person.motherId === partner?.id ? person.fatherId : person.motherId;
-            const otherParent = otherParentId ? people[otherParentId] : undefined;
-            if (otherParent && otherParent.deathYear === undefined) updateRelationship(person.mind, otherParent.id, otherParent.mind.values, 25, "kin");
-          }
-          // Decision 040: when this fires for the away protagonist (`extra.awayNews`), the prose
-          // frames it as word reaching them from afar rather than a death they witnessed firsthand.
-          const awayNews = descriptor.extra?.awayNews === true;
-          const relative = typeof descriptor.extra?.relative === "string" ? descriptor.extra.relative : undefined;
-          const event = pushEvent(events, year, "reflection", [person.id], { note, ...(awayNews ? { awayNews: true, relative: relative ?? "parent" } : {}) }, []);
-          resultingEventIds.push(event.id);
-          break;
-        }
-        case "O2": {
-          const stillAlive = partner && isAlive(partner, year);
-          if (chosen === "reconcile" && stillAlive) {
-            const event = pushEvent(events, year, "reconciliation", [person.id, partner!.id], {}, []);
-            resultingEventIds.push(event.id);
-            pushThought(person.mind, "relief", `making peace with ${partner!.name} at last, after all these years`, 50, 5, year, "altruism", partner!.id);
-            addMemory(seed, person.id, year, person.mind, `made peace with ${partner!.name} in ${year}, after carrying the grudge for years`, "relief", partner!.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, 70, "friend");
-          } else if (chosen === "reconcile") {
-            // The old rival has already died — peace is only with the memory now, no live partner to record a reconciliation event with.
-            pushThought(person.mind, "relief", `finally letting go of the old grudge against ${partner?.name ?? "them"}`, 45, 5, year);
-            addMemory(seed, person.id, year, person.mind, `made peace, at least within themselves, with the memory of ${partner?.name ?? "an old rival"} in ${year}`, "relief", partner?.id);
-            const event = pushEvent(events, year, "reflection", [person.id], { note: "let-go-of-grudge", otherName: partner?.name ?? "an old rival" }, []);
-            resultingEventIds.push(event.id);
-          } else {
-            pushThought(person.mind, "bitterness", `resolving to take the grudge against ${partner?.name ?? "them"} to the grave`, 40, 10, year, "stressVulnerability", partner?.id);
-            const event = pushEvent(events, year, "reflection", [person.id], { note: "kept-the-grudge", otherName: partner?.name ?? "an old rival" }, []);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        case "O4": {
-          let note: string;
-          if (chosen === "peace") {
-            note = "peace-with-death";
-            pushThought(person.mind, "contentment", "making peace with the years that are left", 55, 6, year, "perseverance");
-            addMemory(seed, person.id, year, person.mind, `made their peace with death in ${year}`, "contentment");
-          } else if (chosen === "regret") {
-            note = "regret";
-            pushThought(person.mind, "despair", "dwelling on regrets as the years run short", 55, 6, year, "anxiety");
-            addMemory(seed, person.id, year, person.mind, `was consumed by regret in ${year}, with time running short`, "despair");
-          } else {
-            note = "last-wish";
-            pushThought(person.mind, "hope", "holding onto a last wish", 50, 6, year, "perseverance");
-            addMemory(seed, person.id, year, person.mind, `spoke of a last wish in ${year}`, "hope");
-          }
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-          resultingEventIds.push(event.id);
-          break;
-        }
-        case "C3": {
-          let note: string;
-          if (chosen === "follow-trade") {
-            note = "followed-the-family-trade";
-            pushThought(person.mind, "contentment", "following in the family's footsteps", 35, 4, year, "perseverance");
-            const core = addMemory(seed, person.id, year, person.mind, `chose to follow the family trade in ${year}`, "contentment");
-            if (core) applyCoreMemoryShift(seed, person.id, year, person.mind, "perseverance", 1);
-          } else if (chosen === "apprentice-elsewhere") {
-            note = "sought-an-apprenticeship-elsewhere";
-            pushThought(person.mind, "hope", `seeking a trade of ${person.sex === "f" ? "her" : "his"} own, away from home`, 40, 4, year, "curiosity");
-            addMemory(seed, person.id, year, person.mind, `left to seek an apprenticeship elsewhere in ${year}`, "hope");
-          } else {
-            note = "drifted";
-            pushThought(person.mind, "loneliness", "not knowing what to make of themselves yet", 30, 4, year, "anxiety");
-          }
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-          resultingEventIds.push(event.id);
-          break;
-        }
-        case "A5": {
-          if (townEventId) causes.push(townEventId);
-          const townKind = descriptor.townEventType ?? "festival";
-          const positive = townKind === "festival" || townKind === "harvest" || townKind === "stranger";
-          if (chosen === "help") {
-            pushThought(person.mind, positive ? "joy" : "pride", `helping the town through the ${townKind}`, positive ? 35 : 50, 3, year, "altruism");
-            const friend = person.mind.relationships.find((r) => r.bond === "friend");
-            if (friend) updateRelationship(person.mind, friend.personId, undefined, 8);
-          } else if (chosen === "flee") {
-            pushThought(person.mind, positive ? "contentment" : "shame", positive ? `keeping to themselves during the ${townKind}` : `keeping clear of the ${townKind} instead of helping`, 30, 3, year, "gregariousness");
-          } else {
-            pushThought(person.mind, positive ? "contentment" : "shame", `looking for an advantage in the ${townKind}`, 35, 3, year, "greed");
-          }
-          // Decision 047: A5 never pushed an event for any outcome, for anyone. NPCs keep that
-          // (avoids log noise), but the protagonist now gets one regardless of which option fires.
-          if (person.id === protagonistId) {
-            const note = chosen === "help" ? "helped-during-a-town-event" : chosen === "flee" ? "kept-clear-of-a-town-event" : "looked-for-an-advantage-in-a-town-event";
-            const event = pushEvent(events, year, "reflection", [person.id], { note, otherName: townKind }, causes);
-            resultingEventIds.push(event.id);
-          }
-          break;
-        }
-        // --- Protagonist-only extended catalog (round 9, decision 035) -----
-        case "C1": {
-          const note = chosen === "compete" ? "competed-with-sibling" : chosen === "bond" ? "bonded-with-sibling" : "withdrew-from-sibling";
-          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "compete") {
-            pushThought(person.mind, "anger", `competing with ${partner!.name} for attention`, 30, 3, year, "anger", partner!.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, -10, "rival");
-          } else if (chosen === "bond") {
-            pushThought(person.mind, "contentment", `bonding with ${partner!.name}`, 30, 3, year, "gregariousness", partner!.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, 25, "friend");
-          } else {
-            pushThought(person.mind, "loneliness", "withdrawing at home", 25, 3, year, "anxiety");
-          }
-          break;
-        }
-        case "C4": {
-          const note = chosen === "fight-back" ? "fought-back-against-bully" : chosen === "endure" ? "endured-the-bully" : "told-an-elder";
-          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "fight-back") pushThought(person.mind, "anger", `standing up to ${partner!.name}`, 40, 3, year, "bravery", partner!.id);
-          else if (chosen === "tell-an-elder") pushThought(person.mind, "relief", "telling an elder about the bullying", 25, 2, year, "trust");
-          else pushThought(person.mind, "anxiety", `enduring ${partner!.name}'s bullying`, 35, 4, year, "stressVulnerability", partner!.id);
-          break;
-        }
-        case "Y2": {
-          const note = chosen === "pursue-the-dream" ? "pursued-the-dream-over-trade" : "stayed-practical";
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "pursue-the-dream") pushThought(person.mind, "hope", "choosing the dream over the trade", 35, 3, year, "ambition");
-          else pushThought(person.mind, "contentment", "choosing the trade over the dream, for now", 25, 3, year, "perseverance");
-          break;
-        }
-        case "Y5": {
-          const note = chosen === "open-up" ? "opened-up-to-a-friend" : "kept-their-distance";
-          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "open-up") {
-            pushThought(person.mind, "contentment", `opening up to ${partner!.name}`, 30, 3, year, "gregariousness", partner!.id);
-            addMemory(seed, person.id, year, person.mind, `became close friends with ${partner!.name} in ${year}`, "contentment", partner!.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, 35, "friend");
-          } else {
-            pushThought(person.mind, "loneliness", `keeping ${partner!.name} at a distance`, 20, 2, year);
-          }
-          break;
-        }
-        case "A4": {
-          const note =
-            chosen === "confront" ? "confronted-the-betrayal" : chosen === "forgive" ? "forgave-the-betrayal" : chosen === "leave" ? "left-over-the-betrayal" : "sought-revenge-for-the-betrayal";
-          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
-          resultingEventIds.push(event.id);
-          pushThought(person.mind, "betrayal", `discovering ${partner!.name}'s betrayal`, 70, 6, year, "trust", partner!.id);
-          addMemory(seed, person.id, year, person.mind, `discovered ${partner!.name}'s betrayal in ${year}`, "betrayal", partner!.id);
-          if (chosen === "leave") {
-            // Read BEFORE clearing spouseId below — see the marriage-side note in the `A1` case.
-            const personState = ensureLifeState(person, events);
-            const partnerState = ensureLifeState(partner!, events);
-            person.spouseId = undefined;
-            partner!.spouseId = undefined;
-            person.lifeState = applyLifeTransition(personState, { axis: "marital", to: "single" }, year);
-            partner!.lifeState = applyLifeTransition(partnerState, { axis: "marital", to: "single" }, year);
-            const breakupEvent = pushEvent(events, year, "breakup", [person.id, partner!.id], {}, [event.id]);
-            resultingEventIds.push(breakupEvent.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, -60, "grudge");
-          } else if (chosen === "revenge") {
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, -50, "grudge");
-          } else if (chosen === "forgive") {
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, -10);
-          } else {
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, -20, "grudge");
-          }
-          break;
-        }
-        case "A7": {
-          const note = chosen === "double-down" ? "doubled-down-on-faith" : chosen === "lose-faith" ? "lost-their-faith" : "sought-another-path";
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "double-down") pushThought(person.mind, "hope", "holding fast to faith", 35, 4, year, "perseverance");
-          else if (chosen === "lose-faith") pushThought(person.mind, "despair", "losing faith", 45, 5, year, "anxiety");
-          else pushThought(person.mind, "hope", "seeking another path entirely", 30, 3, year, "curiosity");
-          break;
-        }
-        case "A9": {
-          const note = chosen === "resist" ? "resisted-temptation" : "pursued-an-affair";
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "resist") pushThought(person.mind, "pride", "resisting the temptation", 30, 3, year, "perseverance");
-          else {
-            pushThought(person.mind, "shame", "giving in to temptation", 50, 6, year, "stressVulnerability");
-            const core = addMemory(seed, person.id, year, person.mind, `gave in to temptation in ${year}`, "shame");
-            if (core) applyCoreMemoryShift(seed, person.id, year, person.mind, "trust", -1);
-          }
-          break;
-        }
-        case "A10": {
-          const note = chosen === "take-an-apprentice" ? "took-an-apprentice" : "declined-to-mentor";
-          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "take-an-apprentice") {
-            pushThought(person.mind, "pride", `taking ${partner!.name} on as an apprentice`, 35, 4, year, "altruism", partner!.id);
-            updateRelationship(person.mind, partner!.id, partner!.mind.values, 30, "friend");
-          } else {
-            pushThought(person.mind, "contentment", "declining to take on an apprentice", 15, 2, year);
-          }
-          break;
-        }
-        case "O1": {
-          const note =
-            chosen === "eldest" ? "divided-inheritance-eldest" : chosen === "favorite" ? "divided-inheritance-favorite" : chosen === "split" ? "split-inheritance" : "inheritance-to-town";
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-          resultingEventIds.push(event.id);
-          pushThought(person.mind, "contentment", "settling how the inheritance will fall", 30, 3, year, "perseverance");
-          break;
-        }
-        case "O3": {
-          const note = chosen === "last-attempt" ? "last-attempt-at-dream" : chosen === "pass-it-on" ? "passed-on-dream" : "made-peace-with-unrealized-dream";
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "make-peace-with-it") person.mind.dream.status = "abandoned";
-          pushThought(person.mind, chosen === "last-attempt" ? "hope" : "contentment", `reckoning with the old dream of ${dreamGerund(person.mind.dream.goal)}`, 30, 4, year, "perseverance");
-          break;
-        }
-        case "AP1": {
-          const note = chosen === "apprentice-own-trade" ? "apprenticed-to-family-trade" : chosen === "send-away" ? "sent-away-to-apprentice" : "kept-at-home";
-          const event = pushEvent(events, year, "reflection", [person.id, partner!.id], { note, otherName: partner!.name }, []);
-          resultingEventIds.push(event.id);
-          pushThought(partner!.mind, "hope", `${person.name}'s decision about ${partner!.sex === "f" ? "her" : "his"} future`, 25, 4, year, "ambition", person.id);
-          // Decision 056 fix: `apprentice-own-trade` previously only narrated the apprenticeship —
-          // the child's actual `job` was never set, so A3 at 16 would still draw a fresh one at
-          // random. It now really does set the trade, which is also why A3 (age 16) skips anyone
-          // whose `job` is already set.
-          if (chosen === "apprentice-own-trade" && person.job !== "none") {
-            partner!.job = person.job;
-            addMemory(seed, partner!.id, year, partner!.mind, `was apprenticed to the family trade of ${person.job} in ${year}`, "hope", person.id);
-          }
-          break;
-        }
-        case "PIL1": {
-          const note = chosen === "go" ? "went-on-pilgrimage" : "stayed-home-from-pilgrimage";
-          const event = pushEvent(events, year, "reflection", [person.id], { note }, []);
-          resultingEventIds.push(event.id);
-          if (chosen === "go") {
-            pushThought(person.mind, "hope", "setting out on pilgrimage", 35, 4, year, "curiosity");
-            addMemory(seed, person.id, year, person.mind, `went on pilgrimage in ${year}`, "hope");
-          } else {
-            pushThought(person.mind, "longing", "feeling the pull of a pilgrimage not taken", 20, 2, year);
-          }
-          break;
-        }
-      }
-      }
-
-      decisions.push({
-        id: minted.id,
-        personId: descriptor.personId,
-        partnerId: descriptor.partnerId,
-        year,
-        kind: descriptor.kind,
-        question: questionText("en", descriptor.kind, partner?.name, config.town.name, descriptor.opportunityJob, descriptor.breakdownKind, descriptor.townEventType),
-        options,
-        jevRaw,
-        prior,
-        final,
-        noise,
-        chosen,
-        fragility,
-        surprise,
-        source,
-        causes,
-        resultingEventIds,
-        occurrenceProbability,
-      });
-      // Every social candidate is recorded unconditionally (no `RECORD_THRESHOLD` gate, unlike
-      // biology above), so this id's slot always advances as an occurrence.
-      commitId(people, events, descriptor.personId, minted, true);
-    }
-
-    // "At least one entry per year" (round 10, decision 042): if the protagonist ends this year
-    // with no event of their own — every other situation this year either wasn't the one selected,
-    // or was selected but resolved to "nothing happens" (e.g. A1's "delay") — present one
-    // everyday-life vignette so the chronicle never has a silent year. Checked AFTER biology and
-    // social resolution above (not at candidate-gathering time), since only the actual outcome, not
-    // the mere presence of a candidate, determines whether a year is genuinely quiet. `D1` itself
-    // never goes through the round 12 (decision 045) event-selection gate that the OTHER social
-    // candidates now do — it's asked in the SAME batch (paid for once) but resolved here,
-    // unconditionally, exactly like round 10-11's D1-anchored guarantee, since its vignette outcomes
-    // always produce a real event and it's the one candidate that must never come up empty. What's
-    // NEW this round: the candidates it's backstopping for now got a real, Jev-judged, occurrence-
-    // weighted joint selection instead of N independent code-gated coin flips, so D1 fires less
-    // often in practice — but the mechanism guaranteeing it fires when needed is unchanged.
-    //
-    // Decision 047 fix: the OTHER reason D1 dominated wasn't selection at all — it was that a
-    // selected situation whose chosen option was a "nothing happens" one (A1 "delay", Y1
-    // "decline"/"wait", Y3 "stay", A3 "ignore", A6 "feud" (drags on), Y4 "nurse-it", A2 "wait"/
-    // "refuse", A5 every option) produced NO event for the protagonist, so `hasOwnEventThisYear`
-    // was false and D1 fired anyway even though a real situation WAS selected and resolved.
-    // Every no-op branch above now pushes a `reflection` event (same generic kind decision 030
-    // introduced for C2/O2/O4/etc.) for the protagonist only — declining, waiting, staying are
-    // story beats, not silence. NPCs are untouched (still no event on their own no-ops), so this
-    // never grows the general village simulation's event volume. D1 now only fires when the
-    // selected situation genuinely produced nothing (e.g. its counterpart got invalidated
-    // mid-resolution) — a true safety net, not the common case.
-    if (options.protagonistId) {
-      const protagonist = people[options.protagonistId];
-      if (protagonist && (protagonist.deathYear === undefined || protagonist.deathYear === year)) {
-        const hasOwnEventThisYear = events.some((e) => e.year === year && e.actors.includes(protagonist.id));
-        if (!hasOwnEventThisYear) {
-          const preFetched = finalVignetteWinner ? resultByDecisionId.get(finalVignetteWinner) : undefined;
-          const { decision: d1Decision, wasRealCall } = await resolveDailyLifeVignette(
-            protagonist,
-            year,
-            seed,
-            config,
-            people,
-            events,
-            townEvent,
-            options.decisionMaker,
-            options.engineSource,
-            overrides,
-            d1Candidates,
-            finalVignetteWinner,
-            preFetched,
-            isOverrideYear,
-          );
-          decisions.push(d1Decision);
-          if (wasRealCall) decisionCalls += 1;
-        }
-      }
-    }
-
-    const snapshot: YearSnapshot = { year, people: structuredClone(people), events: structuredClone(events), decisions: structuredClone(decisions) };
     snapshots.set(year, snapshot);
     yield { year, snapshot };
 
@@ -3604,7 +1951,7 @@ export async function* simulateYears(
     result: { config, people, events, decisions },
     snapshots,
     wallTimeMs: Date.now() - started,
-    decisionCalls,
+    decisionCalls: counters.decisionCalls,
     hazardFallbacks: options.decisionMaker.getStats?.().hazardFallbacks ?? {},
   };
 }
@@ -3665,132 +2012,6 @@ function resolveBiologyDecision(descriptor: CandidateDescriptor, year: number, p
     causes: [],
     resultingEventIds: [],
   };
-}
-
-/**
- * Decision 057: replaces the old universal age-6 `school` event. `literate` is decided once, at
- * birth (`worldgen.ts#isLiterate`, keyed by class and sex per research.md's literacy table) — this
- * only decides WHEN the (already-determined) literate ones are taught, at age 7, and only pushes an
- * event for them. Everyone else simply never gets a `school` event, which is the period-faithful
- * default (research.md: labourers ~5-10% literate, ~90% of women illiterate overall).
- */
-function school(events: Event[], people: Record<string, Person>, personId: string, year: number): void {
-  const person = people[personId];
-  if (!person) return;
-  if (ageInYear(person.birthYear, year) === 7 && person.literate) {
-    pushEvent(events, year, "school", [personId], { socialClass: person.socialClass ?? "cottar" }, []);
-  }
-}
-
-/** Picks a first name not already in use by any of `existingNames` with this exact full name — see decision 019 (duplicate names). Falls back to an epithet if the whole pool for this sex is exhausted (small towns won't hit this, a very large one might). */
-function uniqueFirstName(existingNames: ReadonlySet<string>, sex: Sex, preferredIndex: number, surname: string): string {
-  const pool = sex === "f" ? FEMALE_NAMES : MALE_NAMES;
-  for (let offset = 0; offset < pool.length; offset++) {
-    const first = pool[(preferredIndex + offset) % pool.length]!;
-    if (!existingNames.has(`${first} ${surname}`)) return first;
-  }
-  return `${pool[preferredIndex % pool.length]} the Younger`;
-}
-
-function spawnImmigrant(seed: string, year: number, people: Readonly<Record<string, Person>>): Person {
-  const newId = `immigrant-${year}`;
-  const sex: Sex = keyedRng(seed, newId, year, "sex")() < 0.5 ? "f" : "m";
-  const age = 18 + Math.floor(keyedRng(seed, newId, year, "age")() * 14); // 18-31
-  const birthYear = year - age;
-  const nameIndex = Math.floor(keyedRng(seed, newId, year, "name")() * 20);
-  const surnameIndex = Math.floor(keyedRng(seed, newId, year, "surname")() * 20);
-  const surname = pickName(sex, 0, surnameIndex).split(" ")[1]!;
-  const existingNames = new Set(Object.values(people).map((p) => p.name));
-  const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
-  const name = `${first} ${surname}`;
-  const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
-  // Decision 049: an immigrant is assigned one of the five "common" classes (not clergy/gentry,
-  // which are structural, one-per-village roles decided at worldgen — see `worldgen.ts`); no
-  // sourced figure exists for immigrant class distribution specifically, so this reuses the same
-  // founder-class weights as a documented, reasonable default.
-  const socialClass = pickCommonClass(keyedRng(seed, newId, year, "social-class"));
-  const job = pickJobForClass(socialClass, keyedRng(seed, newId, year, "job"));
-  const literate = isLiterate(seed, newId, birthYear, sex, socialClass);
-  const mind = createMind(seed, newId, birthYear, []);
-  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, socialClass, literate };
-}
-
-/**
- * An off-screen gentry suitor arriving via an arranged marriage (decision 083) — same shape as
- * `spawnImmigrant`, but ALWAYS gentry: this is the one deliberate, narrow exception to decision 049's
- * "an immigrant never produces gentry" (that decision's own reasoning was about the GENERAL
- * immigration pool having no sourced gentry-share figure, not about this specific, rare, plot-driven
- * arranged-match mechanism — see decision 083's own doc comment). Content-derived id
- * (`gentry-suitor-<brideId>-<year>`, unique per arranged match).
- * Age band (20s, per research.md's 14th c. gentry-men-marry-later anchor already cited by
- * `MARRIAGE_FLOORS`'s own doc comment) is narrower than a common immigrant's 18-31, since an arranged
- * match specifically seeks an established heir, not a young laborer looking for work.
- */
-function spawnGentrySuitor(seed: string, year: number, brideId: string, people: Readonly<Record<string, Person>>, offScreen: boolean): Person {
-  // Keyed by the bride as well as the year, so two arranged matches in one year never share an id.
-  const newId = `gentry-suitor-${brideId}-${year}`;
-  const sex: Sex = "m";
-  const age = 20 + Math.floor(keyedRng(seed, newId, year, "age")() * 8); // 20-27
-  const birthYear = year - age;
-  const nameIndex = Math.floor(keyedRng(seed, newId, year, "name")() * 20);
-  const surnameIndex = Math.floor(keyedRng(seed, newId, year, "surname")() * 20);
-  const surname = pickName(sex, 0, surnameIndex).split(" ")[1]!;
-  const existingNames = new Set(Object.values(people).map((p) => p.name));
-  const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
-  const name = `${first} ${surname}`;
-  const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
-  const socialClass: SocialClass = "gentry";
-  const job = pickJobForClass(socialClass, keyedRng(seed, newId, year, "job"));
-  const literate = isLiterate(seed, newId, birthYear, sex, socialClass);
-  const mind = createMind(seed, newId, birthYear, []);
-  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, socialClass, literate, ...(offScreen ? { away: true } : {}) };
-}
-
-/** A lightweight newcomer met in the protagonist's away catalog (decision 040) — deterministic and content-derived (`away-<year>`), same shape as `spawnImmigrant`, tagged `away: true` so it never joins the home village's own pools. */
-function spawnAwayPerson(seed: string, year: number, people: Readonly<Record<string, Person>>): Person {
-  const newId = `away-${year}`;
-  const sex: Sex = keyedRng(seed, newId, year, "sex")() < 0.5 ? "f" : "m";
-  const age = 16 + Math.floor(keyedRng(seed, newId, year, "age")() * 20); // 16-35
-  const birthYear = year - age;
-  const nameIndex = Math.floor(keyedRng(seed, newId, year, "name")() * 20);
-  const surnameIndex = Math.floor(keyedRng(seed, newId, year, "surname")() * 20);
-  const surname = pickName(sex, 0, surnameIndex).split(" ")[1]!;
-  const existingNames = new Set(Object.values(people).map((p) => p.name));
-  const first = uniqueFirstName(existingNames, sex, nameIndex, surname);
-  const name = `${first} ${surname}`;
-  const traits = pickTraits(keyedRng(seed, newId, year, "traits"), 3);
-  const socialClass = pickCommonClass(keyedRng(seed, newId, year, "social-class"));
-  const job = pickJobForClass(socialClass, keyedRng(seed, newId, year, "job"));
-  const literate = isLiterate(seed, newId, birthYear, sex, socialClass);
-  const mind = createMind(seed, newId, birthYear, []);
-  return { id: newId, name, sex, birthYear, traits, job, founder: false, mind, away: true, socialClass, literate };
-}
-
-function spawnChild(seed: string, year: number, mother: Person, father: Person, people: Readonly<Record<string, Person>>): Person {
-  // Content-derived id: a mother has at most one child per year, by construction of the have-child gate.
-  const childId = `child-${mother.id}-${year}`;
-  const sex: Sex = keyedRng(seed, childId, year, "child-sex")() < 0.5 ? "f" : "m";
-  const traitRng = keyedRng(seed, childId, year, "child-traits");
-  const traits: Trait[] = [];
-  const pool = [...TRAIT_POOL];
-  for (let t = 0; t < 3 && pool.length > 0; t++) {
-    const idx = Math.floor(traitRng() * pool.length);
-    traits.push(pool.splice(idx, 1)[0]!);
-  }
-  const nameIdxRng = keyedRng(seed, childId, year, "child-name");
-  const surnameSource = mother.name.split(" ").slice(1).join(" ");
-  const surnameIndex = Math.floor(nameIdxRng() * 20);
-  const surname = surnameSource || pickName(sex, 0, surnameIndex).split(" ")[1]!;
-  const existingNames = new Set(Object.values(people).map((p) => p.name));
-  const first = uniqueFirstName(existingNames, sex, Math.floor(nameIdxRng() * 20), surname);
-  const name = `${first} ${surname}`;
-  const mind = createMind(seed, childId, year, [mother.mind, father.mind]);
-  // Decision 056: inherits the father's class (mother's, if the father's is somehow unknown — a
-  // hand-built `Person` fixture without `socialClass` set, since a real simulated father always has
-  // one). Literacy (decision 057) is then drawn fresh for the child, at birth, by their own class/sex.
-  const socialClass = father.socialClass ?? mother.socialClass ?? "cottar";
-  const literate = isLiterate(seed, childId, year, sex, socialClass);
-  return { id: childId, name, sex, birthYear: year, traits, job: "none", motherId: mother.id, fatherId: father.id, founder: false, mind, socialClass, literate };
 }
 
 export { dreamGoalSatisfiedBy, eligibleForAnotherChild, feudPairHistory, gatherCandidatesForYear, resolveCourtshipOnDeath, townEventMortalityMultiplier };

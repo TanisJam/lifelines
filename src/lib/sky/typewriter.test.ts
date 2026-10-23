@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { entryText, TYPE_FAST, TYPE_TITLE, typed, typedKey, typedMarkup, typeParts } from "./typewriter";
+import type { ProseToken } from "@/contracts/life";
+import { entryText, TYPE_FAST, TYPE_TITLE, typed, typedKey, typeParts, typeDuration, typingEnd } from "./typewriter";
 
 const parts = [
   { text: "Title", rate: 0.01 },
@@ -32,6 +33,40 @@ describe("typed", () => {
   });
 });
 
+describe("structured entry text", () => {
+  it("uses literal tokens for UTF-16 ranges, caret, duration and typing end", () => {
+    const prefix = "😀\r\n\0{{literal}}\ud800";
+    const name = "{{other}}é\udfff";
+    const suffix = "{{suffix}}";
+    const proseTokens: readonly ProseToken[] = [
+      { kind: "text", text: prefix }, { kind: "link", personId: "{a}" },
+      { kind: "link", personId: "empty" }, { kind: "link", personId: "__proto__" },
+      { kind: "text", text: suffix },
+    ];
+    const entry = { at: 100, title: "T", prose: prefix + name + name + suffix, proseTokens,
+      links: [{ personId: "{a}", name }, { personId: "empty", name: "" }, { personId: "__proto__", name }],
+      turn: { decidedBy: "By" } as never };
+    const text = entryText(entry);
+    expect(text.prose).toBe(entry.prose);
+    expect(text.links).toEqual([
+      { start: prefix.length, end: prefix.length + name.length, personId: "{a}" },
+      { start: prefix.length + name.length, end: prefix.length + name.length, personId: "empty" },
+      { start: prefix.length + name.length, end: prefix.length + 2 * name.length, personId: "__proto__" },
+    ]);
+    const parts = typeParts(text);
+    const duration = TYPE_TITLE + (2 + entry.prose.length) * TYPE_FAST;
+    expect(typeDuration(entry)).toBeCloseTo(duration);
+    expect(typingEnd([entry])).toBeCloseTo(entry.at + duration);
+    expect(typingEnd([])).toBe(-Infinity);
+    expect(typed(parts, TYPE_TITLE + 2 * TYPE_FAST + 1.5 * TYPE_FAST))
+      .toEqual({ counts: [1, 2, 1], done: false, caret: 2 });
+    expect(typed(parts, duration + TYPE_FAST)).toEqual({ counts: [1, 2, entry.prose.length], done: true, caret: -1 });
+    expect(() => entryText({ ...entry, prose: "mismatch" })).toThrow(TypeError);
+    expect(() => typeDuration({ ...entry, prose: "mismatch" })).toThrow(TypeError);
+    expect(() => typingEnd([{ ...entry, prose: "mismatch" }])).toThrow(TypeError);
+  });
+});
+
 describe("entryText", () => {
   const entry = { title: "Born", prose: "Child of {{a}} and {{b}}.", links: [{ personId: "a", name: "Ann" }, { personId: "b", name: "Bo" }] };
 
@@ -44,6 +79,16 @@ describe("entryText", () => {
     ]);
   });
 
+  it("keeps literal name code units and computes ranges without reparsing marker-like names", () => {
+    const name = '<b>\r\0\ud800😀{{b}}</b>';
+    const text = entryText({ ...entry, prose: "{{a}}!{{missing}}{{b}}", links: [{ personId: "a", name }, { personId: "b", name: "\udfff" }] });
+    expect(text.prose).toBe(`${name}!\udfff`);
+    expect(text.links).toEqual([
+      { start: 0, end: name.length, personId: "a" },
+      { start: name.length + 1, end: name.length + 2, personId: "b" },
+    ]);
+  });
+
   it("types the title slowly, then the decider, then the prose fast; turns carry a decider", () => {
     const turn = { decidedBy: "Her choice" } as never;
     expect(typeParts(entryText({ ...entry, turn }))).toEqual([
@@ -52,25 +97,5 @@ describe("entryText", () => {
       { text: "Child of Ann and Bo.", rate: TYPE_FAST },
     ]);
     expect(typeParts(entryText(entry))).toHaveLength(2);
-  });
-});
-
-describe("typedMarkup", () => {
-  const links = [{ start: 9, end: 12, personId: "a" }];
-
-  it("shows only the typed prefix, escaped", () => {
-    expect(typedMarkup("a < b & c", [], 5)).toBe("a &lt; b");
-  });
-
-  it("wraps a fully typed link name in an anchor", () => {
-    expect(typedMarkup("Child of Ann and", links, 12)).toBe('Child of <a href="#" data-person-link="a">Ann</a>');
-  });
-
-  it("wraps a half-typed link name too, so the click target grows with the text", () => {
-    expect(typedMarkup("Child of Ann and", links, 11)).toBe('Child of <a href="#" data-person-link="a">An</a>');
-  });
-
-  it("escapes the person id in the attribute", () => {
-    expect(typedMarkup("Ann", [{ start: 0, end: 3, personId: 'x"y' }], 3)).toBe('<a href="#" data-person-link="x&quot;y">Ann</a>');
   });
 });

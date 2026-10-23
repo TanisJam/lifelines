@@ -1,0 +1,187 @@
+# Horizon — a life is a chronicle up to 15 years
+
+Objective: make the happy path work end to end with a life that has real length. A life is the
+protagonist's chronicle up to a HORIZON of 15 journal years; a protagonist still alive at the
+horizon is persisted and shown as alive, never as a death.
+Branch: `feat/narrative-engine`. Delivery: work-unit commits. Test runner:
+`node node_modules/vitest/vitest.mjs run <file> --maxWorkers=1 --pool=threads`; `pnpm typecheck`;
+`npx eslint <files>`.
+
+## Specs
+
+> SUPERSEDED: the 15-year horizon was an architecture limit (V8's ~512 MB string cap), not a product
+> decision. `odd/tasks/lifecycle-full-lifetime.md` S1 replaces it: a life runs until its protagonist
+> dies. Everything below is kept as the record of what was built against the old horizon.
+
+S1. A life is the chronicle of one protagonist up to a horizon of 15 journal years. Completion and
+horizon are DIFFERENT states: a death inside the horizon yields a `complete` life; a protagonist
+still alive at the horizon yields an `incomplete` life that IS persisted and displayed as alive at
+the horizon.
+
+S2. The engine rule is untouched: alive is NEVER complete, and the horizon is NEVER a death. No
+manufactured death, no `endYear` treated as `deathYear`, no forcing, no reseeding. The mortality fix
+(commit `2c9d1f4`, decision 085) is the only mortality change authorized here.
+
+S3. The create route persists BOTH statuses. The current refusal
+`"This life has not yet ended."` was legacy parity and is superseded by S1; it must be removed for
+the horizon path. A real failure still refuses and persists nothing: an abort, an admission or
+projection refusal, a persistence error, or an abuse-guard rejection.
+
+S4. Capacity: a 15-year capsule must fit a MEASURED wire profile and a MEASURED encode peak. Both
+numbers come from a measurement at 15 years, reported with heap/RSS and wall time; no limit may be
+raised without that measurement.
+
+S5. Display must be honest: an alive life shows as alive at the horizon. The list and the detail may
+not invent a `deathYear`, an `ageAtDeath` or a `causeOfDeath`. A `complete` life keeps showing its
+real death.
+
+S6. No legacy behavior change: legacy lives, legacy requests, the legacy list and the legacy detail
+keep today's semantics. The two engines' storage stays disjoint.
+
+S7. Evidence: focused tests per unit; the full suite green except its pre-existing failures (`legacy-year`
+pins `maternal-check-37`/`lockout-check-12` and `route.quiet` — three, measured at the base commit);
+typecheck and eslint clean; and a real production-build check that creates a 15-year life, shows it,
+survives a restart, and reloads identically.
+
+## Tasks
+
+| ID | Scope | Route | Status |
+|----|-------|-------|--------|
+| T1 | capacity profile from the 15-year measurement | measurement + delegated writer | DONE `dd0727a` |
+| T2 | horizon 15 + persist incomplete lives (engine constant + create route) | delegated writer | DONE `dd0727a` |
+| T3 | honest display of alive lives (projection, list, detail) | inline — one coherent behavior (contract + projection + read + display + tests); no writer trigger holds | DONE `11c9c6f` |
+| T4 | whole-unit evidence (suite, typecheck, eslint, browser + restart) | inline | DONE — evidence complete in "T4 evidence"; ONE open decision blocks shipping (container memory) |
+
+### T1/T2 evidence
+- 15-year measurement (seed `cap-0`, 125 people): capsule 29,066,054 B, run 93 s / 646 MB heap,
+  encode 2,164 MB heap.
+- New published profile, derived from the certified 4-year point scaled by the measured wire ratio
+  9.04x, with >=30% headroom: nodes 220,000 / edges 4,500,000 / depth 128 / bytes 36,000,000, and a
+  320,000,000 work-text ceiling. `DEFAULT` untouched. The derivation and the measurement are in the
+  constant's docstring; the exact-boundary tests now bind through the profile-lowering option path
+  instead of allocating the published ceilings.
+- `LIFECYCLE_HORIZON_YEARS = 15` is the run budget; `LIFECYCLE_MAX_STEPS` stays 100 because it fixes
+  the genesis `endYear` that a non-editable route test pins. A run alive at the horizon is persisted
+  as `incomplete` with its trusted status/frontier; the `"This life has not yet ended."` refusal is
+  gone; abort, projection refusal and persistence errors still write nothing. Tests 231 + 32 green,
+  typecheck and eslint clean.
+
+### T3 implementation record (2026-10-21)
+- Contract: `ProtagonistInfo.deathYear`/`ageAtDeath`/`causeOfDeath` are now explicitly nullable and
+  `horizonYear?: number` carries the horizon of an alive life; `LifeListItem` mirrors it (and keeps
+  `horizonYear` absent on every completed/legacy row, so the legacy list wire is unchanged).
+  Invariant, enforced by the projection and pinned by tests: `deathYear === null` ⇔ `horizonYear`.
+- Projection: the `status !== "complete"` refusals are gone from both `projectLifecycleChronicle` and
+  `projectLifecycleProtagonist`. An alive life gets `epilogue: []` (no "lived on after her passing"),
+  the existing honest "still living" `lifeSummary`, no death entry and `scene.span.end === null`.
+  A status that disagrees with the protagonist's own record still refuses in both directions.
+- Create path: the chronicle is projected for BOTH statuses before the persist, so an alive-at-horizon
+  life finally emits its `done` frame (the T1/T2 gap) and the client gets `onSaved`.
+- Display: the list renders `still alive in <horizon>` (en/es) with an open-ended `born–…` span and
+  never borrows a death; the detail's intro panel renders no epitaph for an alive life (it falls back
+  to the motto), and the sky's timeline is bounded by the horizon. The live streaming stand-in no
+  longer fabricates `deathYear = birthYear`, `ageAtDeath = 0`, `causeOfDeath = ""`.
+
+### Known gap opened by T1/T2 — CLOSED by T3
+An alive-at-horizon life used to be persisted but emit NO `done` frame, because
+`projectLifecycleChronicle` refused `status !== "complete"` and `Chronicle.protagonist.deathYear`
+was a required number. T3 made the contract represent an alive life honestly (null death fields plus
+the horizon) and `lifecycle-life.ts` now projects and emits `done` for both statuses.
+
+### T3 evidence (commit `11c9c6f`)
+- Focused, all green: `lifecycle-projection.test.ts` 13/13 (new: an alive life projects with
+  `deathYear`/`ageAtDeath`/`causeOfDeath` null, `horizonYear` = frontier, `epilogue` empty, no death
+  entry, "still living" summary; a status disagreeing with the protagonist refuses both ways),
+  `lifecycle-life.test.ts` 7/7 (new: the alive-at-horizon run emits `done` with that chronicle),
+  `lifecycle-read.test.ts` 7/7 (new: list + detail + side sheet for a persisted alive life, and the
+  completed row keeps its death with no `horizonYear`), `route.lifecycle.test.ts` 6/6 (new: the list
+  and the detail wire preserve the three nulls and the horizon), `live-model.test.ts` +
+  `dictionary.test.ts` 13/13 (the streaming stand-in invents no death).
+- `pnpm typecheck` clean; `npx eslint` clean over every changed file.
+- Baseline verification for the full suite: the two `legacy-year.test.ts` canonical pins
+  (`maternal-check-37`, `lockout-check-12`) and `route.quiet.test.ts` fail IDENTICALLY on the T3 base
+  commit `8aefb23` in a scratch worktree (same seeds, same diff), so they are pre-existing and not
+  caused by T3. That means the baseline has THREE failures, not the single `route.quiet` S7 names.
+  The two hash pins most likely fell behind decision 085 (the mortality fix changed
+  `gatherCandidatesForYear`, and 085 re-pinned only the runtime/memory canon); re-pinning them needs
+  a fresh measurement and is NOT authorized inside a display unit, so they are reported, untouched.
+- Full suite after T3: 130 files, 2866 passed, 1 skipped, 3 failed — exactly the three baseline
+  failures above, none new.
+- Native assessment of `8aefb23..HEAD` (`--committed-only`): risk `medium` (`executable_change` in
+  `scripts/richness-stats.ts`), `review_due: false`, reason `under_budget` (448 changed lines), so no
+  native review started and the reviewed boundary stays at `8aefb23`.
+
+### T4 evidence — real production build, browser, restart (2026-10-22)
+Runner: `DECISION_ENGINE=rules pnpm build`, then the standalone server exactly as the Dockerfile
+assembles it (`.next/standalone` + copied `.next/static` and `public`, `node server.js`,
+`NODE_ENV=production`, fresh `DATA_DIR`). Seed `cap-0`, name Tess, sex f, `engine: "lifecycle"`,
+default world (125 people).
+- Create (`POST /api/lives/stream`): start + 15 `tick` + `done`, curl exit 0, **610 s** wall.
+  `done.chronicle.protagonist` = `deathYear: null, ageAtDeath: null, causeOfDeath: null,
+  horizonYear: 1341`, 15 entries, `epilogue: []`, summary "Tess is still living, in Netherfield.",
+  `scene.span.end: null`, stats `jevCalls: 0` / `wallTimeMs: 609746`. The T1/T2 gap is closed in the
+  real build: an alive life now gets its `done`.
+- Reads (each one cold admission + full replay; nothing cached): list 121 s then 135 s, detail 127 s
+  then 133 s. List row: `deathYear/ageAtDeath/causeOfDeath: null`, `horizonYear: 1341`; detail keeps
+  the same protagonist block, 0 death entries, empty epilogue.
+- Restart: server killed and started again from the same standalone build and DB. `GET /api/lives`
+  and `GET /api/lives/:id` are **byte-identical** before and after: list SHA-256
+  `2a77acba…bdb7171c`, detail `bacacc80…4780a935`. One stored life = 58 MB DB + 58 MB WAL (the
+  ~29 MB capsule stored as UTF-16).
+- Browser (Playwright/Chromium against the standalone server): `/en/lives` loaded in 162 s and the
+  row reads `Tess | 1327–… | Still alive in 1341, aged 14. 1 version of this life.` with zero
+  "Died at" text; `/en/life/<id>` loaded in 143 s and the intro shows the motto ("People make a
+  life. / Time gives it meaning.") with **zero** epitaphs and no load error. Screenshots in the
+  session scratch (`browser-list.png`, `browser-detail.png`).
+- Suite/typecheck/eslint (S7): full suite 130 files, 2866 passed, 1 skipped, 3 failed — exactly the
+  three baseline failures, none new; `pnpm typecheck` clean; eslint clean over every changed file.
+
+### Open decision — blocks shipping, not the evidence
+The measured process high-water mark is **4.6 GB RSS for the create** and **2.7 GB for a read** of
+this 15-year life, while `deploy/compose.yaml` sets `mem_limit: 2g`. In the deployed container both
+requests would be OOM-killed (Node's default heap is sized from the host, not the cgroup). T1's own
+encode measurement (2,164 MB heap) already exceeded 2g. S4 forbids raising a limit without a
+measurement; the measurement now exists, so the choice is:
+1. raise `mem_limit` (~6g) in `deploy/compose.yaml`, justified by this measurement, if the host has
+   the RAM; or
+2. reduce what a 15-year life retains/encodes (engineering task: stream or spill the encode), or
+   reduce the default population for this engine (product change).
+Nothing in `deploy/` was changed. This is a delivery/product decision, not a code defect found late.
+
+## Log
+
+L1 (2026-10-21) — human decisions, verbatim, in order: `Sí: revertir tramos y hacer C + perfil
+(Recomendado)`, `10-15 años (Recomendado)`, `Ambos motores (Recomendado)` for the mortality fix, and
+`Vida = crónica hasta un horizonte de 15 años (Recomendado)`.
+
+L2 (2026-10-21) — the mortality fix landed as `2c9d1f4` (decision 085): a founder newborn no longer
+takes a duplicate age-0 biology roll, so every child's first roll is at age 1. Measured on 24 fixed
+seeds with a 40-year window: deaths by age 1 went 12/24 (50%) → 5/24 (20.8%); 6/24 die before age 5
+(ages 1,1,1,1,1,3); 4/24 die between 8 and 36; 14/24 are still alive at 40. The 15 demographic gates
+pass (infant mortality 29.34%, e0 28.58, under-15 share 23.70%).
+
+L3 (2026-10-21) — because most protagonists now outlive any short run, the old route behavior became
+a product blocker: it waited for a death that never comes, ran the full 100-step budget (~15 minutes)
+and then refused to persist. S1 replaces that with a bounded horizon.
+
+L4 (2026-10-21) — capacity context from CP1: `postNative` was dropped from the journal record
+(`05b82b0`), so a 20-year life now costs 49,191,002 B of wire and a 4,912 MB / 5,277 MB encode peak
+(10 years: 13,774,890 B and 3,022 / 3,370 MB). The 15-year point is being measured for T1.
+
+L5 (2026-10-21) — T3 landed as `11c9c6f`: the contract now has two honest protagonist states (a complete life's real death, or an alive-at-horizon life's explicit nulls plus `horizonYear`), the
+projection serves both, the create stream emits `done` for both, and the list/detail/streaming
+surfaces invent no death. Route: inline, because this is ONE coherent behavior (contract + projection
++ read + display + tests) with no parallel units and no context backstop; the `delegated writer` in
+the T3 row was a forecast, not a trigger. Evidence in "T3 evidence" above. New baseline fact found
+while verifying: the full suite has THREE pre-existing failures at `8aefb23`, not the single
+`route.quiet` S7 names — the two extra are `legacy-year` canonical pins (`maternal-check-37`,
+`lockout-check-12`), reproduced byte-identically on the base commit in a scratch worktree. T4 must
+record them as baseline; re-pinning them needs a fresh measurement and a decision, and is not part of
+the display unit.
+
+L6 (2026-10-22) — T4 evidence is complete (production standalone build, browser, restart). Two
+corrections to the record: the suite baseline is three pre-existing failures, not one (S7 updated
+factually), and the real 15-year life peaks at 4.6 GB RSS to create / 2.7 GB to read, above the
+deployed `mem_limit: 2g`. The second one is an OPEN DECISION for the human, recorded above; the
+evidence unit closed without touching `deploy/`. Human stopped the session for the night.
+

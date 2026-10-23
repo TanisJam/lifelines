@@ -5,8 +5,23 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { LifeListItem } from "@/contracts/life";
 import type { Locale } from "@/i18n/config";
+import type { Dictionary } from "@/i18n/dictionary";
 import { getDictionary } from "@/i18n/get-dictionary";
 import { getLives } from "@/lib/life-client";
+
+/**
+ * The one display line for a row, from what the row actually carries. A completed life shows its
+ * real death; a life alive at its horizon shows as alive in the year its chronicle reached, and
+ * never borrows a death year, age or cause to fill the sentence (spec S5).
+ */
+function lifeLine(life: LifeListItem, dict: Dictionary): string | null {
+  if (life.deathYear === null) {
+    if (life.horizonYear === undefined) return null;
+    return dict.lives.aliveEntry(life.horizonYear - life.birthYear, life.horizonYear, life.branchCount);
+  }
+  if (life.ageAtDeath === null || life.causeOfDeath === null) return null;
+  return dict.lives.entry(life.ageAtDeath, life.causeOfDeath, life.branchCount);
+}
 
 /** "Your lives" (decision 041): a plain list from `GET /api/lives`. Decision 059: `lang` also rides along to the request, so `causeOfDeath` renders in the reader's locale. */
 export default function LivesPage() {
@@ -42,10 +57,10 @@ export default function LivesPage() {
               <div className="flex items-baseline justify-between gap-4">
                 <span className="font-heading text-xl font-semibold text-foreground">{life.name}</span>
                 <span className="font-label text-xs uppercase tracking-widest text-muted-foreground">
-                  {life.birthYear}–{life.deathYear}
+                  {life.deathYear === null ? dict.lives.spanAlive(life.birthYear) : `${life.birthYear}–${life.deathYear}`}
                 </span>
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">{dict.lives.entry(life.ageAtDeath, life.causeOfDeath, life.branchCount)}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{lifeLine(life, dict)}</p>
             </Link>
           </li>
         ))}

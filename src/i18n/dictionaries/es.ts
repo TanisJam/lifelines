@@ -18,6 +18,7 @@ const ES_RELATION: Record<RelCode, readonly [string, string]> = {
   lover: ["amor", "amor"],
   rival: ["rival", "rival"],
   friend: ["amiga", "amigo"],
+  participant: ["participante", "participante"],
   childSpouse: ["nuera", "yerno"],
   grandchild: ["nieta", "nieto"],
 };
@@ -66,6 +67,10 @@ export const es: Dictionary = {
     empty: "Todavía no hay vidas.",
     entry: (ageAtDeath: number, causeOfDeath: string, branchCount: number) =>
       `Murió a los ${ageAtDeath} años, de ${causeOfDeath}. ${branchCount} ${branchCount === 1 ? "versión" : "versiones"} de esta vida.`,
+    /** A life alive at its horizon (spec S5): it shows as alive in the year its chronicle reached, never as a death. */
+    spanAlive: (birthYear: number) => `${birthYear}–…`,
+    aliveEntry: (age: number, horizonYear: number, branchCount: number) =>
+      `Sigue con vida en ${horizonYear}, con ${age} años. ${branchCount} ${branchCount === 1 ? "versión" : "versiones"} de esta vida.`,
     writeAnother: "Escribir otra vida",
   },
   life: {

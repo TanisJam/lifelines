@@ -48,3 +48,6 @@ next-env.d.ts
 # Local Pi runtime state
 .atl/
 .codegraph/
+
+# Local agent scratch (worktrees and session state, never source)
+/.claude/

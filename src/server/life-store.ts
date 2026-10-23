@@ -1,10 +1,13 @@
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { DatabaseSync } from "node:sqlite";
 import type { LifeSex } from "@/contracts/life";
 import { remapLegacyClasses, remapSnapshots } from "@/domain/period/classes";
 import type { Override, SimulationResult, WorldConfig, YearSnapshot } from "@/domain/types";
 import { compressJson, dataDir, decompressJson, nextCounter, openDb, storeCacheSize, withTransaction } from "./db";
 import { LruCache } from "./lru-cache";
+import { EBranchRepository, type CanonicalPublication } from "./e-branch-repository";
+import type { AnnualRuntimeRepository } from "./e-repository";
 
 /**
  * Server-side state for the single-life product (round 9, decision 034). Originally deliberately
@@ -132,6 +135,9 @@ interface LifeSummaryRow {
 }
 
 export interface LifeStore {
+  /** Inactive canonical boundary; route activation belongs to RI1. */
+  publishCanonicalBranch(input: CanonicalPublication): Promise<LifeBranchRecord>;
+  loadCanonicalBranch(lifeId: string, branchId: string): ReturnType<EBranchRepository["load"]>;
   newLifeId(): string;
   newLifeBranchId(): string;
   registerLife(
@@ -181,9 +187,22 @@ export interface LifeStore {
  * tests can point a store at a temp file — the module below wraps a single `globalThis`-cached
  * instance of this for the app's own default DB.
  */
-export function createLifeStore(dbPath?: string, cacheSize?: number): LifeStore {
+export function createLifeStore(dbPath?: string, cacheSize?: number, repositoryFactory?: (db: DatabaseSync) => AnnualRuntimeRepository): LifeStore {
   const db: DatabaseSync = openDb(dbPath ?? path.join(dataDir(), "lifelines.db"));
   const cache = new LruCache<string, LifeRecord>(cacheSize ?? storeCacheSize());
+  // Lazy and outside publication BEGIN, on THIS store connection (never getDb()).
+  let canonicalRepository: EBranchRepository | undefined;
+  function canonical(): EBranchRepository {
+    return canonicalRepository ??= new EBranchRepository(db, repositoryFactory?.(db));
+  }
+  function hasCanonicalHistory(lifeId: string): boolean {
+    return db.prepare("SELECT 1 FROM canonical_branch_bindings WHERE life_id = ? LIMIT 1").get(lifeId) !== undefined;
+  }
+  function guardLegacyWrite(lifeId: string, branchId: string): void {
+    if (hasCanonicalHistory(lifeId) || db.prepare("SELECT 1 FROM canonical_branch_bindings WHERE branch_id = ?").get(branchId)) {
+      throw new Error("Canonical history cannot be overwritten by legacy publication");
+    }
+  }
 
   function loadBranchesForLife(lifeId: string): Map<string, LifeBranchRecord> {
     const rows = db.prepare("SELECT * FROM life_branches WHERE life_id = ?").all(lifeId) as unknown as LifeBranchRow[];
@@ -264,6 +283,7 @@ export function createLifeStore(dbPath?: string, cacheSize?: number): LifeStore 
     result: SimulationResult,
     snapshots: ReadonlyMap<number, YearSnapshot>,
   ): LifeRecord {
+    guardLegacyWrite(lifeId, branchId);
     const branch: LifeBranchRecord = { id: branchId, lifeId, label: "Original life", result, snapshots, createdAt: Date.now() };
     const record: LifeRecord = {
       id: lifeId,
@@ -314,6 +334,7 @@ export function createLifeStore(dbPath?: string, cacheSize?: number): LifeStore 
     snapshots: ReadonlyMap<number, YearSnapshot>,
     label: string,
   ): LifeBranchRecord | undefined {
+    guardLegacyWrite(lifeId, branchId);
     const life = ensureLoaded(lifeId);
     if (!life) return undefined;
     const branch: LifeBranchRecord = { id: branchId, lifeId, label, parentBranchId, forkYear, override, result, snapshots, createdAt: Date.now() };
@@ -385,19 +406,67 @@ export function createLifeStore(dbPath?: string, cacheSize?: number): LifeStore 
    * `result.changes` from the `DELETE FROM lives` statement instead.
    */
   function deleteLife(lifeId: string): boolean {
-    const wasCached = cache.delete(lifeId);
     const changes = withTransaction(db, () => {
+      if (hasCanonicalHistory(lifeId)) throw new Error("Canonical history blocks life deletion");
       db.prepare("DELETE FROM life_branches WHERE life_id = ?").run(lifeId);
       return db.prepare("DELETE FROM lives WHERE id = ?").run(lifeId).changes;
     });
+    const wasCached = cache.delete(lifeId);
     return wasCached || changes > 0;
+  }
+
+  async function publishCanonicalBranch(request: CanonicalPublication): Promise<LifeBranchRecord> {
+    const branch = await canonical().publish(request, (input, binding, retry) => {
+      // Fresh SQL state, never a potentially stale caller/cache object, after save's await.
+      const life = loadLifeFromDb(input.lifeId);
+      const row = db.prepare("SELECT * FROM life_branches WHERE id = ?").get(input.branchId) as unknown as LifeBranchRow | undefined;
+      if (retry) {
+        if (!life || !row || row.life_id !== input.lifeId) throw new Error("Missing canonical public representation");
+        const existing = rowToBranch(row);
+        const expected = { ...input.branch, id: input.branchId, lifeId: input.lifeId, createdAt: existing.createdAt };
+        const actualData = JSON.parse(JSON.stringify({ ...existing, snapshots: snapshotsToJson(existing.snapshots) }));
+        const expectedData = JSON.parse(JSON.stringify({ ...expected, snapshots: snapshotsToJson(expected.snapshots) }));
+        if (!isDeepStrictEqual(actualData, expectedData)) {
+          throw new Error("Canonical retry representation disagreement");
+        }
+        return existing;
+      }
+      if (row) throw new Error("Branch identifier already published");
+      if (binding.provenance) {
+        const parent = life?.branches.get(binding.provenance.parentBranchId);
+        if (!life || !parent || parent.lifeId !== input.lifeId || JSON.stringify(life.config) !== JSON.stringify(input.config)
+          || life.protagonistName !== input.protagonistName || life.protagonistSex !== input.protagonistSex) throw new Error("Canonical same-life parent disagreement");
+      } else if (life) throw new Error("Existing life has no canonical root publication authority");
+      const branch: LifeBranchRecord = { ...input.branch, id: input.branchId, lifeId: input.lifeId, createdAt: Date.now() };
+      const record: LifeRecord = life ? { ...life, latestBranchId: branch.id } : {
+        id: input.lifeId, config: input.config, protagonistName: input.protagonistName, protagonistSex: input.protagonistSex,
+        originalBranchId: branch.id, latestBranchId: branch.id, branches: new Map(), createdAt: Date.now(),
+      };
+      persistLife(record);
+      persistBranch(branch);
+      return branch;
+    });
+    // COMMIT has succeeded. Refresh the public cache only now; exact retries do not
+    // move latest backwards if a later branch was already published.
+    const fresh = loadLifeFromDb(branch.lifeId)!;
+    const cached = cache.get(branch.lifeId);
+    if (cached) {
+      cached.branches.clear();
+      for (const [id, value] of fresh.branches) cached.branches.set(id, value);
+      cached.latestBranchId = fresh.latestBranchId;
+    } else cache.set(branch.lifeId, fresh);
+    return branch;
+  }
+
+  function loadCanonicalBranch(lifeId: string, branchId: string): ReturnType<EBranchRepository["load"]> {
+    return canonical().load(lifeId, branchId);
   }
 
   function close(): void {
     db.close();
   }
 
-  return { newLifeId, newLifeBranchId, registerLife, createLife, getLife, getLifeBranch, getLatestBranch, registerLifeBranch, addLifeBranch, listLifeBranches, listLifeSummaries, deleteLife, close };
+  return { publishCanonicalBranch, loadCanonicalBranch, newLifeId, newLifeBranchId, registerLife, createLife, getLife, getLifeBranch, getLatestBranch, registerLifeBranch, addLifeBranch, listLifeBranches, listLifeSummaries, deleteLife, close };
 }
 
 const globalStoreKey = "__lifelinesLivesStore__";

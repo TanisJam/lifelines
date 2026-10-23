@@ -18,6 +18,12 @@ export interface CreateLifeRequest {
   readonly lang?: string;
   /** Abuse protection: the Cloudflare Turnstile token from the create-life form's widget. Ignored when Turnstile isn't configured server-side (see `src/server/turnstile.ts`). */
   readonly turnstileToken?: string;
+  /**
+   * Which engine creates this life. Absent or `"legacy"` is the original path, unchanged; only
+   * `"lifecycle"` runs the new engine (`src/server/lifecycle-life.ts`). Any other value is a 400
+   * before admission — there is no implicit fallback between the two representations.
+   */
+  readonly engine?: "legacy" | "lifecycle";
 }
 
 /** POST /api/lives/:lifeId/rewrite/stream request body. */
@@ -36,6 +42,11 @@ export interface PersonLink {
   readonly personId: string;
   readonly name: string;
 }
+
+/** Opt-in literal prose: link tokens resolve exact canonical IDs through `links`. */
+export type ProseToken =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "link"; readonly personId: string };
 
 /** 1 = ordinary, 2 = significant, 3 = turn (editable). ui-ux-handoff.md §7. */
 export type EntryLevel = 1 | 2 | 3;
@@ -65,7 +76,8 @@ export interface Turn {
 
 /** Night-sky scene graph (spec: life-scene). Times are fractional years (1350.5 = mid-1350). */
 export type SceneGroup = "self" | "parents" | "siblings" | "spouses" | "children" | "others" | "outer";
-export type RelCode = "self" | "parent" | "sibling" | "spouse" | "child" | "lover" | "rival" | "friend" | "childSpouse" | "grandchild";
+/** `participant` is a presentation-only neutral entry in `others`, not an asserted social bond. */
+export type RelCode = "self" | "parent" | "sibling" | "spouse" | "child" | "lover" | "rival" | "friend" | "childSpouse" | "grandchild" | "participant";
 export type EdgeKind = "parent" | "spouse" | "lover" | "rival" | "friend";
 
 export interface ScenePerson {
@@ -106,6 +118,8 @@ export interface SceneBand {
 }
 
 export interface LifeScene {
+  /** Explicit historical eligibility; absent preserves the legacy animated timeline. */
+  readonly timeBasis?: "journal-ordered";
   readonly people: readonly ScenePerson[];
   readonly edges: readonly SceneEdge[];
   readonly village: readonly VillageSoul[];
@@ -121,9 +135,11 @@ export interface ChronicleEntry {
   readonly level: EntryLevel;
   readonly kind: "birth" | "death" | "period" | string;
   readonly title: string;
-  /** May contain `{{personId}}` markers resolved through `links`. */
+  /** Legacy markers when tokens are absent; otherwise exact resolved token plaintext. */
   readonly prose: string;
   readonly links: readonly PersonLink[];
+  /** Optional opt-in; absent/undefined retains legacy parsing. Invalid tokens throw TypeError. */
+  readonly proseTokens?: readonly ProseToken[];
   /** At most one: "Follows her courtship with Greta Ravensworth (1506)". */
   readonly cause?: { readonly entryId?: string; readonly phrase: string; readonly year: number };
   readonly turn?: Turn;
@@ -141,14 +157,26 @@ export interface BranchInfo {
   readonly forkYear: number | null;
 }
 
+/**
+ * The protagonist block shared by the chronicle and the "Your lives" list.
+ *
+ * COMPLETION AND HORIZON ARE DIFFERENT STATES (spec S1). A `complete` life ended in a death inside
+ * its horizon and carries that death's own year, age and cause. A life still alive at its horizon is
+ * `incomplete`: it carries an explicit `null` in all three death fields — never a borrowed year, a
+ * zero age or an empty cause — and the last chronicled year in `horizonYear`. The invariant is
+ * `deathYear === null` if and only if `horizonYear` is present.
+ */
 export interface ProtagonistInfo {
   readonly name: string;
   readonly sex: LifeSex;
   readonly birthYear: number;
-  readonly deathYear: number;
-  readonly ageAtDeath: number;
-  /** Short cause: "a winter fever", "childbirth", "old age". */
-  readonly causeOfDeath: string;
+  /** The real death year of a `complete` life; `null` while the protagonist is alive at the horizon. */
+  readonly deathYear: number | null;
+  readonly ageAtDeath: number | null;
+  /** Short cause: "a winter fever", "childbirth", "old age". `null` while alive. */
+  readonly causeOfDeath: string | null;
+  /** `incomplete` only: the last chronicled year — the horizon this life reached alive. Absent when the life ended in a death. */
+  readonly horizonYear?: number;
 }
 
 export interface Chronicle {
@@ -187,9 +215,12 @@ export interface LifeListItem {
   readonly lifeId: string;
   readonly name: string;
   readonly birthYear: number;
-  readonly deathYear: number;
-  readonly ageAtDeath: number;
-  readonly causeOfDeath: string;
+  /** `null` while the life is still alive at its horizon (spec S5); a completed life keeps its real death. */
+  readonly deathYear: number | null;
+  readonly ageAtDeath: number | null;
+  readonly causeOfDeath: string | null;
+  /** Alive-at-horizon rows only: the last chronicled year. Absent on every completed or legacy row, whose wire shape is unchanged. */
+  readonly horizonYear?: number;
   readonly branchCount: number;
 }
 

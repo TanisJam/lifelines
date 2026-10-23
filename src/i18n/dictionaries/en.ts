@@ -23,6 +23,7 @@ const EN_RELATION: Record<RelCode, readonly [string, string]> = {
   lover: ["love", "love"],
   rival: ["rival", "rival"],
   friend: ["friend", "friend"],
+  participant: ["participant", "participant"],
   childSpouse: ["daughter-in-law", "son-in-law"],
   grandchild: ["granddaughter", "grandson"],
 };
@@ -71,6 +72,9 @@ export const en = {
     loading: "Loading…",
     empty: "No lives yet.",
     entry: (ageAtDeath: number, causeOfDeath: string, branchCount: number) => `Died at ${ageAtDeath}, of ${causeOfDeath}. ${branchCount} ${branchCount === 1 ? "version" : "versions"} of this life.`,
+    /** An alive-at-horizon life (spec S5): it shows as alive in the year its chronicle reached, never as a death. */
+    spanAlive: (birthYear: number) => `${birthYear}–…`,
+    aliveEntry: (age: number, horizonYear: number, branchCount: number) => `Still alive in ${horizonYear}, aged ${age}. ${branchCount} ${branchCount === 1 ? "version" : "versions"} of this life.`,
     writeAnother: "Write another life",
   },
   life: {

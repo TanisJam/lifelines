@@ -27,6 +27,7 @@ describe("POST /api/lives/stream — quiet years", () => {
     const ticks = frames.filter((f) => f.event === "tick").map((f) => f.data as Extract<LifeStreamEvent, { type: "tick" }>);
     const done = frames.find((f) => f.event === "done")!.data as Extract<LifeStreamEvent, { type: "done" }>;
     const { birthYear, deathYear } = done.chronicle.protagonist;
+    if (deathYear === null) throw new Error("Expected the legacy route's completed life to carry a death year.");
     expect(ticks.map((t) => t.year)).toEqual(Array.from({ length: deathYear - birthYear + 1 }, (_, i) => birthYear + i));
     expect(ticks.every((t) => t.entries.length === 0 && t.scene.people.length > 0)).toBe(true);
     deleteLife(done.chronicle.lifeId);

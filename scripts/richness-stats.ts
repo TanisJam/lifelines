@@ -51,7 +51,10 @@ async function runOne(seed: string): Promise<LifeStats> {
   let minEntriesPerYear = Infinity;
   let missingYears = 0;
   if (chronicle) {
-    for (let year = chronicle.protagonist.birthYear; year <= chronicle.protagonist.deathYear; year++) {
+    // These corpus lives are completed (they end in a death); the horizon state is not measured here.
+    const deathYear = chronicle.protagonist.deathYear;
+    if (deathYear === null) throw new Error(`Life ${life.id} has no death year.`);
+    for (let year = chronicle.protagonist.birthYear; year <= deathYear; year++) {
       const count = countByYear.get(year) ?? 0;
       if (count === 0) missingYears += 1;
       minEntriesPerYear = Math.min(minEntriesPerYear, count);

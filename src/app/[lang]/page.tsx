@@ -10,6 +10,7 @@ import { TurnstileWidget } from "@/components/turnstile-widget";
 import type { Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/get-dictionary";
 import { guardErrorMessage } from "@/lib/guard-error";
+import { requestedEngine } from "@/lib/engine-flag";
 import { getLives } from "@/lib/life-client";
 import { useTurnstileSiteKey } from "@/lib/turnstile-client";
 
@@ -68,8 +69,13 @@ export default function HomePage() {
     setError(null);
     setStage("creating");
 
+    // RA1 (spec S1): hidden opt-in. The create form never offers the new engine visibly; only an
+    // `?engine=lifecycle` in the address bar requests it, and the field is omitted entirely
+    // otherwise, so a reader who never passes the flag sends exactly today's request body.
+    const engine = requestedEngine(window.location.search);
+
     try {
-      await live.start({ name: name.trim(), sex, villageName: villageName.trim() || undefined, lang, turnstileToken: turnstileToken ?? undefined }, (saved) => {
+      await live.start({ name: name.trim(), sex, villageName: villageName.trim() || undefined, lang, turnstileToken: turnstileToken ?? undefined, ...(engine === undefined ? {} : { engine }) }, (saved) => {
         window.history.replaceState(null, "", `/${lang}/life/${saved.lifeId}?branch=${saved.branchId}`);
       });
     } catch (err) {

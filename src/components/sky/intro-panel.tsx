@@ -18,13 +18,17 @@ export function IntroPanel({ chronicle, sky, store, labels, busy, seek, onBranch
   useEffect(() => store.onFrame((frame) => setLiving(ageAt(scene, frame.t).alive)), [store, scene]);
   const { branches, branchId } = chronicle;
   const forkYear = branches.find((b) => b.branchId === branchId)?.forkYear ?? null;
-  const epitaph = `${sky.intro.epitaph(protagonist.name, protagonist.birthYear, protagonist.deathYear ?? protagonist.birthYear)} ${firstSentence(chronicle.summary, chronicle.summaryLinks)}`.trim();
+  // An alive-at-horizon life has no death, so it has no epitaph: the motto keeps the panel honest
+  // instead of borrowing a year that never happened (spec S5).
+  const epitaph = protagonist.deathYear === null
+    ? null
+    : `${sky.intro.epitaph(protagonist.name, protagonist.birthYear, protagonist.deathYear)} ${firstSentence(chronicle.summary, chronicle.summaryLinks)}`.trim();
   return (
     <section className="sky-intro">
       <h1 className="sky-heading">{sky.title(protagonist.name)}</h1>
       <p className="sky-lede">{sky.intro.lede(protagonist.sex, chronicle.villageName)}</p>
       <hr className="sky-rule" />
-      {living ? (
+      {living || epitaph === null ? (
         <p key="motto" className="sky-motto">
           {sky.intro.mottoA}
           <br />

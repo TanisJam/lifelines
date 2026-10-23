@@ -1,5 +1,6 @@
 import type { LifeScene, ScenePerson } from "@/contracts/life";
 import { focusSet } from "@/lib/sky/focus-set";
+import { domCoordinate } from "@/lib/sky/dom-coordinate";
 import { edgeKey } from "@/lib/sky/layout";
 import type { PlayerStore } from "@/lib/sky/player-store";
 import type { StarText } from "@/lib/sky/describe-star";
@@ -37,9 +38,9 @@ const toggle = (el: Element, name: string, on: boolean) => {
 export function createFocus({ svg, tip, scene, store, describe, activate }: FocusInit): Focus {
   const people = new Map(scene.people.map((p) => [p.id, p]));
   const nodes = new Map<string, SVGGElement>();
-  scene.people.forEach((p) => nodes.set(p.id, svg.querySelector<SVGGElement>(`[data-person="${CSS.escape(p.id)}"]`)!));
+  scene.people.forEach((p) => nodes.set(p.id, svg.querySelector<SVGGElement>(`[data-person="${domCoordinate(p.id)}"]`)!));
   const edges = new Map<string, SVGPathElement>();
-  scene.edges.forEach((e) => edges.set(edgeKey(e), svg.querySelector<SVGPathElement>(`[data-edge="${CSS.escape(edgeKey(e))}"]`)!));
+  scene.edges.forEach((e) => edges.set(edgeKey(e), svg.querySelector<SVGPathElement>(`[data-edge="${domCoordinate(edgeKey(e))}"]`)!));
   const [relEl, nameEl, subEl] = [tip.querySelector(".r")!, tip.querySelector("b")!, tip.querySelector(".s")!];
 
   let frame: Frame | null = null;

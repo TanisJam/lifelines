@@ -10,9 +10,20 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Measured, not guessed (odd/tasks/lifecycle-full-lifetime.md L8): a full life - the protagonist's
+      # whole 57-year life at seed cap-0 - completes at 1536 MB of JS heap with a 1.36 GiB VmHWM peak.
+      # Without an explicit cap V8 sizes the heap from the HOST instead of this cgroup limit, so it
+      # never collects, reaches ~4.6 GB and dies.
+      NODE_OPTIONS: --max-old-space-size=1536
     # Bounds the container's total memory (the app's own STORE_CACHE_SIZE bounds the two in-process
     # life/world LRU caches, but this is the outer guardrail against the whole container's usage —
-    # Node's own overhead, request buffering, etc.) — generous for a single-instance homelab deploy.
+    # Node's own overhead, request buffering, etc.).
+    # MEASURED IN THIS CONTAINER, not assumed: at 2g, a full life (seed cap-0, 57 years to death)
+    # completes in 43-44 s over HTTP with 57 streamed ticks, peak cgroup memory 1.386 GiB, OOMKilled
+    # false, and the resulting chronicle reads in 20 ms. ~0.6 GiB of headroom remains.
+    # This is BELOW the old 2g bound that OOM-killed a create when it peaked at 2.07 GiB - the
+    # compaction work is what moved it. Re-measure before raising NODE_OPTIONS or lowering this.
     mem_limit: 2g
     volumes:
       - lifelines-data:/data

@@ -7,9 +7,10 @@ import type { Override } from "@/domain/types";
 import { validateOverride } from "@/domain/validate-override";
 import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
-import { buildLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
+import { assertCompletedLife } from "@/server/completed-life";
+import { buildCandidateLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
 import { createSceneTracker, friendSeenBefore } from "@/server/life-scene";
-import { getLife, getLifeBranch, newLifeBranchId, registerLifeBranch } from "@/server/life-store";
+import { getLife, getLifeBranch, listLifeBranches, newLifeBranchId, registerLifeBranch, type LifeBranchRecord } from "@/server/life-store";
 import { sseResponse, yieldToEventLoop } from "@/server/sse";
 
 export const runtime = "nodejs";
@@ -139,14 +140,15 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
       throw error;
     }
 
+    if (signal.aborted) return;
+    assertCompletedLife(report.result, report.snapshots);
     const label = `Changed in ${forkYear}`;
-    const newBranch = registerLifeBranch(lifeId, newBranchId, branchId, forkYear, override, report.result, report.snapshots, label);
-    if (!newBranch) {
-      send("error", { type: "error", message: "Failed to create the new branch." });
-      return;
-    }
-
-    const chronicleResult = await buildLifeChronicle(lifeId, newBranchId, locale);
+    const candidate: LifeBranchRecord = {
+      id: newBranchId, lifeId, parentBranchId: branchId, forkYear, override, label,
+      result: report.result, snapshots: report.snapshots, createdAt: Date.now(),
+    };
+    const chronicleResult = await buildCandidateLifeChronicle(candidate, [...listLifeBranches(lifeId), candidate], locale);
+    if (signal.aborted) return;
     if (!chronicleResult.data) {
       send("error", { type: "error", message: chronicleResult.error ?? "Failed to build the chronicle." });
       return;
@@ -168,6 +170,13 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
       ghosts,
       stats: { jevCalls: report.decisionCalls, cacheHits: runStats.cacheHits, wallTimeMs: report.wallTimeMs, jevRequests: runStats.jevRequests, jevQuestions: runStats.jevQuestions, inputTokens: runStats.inputTokens, estimatedUsd: runStats.estimatedUsd },
     };
+    // All fallible asynchronous construction and cancellation checks precede publication.
+    if (signal.aborted) return;
+    const newBranch = registerLifeBranch(lifeId, newBranchId, branchId, forkYear, override, report.result, report.snapshots, label);
+    if (!newBranch) {
+      send("error", { type: "error", message: "Failed to create the new branch." });
+      return;
+    }
     send("done", done);
   });
 }

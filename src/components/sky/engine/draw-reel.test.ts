@@ -3,11 +3,11 @@ import { fixtureChronicle } from "@/lib/fixtures";
 import { timeline } from "@/lib/sky/dial";
 import { computeLayout } from "@/lib/sky/layout";
 import { createPlayerStore } from "@/lib/sky/player-store";
-import { reelEntries } from "@/lib/sky/reel-model";
+import { reelEntries, type ReelEntry } from "@/lib/sky/reel-model";
 import { frameAt } from "@/lib/sky/scene-model";
 import { scrollAt, tapeYs } from "@/lib/sky/tape";
 import { createReel } from "./draw-reel";
-import { FakeEl } from "./fake-dom";
+import { FakeEl, FakeText } from "./fake-dom";
 
 const chronicle = fixtureChronicle("life-elin");
 const scene = chronicle.scene;
@@ -32,11 +32,15 @@ beforeEach(() => {
       }
     },
   );
-  vi.stubGlobal("document", { createElementNS: () => new FakeEl("path") });
+  vi.stubGlobal("document", {
+    createElementNS: (_ns: string, tag: string) => new FakeEl(tag),
+    createElement: (tag: string) => new FakeEl(tag),
+    createTextNode: (text: string) => new FakeText(text),
+  });
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function setup() {
+function setup(entries: readonly ReelEntry[] = reelEntries(chronicle.entries)) {
   const area = new FakeEl("div");
   area.rect = { left: 0, top: 0, width: 1400, height: 800, right: 1400, bottom: 800 };
   area.querySelector(".sky-disc").rect = { left: 0, top: 0, width: 800, height: 800, right: 800, bottom: 800 };
@@ -96,6 +100,127 @@ describe("createReel", () => {
     expect(openPerson).toHaveBeenCalledWith("p-elin");
     expect(ev.prevented).toBe(true);
     expect(seek).not.toHaveBeenCalled();
+  });
+
+  describe("literal rendered links", () => {
+    const ids = ["plain", 'quotes"\'&<>', "line\r\nbreak", "nul\0id", "\ud800", "\udfff", "雪😀", "__proto__", "constructor", "toString", "{{marker}}", "}", " "];
+    const name = '<img src=x onerror="oops">\r\n\0\ud800雪😀{{marker}}';
+    const suffix = ' <script>oops</script>\r\0\udfff{{unknown}}';
+    function entry(personId: string, linkedName = name): ReelEntry {
+      const text = { title: '<b>Title</b>\r\0\ud800', by: 'Choice\r\0', prose: `Before ${linkedName}${suffix}`, links: [{ start: 7, end: 7 + linkedName.length, personId }] };
+      return { ...entries[0]!, at: 0, text, parts: [text.title, text.by, text.prose].map((text) => ({ text, rate: 0.01 })) };
+    }
+
+    it.each(ids)("renders literal UTF-16 and selects the exact ID %j through an actual anchor", (id) => {
+      wide = false;
+      const e = entry(id);
+      const { draw, rows, ol, openPerson, seek, reel } = setup([e]);
+      draw(10);
+      expect(rows[0]!.querySelector(".t").textContent).toBe(e.text.title);
+      expect(rows[0]!.querySelector(".by").textContent).toBe(e.text.by);
+      const prose = rows[0]!.querySelector(".p");
+      expect(prose.textContent).toBe(e.text.prose);
+      const anchors = prose.children.filter((el) => el.tag === "a");
+      expect(anchors).toHaveLength(1);
+      const anchor = anchors[0]!;
+      expect(anchor.textContent).toBe(name);
+      expect(anchor.attrs).toEqual({ href: "#", "data-person-link": "" });
+      expect(anchor.children).toHaveLength(0);
+      expect(anchor.childNodes[0]).toBeInstanceOf(FakeText);
+      anchor.dataset.personLink = "tampered";
+      expect(ol.fire("click", {}, anchor).prevented).toBe(true);
+      const child = new FakeEl("span");
+      anchor.append(child);
+      child.fire("click");
+      expect(openPerson.mock.calls).toEqual([[id], [id]]);
+      expect(seek).not.toHaveBeenCalled();
+      reel.destroy();
+    });
+
+    it("keeps each rendered prefix, partial anchor and caret correct while scrubbing backwards", () => {
+      wide = false;
+      const e = entry("a", "Ann");
+      const { draw, rows, ol, openPerson, reel } = setup([e]);
+      const title = rows[0]!.querySelector(".t");
+      const by = rows[0]!.querySelector(".by");
+      const prose = rows[0]!.querySelector(".p");
+      draw(0.025);
+      expect(title.textContent).toBe(e.text.title.slice(0, 2));
+      expect(title.children.map((el) => el.attrs.class)).toEqual(["sky-caret"]);
+      draw((e.text.title.length + 1.5) * 0.01);
+      expect(title.children).toHaveLength(0);
+      expect(by.textContent).toBe("C");
+      expect(by.children.map((el) => el.attrs.class)).toEqual(["sky-caret"]);
+      draw((e.text.title.length + e.text.by!.length + 9.5) * 0.01);
+      expect(title.textContent).toBe(e.text.title);
+      expect(by.textContent).toBe(e.text.by);
+      expect(prose.textContent).toBe("Before An");
+      expect(prose.children.map((el) => el.tag)).toEqual(["a", "span"]);
+      expect(prose.children[0]!.textContent).toBe("An");
+      const partial = prose.children[0]!;
+      ol.fire("click", {}, partial);
+      expect(openPerson).toHaveBeenCalledWith("a");
+      draw(10);
+      expect(partial.parentElement).toBeNull();
+      expect(prose.textContent).toBe(e.text.prose);
+      expect(prose.children.map((el) => el.tag)).toEqual(["a"]);
+      draw((e.text.title.length + e.text.by!.length + 6.5) * 0.01);
+      expect(prose.textContent).toBe("Before");
+      expect(prose.children.map((el) => el.tag)).toEqual(["span"]);
+      draw(0);
+      expect(prose.textContent).toBe("");
+      expect(prose.style.display).toBe("none");
+      reel.destroy();
+    });
+
+    it("uses WeakMap membership for an empty internal range ID without admitting it as canonical", () => {
+      wide = false;
+      const { draw, rows, ol, openPerson, seek, reel } = setup([entry("", "Ann")]);
+      draw(10);
+      const anchor = rows[0]!.querySelector(".p").children[0]!;
+      anchor.dataset.personLink = "not-the-id";
+      ol.fire("click", {}, anchor);
+      expect(openPerson).toHaveBeenCalledWith("");
+      expect(seek).not.toHaveBeenCalled();
+      reel.destroy();
+    });
+
+    it("renders legacy marker resolution literally without changing unknown-marker removal", () => {
+      wide = false;
+      const source = { ...chronicle.entries[0]!, at: 0, title: "a < b & c", prose: "{{a}} + {{missing}} suffix{{a}}", links: [{ personId: "a", name: name }] };
+      const resolved = reelEntries([source]);
+      const { draw, rows, reel } = setup(resolved);
+      draw(0.016 * 5.5);
+      expect(rows[0]!.querySelector(".t").textContent).toBe("a < b");
+      draw(10);
+      expect(rows[0]!.querySelector(".p").textContent).toBe(`${name} +  suffix${name}`);
+      expect(rows[0]!.querySelector(".p").children.map((el) => el.textContent)).toEqual([name, name]);
+      reel.destroy();
+    });
+
+    it("distinguishes same-name people, guards unmapped hooks, excludes link keys and cleans up", () => {
+      wide = false;
+      const e = entry("first", "Ann");
+      const text = { ...e.text, prose: "AnnAnn", links: [{ start: 0, end: 3, personId: "first" }, { start: 3, end: 6, personId: "second" }] };
+      const { draw, rows, ol, openPerson, seek, reel } = setup([{ ...e, text, parts: [text.title, text.by!, text.prose].map((text) => ({ text, rate: 0.01 })) }]);
+      draw(10);
+      const prose = rows[0]!.querySelector(".p");
+      const anchors = prose.children.filter((el) => el.tag === "a");
+      expect(anchors).toHaveLength(2);
+      anchors.forEach((a) => ol.fire("click", {}, a));
+      expect(openPerson.mock.calls).toEqual([["first"], ["second"]]);
+      const unknown = new FakeEl("a", { "data-person-link": "" }, rows[0]!);
+      ol.fire("click", {}, unknown);
+      expect(openPerson).toHaveBeenCalledTimes(2);
+      ol.fire("keydown", { key: "Enter" }, anchors[0]!);
+      ol.fire("keydown", { key: " " }, new FakeEl("button", {}, rows[0]!));
+      expect(seek).not.toHaveBeenCalled();
+      reel.destroy();
+      anchors[0]!.fire("click");
+      draw(0);
+      expect(openPerson).toHaveBeenCalledTimes(2);
+      expect(prose.textContent).toBe(text.prose);
+    });
   });
 
   describe("wheel", () => {

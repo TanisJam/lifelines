@@ -4,16 +4,21 @@ import { drainSimulation, SimulationAbortedError, simulateYears } from "@/domain
 import { generateWorld, resolveProtagonistSex } from "@/domain/worldgen";
 import { guardSimulation } from "@/server/abuse-guard";
 import { decisionMakerRunStats, snapshotDecisionMakerStats } from "@/server/decision-engine";
-import { buildLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
+import { assertCompletedLife } from "@/server/completed-life";
+import { getDb } from "@/server/db";
+import { buildCandidateLifeChronicle, buildProvisionalTickEntries } from "@/server/life-chronicle";
+import { LifecycleQueueFullError, requestLifecycleCreateSlot } from "@/server/lifecycle-create-queue";
+import { streamLifecycleLife } from "@/server/lifecycle-life";
+import { LifecycleRepository } from "@/server/lifecycle-repository";
 import { createSceneTracker } from "@/server/life-scene";
-import { newLifeBranchId, newLifeId, registerLife } from "@/server/life-store";
+import { newLifeBranchId, newLifeId, registerLife, type LifeBranchRecord } from "@/server/life-store";
 import { sseResponse, yieldToEventLoop } from "@/server/sse";
 
 export const runtime = "nodejs";
 
 /** Period-setting capability: the run begins at the start of the 1327–1361 period this engine models. */
 const START_YEAR = 1327;
-/** A generous safety cap (see mortality.ts): the sim always stops earlier, at the protagonist's death, but the actuarial curve alone never guarantees that before some fixed year. */
+/** Legacy bounded horizon, NOT completion: survivors must fail admission. Autonomous continuation is pending. */
 const MAX_LIFESPAN_YEARS = 100;
 
 function randomSeed(): string {
@@ -33,6 +38,10 @@ function errorResponse(message: string, status = 400): Response {
  * carries the one authoritative `Chronicle`, built by `buildLifeChronicle` (which DOES call Jev).
  * A client disconnect aborts the in-flight simulation and skips persisting a branch (see
  * `sseResponse`'s `AbortSignal` and `drainSimulation`'s `SimulationAbortedError`).
+ *
+ * RI1c (spec S7): `engine: "lifecycle"` streams the same `LifeStreamEvent` frames from the new
+ * engine instead, through `lifecycle-life.ts`. Absent or `"legacy"` keeps this legacy body exactly
+ * as it was; the shared admission guard applies to both branches.
  */
 export async function POST(request: Request): Promise<Response> {
   let body: Partial<CreateLifeRequest> = {};
@@ -46,18 +55,70 @@ export async function POST(request: Request): Promise<Response> {
   if (!name) return errorResponse('"name" is required.');
   const sex = body.sex;
   if (sex !== "f" && sex !== "m" && sex !== "random") return errorResponse('"sex" must be "f", "m" or "random".');
+  // Versioned branch selection (RI1c): absent or "legacy" is the original path, unchanged. An
+  // unknown value is refused here — with the other cheap local shape checks, before admission —
+  // and is never coerced into either representation.
+  const engine = body.engine;
+  if (engine !== undefined && engine !== "legacy" && engine !== "lifecycle") {
+    return errorResponse('"engine" must be "legacy" or "lifecycle".');
+  }
 
   // Rate limit + (if configured) Turnstile verification, BEFORE any simulation work starts —
   // validated above only checks cheap, purely local input shape, so a malformed request never
   // costs the caller a rate-limit slot.
   const guard = await guardSimulation(request, body);
   if (guard instanceof Response) return guard;
-  const { decisionMaker, engineSource, backgroundDecisionMaker } = guard.engine;
 
   const seed = body.seed?.trim() || randomSeed();
+  const locale = body.lang && isLocale(body.lang) ? body.lang : "en";
+
+  if (engine === "lifecycle") {
+    // New engine (spec S7): the existing admission guard above still applies; no DecisionMaker is
+    // used, and persistence goes only through `LifecycleRepository`. The route owns identity and
+    // transport; the orchestration, projection and persist live in `lifecycle-life.ts`. The ids
+    // come from the same allocator as legacy lives (one identity space, `counters` rows only) —
+    // no `lives` or `life_branches` row is written by this branch.
+    // One create at a time: a second concurrent create exceeds the container's 2560m cgroup and the
+    // kernel kills the process, reads included. A full waiting list is refused BEFORE a stream is
+    // opened, so the client gets an honest 429 instead of an SSE that never starts.
+    let ticket;
+    try {
+      ticket = requestLifecycleCreateSlot();
+    } catch (error) {
+      if (error instanceof LifecycleQueueFullError) return errorResponse(error.message, 429);
+      throw error;
+    }
+    const lifeId = newLifeId();
+    const branchId = newLifeBranchId();
+    const villageName = body.villageName?.trim() || undefined;
+    return sseResponse(async (send, signal) => {
+      try {
+        await ticket.ready(signal);
+        if (signal.aborted) return;
+        await streamLifecycleLife({
+          // Per-request seam: the repository owns no state beyond its prepared statements.
+          repository: new LifecycleRepository(getDb()),
+          lifeId,
+          branchId,
+          name,
+          sex,
+          seed,
+          ...(villageName === undefined ? {} : { villageName }),
+          locale,
+          signal,
+          emit: (event) => send(event.type, event),
+          flushFrame: yieldToEventLoop,
+        });
+      } finally {
+        ticket.release();
+      }
+    });
+  }
+
+  const { decisionMaker, engineSource, backgroundDecisionMaker } = guard.engine;
+
   const startYear = START_YEAR;
   const endYear = startYear + MAX_LIFESPAN_YEARS;
-  const locale = body.lang && isLocale(body.lang) ? body.lang : "en";
 
   // "Let fate decide" (decision 041): resolve "random" to a concrete sex via the DecisionMaker
   // BEFORE the world (and the protagonist's own PersonMind) exists, rather than a name-blind coin
@@ -120,9 +181,14 @@ export async function POST(request: Request): Promise<Response> {
       throw error;
     }
 
-    registerLife(lifeId, branchId, config, protagonist.name, protagonistSex, report.result, report.snapshots);
-
-    const chronicleResult = await buildLifeChronicle(lifeId, branchId, locale);
+    if (signal.aborted) return;
+    assertCompletedLife(report.result, report.snapshots);
+    const candidate: LifeBranchRecord = {
+      id: branchId, lifeId, label: "Original life", result: report.result,
+      snapshots: report.snapshots, createdAt: Date.now(),
+    };
+    const chronicleResult = await buildCandidateLifeChronicle(candidate, [candidate], locale);
+    if (signal.aborted) return;
     if (!chronicleResult.data) {
       send("error", { type: "error", message: chronicleResult.error ?? "Failed to build the chronicle." });
       return;
@@ -137,6 +203,9 @@ export async function POST(request: Request): Promise<Response> {
       chronicle,
       stats: { jevCalls: report.decisionCalls, cacheHits: runStats.cacheHits, wallTimeMs: report.wallTimeMs, jevRequests: runStats.jevRequests, jevQuestions: runStats.jevQuestions, inputTokens: runStats.inputTokens, estimatedUsd: runStats.estimatedUsd },
     };
+    // No await between the final cancellation check and synchronous visible publication.
+    if (signal.aborted) return;
+    registerLife(lifeId, branchId, config, protagonist.name, protagonistSex, report.result, report.snapshots);
     send("done", done);
   });
 }
