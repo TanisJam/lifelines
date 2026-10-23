@@ -28,9 +28,9 @@ S8 — Content coverage. Content must be sized from measurement, not guesswork: 
 | --- | --- | --- | --- |
 | T1 | S1, S2 | inline | done — 693b89e |
 | T2 | S3, S6 | inline | done — 693b89e |
-| T3 | S4, S5 (frequent vignettes) | inline | partial — 4 of 28 converted (feast-day, market-day, neighbor-needs-help, old-debt), 4 variants each |
-| T4 | S4, S5 (remaining vignettes) | inline | pending |
-| T5 | S3, S8 invariant test + measurement | inline | pending |
+| T3 | S4, S5 (frequent vignettes) | inline | done — 693b89e (four variants each) |
+| T4 | S4, S5 (remaining vignettes) | inline | done — bdf11c1 (all 28 carry ≥3 phrasings, 88 total) |
+| T5 | S3, S8 invariant test + measurement | inline | open — 70-year life still falls back late (see L5) |
 | T6 | docs | inline | pending |
 
 ## Log
@@ -42,4 +42,7 @@ L2 — Measured on `life10-mvl08wds` (Mario, 1327–1397, legacy engine): 71 ent
 L3 — Synthetic full life (`cap-0`, 1327–1400, `protagonistId: protagonist`, rules engine): 80 entries, 57 vignette entries over an eligible pool of 19 vignettes. Frequency: feast-day 9, market-day 8, neighbor-needs-help 8, old-debt 8, hard-winter 5, poor-harvest 4, first-glance 2, aches-of-age 2, thirteen others once each. **Sizing:** a normal life needs ~57 distinct phrasings; the 28-vignette pool provides 28 with one phrasing each. Three variants per vignette (84) covers any plausible pool; four on the four most frequent covers 33 of the 57 on its own. This is why the task is content-bound, not code-bound.
 
 L4 — After 693b89e (mechanism + four vignettes at four variants): same life, distinct texts 44 → 58. The remaining repeats come from the S7 exhaustion fallback (31 available phrasings for 57 vignette-years), which is exactly what T4 removes.
+
+L5 — After bdf11c1 (all 28 vignettes at 3 phrasings, the four most frequent at 4; 88 in total): distinct texts 63, worst repeat 2×. The limiting factor is not the 88 but ELIGIBILITY: this protagonist's pool is 15 vignettes, so only ~48 of the 88 phrasings are reachable, against 57 vignette-years. The last ~9 years therefore hit the S7 fallback. Closing it needs either a fourth phrasing on the adult-eligible vignettes (~12 more slots) or more adult-eligible situations — content, not code.
+
 
