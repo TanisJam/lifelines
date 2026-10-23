@@ -62,11 +62,11 @@ describe("decision 059: vignette locale parity", () => {
 describe("chronicle variation — deterministic variants", () => {
   const townName = "Ravenford";
 
-  it("walks 0, 1, 2… so N occurrences use N distinct phrasings, clamping past the end", () => {
+  it("walks 0, 1, 2… so N occurrences use N distinct phrasings, cycling past the end", () => {
     expect(vignetteVariant(0, 3)).toBe(0);
     expect(vignetteVariant(1, 3)).toBe(1);
     expect(vignetteVariant(2, 3)).toBe(2);
-    expect(vignetteVariant(3, 3)).toBe(2);
+    expect(vignetteVariant(3, 3)).toBe(0);
     expect(vignetteVariant(0, 1)).toBe(0);
     expect(vignetteVariant(9, 1)).toBe(0);
   });
