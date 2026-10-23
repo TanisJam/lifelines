@@ -1751,6 +1751,7 @@ function buildDailyLifeVignetteDescriptor(
   people: Readonly<Record<string, Person>>,
   events: readonly Event[],
   townEventType: TownEventType | undefined,
+  slot = 1,
 ): { descriptor: CandidateDescriptor; vignette: Vignette; deciderId: string } {
   const ctx: VignetteContext = {
     age: ageInYear(protagonist.birthYear, year),
@@ -1781,7 +1782,7 @@ function buildDailyLifeVignetteDescriptor(
   const exhaustedIds = new Set(
     VIGNETTES.filter((v) => (occurred.get(v.id) ?? 0) >= (v.variants ?? 1)).map((v) => v.id),
   );
-  const vignette = pickVignette(seed, protagonist.id, year, ctx, recentIds, exhaustedIds);
+  const vignette = pickVignette(seed, protagonist.id, year, ctx, recentIds, exhaustedIds, slot);
   const options = Object.keys(vignette.outcomes);
   const decisionId = `D1:${protagonist.id}:${year}`;
   // An infant/toddler can't make this call themselves (decision 043) — attributed to a living parent

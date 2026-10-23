@@ -57,11 +57,11 @@ describe("compact create bytes are unchanged by the L8 performance work", () => 
   it("cap-0 keeps the same ten-year bytes", async () => {
     expect(await measure("cap-0", 10)).toEqual({
       status: "incomplete", frontier: 1336, years: 10,
-      digest: "641be6b9fe8e3dfb2b3739a32761bda16b448479382f6e843ca39b5fdd8dceb3",
-      journal: "59bf3a262046f10e8f2ecbdd1ae02513082a7a8f5a527ff15804d9ff2c24cdcd",
-      chronicle: "be6dbf1f684ee8e93580ce52925e17799b701e396ad112f96d0702a641ee3a0c",
-      chronicleEntries: 10,
-      sheets: "2ed2349d8ec5f099f616a2dd61927a4073c2f5ef20903cedfd53ace158eee3e1",
+      digest: "7327e82864ce61f778a1e36c7c52a14336d635feec693bf0c2151308846b5545",
+      journal: "a27784a0f61706680c963c408a3a1c7357343f9d59a25b2b351fbf2633c1c8dc",
+      chronicle: "137996ae4bc5001691b9dab2f813f6413050948f16af7415f44c648be95522f4",
+      chronicleEntries: 13,
+      sheets: "dfaa1d85f4b5e263736dcdcc5cb06d0ef5927ead2cdc7054a272466801059572",
       sheetCount: 111,
     });
   }, 180_000);

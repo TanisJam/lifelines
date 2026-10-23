@@ -2,7 +2,7 @@ import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge } from "./ac
 import type { MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { mapWithConcurrency } from "./concurrency";
-import { decisionFragility, isSurprise, keyedDraw, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
+import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistribution, NOT_FRAGILE, sampleGumbelMax } from "./rng";
 import { article } from "./narrate";
 import type { Locale } from "./locale";
 import { FALLBACK_CLASS } from "./period/classes";
@@ -1026,7 +1026,7 @@ export interface LegacyFinalizeContext<TownEvent extends string = string> extend
   readonly originalOverrideYear: number;
   readonly options: LegacySocialBatchContext<SocialCandidate>["options"];
   readonly buildQuestion: (descriptor: LegacyD1Descriptor, year: number, config: WorldConfig, people: Record<string, Person>) => DecisionQuestion;
-  readonly buildDailyLifeVignetteDescriptor: (person: Person, year: number, seed: string, people: Readonly<Record<string, Person>>, events: readonly Event[], townEvent: TownEvent | undefined) => LegacyDailyLifeCandidate<LegacyD1Descriptor>;
+  readonly buildDailyLifeVignetteDescriptor: (person: Person, year: number, seed: string, people: Readonly<Record<string, Person>>, events: readonly Event[], townEvent: TownEvent | undefined, slot?: number) => LegacyDailyLifeCandidate<LegacyD1Descriptor>;
   readonly getVignetteForOption: (option: string) => Vignette | undefined;
   readonly optionLabel: LegacySocialApplyContext<LegacySocialApplyCandidate>["optionLabel"];
   readonly resolveSocialDecision: LegacySocialBatchContext<SocialCandidate>["resolveSocialDecision"];
@@ -1153,6 +1153,38 @@ async function resolveDailyLifeVignette<C extends LegacyD1Descriptor, TownEvent 
   return { decision, wasRealCall };
 }
 
+/**
+ * A life's texture, moderate option: in a quiet year, one extra everyday beat every third year of
+ * the protagonist's life. Deliberately NOT a second `D1` decision — overrides and rewrites address
+ * `D1:<personId>:<year>`, and minting a second addressable decision would widen that contract. The
+ * beat is still simulated (same pool, same eligibility, same exhaustion rule, same side effects as a
+ * vignette outcome); only its outcome is drawn deterministically from the rules distribution, so it
+ * costs no model call and reads as another ordinary moment rather than an editable turn.
+ */
+async function addExtraEverydayMoment<TownEvent extends string>(
+  context: LegacyFinalizeContext<TownEvent>,
+  protagonist: Person,
+  year: number,
+  townEvent: TownEvent | undefined,
+): Promise<void> {
+  const { config, people, events, buildDailyLifeVignetteDescriptor, optionLabel: _unused } = context;
+  const seed = config.seed;
+  const { vignette, deciderId } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEvent, 2);
+  const options = Object.keys(vignette.outcomes);
+  const chosen = options[Math.floor(keyedRng(seed, protagonist.id, year, "D1-extra-moment")() * options.length)]!;
+  const outcome = vignette.outcomes[chosen]!;
+  const cause = outcome.cause(protagonist.name, config.town.name);
+  const actors = deciderId !== protagonist.id ? [deciderId, protagonist.id] : [protagonist.id];
+  pushEvent(events, year, "vignette", actors, { vignette: vignette.id, outcome: chosen }, []);
+  pushThought(protagonist.mind, outcome.emotion, cause, outcome.intensity, outcome.duration, year, outcome.facet as Facet | undefined);
+  if (outcome.memorable) addMemory(seed, protagonist.id, year, protagonist.mind, cause, outcome.emotion);
+  if (outcome.relationshipTarget) {
+    const targetId = relationshipTargetId(outcome.relationshipTarget, protagonist, people);
+    const target = targetId ? people[targetId] : undefined;
+    if (target) updateRelationship(protagonist.mind, target.id, target.mind.values, outcome.relationshipDelta ?? 10);
+  }
+}
+
 /** The quiet-year guard runs after all outcomes, then publishes their CURRENT complete state. */
 export async function finalizeLegacyYear<C extends LegacyD1Descriptor, TownEvent extends string>(
   context: LegacyFinalizeContext<TownEvent>,
@@ -1171,6 +1203,11 @@ export async function finalizeLegacyYear<C extends LegacyD1Descriptor, TownEvent
         const { decision, wasRealCall } = await resolveDailyLifeVignette(context, protagonist, year, townEvent, overrides, d1Candidates, finalVignetteWinner, preFetched);
         decisions.push(decision);
         if (wasRealCall) counters.decisionCalls += 1;
+      }
+      // Moderate density: a second everyday beat in quiet years, every third year of the life.
+      const ageThisYear = year - protagonist.birthYear;
+      if (!hasOwnEventThisYear && ageThisYear > 0 && ageThisYear % 3 === 0) {
+        await addExtraEverydayMoment(context, protagonist, year, townEvent);
       }
     }
   }
