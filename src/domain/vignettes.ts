@@ -117,7 +117,10 @@ function fixed(en: string, es: string): (locale: Locale, townName: string) => st
  */
 export function vignetteVariant(occurrence: number, variants: number): number {
   if (variants <= 1) return 0;
-  return Math.min(occurrence, variants - 1);
+  // Cycles rather than clamps past the end: a life created before phrasings existed (or one that
+  // outruns the content) has more occurrences than variants, and cycling spreads those across every
+  // phrasing instead of stacking all the overflow on the last one.
+  return occurrence % variants;
 }
 
 /**
