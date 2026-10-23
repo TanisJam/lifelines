@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deathProbabilityAtAge } from "./actuarial";
+import { CHILDHOOD_DEATH_FACTOR, CHILDHOOD_MAX_AGE, childhoodMortalityFactor, deathProbabilityAtAge } from "./actuarial";
 import { MORTALITY_BY_AGE_BAND } from "./params/demography";
 
 describe("deathProbabilityAtAge", () => {
@@ -53,5 +53,18 @@ describe("deathProbabilityAtAge", () => {
 
   it("reads from the shared, named MORTALITY_BY_AGE_BAND table, not an inline literal", () => {
     expect(MORTALITY_BY_AGE_BAND.find((b) => 0 < b.maxAge)?.hazard).toBe(deathProbabilityAtAge(0));
+  });
+});
+
+describe("childhood survival guard", () => {
+  it("damps every age below 18 by the same factor and leaves adults untouched", () => {
+    for (let age = 0; age < CHILDHOOD_MAX_AGE; age += 1) expect(childhoodMortalityFactor(age)).toBe(CHILDHOOD_DEATH_FACTOR);
+    expect(childhoodMortalityFactor(CHILDHOOD_MAX_AGE)).toBe(1);
+    expect(childhoodMortalityFactor(40)).toBe(1);
+  });
+
+  it("leaves a child's effective risk a small fraction of the calibrated hazard", () => {
+    const age = 1;
+    expect(deathProbabilityAtAge(age) * childhoodMortalityFactor(age)).toBeLessThan(0.03);
   });
 });

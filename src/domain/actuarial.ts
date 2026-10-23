@@ -40,6 +40,21 @@ import type { SocialClass } from "./types";
  * than the game's own 60-year default — see that comment before assuming this table looks wrong
  * against a 60-year measurement).
  */
+/**
+ * The childhood survival guard (user request, 2026-10-23): "muy raro que mueran al menos hasta los
+ * 18". Below 18 the calibrated hazard is multiplied by this factor, so a child almost always lives.
+ * It is applied to the BASE band hazard only, never to the dated pandemics (Black Death, second
+ * pestilence): those are the period's own story beats and still kill the young, which is the one
+ * historical shape worth keeping.
+ */
+export const CHILDHOOD_MAX_AGE = 18;
+export const CHILDHOOD_DEATH_FACTOR = 0.08;
+
+/** Multiplier applied to a person's base death probability: heavily damped below 18, neutral after. */
+export function childhoodMortalityFactor(age: number): number {
+  return age < CHILDHOOD_MAX_AGE ? CHILDHOOD_DEATH_FACTOR : 1;
+}
+
 export function deathProbabilityAtAge(age: number): number {
   const band = MORTALITY_BY_AGE_BAND.find((b) => age < b.maxAge) ?? MORTALITY_BY_AGE_BAND[MORTALITY_BY_AGE_BAND.length - 1]!;
   return band.hazard;

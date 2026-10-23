@@ -1,4 +1,4 @@
-import { ageInYear, classMortalityMultiplier, deathProbabilityAtAge } from "./actuarial";
+import { ageInYear, CHILDHOOD_MAX_AGE, childhoodMortalityFactor, classMortalityMultiplier, deathProbabilityAtAge } from "./actuarial";
 import type { MintedId } from "./decision-id";
 import type { DecisionMaker, DecisionQuestion, DecisionRecord, DecisionSource, Distribution, PersonYearSituation } from "./decisions";
 import { mapWithConcurrency } from "./concurrency";
@@ -1575,7 +1575,15 @@ export function resolveLegacyVitalDecision<C extends VitalCandidate, Debug>(
     // `townEventMortalityMultiplier`'s own doc comment for why a flat multiplier can't reliably
     // hit their documented scale across every age band.
     const pandemicMortality = blackDeathMortalityForYear(year) ?? secondPestilenceMortalityForYear(year, age);
-    const basePandemic = Math.min(0.9, deathProbabilityAtAge(age) * classMortalityMultiplier(socialClass) * shockMultiplier * illnessMultiplier);
+    // Childhood survival guard: the base band hazard is damped below 18 (see
+    // `actuarial.ts#childhoodMortalityFactor`). Scoped to the protagonist and their own children —
+    // the family the reader actually watches — because damping it village-wide removed enough child
+    // deaths to grow the population, and the full-create cost went from ~46 s to over 60 s. The dated
+    // pandemics below are combined afterwards and are deliberately NOT damped: the Black Death and
+    // the second pestilence still take children, which is the period's own story.
+    const raisesTheReader = person.id === protagonistId || person.fatherId === protagonistId || person.motherId === protagonistId;
+    const childhoodFactor = raisesTheReader ? childhoodMortalityFactor(age) : 1;
+    const basePandemic = Math.min(0.9, deathProbabilityAtAge(age) * classMortalityMultiplier(socialClass) * shockMultiplier * illnessMultiplier * childhoodFactor);
     const p = pandemicMortality === undefined ? basePandemic : Math.min(0.9, 1 - (1 - basePandemic) * (1 - pandemicMortality));
     // Decision 050: `hasActiveFeud` (and therefore the "feud-violence" cause) is now computed for
     // EVERY person, not just the protagonist — `activeFeudPair` already reads the general event
@@ -1615,6 +1623,13 @@ export function resolveLegacyVitalDecision<C extends VitalCandidate, Debug>(
         const heriotEvent = pushEvent(events, year, "manorial-fine", [person.id], manorialFinePayload("heriot", person.id), [deathEvent.id]);
         resultingEventIds.push(heriotEvent.id);
       }
+    } else if (age < CHILDHOOD_MAX_AGE && person.id === protagonistId && keyedDraw(seed, person.id, year, "childhood-close-call") < 0.12) {
+      // The user's own framing: the year's danger still comes for the child, and the child pulls
+      // through — the roll's "die" branch was damped, so this narrates what the damping means
+      // instead of leaving the year silently ordinary. Protagonist only, and gated again, so it
+      // reads as a rare, memorable beat rather than a yearly fixture.
+      pushEvent(events, year, "reflection", [person.id], { note: "survived-a-close-call" }, illnessEvent ? [illnessEvent.id] : []);
+      if (illnessEvent) (illnessEvent.payload as Record<string, JsonValue>).recovered = true;
     } else if (illnessEvent) {
       (illnessEvent.payload as Record<string, JsonValue>).recovered = true;
     }
