@@ -47,5 +47,8 @@ L5 — After bdf11c1 (all 28 vignettes at 3 phrasings, the four most frequent at
 
 L6 — The 2× in L5 was an artifact: the exhaustion check had been added only to the override-catalogue builder, not to the live single-pick path (`pickVignette` via `buildDailyLifeVignetteDescriptor`), so the filter never ran. Instrumented the real path: with the filter wired in, the eligible pool for this protagonist runs out around year 45 of a 70-year life, and the remaining ~25 years come from the S7 fallback. Also replaced the year-keyed variant with an occurrence index (S2): the year hash gave each vignette exactly one phrasing per year, so cross-year collisions were structural, not bad luck. Diagnosis is now measured, not inferred: unused pool 6–8 at year 30, 0 by year 45.
 
+L7 — After 3eaf0da (feast day, market day, a neighbor in need, an old debt and the aches of age at six phrasings): the synthetic 73-year life shows 71 distinct entries of 80, and no vignette repeats more than twice. The residual is season stranding — `hard-winter` only exists in winter and `poor-harvest`/`good-harvest` only in autumn, so an unused phrasing of theirs cannot fill a summer year, and the pool can be empty for that year even while phrasings remain elsewhere. Closing to zero needs season-balanced content, not more variants on the backbone five. The only 4× left is `decided to have a child`, a `child` event outside the vignette scope (S6).
+
+
 
 
