@@ -1829,6 +1829,11 @@ function buildDailyLifeVignetteCandidates(
   // `(seed, id, year)` — the exact same derivation narration uses — so this needs no extra
   // storage and cannot disagree with what the reader sees. A vignette whose variants are all
   // spent simply stops being offered, which is what makes a repeated title impossible.
+  //
+  // This is deliberately checked BEFORE the 5-year pacing window: pacing was only ever a proxy for
+  // variety, and it used to discard a vignette that still had unused phrasings (shrinking the pool
+  // and forcing an earlier fallback). Unused phrasings now come first, and pacing decides only
+  // between phrasings that are all still available.
   const usedPhrasings = new Set<string>();
   for (const past of events) {
     if (past.kind !== "vignette" || past.year >= year) continue;
@@ -1837,10 +1842,11 @@ function buildDailyLifeVignetteCandidates(
     if (!pastVignette) continue;
     usedPhrasings.add(`${pastId}:${vignetteVariant(seed, pastId, past.year, pastVignette.variants ?? 1)}`);
   }
-  const unusedPool = pacingPool.filter((vignette) => !usedPhrasings.has(`${vignette.id}:${vignetteVariant(seed, vignette.id, year, vignette.variants ?? 1)}`));
+  const unusedPool = eligibleVignettePool(ctx).filter((vignette) => !usedPhrasings.has(`${vignette.id}:${vignetteVariant(seed, vignette.id, year, vignette.variants ?? 1)}`));
   // Spec S7: if every eligible phrasing is spent, the year still gets one entry rather than going
-  // silent. Repetition here is the documented edge, never the normal path.
-  const pool = unusedPool.length > 0 ? unusedPool : pacingPool;
+  // silent. Pacing is the first preference, the full eligible pool the last resort, so a life that
+  // outruns the content repeats the most recent situation last rather than at random.
+  const pool = unusedPool.length > 0 ? unusedPool : eligibleVignettePool(ctx, recentIds);
   return pool.map((vignette) => {
     const options = Object.keys(vignette.outcomes);
     const decisionId = `D1:${protagonist.id}:${year}:${vignette.id}`;
