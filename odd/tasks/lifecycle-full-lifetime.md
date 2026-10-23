@@ -168,3 +168,49 @@ reorders a year being refused. Its S6 case is the RED test for the blocker.
 Two documentation defects it also raised are fixed: the stale `LIFECYCLE_MAX_STEPS` comment and the
 create-queue rationale that still quoted a 15-year create.
 
+
+**L8 — create went from 499 s to 46 s, and the cost was a validation walk nobody needed.**
+
+The user's constraint: "es un monton, fijate de cambiar o reducir cosas para que tarde al dededor de 1
+minuto como mucho". A CPU profile of a 20-year compact run, not guesswork, put **91.5% of the time in
+`ownData`**, reached through `guardCurrentView` from `inspectHelpOpportunities` and `currentHelpContext`.
+That guard deep-walks the ENTIRE favour ledger - every person's mind, every event, every tie - and the
+annual loop calls it once per creditor and slot, plus once per executed operation. It is O(state) per
+call, so it is quadratic over a life.
+
+The guard exists for CALLER-SUPPLIED state. The engine's own ledger was already validated when genesis
+was admitted, and every clone and mutation it performs preserves that shape. Three changes, none of
+which weakens the boundary:
+
+1. `trustFavorState(state)` marks an engine-owned ledger in a `WeakSet`; `guardCurrentView` skips ONLY
+   the deep `ownData` walk for marked objects. The cheap structural checks still run, and any object the
+   module did not mark is walked exactly as before.
+2. `requireAnnualPolicyView` skips its own `requireFavorData` walk for the same marked state.
+3. `createFavorExecutor(..., { auditEvidence: false })` stops BUILDING the per-operation `consumed`
+   evidence in compact mode. P1 only stopped persisting it; the clones of the whole ledger plus every
+   prior operation id were still being computed for nothing.
+
+Measured on seed `cap-0`, same machine, none of these touching the audit path or the lifecycle output:
+
+| | Before | After |
+|---|---|---|
+| 10 years | 39 s | **3 s** |
+| 20 years | 183 s | **6 s** |
+| 57-year run | 471 s | **31.4 s** |
+| Full create (run + capsule + views + publish) | 499 s | **46.4 s** |
+| Peak VmHWM | 1.51 GiB | **1.36 GiB** |
+
+A whole life now creates in **46 seconds**, comfortably inside the one-minute budget. The remaining
+split is 31 s of simulation and 15 s of capsule encoding; the encode is the next lever if it is ever
+worth another pass, and it is not needed to meet the requirement.
+
+Two pins, because my first attempt at one was worthless. `favor-trust-boundary.test.ts` marks a malformed
+ledger and proves the walk skips for THAT object, while a spread copy of it - a different object - is
+still walked and still refused, and the cheap structural checks survive the skip.
+`lifecycle-perf-identity.test.ts` pins the capsule digest, journal hash, chronicle hash and every person
+sheet hash against what the pre-optimisation engine produced, so a future speedup that changes the life
+fails a test instead of needing a re-measurement to notice.
+
+The first test I wrote for the guard inspected `run.output.favors`, which is a frozen clone the engine
+never marked: it passed even with the optimization deleted. Independent verification caught it, which is
+exactly what a vacuous test is for.

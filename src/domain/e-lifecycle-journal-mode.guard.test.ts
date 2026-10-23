@@ -118,4 +118,5 @@ describe("lifecycle journal mode guard", () => {
     expect((await repository.load("old", "old-b"))?.capsule.digest).toBe(oldBinding.capsuleDigest);
     expect((await repository.load("new", "new-b"))?.capsule.digest).toBe(newBinding.capsuleDigest);
   }, 180_000);
+
 });

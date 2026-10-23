@@ -198,11 +198,34 @@ function reduce(state: AnyFavorState, event: AnyFavorEvent): AnyFavorState {
 }
 
 /** Guard the entire borrowed root before reading any registry or history field. */
+/**
+ * Favor state that the ENGINE owns, whose deep shape was already established when it entered the
+ * process (genesis admission) and is preserved by every clone and mutation the engine performs.
+ *
+ * The deep `ownData` walk below is a guard for CALLER-SUPPLIED state. Running it again on the engine's
+ * own ledger, once per creditor and slot and per executed operation, costs O(state) each time and was
+ * measured at 91.5% of a full life's create time. Marking engine state skips only that walk: the cheap
+ * structural checks still run, and any object this module did not mark is walked exactly as before.
+ */
+const engineOwnedState = new WeakSet<object>();
+export function trustFavorState(state: object): void {
+  engineOwnedState.add(state);
+}
+/** True when this module itself established the object's deep shape (genesis admission). */
+export function isTrustedFavorState(value: unknown): boolean {
+  return typeof value === "object" && value !== null && engineOwnedState.has(value);
+}
+
 function guardCurrentView(state: CurrentGrantView): void {
-  ownData(state, true);
+  // Reject a non-record FIRST: `ownData`/`Object.keys` on null would surface a raw TypeError and
+  // change the refusal text callers already rely on.
   record(state);
-  for (const key of Object.keys(state)) {
-    if (key !== "people" && key !== "legacyEvents") ownData(Object.getOwnPropertyDescriptor(state, key)!.value);
+  const trusted = engineOwnedState.has(state);
+  if (!trusted) {
+    ownData(state, true);
+    for (const key of Object.keys(state)) {
+      if (key !== "people" && key !== "legacyEvents") ownData(Object.getOwnPropertyDescriptor(state, key)!.value);
+    }
   }
   record(state.people);
   array(state.legacyEvents);

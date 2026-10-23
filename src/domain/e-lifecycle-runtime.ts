@@ -3,7 +3,7 @@ import { createRulesYearSource } from "./e-year-source";
 import { planAnnualFavorDraft, stableAnnualIdOrder } from "./e-annual-policy";
 import { planAnnualHelpSlot } from "./e-annual-composition";
 import { createFavorExecutor } from "./e-favor-executor";
-import { inspectHelpOpportunities } from "./effects";
+import { inspectHelpOpportunities, trustFavorState } from "./effects";
 import { captureLegacyYear } from "./legacy-year";
 import type { LegacyOwnedRunState } from "./simulate";
 import type { GrantIntention, RequestIntention, ResourceOperation, RuntimeEntry, RuntimeOutput } from "./e-runtime";
@@ -127,6 +127,9 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
   const journalMode = options.journal ?? "audit";
   if (journalMode !== "audit" && journalMode !== "compact") throw new Error("Invalid lifecycle journal mode");
   const { genesis, config, protagonistId, owned, favors } = instantiateLifecycleGenesis(input);
+  // This ledger is engine-owned from here on: its deep shape was established at genesis admission,
+  // and every clone/mutation below preserves it. The deep input guard must not re-walk it per call.
+  trustFavorState(favors);
   const initialFrontier = config.startYear - 1;
   requireYear(initialFrontier);
   let advancing = false;
@@ -171,6 +174,7 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
     try {
       // Never separately clone owned and favors: native phases and FE1 borrow ONE graph.
       const draft = structuredClone(committed.state);
+      trustFavorState(draft.favors);
       const lifeStart = draft.owned.events.length;
       const decisionStart = draft.owned.decisions.length;
       const economicStart = draft.favors.events.length;
@@ -179,7 +183,7 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
       const physicalSnapshot = await source.execute(year);
       const allowances = planAnnualFavorDraft(draft.favors, config.seed, year);
       const entries: RuntimeEntry[] = [];
-      const favor = createFavorExecutor(draft.favors, year, entries);
+      const favor = createFavorExecutor(draft.favors, year, entries, undefined, { auditEvidence: journalMode === "audit" });
       allowances.resources.forEach(favor.executeResource);
       allowances.grants.forEach(favor.executeGrant);
       const creditors = [...new Set(inspectHelpOpportunities(draft.favors, year)

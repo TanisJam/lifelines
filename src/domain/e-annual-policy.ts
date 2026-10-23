@@ -3,7 +3,7 @@ import { ageInYear, isAdult } from "./actuarial";
 import { replayAnnualRuntime, type AnnualPlan, type ResourceAllocation, type RuntimeOutput } from "./e-runtime";
 import { ensureLifeState } from "./life-state";
 import { keyedDraw } from "./rng";
-import { inspectHelpOpportunities, requireFavorData, type CurrentHelpView } from "./effects";
+import { inspectHelpOpportunities, isTrustedFavorState, requireFavorData, type CurrentHelpView } from "./effects";
 import { requireFields } from "./obligations";
 
 /** Inactive, explicit allowance/offer policy; not a runtime or provenance version. */
@@ -50,7 +50,9 @@ export function buildAnnualFavorPlan(input: unknown, year: number): AnnualPlan {
 
 /** Descriptor/own-field admission for the separate planning view, not replay. */
 export function requireAnnualPolicyView(view: unknown): asserts view is CurrentHelpView {
-  requireFavorData(view, true);
+  // The runtime plans over its OWN post-physical draft, whose deep shape admission already
+  // established; re-walking it every year is pure overhead. Caller-supplied views still pay it.
+  if (!isTrustedFavorState(view)) requireFavorData(view, true);
   if (view === null || typeof view !== "object" || Array.isArray(view)) throw new Error("Invalid annual planning view");
   requireFields(view, ["people", "legacyEvents", "events", "grain", "assistance", "need", "obligations", "ties", "appraisals"]);
 }
