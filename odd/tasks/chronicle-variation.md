@@ -8,7 +8,7 @@ Test runner: `pnpm test` (vitest), `pnpm typecheck`, `pnpm lint`.
 
 S1 — Variants per vignette. Every vignette declares how many phrasings it has. `title` and each outcome's `prose` take a variant index in `[0, variants)` and must render that variant's text. A vignette with `variants: 1` behaves exactly as today.
 
-S2 — Deterministic variant. The variant of an event is derived only from `(world seed, vignette id, year)`. The selection path and every read path (chronicle, person sheet, timeline) must compute the same index for the same event without consulting mutable state or the order in which narration happens.
+S2 — Deterministic variant. The variant of an event is the number of times the same vignette already happened to this protagonist before it, in `(year, id)` order — so occurrence N uses phrasing N. The selection path and every read path (chronicle, person sheet, timeline) compute the same index from the same event log, without storing the choice on the event. A year-keyed hash was tried first and rejected: it made each vignette offer exactly one possible phrasing per year, so different years collided on the same phrasing and the pool exhausted long before its content ran out.
 
 S3 — No repeated title within a life. A vignette whose variants are all already used by that protagonist is not offered again. Consequence under test: across a full life, the set of vignette titles has no duplicates.
 
@@ -44,5 +44,8 @@ L3 — Synthetic full life (`cap-0`, 1327–1400, `protagonistId: protagonist`, 
 L4 — After 693b89e (mechanism + four vignettes at four variants): same life, distinct texts 44 → 58. The remaining repeats come from the S7 exhaustion fallback (31 available phrasings for 57 vignette-years), which is exactly what T4 removes.
 
 L5 — After bdf11c1 (all 28 vignettes at 3 phrasings, the four most frequent at 4; 88 in total): distinct texts 63, worst repeat 2×. The limiting factor is not the 88 but ELIGIBILITY: this protagonist's pool is 15 vignettes, so only ~48 of the 88 phrasings are reachable, against 57 vignette-years. The last ~9 years therefore hit the S7 fallback. Closing it needs either a fourth phrasing on the adult-eligible vignettes (~12 more slots) or more adult-eligible situations — content, not code.
+
+L6 — The 2× in L5 was an artifact: the exhaustion check had been added only to the override-catalogue builder, not to the live single-pick path (`pickVignette` via `buildDailyLifeVignetteDescriptor`), so the filter never ran. Instrumented the real path: with the filter wired in, the eligible pool for this protagonist runs out around year 45 of a 70-year life, and the remaining ~25 years come from the S7 fallback. Also replaced the year-keyed variant with an occurrence index (S2): the year hash gave each vignette exactly one phrasing per year, so cross-year collisions were structural, not bad luck. Diagnosis is now measured, not inferred: unused pool 6–8 at year 30, 0 by year 45.
+
 
 

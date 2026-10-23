@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VIGNETTES, vignetteVariant } from "./vignettes";
+import { VIGNETTES, vignetteOccurrence, vignetteVariant } from "./vignettes";
 
 /**
  * Decision 059: every vignette's `title`/`question`/outcome `prose` must render something in both
@@ -62,27 +62,28 @@ describe("decision 059: vignette locale parity", () => {
 describe("chronicle variation — deterministic variants", () => {
   const townName = "Ravenford";
 
-  it("derives the same variant for the same (seed, id, year) regardless of call order", () => {
-    const first = vignetteVariant("cap-0", "feast-day", 1341, 4);
-    for (let i = 0; i < 5; i += 1) vignetteVariant("other-seed", "market-day", 1300 + i, 3);
-    expect(vignetteVariant("cap-0", "feast-day", 1341, 4)).toBe(first);
+  it("walks 0, 1, 2… so N occurrences use N distinct phrasings, clamping past the end", () => {
+    expect(vignetteVariant(0, 3)).toBe(0);
+    expect(vignetteVariant(1, 3)).toBe(1);
+    expect(vignetteVariant(2, 3)).toBe(2);
+    expect(vignetteVariant(3, 3)).toBe(2);
+    expect(vignetteVariant(0, 1)).toBe(0);
+    expect(vignetteVariant(9, 1)).toBe(0);
   });
 
-  it("stays inside [0, variants) and is a no-op when a vignette has only one phrasing", () => {
-    for (const variants of [1, 2, 3, 4, 7]) {
-      for (let year = 1300; year < 1400; year += 1) {
-        const v = vignetteVariant("cap-0", "feast-day", year, variants);
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThan(variants);
-      }
-    }
-    expect(vignetteVariant("cap-0", "feast-day", 1341, 1)).toBe(0);
-  });
-
-  it("spreads across every variant of a vignette over a run of years", () => {
-    const seen = new Set<number>();
-    for (let year = 1300; year < 1360; year += 1) seen.add(vignetteVariant("cap-0", "feast-day", year, 4));
-    expect([...seen].sort()).toEqual([0, 1, 2, 3]);
+  it("counts earlier occurrences of the same vignette in (year, id) order, and only that vignette", () => {
+    const make = (id: string, year: number, vignette: string) =>
+      ({ id, year, kind: "vignette", actors: ["protagonist"], payload: { vignette, outcome: "x" } }) as never;
+    const events = [
+      make("a", 1340, "feast-day"),
+      make("b", 1341, "market-day"),
+      make("c", 1343, "feast-day"),
+      make("d", 1343, "feast-day"),
+    ];
+    expect(vignetteOccurrence(events, events[0]!, "feast-day")).toBe(0);
+    expect(vignetteOccurrence(events, events[2]!, "feast-day")).toBe(1);
+    expect(vignetteOccurrence(events, events[3]!, "feast-day")).toBe(2);
+    expect(vignetteOccurrence(events, events[1]!, "market-day")).toBe(0);
   });
 
   it("renders a distinct title and distinct EN/ES prose for every declared variant", () => {

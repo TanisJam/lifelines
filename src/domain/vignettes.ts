@@ -1,6 +1,6 @@
 import type { Locale } from "./locale";
-import { keyedDraw, keyedRng } from "./rng";
-import type { Job, SocialClass } from "./types";
+import { keyedRng } from "./rng";
+import type { Event, Job, SocialClass } from "./types";
 
 /**
  * "At least one entry per year" (round 10, decision 042): when the protagonist has no other
@@ -103,18 +103,34 @@ function fixed(en: string, es: string): (locale: Locale, townName: string) => st
 }
 
 /**
- * The variant a given vignette-year renders (spec S2 of `odd/tasks/chronicle-variation.md`).
+ * The variant a given vignette occurrence renders (spec S2 of `odd/tasks/chronicle-variation.md`).
  *
- * Derived ONLY from `(world seed, vignette id, year)`, never from event order, mutable state or how
- * many times narration happened to run. That is what lets the selection path and every read path
- * (chronicle, person sheet, timeline) agree on the same phrasing for the same event without storing
- * the choice on the event itself — no persisted-format change, so existing stored lives keep their
- * current bytes and digests.
+ * Keyed on HOW MANY TIMES this situation has already happened to this protagonist, not on the
+ * year: an occurrence-indexed variant walks 0, 1, 2… so `variants` occurrences use `variants`
+ * distinct phrasings. A year-keyed variant was tried first and was wrong — it made a vignette
+ * offer exactly one possible phrasing per year, so two occurrences in different years collided
+ * on the same phrasing and the pool exhausted long before its content ran out.
+ *
+ * Still a pure function of the event log (the occurrence count), so the selection path and every
+ * read path agree without storing the choice on the event: no persisted-format change, existing
+ * stored lives keep their bytes and digests.
  */
-export function vignetteVariant(seed: string, vignetteId: string, year: number, variants: number): number {
+export function vignetteVariant(occurrence: number, variants: number): number {
   if (variants <= 1) return 0;
-  const draw = keyedDraw(seed, vignetteId, year, "vignette-variant");
-  return Math.min(variants - 1, Math.floor(draw * variants));
+  return Math.min(occurrence, variants - 1);
+}
+
+/**
+ * How many times this vignette already happened to this life before `event`, in event order.
+ * Ordering is `(year, id)` so two vignettes in the same year still have a stable count.
+ */
+export function vignetteOccurrence(events: readonly Event[], event: Event, vignetteId: string): number {
+  let count = 0;
+  for (const candidate of events) {
+    if (candidate.kind !== "vignette" || String(candidate.payload.vignette ?? "") !== vignetteId) continue;
+    if (candidate.year < event.year || (candidate.year === event.year && candidate.id < event.id)) count += 1;
+  }
+  return count;
 }
 
 /**
@@ -141,10 +157,10 @@ function prosePhrasings(phrasingsEn: readonly string[], phrasingsEs: readonly st
 export const VIGNETTES: readonly Vignette[] = [
   {
     id: "hard-winter",
-    variants: 3,
+    variants: 4,
     title: phrasings(
-      ["A hard winter", "Grain runs short in a hard winter", "A winter with hunger at the door"],
-      ["Un invierno duro", "El grano escasea en un invierno duro", "Un invierno con el hambre en la puerta"],
+      ["A hard winter", "Grain runs short in a hard winter", "A winter with hunger at the door", "A winter nobody forgets"],
+      ["Un invierno duro", "El grano escasea en un invierno duro", "Un invierno con el hambre en la puerta", "Un invierno que nadie olvida"],
     ),
     question: fixed(
       "The winter is hard, and a neighbor's family is going hungry. Do I share our grain?",
@@ -164,11 +180,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} shared the last of the grain with a hungry neighbor, through a hard winter.",
             "{name} carried a measure of grain to a neighbor's door in the worst of the winter.",
             "{name} thinned the household's own bread to keep a hungry neighbor alive through the cold.",
+            "The house went without supper twice so a neighbor's children could eat.",
           ],
           [
             "{name} compartió el último grano con un vecino hambriento, durante un invierno duro.",
             "{name} llevó una medida de grano a la puerta de un vecino en lo peor del invierno.",
             "{name} racionó el pan de su propia casa para mantener con vida a un vecino hambriento durante el frío.",
+            "La casa se quedó sin cena dos veces para que los hijos de un vecino comieran.",
           ],
         ),
         optionDescription: "The winter is hard, but I share what grain we have with the neighbor who's going hungry.",
@@ -183,11 +201,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} kept close to home through a hard winter, grain rationed carefully.",
             "{name} counted the grain every night of a hard winter, and opened the door to no one.",
             "{name} let a hungry neighbor go away empty, and kept the stores for their own.",
+            "The grain went into the ground for spring, and no one starved.",
           ],
           [
             "{name} se mantuvo cerca de casa durante un invierno duro, racionando el grano con cuidado.",
             "{name} contó el grano cada noche de un invierno duro, y no le abrió la puerta a nadie.",
             "{name} dejó que un vecino hambriento se fuera con las manos vacías, y guardó las reservas para los suyos.",
+            "El grano se guardó para la siembra de primavera, y nadie murió de hambre.",
           ],
         ),
         optionDescription: "The winter is hard, and I keep our own grain close rather than risk our own family going hungry.",
@@ -196,10 +216,10 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "poor-harvest",
-    variants: 3,
+    variants: 4,
     title: phrasings(
-      ["A poor harvest", "The harvest comes in thin", "A thin year in the fields"],
-      ["Una mala cosecha", "La cosecha llega escasa", "Un año flaco en el campo"],
+      ["A poor harvest", "The harvest comes in thin", "A thin year in the fields", "A harvest that hardly filled a cart"],
+      ["Una mala cosecha", "La cosecha llega escasa", "Un año flaco en el campo", "Una cosecha que apenas llenó un carro"],
     ),
     question: fixed("The harvest fell short this year. Do I tighten my belt without complaint?", "Este año la cosecha fue escasa. ¿Me aprieto el cinturón sin quejarme?"),
     eligible: (ctx) => !ctx.away && ctx.age >= 3 && ctx.season === "the golden days of autumn" && ctx.townEventType !== "harvest",
@@ -215,11 +235,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} tightened the belt and said nothing, through a poor harvest.",
             "{name} made the bread smaller and the broth thinner, and complained to no one.",
             "{name} counted every sack twice after a poor harvest, and said nothing about the shortfall.",
+            "The bread was weighed out smaller each week, and nobody said a word.",
           ],
           [
             "{name} se apretó el cinturón y no dijo nada, tras una mala cosecha.",
             "{name} hizo más pequeño el pan y más claro el caldo, y no se quejó ante nadie.",
             "{name} contó cada saco dos veces tras una mala cosecha, y no dijo nada de lo que faltaba.",
+            "El pan se pesó más pequeño cada semana, y nadie dijo una palabra.",
           ],
         ),
         optionDescription: "The harvest fell short, but I tighten my belt and say nothing about it.",
@@ -234,11 +256,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} grumbled openly about a poor harvest, same as everyone else.",
             "{name} cursed the thin sheaves loud enough for the whole field to hear.",
             "{name} spent the poor harvest complaining at the lord's reeve, and got nothing for it.",
+            "The reeve heard the complaints and wrote none of them down.",
           ],
           [
             "{name} se quejó abiertamente de la mala cosecha, igual que todos los demás.",
             "{name} maldijo las gavillas flacas lo bastante alto como para que lo oyera todo el campo.",
             "{name} pasó la mala cosecha quejándose ante el alguacil del señor, y no consiguió nada.",
+            "El alguacil oyó las quejas y no anotó ninguna.",
           ],
         ),
         optionDescription: "The harvest fell short, and I grumble openly about it, same as everyone else.",
@@ -247,10 +271,10 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "good-harvest",
-    variants: 3,
+    variants: 4,
     title: phrasings(
-      ["A good harvest in {town}", "A full barn in {town}", "The harvest comes in heavy in {town}"],
-      ["Una buena cosecha en {town}", "Un granero lleno en {town}", "La cosecha llega abundante a {town}"],
+      ["A good harvest in {town}", "A full barn in {town}", "The harvest comes in heavy in {town}", "The barns hold this year"],
+      ["Una buena cosecha en {town}", "Un granero lleno en {town}", "La cosecha llega abundante a {town}", "Este año los graneros aguantan"],
     ),
     question: fixed("It's been a good harvest this year. Do I give thanks openly at the feast?", "Este año la cosecha ha sido buena. ¿Doy gracias abiertamente en la fiesta?"),
     eligible: (ctx) => !ctx.away && ctx.age >= 3 && ctx.season === "the golden days of autumn" && ctx.townEventType === "harvest",
@@ -266,11 +290,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} gave thanks openly at the harvest feast in {town}.",
             "{name} stood up at the harvest feast in {town} and thanked God and the neighbors both.",
             "{name} brought bread to the harvest feast in {town} and gave thanks with a full voice.",
+            "A measure of bread went to the church, and the rest stayed where it was needed.",
           ],
           [
             "{name} dio gracias abiertamente en la fiesta de la cosecha en {town}.",
             "{name} se puso de pie en la fiesta de la cosecha en {town} y dio gracias a Dios y a los vecinos por igual.",
             "{name} llevó pan a la fiesta de la cosecha en {town} y dio gracias con voz entera.",
+            "Una medida de pan fue a la iglesia, y el resto se quedó donde hacía falta.",
           ],
         ),
         optionDescription: "It's been a good harvest, and I give thanks for it openly, at the feast.",
@@ -285,11 +311,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} kept the relief of a good harvest quietly, without much fuss.",
             "{name} walked the full barn once, satisfied, and said nothing to anyone about it.",
             "{name} ate well that autumn and let others do the thanking.",
+            "The full barn was counted once and then left alone.",
           ],
           [
             "{name} guardó en silencio el alivio de una buena cosecha, sin mucho alboroto.",
             "{name} recorrió el granero lleno una vez, con satisfacción, y no le dijo nada a nadie.",
             "{name} comió bien aquel otoño y dejó que otros dieran las gracias.",
+            "El granero lleno se contó una vez y después se dejó en paz.",
           ],
         ),
         optionDescription: "It's been a good harvest, but I keep my relief about it quiet, without much fuss.",
@@ -410,10 +438,10 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "sibling-quarrel",
-    variants: 3,
+    variants: 4,
     title: phrasings(
-      ["A quarrel with a sibling", "Words sharpened between siblings", "A quarrel that outlasted the day"],
-      ["Una riña con un hermano", "Palabras afiladas entre hermanos", "Una riña que duró más que el día"],
+      ["A quarrel with a sibling", "Words sharpened between siblings", "A quarrel that outlasted the day", "A silence between siblings"],
+      ["Una riña con un hermano", "Palabras afiladas entre hermanos", "Una riña que duró más que el día", "Un silencio entre hermanos"],
     ),
     question: fixed("A quarrel with a sibling has left things tense. Do I make peace first?", "Una riña con un hermano ha dejado las cosas tensas. ¿Hago las paces primero?"),
     eligible: (ctx) => ctx.hasLivingSibling && ctx.age >= 8,
@@ -431,11 +459,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} made the first move to patch things up after a quarrel with a sibling.",
             "{name} swallowed pride and spoke first, and the quarrel with a sibling ended there.",
             "{name} brought a small peace offering to a sibling after the quarrel, and there was forgiveness.",
+            "The quarrel was patched over bread and salt, and hardly mentioned again.",
           ],
           [
             "{name} dio el primer paso para arreglar las cosas tras una riña con un hermano.",
             "{name} se tragó el orgullo y habló primero, y la riña con un hermano terminó ahí.",
             "{name} llevó un pequeño gesto de paz a un hermano tras la riña, y hubo perdón.",
+            "La riña se arregló con pan y sal, y apenas se volvió a mencionar.",
           ],
         ),
         optionDescription: "A quarrel with a sibling has left things tense, and I make the first move to patch things up.",
@@ -453,11 +483,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} stayed cross with a sibling long after the quarrel should have passed.",
             "{name} let a quarrel with a sibling harden into weeks of silence.",
             "{name} kept a tally of what a sibling had said, and did not let it go.",
+            "Neither of them said the first word, and the winter passed that way.",
           ],
           [
             "{name} mantuvo el enojo con un hermano mucho después de que la riña debiera haber pasado.",
             "{name} dejó que una riña con un hermano se endureciera en semanas de silencio.",
             "{name} llevó la cuenta de lo que un hermano había dicho, y no lo dejó pasar.",
+            "Ninguno de los dos dijo la primera palabra, y el invierno pasó así.",
           ],
         ),
         optionDescription: "A quarrel with a sibling has left things tense, and I stay cross rather than make peace.",
@@ -522,10 +554,10 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "first-glance",
-    variants: 3,
+    variants: 4,
     title: phrasings(
-      ["A first glance", "Someone new across the square", "A face worth a second look"],
-      ["Una primera mirada", "Alguien nuevo al otro lado de la plaza", "Un rostro que merece una segunda mirada"],
+      ["A first glance", "Someone new across the square", "A face worth a second look", "A look across the room"],
+      ["Una primera mirada", "Alguien nuevo al otro lado de la plaza", "Un rostro que merece una segunda mirada", "Una mirada al otro lado de la sala"],
     ),
     question: fixed("Someone caught my eye today. Do I find a reason to speak with them?", "Hoy alguien llamó mi atención. ¿Busco una razón para hablar con esa persona?"),
     eligible: (ctx) => ctx.age >= 14 && ctx.age <= 30 && !ctx.hasSpouse,
@@ -541,11 +573,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} found a reason to speak with someone who'd caught an eye, if only for a moment.",
             "{name} crossed the square to speak to a stranger, and the words came easier than expected.",
             "{name} lingered near someone who'd caught an eye until there was nothing left but to say hello.",
+            "A few words at a doorway turned into an hour, and the hour into a habit.",
           ],
           [
             "{name} encontró una razón para hablar con quien le había llamado la atención, aunque solo fuera un momento.",
             "{name} cruzó la plaza para hablar con alguien desconocido, y las palabras salieron más fáciles de lo esperado.",
             "{name} rondó cerca de quien le había llamado la atención hasta que no quedó más que saludar.",
+            "Unas palabras en un umbral se volvieron una hora, y la hora se volvió costumbre.",
           ],
         ),
         optionDescription: "Someone caught my eye today, and I find a reason to speak with them.",
@@ -560,11 +594,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} noticed someone who caught an eye, and said nothing at all.",
             "{name} watched a stranger from across the square and let the moment pass.",
             "{name} rehearsed a greeting twice and never used it.",
+            "The chance was let go by, and remembered for longer than it should have been.",
           ],
           [
             "{name} se fijó en alguien que le llamó la atención, y no dijo nada en absoluto.",
             "{name} miró a alguien desconocido desde el otro lado de la plaza y dejó pasar el momento.",
             "{name} ensayó un saludo dos veces y nunca lo usó.",
+            "La ocasión se dejó pasar, y se recordó más tiempo del que debía.",
           ],
         ),
         optionDescription: "Someone caught my eye today, but I hold back and say nothing.",
@@ -631,10 +667,10 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "sick-animal",
-    variants: 3,
+    variants: 4,
     title: phrasings(
-      ["A sick animal", "A beast down in the byre", "Sickness among the animals"],
-      ["Un animal enfermo", "Una bestia caída en el establo", "Enfermedad entre los animales"],
+      ["A sick animal", "A beast down in the byre", "Sickness among the animals", "A beast that will not rise"],
+      ["Un animal enfermo", "Una bestia caída en el establo", "Enfermedad entre los animales", "Una bestia que no se levanta"],
     ),
     question: fixed("One of the animals has fallen sick. Do I sit up nursing it through the night?", "Uno de los animales ha enfermado. ¿Me quedo despierto cuidándolo toda la noche?"),
     eligible: (ctx) => !ctx.away && ctx.job === "farmer",
@@ -650,11 +686,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} sat up through the night nursing a sick animal back to health.",
             "{name} kept a fire going in the byre and coaxed a sick beast through until morning.",
             "{name} slept in the straw beside a sick animal for three nights, and it lived.",
+            "Three nights in the straw, and the beast walked out of the byre on its own.",
           ],
           [
             "{name} se quedó despierto toda la noche cuidando a un animal enfermo hasta que sanó.",
             "{name} mantuvo el fuego encendido en el establo y sacó adelante a una bestia enferma hasta la mañana.",
             "{name} durmió en la paja junto a un animal enfermo durante tres noches, y el animal vivió.",
+            "Tres noches en la paja, y la bestia salió sola del establo.",
           ],
         ),
         optionDescription: "One of the animals has fallen sick, and I sit up nursing it through the night.",
@@ -669,11 +707,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} let a sick animal go, rather than lose sleep over it.",
             "{name} judged a sick beast not worth the nights, and put it out of mind.",
             "{name} left a sick animal to whatever came, and did not go back to the byre.",
+            "The beast was sold cheap rather than watched over, and was someone else's trouble by the week's end.",
           ],
           [
             "{name} dejó ir a un animal enfermo, antes que perder el sueño por él.",
             "{name} consideró que una bestia enferma no valía las noches, y la apartó de su cabeza.",
             "{name} dejó a un animal enfermo a lo que viniera, y no volvió al establo.",
+            "La bestia se vendió barata en vez de cuidarla, y para el fin de semana era problema de otro.",
           ],
         ),
         optionDescription: "One of the animals has fallen sick, and I let it go rather than lose sleep over it.",
@@ -737,10 +777,10 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "teaching-a-child",
-    variants: 3,
+    variants: 4,
     title: phrasings(
-      ["Teaching a child the trade", "A child's first day at the work", "Handing on the trade"],
-      ["Enseñando el oficio a un hijo", "El primer día de trabajo de un hijo", "Transmitir el oficio"],
+      ["Teaching a child the trade", "A child's first day at the work", "Handing on the trade", "Showing a child how it is done"],
+      ["Enseñando el oficio a un hijo", "El primer día de trabajo de un hijo", "Transmitir el oficio", "Mostrando a un hijo cómo se hace"],
     ),
     question: fixed("A child is old enough to start learning the trade. Do I teach patiently, or push them along briskly?", "Un hijo ya tiene edad para empezar a aprender el oficio. ¿Le enseño con paciencia, o lo apremio?"),
     eligible: (ctx) => !ctx.away && ctx.hasChild && ctx.job !== "none",
@@ -759,11 +799,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} taught a child the trade patiently, one small task at a time.",
             "{name} let a child spoil three good pieces and said nothing about it.",
             "{name} spent the day showing a child the trade slowly, hands over hands.",
+            "A child learned the trade at the pace of the work itself, and did not notice the learning.",
           ],
           [
             "{name} enseñó el oficio a un hijo con paciencia, una pequeña tarea a la vez.",
             "{name} dejó que un hijo arruinara tres piezas buenas y no dijo nada al respecto.",
             "{name} pasó el día mostrando el oficio a un hijo despacio, con las manos encima de las suyas.",
+            "Un hijo aprendió el oficio al ritmo del trabajo mismo, y no notó que estaba aprendiendo.",
           ],
         ),
         optionDescription: "A child is old enough to start learning the trade, and I teach patiently.",
@@ -781,11 +823,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} pushed a child briskly through the first lessons of the trade.",
             "{name} hurried a child through the work, and called the mistakes out loud.",
             "{name} set a child to a full day's work on the first morning, to see what they were made of.",
+            "A child was kept at it until the hands knew what the head did not.",
           ],
           [
             "{name} apremió a un hijo en las primeras lecciones del oficio.",
             "{name} apuró a un hijo en el trabajo, y señaló los errores en voz alta.",
             "{name} puso a un hijo a un día entero de trabajo en la primera mañana, para ver de qué estaba hecho.",
+            "A un hijo se lo mantuvo en eso hasta que las manos supieron lo que la cabeza no.",
           ],
         ),
         optionDescription: "A child is old enough to start learning the trade, and I push them along briskly.",
@@ -794,10 +838,10 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "aches-of-age",
-    variants: 3,
+    variants: 4,
     title: phrasings(
-      ["The aches of age", "A body slow to wake", "The work, and the years"],
-      ["Los achaques de la edad", "Un cuerpo que tarda en despertar", "El trabajo, y los años"],
+      ["The aches of age", "A body slow to wake", "The work, and the years", "The morning after a long life"],
+      ["Los achaques de la edad", "Un cuerpo que tarda en despertar", "El trabajo, y los años", "La mañana después de una vida larga"],
     ),
     question: fixed("The aches of age are catching up. Do I push through the day's work all the same?", "Los achaques de la edad empiezan a pesar. ¿Sigo adelante con el trabajo del día de todos modos?"),
     eligible: (ctx) => ctx.age >= 60,
@@ -813,11 +857,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} pushed through the aches of age to get the day's work done.",
             "{name} worked the whole day on a knee that complained with every step.",
             "{name} did the work of a younger person, and paid for it that night.",
+            "The day's work was finished by noon, and the afternoon given to the door and the sun.",
           ],
           [
             "{name} siguió adelante pese a los achaques de la edad, para terminar el trabajo del día.",
             "{name} trabajó todo el día con una rodilla que se quejaba a cada paso.",
             "{name} hizo el trabajo de alguien más joven, y lo pagó esa noche.",
+            "El trabajo del día se terminó al mediodía, y la tarde se dio a la puerta y al sol.",
           ],
         ),
         optionDescription: "The aches of age are catching up, but I push through the day's work all the same.",
@@ -832,11 +878,13 @@ export const VIGNETTES: readonly Vignette[] = [
             "{name} gave in to the aches of age and rested, for once.",
             "{name} sat in the sun through the morning and let the work wait.",
             "{name} handed the harder tasks to someone younger, and did not argue about it.",
+            "The body was asked for less, and gave back enough.",
           ],
           [
             "{name} cedió a los achaques de la edad y descansó, por una vez.",
             "{name} se quedó al sol durante la mañana y dejó que el trabajo esperara.",
             "{name} le pasó las tareas más duras a alguien más joven, y no discutió al respecto.",
+            "Al cuerpo se le pidió menos, y devolvió lo suficiente.",
           ],
         ),
         optionDescription: "The aches of age are catching up, and I rest instead of pushing through.",
@@ -1668,8 +1716,13 @@ export function eligibleVignettePool(ctx: VignetteContext, recentIds?: ReadonlyS
  * `buildDailyLifeVignetteCandidates`) offers the WHOLE eligible pool to Jev instead (round 12,
  * decision 046).
  */
-export function pickVignette(seed: string, personId: string, year: number, ctx: VignetteContext, recentIds?: ReadonlySet<string>): Vignette {
-  const pool = eligibleVignettePool(ctx, recentIds);
+export function pickVignette(seed: string, personId: string, year: number, ctx: VignetteContext, recentIds?: ReadonlySet<string>, exhaustedIds?: ReadonlySet<string>): Vignette {
+  const base = eligibleVignettePool(ctx, recentIds);
+  // Spec S3: a vignette whose phrasings this life has all spent is not offered again. Dropped
+  // rather than left to shrink the pool to nothing: if every eligible situation is spent, a year
+  // still gets an entry (spec S7).
+  const available = exhaustedIds ? base.filter((vignette) => !exhaustedIds.has(vignette.id)) : base;
+  const pool = available.length > 0 ? available : base;
   const rng = keyedRng(seed, personId, year, "D1-vignette-pick");
   return pool[Math.floor(rng() * pool.length)]!;
 }

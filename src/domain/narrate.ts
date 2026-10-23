@@ -7,7 +7,7 @@ import { keyedDraw, keyedRng } from "./rng";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "./mortality";
 import { LANDMARK_POOL, pickLandmarkFor, pickLandmarks, seasonFor, type Landmark } from "./town";
 import type { Event, Job, Person } from "./types";
-import { getVignette, vignetteVariant } from "./vignettes";
+import { getVignette, vignetteOccurrence, vignetteVariant } from "./vignettes";
 
 export type { Locale } from "./locale";
 
@@ -441,7 +441,7 @@ export function narrateEvent(
       // `payload.outcome` — never free text stored on the event itself (decision 001).
       const vignette = getVignette(String(event.payload.vignette ?? ""));
       const outcome = vignette?.outcomes[String(event.payload.outcome ?? "")];
-      const variant = vignette ? vignetteVariant(seed, vignette.id, event.year, vignette.variants ?? 1) : 0;
+      const variant = vignette ? vignetteVariant(vignetteOccurrence(allEvents, event, vignette.id), vignette.variants ?? 1) : 0;
       return outcome ? outcome.prose(locale, A, townName, variant) : t(locale, `${A} lived through an ordinary year.`, `${A} vivió un año como cualquier otro.`);
     }
     case "manorial-fine": {
@@ -883,7 +883,9 @@ function titleFor(event: Event, viewerId: string, people: Readonly<Record<string
       return t(locale, "The lord's levy", "El tributo del señor");
     case "vignette": {
       const vignette = getVignette(String(event.payload.vignette ?? ""));
-      return vignette ? vignette.title(locale, townName, vignetteVariant(seed, vignette.id, event.year, vignette.variants ?? 1)) : t(locale, "An ordinary year", "Un año cualquiera");
+      if (!vignette) return t(locale, "An ordinary year", "Un año cualquiera");
+      const occurrence = vignetteOccurrence(allEvents, event, vignette.id);
+      return vignette.title(locale, townName, vignetteVariant(occurrence, vignette.variants ?? 1));
     }
     case "widowed":
       return t(locale, "Widowed", "Enviudado");
