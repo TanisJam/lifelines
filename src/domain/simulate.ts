@@ -24,7 +24,7 @@ import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistributi
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
 import type { Event, EventKind, JsonValue, Job, Override, Person, Sex, SimulationResult, SocialClass, WorldConfig, YearSnapshot } from "./types";
-import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext } from "./vignettes";
+import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, vignetteVariant, type Vignette, type VignetteContext } from "./vignettes";
 import { pickJobForClass } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
@@ -1823,7 +1823,24 @@ function buildDailyLifeVignetteCandidates(
   const recentIds = new Set(
     events.filter((e) => e.kind === "vignette" && e.actors.includes(protagonist.id) && e.year >= year - 5 && e.year < year).map((e) => e.payload.vignette as string),
   );
-  const pool = eligibleVignettePool(ctx, recentIds);
+  const pacingPool = eligibleVignettePool(ctx, recentIds);
+  // Spec S3 (`odd/tasks/chronicle-variation.md`): never offer a situation whose phrasing this
+  // protagonist has already lived. The variant of a past event is recomputed from
+  // `(seed, id, year)` — the exact same derivation narration uses — so this needs no extra
+  // storage and cannot disagree with what the reader sees. A vignette whose variants are all
+  // spent simply stops being offered, which is what makes a repeated title impossible.
+  const usedPhrasings = new Set<string>();
+  for (const past of events) {
+    if (past.kind !== "vignette" || past.year >= year) continue;
+    const pastId = String(past.payload.vignette ?? "");
+    const pastVignette = getVignette(pastId);
+    if (!pastVignette) continue;
+    usedPhrasings.add(`${pastId}:${vignetteVariant(seed, pastId, past.year, pastVignette.variants ?? 1)}`);
+  }
+  const unusedPool = pacingPool.filter((vignette) => !usedPhrasings.has(`${vignette.id}:${vignetteVariant(seed, vignette.id, year, vignette.variants ?? 1)}`));
+  // Spec S7: if every eligible phrasing is spent, the year still gets one entry rather than going
+  // silent. Repetition here is the documented edge, never the normal path.
+  const pool = unusedPool.length > 0 ? unusedPool : pacingPool;
   return pool.map((vignette) => {
     const options = Object.keys(vignette.outcomes);
     const decisionId = `D1:${protagonist.id}:${year}:${vignette.id}`;

@@ -7,7 +7,7 @@ import { keyedDraw, keyedRng } from "./rng";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "./mortality";
 import { LANDMARK_POOL, pickLandmarkFor, pickLandmarks, seasonFor, type Landmark } from "./town";
 import type { Event, Job, Person } from "./types";
-import { getVignette } from "./vignettes";
+import { getVignette, vignetteVariant } from "./vignettes";
 
 export type { Locale } from "./locale";
 
@@ -441,7 +441,8 @@ export function narrateEvent(
       // `payload.outcome` — never free text stored on the event itself (decision 001).
       const vignette = getVignette(String(event.payload.vignette ?? ""));
       const outcome = vignette?.outcomes[String(event.payload.outcome ?? "")];
-      return outcome ? outcome.prose(locale, A, townName) : t(locale, `${A} lived through an ordinary year.`, `${A} vivió un año como cualquier otro.`);
+      const variant = vignette ? vignetteVariant(seed, vignette.id, event.year, vignette.variants ?? 1) : 0;
+      return outcome ? outcome.prose(locale, A, townName, variant) : t(locale, `${A} lived through an ordinary year.`, `${A} vivió un año como cualquier otro.`);
     }
     case "manorial-fine": {
       // Engine life course PR5's manorial dues — restrained, non-graphic copy (design's own
@@ -811,7 +812,7 @@ function withArticle(noun: string): string {
  * is expected to refine titles further — this proves the `{title, prose}`
  * shape works, not final copy for all fifteen event kinds).
  */
-function titleFor(event: Event, viewerId: string, people: Readonly<Record<string, Person>>, townName = "town", allEvents: readonly Event[] = [], locale: Locale = DEFAULT_LOCALE): string {
+function titleFor(event: Event, viewerId: string, people: Readonly<Record<string, Person>>, townName = "town", allEvents: readonly Event[] = [], locale: Locale = DEFAULT_LOCALE, seed = "narrate"): string {
   const [a, b] = event.actors;
   const viewer = people[viewerId];
   const otherId = a === viewerId ? b : a;
@@ -882,7 +883,7 @@ function titleFor(event: Event, viewerId: string, people: Readonly<Record<string
       return t(locale, "The lord's levy", "El tributo del señor");
     case "vignette": {
       const vignette = getVignette(String(event.payload.vignette ?? ""));
-      return vignette ? vignette.title(locale, townName) : t(locale, "An ordinary year", "Un año cualquiera");
+      return vignette ? vignette.title(locale, townName, vignetteVariant(seed, vignette.id, event.year, vignette.variants ?? 1)) : t(locale, "An ordinary year", "Un año cualquiera");
     }
     case "widowed":
       return t(locale, "Widowed", "Enviudado");
@@ -1006,7 +1007,7 @@ export function narrateEventForViewer(
   allEvents: readonly Event[] = [],
   locale: Locale = DEFAULT_LOCALE,
 ): RenderedEvent {
-  const title = titleFor(event, viewerId, people, townName, allEvents, locale);
+  const title = titleFor(event, viewerId, people, townName, allEvents, locale, seed);
   const viewer = people[viewerId];
   const [a] = event.actors;
 

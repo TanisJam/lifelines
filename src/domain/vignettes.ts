@@ -1,5 +1,5 @@
 import type { Locale } from "./locale";
-import { keyedRng } from "./rng";
+import { keyedDraw, keyedRng } from "./rng";
 import type { Job, SocialClass } from "./types";
 
 /**
@@ -53,13 +53,22 @@ export interface VignetteOutcome {
   readonly memorable?: boolean;
   readonly relationshipTarget?: VignetteRelationshipTarget;
   readonly relationshipDelta?: number;
-  readonly prose: (locale: Locale, name: string, townName: string) => string;
+  readonly prose: (locale: Locale, name: string, townName: string, variant?: number) => string;
   readonly optionDescription: string;
 }
 
 export interface Vignette {
   readonly id: string;
-  readonly title: (locale: Locale, townName: string) => string;
+  /**
+   * How many distinct phrasings this vignette can render (spec S1 of `odd/tasks/chronicle-variation.md`).
+   * Absent means 1: `title` and every outcome's `prose` ignore the variant index and behave exactly as
+   * they did before variants existed. A vignette is never offered again to the same protagonist once
+   * all of its variants have been used (spec S3), so this number is what bounds how often one situation
+   * can come back in a single life.
+   */
+  readonly variants?: number;
+  /** `variant` picks one of `variants` phrasings; it is derived from `(seed, id, year)` only (spec S2). Implementations with one phrasing ignore it. */
+  readonly title: (locale: Locale, townName: string, variant?: number) => string;
   readonly question: (locale: Locale, townName: string) => string;
   readonly eligible: (ctx: VignetteContext) => boolean;
   readonly outcomes: Readonly<Record<string, VignetteOutcome>>;
@@ -82,7 +91,7 @@ function outcome(spec: {
   readonly memorable?: boolean;
   readonly relationshipTarget?: VignetteRelationshipTarget;
   readonly relationshipDelta?: number;
-  readonly prose: (locale: Locale, name: string, townName: string) => string;
+  readonly prose: (locale: Locale, name: string, townName: string, variant?: number) => string;
   readonly optionDescription: string;
 }): VignetteOutcome {
   return { ...spec, cause: typeof spec.cause === "string" ? () => spec.cause as string : spec.cause };
@@ -91,6 +100,42 @@ function outcome(spec: {
 /** `t(locale, en, es)`-backed `title`/`question` builder shared by every vignette below — both ignore `townName` unless noted otherwise, same as the original English-only definitions did. */
 function fixed(en: string, es: string): (locale: Locale, townName: string) => string {
   return (locale) => t(locale, en, es);
+}
+
+/**
+ * The variant a given vignette-year renders (spec S2 of `odd/tasks/chronicle-variation.md`).
+ *
+ * Derived ONLY from `(world seed, vignette id, year)`, never from event order, mutable state or how
+ * many times narration happened to run. That is what lets the selection path and every read path
+ * (chronicle, person sheet, timeline) agree on the same phrasing for the same event without storing
+ * the choice on the event itself — no persisted-format change, so existing stored lives keep their
+ * current bytes and digests.
+ */
+export function vignetteVariant(seed: string, vignetteId: string, year: number, variants: number): number {
+  if (variants <= 1) return 0;
+  const draw = keyedDraw(seed, vignetteId, year, "vignette-variant");
+  return Math.min(variants - 1, Math.floor(draw * variants));
+}
+
+/**
+ * Bilingual phrasing list for one variant-aware slot: `titles[i]`/`titlesEs[i]` are variant `i`.
+ * `{town}` is replaced with the town name; `{name}` with the protagonist's. Kept as plain strings so
+ * the content stays greppable and reviewable in one place per vignette.
+ */
+function phrasings(titles: readonly string[], titlesEs: readonly string[]): (locale: Locale, townName: string, variant?: number) => string {
+  return (locale, townName, variant = 0) => {
+    const index = Math.min(variant, titles.length - 1);
+    const raw = t(locale, titles[index]!, titlesEs[index]!);
+    return raw.replaceAll("{town}", townName);
+  };
+}
+
+/** Same as `phrasings`, for an outcome's prose: `{name}` is the protagonist, `{town}` the town. */
+function prosePhrasings(phrasingsEn: readonly string[], phrasingsEs: readonly string[]): (locale: Locale, name: string, townName: string, variant?: number) => string {
+  return (locale, name, townName, variant = 0) => {
+    const index = Math.min(variant, phrasingsEn.length - 1);
+    return t(locale, phrasingsEn[index]!, phrasingsEs[index]!).replaceAll("{name}", name).replaceAll("{town}", townName);
+  };
 }
 
 export const VIGNETTES: readonly Vignette[] = [
@@ -176,7 +221,11 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "market-day",
-    title: (locale, townName) => t(locale, `Market day in ${townName}`, `Día de mercado en ${townName}`),
+    variants: 4,
+    title: phrasings(
+      ["Market day in {town}", "A market day, and the square full", "Market-day prices in {town}", "The market comes to {town}"],
+      ["Día de mercado en {town}", "Un día de mercado, y la plaza llena", "Los precios del día de mercado en {town}", "El mercado llega a {town}"],
+    ),
     question: (locale, townName) => t(locale, `It's market day in ${townName}. Do I haggle hard over the price, or pay what's asked?`, `Es día de mercado en ${townName}. ¿Regateo con fuerza el precio, o pago lo que piden?`),
     eligible: (ctx) => !ctx.away && ctx.age >= 10,
     outcomes: {
@@ -186,7 +235,20 @@ export const VIGNETTES: readonly Vignette[] = [
         intensity: 20,
         duration: 2,
         facet: "greed",
-        prose: (locale, name, townName) => t(locale, `${name} haggled hard at market day in ${townName}, and came away pleased with the bargain.`, `${name} regateó con fuerza en el día de mercado en ${townName}, y quedó satisfech${name.endsWith("a") ? "a" : "o"} con el trato.`),
+        prose: prosePhrasings(
+          [
+            "{name} haggled hard at market day in {town}, and came away pleased with the bargain.",
+            "{name} argued a price down to the last penny at market day in {town}, and enjoyed every minute of it.",
+            "{name} squeezed a better price out of a market stall in {town} than the seller liked.",
+            "{name} spent the market day in {town} haggling, and won more than was strictly fair.",
+          ],
+          [
+            "{name} regateó con fuerza en el día de mercado en {town}, y se fue con la sensación de haber ganado.",
+            "{name} discutió un precio hasta el último penique en el día de mercado en {town}, y disfrutó cada minuto.",
+            "{name} sacó en un puesto de {town} un precio mejor del que al vendedor le gustaba.",
+            "{name} pasó el día de mercado en {town} regateando, y ganó más de lo estrictamente justo.",
+          ],
+        ),
         optionDescription: "It's market day, and I haggle hard over the price.",
       }),
       "pay-fair": outcome({
@@ -195,7 +257,20 @@ export const VIGNETTES: readonly Vignette[] = [
         intensity: 15,
         duration: 1,
         facet: "altruism",
-        prose: (locale, name, townName) => t(locale, `${name} paid a fair price without haggling, at market day in ${townName}.`, `${name} pagó un precio justo sin regatear, en el día de mercado en ${townName}.`),
+        prose: prosePhrasings(
+          [
+            "{name} paid a fair price without haggling, at market day in {town}.",
+            "{name} paid what was asked at market day in {town}, and did not argue the price.",
+            "{name} counted out a fair price at market day in {town}, and let the seller keep their dignity.",
+            "{name} went to market day in {town} and paid without haggling, though others did not.",
+          ],
+          [
+            "{name} pagó un precio justo sin regatear, en el día de mercado en {town}.",
+            "{name} pagó lo que le pidieron en el día de mercado en {town}, y no discutió el precio.",
+            "{name} contó un precio justo en el día de mercado en {town}, y dejó al vendedor con su dignidad.",
+            "{name} fue al día de mercado en {town} y pagó sin regatear, aunque otros no lo hicieron.",
+          ],
+        ),
         optionDescription: "It's market day, and I pay what's asked without haggling.",
       }),
     },
@@ -262,7 +337,11 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "neighbor-needs-help",
-    title: fixed("A neighbor in need", "Un vecino necesitado"),
+    variants: 4,
+    title: phrasings(
+      ["A neighbor in need", "A neighbor asks for a hand", "Hard work, and a neighbor who needs it", "A neighbor's trouble, and whether I go"],
+      ["Un vecino necesitado", "Un vecino pide una mano", "Trabajo duro, y un vecino que lo necesita", "El problema de un vecino, y si voy o no"],
+    ),
     question: fixed("A neighbor could use a hand with hard, unglamorous work. Do I help?", "Un vecino agradecería una mano con un trabajo duro y poco lucido. ¿Ayudo?"),
     eligible: (ctx) => !ctx.away && ctx.age >= 16,
     outcomes: {
@@ -273,7 +352,20 @@ export const VIGNETTES: readonly Vignette[] = [
         duration: 3,
         facet: "altruism",
         memorable: true,
-        prose: (locale, name) => t(locale, `${name} spent the day helping a neighbor with hard, unglamorous work.`, `${name} pasó el día ayudando a un vecino con un trabajo duro y poco lucido.`),
+        prose: prosePhrasings(
+          [
+            "{name} spent the day helping a neighbor with hard, unglamorous work.",
+            "{name} gave a neighbor a full day of hard work, and asked nothing for it.",
+            "{name} carried, lifted and hauled for a neighbor until dark, and called it nothing.",
+            "{name} showed up for a neighbor's hard day and stayed until the work was done.",
+          ],
+          [
+            "{name} pasó el día ayudando a un vecino con un trabajo duro y poco lucido.",
+            "{name} le dio a un vecino un día entero de trabajo duro, y no pidió nada a cambio.",
+            "{name} cargó, levantó y acarreó para un vecino hasta el anochecer, y no le dio importancia.",
+            "{name} apareció en el día duro de un vecino y se quedó hasta terminar el trabajo.",
+          ],
+        ),
         optionDescription: "A neighbor could use a hand with hard, unglamorous work, and I help.",
       }),
       decline: outcome({
@@ -281,7 +373,20 @@ export const VIGNETTES: readonly Vignette[] = [
         cause: "letting a neighbor's request for help go unanswered",
         intensity: 15,
         duration: 1,
-        prose: (locale, name) => t(locale, `${name} had troubles enough of their own, and let a neighbor's request go unanswered.`, `${name} ya tenía bastantes problemas propios, y dejó sin respuesta la petición de un vecino.`),
+        prose: prosePhrasings(
+          [
+            "{name} had troubles enough of their own, and let a neighbor's request go unanswered.",
+            "{name} heard a neighbor ask for help and pretended not to.",
+            "{name} had an excuse ready, and let a neighbor carry the work alone.",
+            "{name} turned away from a neighbor's request, and the day sat badly afterwards.",
+          ],
+          [
+            "{name} ya tenía bastantes problemas propios, y dejó sin respuesta la petición de un vecino.",
+            "{name} oyó a un vecino pedir ayuda e hizo como que no.",
+            "{name} tenía una excusa lista, y dejó que un vecino cargara solo con el trabajo.",
+            "{name} le dio la espalda a la petición de un vecino, y el día se le hizo pesado después.",
+          ],
+        ),
         optionDescription: "A neighbor could use a hand with hard, unglamorous work, but I have troubles enough of my own.",
       }),
     },
@@ -313,7 +418,11 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "feast-day",
-    title: (locale, townName) => t(locale, `A feast day in ${townName}`, `Un día de fiesta en ${townName}`),
+    variants: 4,
+    title: phrasings(
+      ["A feast day in {town}", "Feast-day bells in {town}", "A feast day, and the town at its loudest", "The long evening of a feast day"],
+      ["Un día de fiesta en {town}", "Campanas de fiesta en {town}", "Un día de fiesta, y el pueblo en su punto más ruidoso", "La larga noche de un día de fiesta"],
+    ),
     question: (locale, townName) => t(locale, `It's a feast day in ${townName}. Do I join in the festivities?`, `Es día de fiesta en ${townName}. ¿Me uno a la celebración?`),
     // The universal fallback for anyone past infancy (round 10, decision 042; age floor added round
     // 10, decision 043 — an infant can't decide whether to join a feast). `pickVignette` still never
@@ -326,7 +435,20 @@ export const VIGNETTES: readonly Vignette[] = [
         intensity: 20,
         duration: 2,
         facet: "gregariousness",
-        prose: (locale, name, townName) => t(locale, `${name} joined in the feast-day festivities in ${townName}, if only for an evening.`, `${name} se unió a la celebración del día de fiesta en ${townName}, aunque solo fuera por una noche.`),
+        prose: prosePhrasings(
+          [
+            "{name} joined in the feast-day festivities in {town}, if only for an evening.",
+            "{name} walked the feast-day crowd in {town} until the torches burned low.",
+            "{name} let the feast day carry the whole day, and came home late and hoarse from talking.",
+            "{name} found the feast day's noise a comfort, and stayed out past the bells.",
+          ],
+          [
+            "{name} se unió a la celebración del día de fiesta en {town}, aunque solo fuera por una noche.",
+            "{name} recorrió la multitud del día de fiesta en {town} hasta que las antorchas se consumieron.",
+            "{name} dejó que el día de fiesta se llevara el día entero, y volvió a casa tarde y ronco de tanto hablar.",
+            "{name} encontró consuelo en el ruido del día de fiesta, y se quedó fuera hasta después de las campanas.",
+          ],
+        ),
         optionDescription: "It's a feast day, and I join in the festivities.",
       }),
       "keep-to-self": outcome({
@@ -334,7 +456,20 @@ export const VIGNETTES: readonly Vignette[] = [
         cause: "keeping to home on a feast day",
         intensity: 15,
         duration: 1,
-        prose: (locale, name, townName) => t(locale, `${name} kept to home on a feast day, while ${townName} celebrated without them.`, `${name} se quedó en casa el día de fiesta, mientras ${townName} celebraba sin él o ella.`),
+        prose: prosePhrasings(
+          [
+            "{name} kept to home on a feast day, while {town} celebrated without them.",
+            "{name} heard the feast day start in {town} and did not go down to it.",
+            "{name} kept the door shut through the feast day, and let {town} celebrate without them.",
+            "{name} watched the feast-day fires from a distance, and stayed where it was quiet.",
+          ],
+          [
+            "{name} se quedó en casa el día de fiesta, mientras {town} celebraba sin él o ella.",
+            "{name} oyó empezar el día de fiesta en {town} y no bajó a él.",
+            "{name} mantuvo la puerta cerrada durante el día de fiesta, y dejó que {town} celebrara sin él o ella.",
+            "{name} miró los fuegos del día de fiesta desde lejos, y se quedó donde había silencio.",
+          ],
+        ),
         optionDescription: "It's a feast day, but I keep to home rather than join in.",
       }),
     },
@@ -366,7 +501,11 @@ export const VIGNETTES: readonly Vignette[] = [
   },
   {
     id: "old-debt",
-    title: fixed("An old debt", "Una vieja deuda"),
+    variants: 4,
+    title: phrasings(
+      ["An old debt", "An old debt comes due", "The debt that would not die", "A debt, and a reckoning"],
+      ["Una vieja deuda", "Una vieja deuda vence", "La deuda que no moría", "Una deuda, y un ajuste de cuentas"],
+    ),
     question: fixed("An old debt has come due. Do I pay it off, even if it costs me?", "Una vieja deuda ha vencido. ¿La pago, aunque me cueste?"),
     eligible: (ctx) => ctx.age >= 20,
     outcomes: {
@@ -376,7 +515,20 @@ export const VIGNETTES: readonly Vignette[] = [
         intensity: 20,
         duration: 2,
         facet: "perseverance",
-        prose: (locale, name) => t(locale, `${name} paid off an old debt, whatever it cost.`, `${name} pagó una vieja deuda, costara lo que costara.`),
+        prose: prosePhrasings(
+          [
+            "{name} paid off an old debt, whatever it cost.",
+            "{name} settled an old debt in full, and slept easier for it.",
+            "{name} counted out the last of an old debt and closed the account for good.",
+            "{name} paid an old debt down to nothing, and did not complain about the price.",
+          ],
+          [
+            "{name} pagó una vieja deuda, costara lo que costara.",
+            "{name} saldó una vieja deuda por completo, y desde entonces durmió mejor.",
+            "{name} contó hasta el último penique de una vieja deuda y cerró la cuenta para siempre.",
+            "{name} pagó una vieja deuda hasta dejarla en nada, y no se quejó del precio.",
+          ],
+        ),
         optionDescription: "An old debt has come due, and I pay it off, even if it costs me.",
       }),
       "let-it-ride": outcome({
@@ -384,7 +536,20 @@ export const VIGNETTES: readonly Vignette[] = [
         cause: "letting an old debt ride another year",
         intensity: 15,
         duration: 2,
-        prose: (locale, name) => t(locale, `${name} let an old debt ride another year, and felt the weight of it.`, `${name} dejó pasar otro año con una vieja deuda, y sintió su peso.`),
+        prose: prosePhrasings(
+          [
+            "{name} let an old debt ride another year, and felt the weight of it.",
+            "{name} put off an old debt again, and avoided the creditor's street.",
+            "{name} promised an old debt would be paid soon, and meant it less than last time.",
+            "{name} let an old debt stand another year, and the silence around it grew.",
+          ],
+          [
+            "{name} dejó pasar otro año con una vieja deuda, y sintió su peso.",
+            "{name} volvió a postergar una vieja deuda, y evitó la calle del acreedor.",
+            "{name} prometió que una vieja deuda se pagaría pronto, y lo dijo con menos ganas que la vez anterior.",
+            "{name} dejó en pie una vieja deuda otro año más, y el silencio alrededor creció.",
+          ],
+        ),
         optionDescription: "An old debt has come due, and I let it ride another year.",
       }),
     },
