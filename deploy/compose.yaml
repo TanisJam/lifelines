@@ -19,11 +19,12 @@ services:
     # Bounds the container's total memory (the app's own STORE_CACHE_SIZE bounds the two in-process
     # life/world LRU caches, but this is the outer guardrail against the whole container's usage —
     # Node's own overhead, request buffering, etc.).
-    # MEASURED, not assumed: with the 1536 MB heap cap above, a full create peaks at 1.36 GiB RSS
-    # (VmHWM), so 2560m leaves ~1.2 GiB of headroom. A lower bound looks affordable now, but this
-    # value was validated in the real container against the OLD 2.07 GiB peak, not re-measured since -
-    # re-measure inside the container before lowering it or the heap cap.
-    mem_limit: 2560m
+    # MEASURED IN THIS CONTAINER, not assumed: at 2g, a full life (seed cap-0, 57 years to death)
+    # completes in 43-44 s over HTTP with 57 streamed ticks, peak cgroup memory 1.386 GiB, OOMKilled
+    # false, and the resulting chronicle reads in 20 ms. ~0.6 GiB of headroom remains.
+    # This is BELOW the old 2g bound that OOM-killed a create when it peaked at 2.07 GiB - the
+    # compaction work is what moved it. Re-measure before raising NODE_OPTIONS or lowering this.
+    mem_limit: 2g
     volumes:
       - lifelines-data:/data
     networks:
