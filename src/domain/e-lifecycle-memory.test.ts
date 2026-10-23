@@ -170,11 +170,12 @@ it.skipIf(childSelected)("measures one fresh child, including its Vitest process
   const metrics = JSON.parse(lines[0].slice(marker.length));
   expect(metrics.fullColdProof).toBe(true);
   expect(metrics.steps).toBe(4);
-  // Re-pinned (decision 085): no age-0 biology roll, so the year-1498 decision content changed.
-  // Measured from this exact child run; `steps`/`frontier` are unchanged.
-  expect(metrics.wireBytes).toBe(51610673);
-  expect(metrics.canonicalHash).toBe("70c06f8affb513d2b455edb7c774f1dd37127b5f45dcfe6c9ccedcc7f60a92b4");
-  expect(metrics.wireHash).toBe("5b363daf7cfcd8abb10b620768f0f0f224226b4a79ccdd77dc12675f1c200699");
+  // Re-pinned (chronicle variation, 3eaf0da): vignette selection is occurrence-indexed now, so a
+  // fresh child's year content changes by a phrasing's worth. Measured from this exact child run;
+  // `steps`/`frontier` are unchanged.
+  expect(metrics.wireBytes).toBe(51610751);
+  expect(metrics.canonicalHash).toBe("9ea6d73ceadc099d0d5dd694dfd6b2bc9eeb4d53dcff9cc5d4af338089d8b13e");
+  expect(metrics.wireHash).toBe("e01a91da8f2d0fec9bdfc19a2ddcef133370093e520d16b376bc42662ec5e3ab");
   expect(metrics.totalMaxRssBytes).toBeGreaterThan(0);
   let previousMaxRssBytes = 0;
   for (const observation of metrics.phases) {

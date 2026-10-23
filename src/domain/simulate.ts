@@ -24,7 +24,7 @@ import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistributi
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
 import type { Event, EventKind, JsonValue, Job, Override, Person, Sex, SimulationResult, SocialClass, WorldConfig, YearSnapshot } from "./types";
-import { eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext } from "./vignettes";
+import { VIGNETTES, eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, vignetteVariant, type Vignette, type VignetteContext } from "./vignettes";
 import { pickJobForClass } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
@@ -1770,7 +1770,18 @@ function buildDailyLifeVignetteDescriptor(
   const recentIds = new Set(
     events.filter((e) => e.kind === "vignette" && e.actors.includes(protagonist.id) && e.year >= year - 5 && e.year < year).map((e) => e.payload.vignette as string),
   );
-  const vignette = pickVignette(seed, protagonist.id, year, ctx, recentIds);
+  // Same occurrence counting narration uses (spec S2/S3): a vignette that already happened as many
+  // times as it has phrasings is spent, and is not offered again.
+  const occurred = new Map<string, number>();
+  for (const past of events) {
+    if (past.kind !== "vignette" || past.year >= year) continue;
+    const id = String(past.payload.vignette ?? "");
+    occurred.set(id, (occurred.get(id) ?? 0) + 1);
+  }
+  const exhaustedIds = new Set(
+    VIGNETTES.filter((v) => (occurred.get(v.id) ?? 0) >= (v.variants ?? 1)).map((v) => v.id),
+  );
+  const vignette = pickVignette(seed, protagonist.id, year, ctx, recentIds, exhaustedIds);
   const options = Object.keys(vignette.outcomes);
   const decisionId = `D1:${protagonist.id}:${year}`;
   // An infant/toddler can't make this call themselves (decision 043) — attributed to a living parent
@@ -1823,7 +1834,27 @@ function buildDailyLifeVignetteCandidates(
   const recentIds = new Set(
     events.filter((e) => e.kind === "vignette" && e.actors.includes(protagonist.id) && e.year >= year - 5 && e.year < year).map((e) => e.payload.vignette as string),
   );
-  const pool = eligibleVignettePool(ctx, recentIds);
+  const pacingPool = eligibleVignettePool(ctx, recentIds);
+  // Spec S3 (`odd/tasks/chronicle-variation.md`): never offer a situation the protagonist has
+  // already lived through as many times as it has phrasings. The count is the number of past
+  // vignette events with this id — the exact same occurrence index narration uses to pick the
+  // phrasing — so a vignette disappears from the pool only once every phrasing is spent, which is
+  // what makes a repeated title impossible rather than merely unlikely.
+  //
+  // Checked BEFORE the 5-year pacing window: pacing was only ever a proxy for variety, and it used
+  // to discard a vignette that still had unused phrasings, shrinking the pool and forcing an
+  // earlier fallback.
+  const occurred = new Map<string, number>();
+  for (const past of events) {
+    if (past.kind !== "vignette" || past.year >= year) continue;
+    const pastId = String(past.payload.vignette ?? "");
+    occurred.set(pastId, (occurred.get(pastId) ?? 0) + 1);
+  }
+  const unusedPool = eligibleVignettePool(ctx).filter((vignette) => (occurred.get(vignette.id) ?? 0) < (vignette.variants ?? 1));
+  // Spec S7: if every eligible phrasing is spent, the year still gets one entry rather than going
+  // silent. Pacing is the first preference, the full eligible pool the last resort, so a life that
+  // outruns the content repeats the oldest situation last rather than at random.
+  const pool = unusedPool.length > 0 ? unusedPool : eligibleVignettePool(ctx, recentIds);
   return pool.map((vignette) => {
     const options = Object.keys(vignette.outcomes);
     const decisionId = `D1:${protagonist.id}:${year}:${vignette.id}`;
