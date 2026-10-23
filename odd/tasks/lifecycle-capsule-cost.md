@@ -2,6 +2,9 @@
 
 Branch: `feat/narrative-engine`. Test runner: `pnpm test` (vitest). Delivery: work-unit commits on the branch.
 
+> HISTORICAL. Every measurement here is at the OLD 15-year horizon and the old storage format; the
+> full-life work that replaced them is `odd/tasks/lifecycle-full-lifetime.md`. Read that first.
+
 Objective: make a 15-year lifecycle life fit the deployed container and make reads concurrent-capable, without
 weakening the capsule's authority model.
 

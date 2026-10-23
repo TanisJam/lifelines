@@ -11,16 +11,18 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      # Measured, not guessed (odd/tasks/lifecycle-capsule-cost.md): a 15-year create needs more than
-      # 1280 MB of JS heap (exit 134) and passes at 1536 MB. Without an explicit cap V8 sizes the heap
-      # from the HOST instead of this cgroup limit, so it never collects, reaches ~4.6 GB and dies.
+      # Measured, not guessed (odd/tasks/lifecycle-full-lifetime.md L8): a full life - the protagonist's
+      # whole 57-year life at seed cap-0 - completes at 1536 MB of JS heap with a 1.36 GiB VmHWM peak.
+      # Without an explicit cap V8 sizes the heap from the HOST instead of this cgroup limit, so it
+      # never collects, reaches ~4.6 GB and dies.
       NODE_OPTIONS: --max-old-space-size=1536
     # Bounds the container's total memory (the app's own STORE_CACHE_SIZE bounds the two in-process
     # life/world LRU caches, but this is the outer guardrail against the whole container's usage —
     # Node's own overhead, request buffering, etc.).
-    # MEASURED, not assumed: with the 1536 MB heap cap above, a 15-year create peaks at 2.07 GiB RSS
-    # (VmHWM), so the previous 2g bound would have OOM-killed exactly the request we were sizing for.
-    # 2560m leaves ~0.4 GiB over the measured peak. Re-measure before lowering this or the heap cap.
+    # MEASURED, not assumed: with the 1536 MB heap cap above, a full create peaks at 1.36 GiB RSS
+    # (VmHWM), so 2560m leaves ~1.2 GiB of headroom. A lower bound looks affordable now, but this
+    # value was validated in the real container against the OLD 2.07 GiB peak, not re-measured since -
+    # re-measure inside the container before lowering it or the heap cap.
     mem_limit: 2560m
     volumes:
       - lifelines-data:/data

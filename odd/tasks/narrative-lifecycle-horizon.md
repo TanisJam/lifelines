@@ -9,6 +9,10 @@ Branch: `feat/narrative-engine`. Delivery: work-unit commits. Test runner:
 
 ## Specs
 
+> SUPERSEDED: the 15-year horizon was an architecture limit (V8's ~512 MB string cap), not a product
+> decision. `odd/tasks/lifecycle-full-lifetime.md` S1 replaces it: a life runs until its protagonist
+> dies. Everything below is kept as the record of what was built against the old horizon.
+
 S1. A life is the chronicle of one protagonist up to a horizon of 15 journal years. Completion and
 horizon are DIFFERENT states: a death inside the horizon yields a `complete` life; a protagonist
 still alive at the horizon yields an `incomplete` life that IS persisted and displayed as alive at
