@@ -414,7 +414,10 @@ export function narrateEvent(
       const note = String(event.payload.note ?? "");
       const other = typeof event.payload.otherName === "string" ? event.payload.otherName : t(locale, "them", "ellos");
       const table = locale === "es" ? REFLECTION_NARRATION_ES : REFLECTION_NARRATION;
-      const base = table[note]?.(A, other) ?? t(locale, `${A} sat with their thoughts.`, `${A} se quedó a solas con sus pensamientos.`);
+      const extra = reflectionExtra(note, reflectionOccurrence(allEvents, event, note));
+      const base = extra
+        ? t(locale, extra.en, extra.es).replaceAll("{name}", A).replaceAll("{other}", other)
+        : (table[note]?.(A, other) ?? t(locale, `${A} sat with their thoughts.`, `${A} se quedó a solas con sus pensamientos.`));
       // Decision 040: a parent's death reaching the away protagonist reads as news from home, not
       // something witnessed firsthand — same grieve/harden/lean-on-family sentence, framed first.
       if (event.payload.awayNews === true) {
@@ -466,6 +469,74 @@ export function narrateEvent(
     default:
       return `${A}: ${event.kind}.`;
   }
+}
+
+/**
+ * Extra phrasings for the reflections a life actually repeats (variant 0 is the original wording
+ * below, or the slug-derived title). A reflection's note is dictated by the simulation, not chosen
+ * from a pool, so there is nothing to exclude — the same beat comes back by nature. Cycling its
+ * phrasings by occurrence is what stops "Chose to stay home" from reading identically every time.
+ */
+const REFLECTION_EXTRA: Record<string, readonly { readonly titleEn: string; readonly titleEs: string; readonly en: string; readonly es: string }[]> = {
+  "chose-to-stay-home": [
+    { titleEn: "Stayed, when going was possible", titleEs: "Se quedó, cuando irse era posible",
+      en: "{name} weighed the road out of town and chose the door home.", es: "{name} sopesó el camino fuera del pueblo y eligió la puerta de casa." },
+    { titleEn: "A road not taken", titleEs: "Un camino no tomado",
+      en: "{name} let the chance to leave pass, and did not chase it.", es: "{name} dejó pasar la ocasión de irse, y no la persiguió." },
+  ],
+  "kept-chasing-a-dream": [
+    { titleEn: "Still after the dream", titleEs: "Todavía tras el sueño",
+      en: "{name} kept after the dream for another year, though it stayed out of reach.", es: "{name} siguió tras el sueño otro año más, aunque permaneció fuera de alcance." },
+    { titleEn: "The dream, another year", titleEs: "El sueño, otro año",
+      en: "{name} would not put the dream down, whatever the year cost.", es: "{name} no quiso soltar el sueño, costara lo que costara el año." },
+  ],
+  "sought-revenge-for-the-betrayal": [
+    { titleEn: "Revenge, still owed", titleEs: "La venganza, todavía debida",
+      en: "{name} kept the betrayal close and looked for a way to answer {other}.", es: "{name} guardó cerca la traición y buscó la manera de responderle a {other}." },
+    { titleEn: "A debt of another kind", titleEs: "Una deuda de otro tipo",
+      en: "{name} waited for the moment to settle things with {other}, and waited patiently.", es: "{name} esperó el momento de ajustar cuentas con {other}, y esperó con paciencia." },
+  ],
+  "let-a-feud-drag-on": [
+    { titleEn: "The feud, another year", titleEs: "La rencilla, otro año",
+      en: "{name} let the quarrel with {other} run on, and did nothing to end it.", es: "{name} dejó que la disputa con {other} siguiera, y no hizo nada por terminarla." },
+    { titleEn: "Old quarrel, new year", titleEs: "Vieja disputa, año nuevo",
+      en: "{name} passed {other} without a word, as the feud had taught.", es: "{name} pasó junto a {other} sin una palabra, como la rencilla había enseñado." },
+  ],
+  "tried-for-a-child-without-success": [
+    { titleEn: "Hoping again", titleEs: "Esperar otra vez",
+      en: "{name} hoped for a child again that year, and the hope went unanswered.", es: "{name} volvió a esperar un hijo ese año, y la esperanza quedó sin respuesta." },
+    { titleEn: "A year without a child", titleEs: "Un año sin hijo",
+      en: "{name} counted the months and found no child at the end of them.", es: "{name} contó los meses y no encontró ningún hijo al final de ellos." },
+  ],
+  "kept-the-grudge": [
+    { titleEn: "The grudge, kept", titleEs: "El rencor, guardado",
+      en: "{name} kept the grievance against {other} close, and would not set it down.", es: "{name} guardó cerca el agravio contra {other}, y no quiso dejarlo." },
+    { titleEn: "Nothing forgiven", titleEs: "Nada perdonado",
+      en: "{name} decided that what {other} had done would not be forgiven.", es: "{name} decidió que lo que {other} había hecho no sería perdonado." },
+  ],
+  "last-attempt-at-dream": [
+    { titleEn: "One more try at the old dream", titleEs: "Un intento más por el viejo sueño",
+      en: "{name} tried the old dream one last time, knowing how it usually ends.", es: "{name} probó el viejo sueño una última vez, sabiendo cómo suele terminar." },
+    { titleEn: "The dream, one final time", titleEs: "El sueño, una última vez",
+      en: "{name} went back to the dream with everything left, and no time to spare.", es: "{name} volvió al sueño con todo lo que quedaba, y sin tiempo que perder." },
+  ],
+};
+
+/** How many times this reflection note already happened in this life before `event`, in (year, id) order. */
+function reflectionOccurrence(events: readonly Event[], event: Event, note: string): number {
+  let count = 0;
+  for (const candidate of events) {
+    if (candidate.kind !== "reflection" || String(candidate.payload.note ?? "") !== note) continue;
+    if (candidate.year < event.year || (candidate.year === event.year && candidate.id < event.id)) count += 1;
+  }
+  return count;
+}
+
+/** The extra phrasing for this occurrence, or `undefined` for occurrence 0 (the original wording). */
+function reflectionExtra(note: string, occurrence: number) {
+  const extras = REFLECTION_EXTRA[note];
+  if (!extras || extras.length === 0 || occurrence === 0) return undefined;
+  return extras[(occurrence - 1) % extras.length];
 }
 
 /** One prose line per `reflection` note (round 7, decision 030) — a small, closed vocabulary rather than open-ended text, so this stays template-based (decision 001) even though the note itself is a free-ish string tag. */
@@ -877,6 +948,8 @@ function titleFor(event: Event, viewerId: string, people: Readonly<Record<string
       return t(locale, capitalize(String(event.payload.eventType ?? "something happens").replace(/-/g, " ")), capitalize(TOWN_EVENT_TITLE_ES[String(event.payload.eventType ?? "")] ?? "Algo sucede"));
     case "reflection": {
       const note = String(event.payload.note ?? "a quiet moment");
+      const extra = reflectionExtra(note, reflectionOccurrence(allEvents, event, note));
+      if (extra) return t(locale, extra.titleEn, extra.titleEs);
       return t(locale, capitalize(note.replace(/-/g, " ")), capitalize(REFLECTION_TITLE_ES[note] ?? "Un momento de calma"));
     }
     case "levy":
@@ -929,8 +1002,7 @@ const TOWN_EVENT_TITLE_ES: Record<string, string> = {
 
 /** Short Spanish titles for `reflection` notes (mirrors `REFLECTION_NARRATION_ES`'s keys). */
 const REFLECTION_TITLE_ES: Record<string, string> = {
-  "grieved-openly": "llora su pena abiertamente",
-  hardened: "se endurece",
+  "grieved-openly": "llora su pena abiertamente",  hardened: "se endurece",
   "leaned-on-family": "se apoya en la familia",
   "let-go-of-grudge": "deja ir un viejo rencor",
   "kept-the-grudge": "se aferra a un rencor",

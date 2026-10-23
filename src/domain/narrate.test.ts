@@ -426,3 +426,38 @@ describe("lifeSummary: leaving and returning reads consistently", () => {
     expect(summary).not.toContain("se hizo realidad");
   });
 });
+
+describe("chronicle variation — repeated reflections read differently", () => {
+  const person = makePerson("p001", { sex: "f" });
+  const people = { p001: person };
+  const reflection = (id: string, year: number, note: string): Event =>
+    ({ id, year, kind: "reflection", actors: ["p001"], payload: { note }, causes: [] });
+
+  it("cycles a repeating note's phrasings by occurrence instead of repeating one line", () => {
+    const events = [
+      reflection("e1", 1400, "chose-to-stay-home"),
+      reflection("e2", 1404, "chose-to-stay-home"),
+      reflection("e3", 1408, "chose-to-stay-home"),
+    ];
+    const titles = events.map((e) => narrateEventForViewer(e, "p001", people, "seed", "town", events).title);
+    const prose = events.map((e) => narrateEventForViewer(e, "p001", people, "seed", "town", events).prose);
+
+    expect(titles[0]).toBe("Chose to stay home"); // occurrence 0 keeps the original wording
+    expect(new Set(titles).size).toBe(3);
+    expect(new Set(prose).size).toBe(3);
+  });
+
+  it("leaves a note without extra phrasings exactly as it was", () => {
+    const events = [reflection("e1", 1400, "hardened"), reflection("e2", 1405, "hardened")];
+    const rendered = events.map((e) => narrateEventForViewer(e, "p001", people, "seed", "town", events));
+    expect(rendered[0]!.title).toBe("Hardened");
+    expect(rendered[0]!.prose).toBe(rendered[1]!.prose);
+  });
+
+  it("renders the extra phrasings in Spanish too", () => {
+    const events = [reflection("e1", 1400, "kept-chasing-a-dream"), reflection("e2", 1406, "kept-chasing-a-dream")];
+    const second = narrateEventForViewer(events[1]!, "p001", people, "seed", "town", events, "es");
+    expect(second.title).toBe("Todavía tras el sueño");
+    expect(second.prose).toContain("siguió tras el sueño");
+  });
+});
