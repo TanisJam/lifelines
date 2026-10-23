@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { beginLegacyYear, resolveLegacyVitalDecision, type LegacySocialBatchContext, type LegacySocialBatchOutput, type ResolvedDecision } from "./legacy-year";
+import { simulate } from "./simulate";
 import type { DecisionMaker, PersonYearBatch } from "./decisions";
 import { getVignette } from "./vignettes";
 import { mintId, overrideFor, spawnChild } from "./legacy-year-mechanics";
@@ -1147,4 +1148,30 @@ describe("legacy whole-year canonical baseline", () => {
       expect({ years: observed.years, final: observed.final }).toEqual(pins[scenario] ?? {});
     });
   }
+});
+
+describe("moderate density — a second everyday beat in quiet years", () => {
+  it("adds one extra vignette every third year of a quiet life, and none in the years between", async () => {
+    // cap-0 is the measured fixture: a protagonist who lives to ~1383 with dozens of quiet years.
+    const { config, people, events } = generateWorld({ seed: "cap-0", startYear: 1327, endYear: 1400, founderCount: 10, protagonist: { name: "Density", sex: "m" } });
+    const report = await simulate(config, people, events, { decisionMaker: new RuleDecisionMaker(), engineSource: "rules", protagonistId: "protagonist" });
+    const protagonist = report.result.people["protagonist"]!;
+    expect(protagonist).toBeDefined();
+    const vignettesByYear = new Map<number, number>();
+    for (const event of report.result.events) {
+      if (event.kind !== "vignette" || !event.actors.includes(protagonist.id)) continue;
+      vignettesByYear.set(event.year, (vignettesByYear.get(event.year) ?? 0) + 1);
+    }
+    // A quiet year keeps its primary beat; every third year adds exactly one more.
+    let doubled = 0;
+    for (const [year, count] of vignettesByYear) {
+      const age = year - protagonist.birthYear;
+      if (count > 1) {
+        expect(age % 3).toBe(0);
+        expect(count).toBeLessThanOrEqual(2);
+        doubled += 1;
+      }
+    }
+    expect(doubled).toBeGreaterThan(0);
+  }, 120_000);
 });
