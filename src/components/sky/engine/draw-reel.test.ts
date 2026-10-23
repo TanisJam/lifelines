@@ -75,6 +75,23 @@ describe("createReel", () => {
     expect(seek).toHaveBeenCalledWith(entries[2]!.at + 0.03);
   });
 
+  it("shows the clicked entry complete while paused, so what was selected is readable", () => {
+    const entry = entries[2]!;
+    const { draw, rows } = setup([entry]);
+    draw(entry.at + 0.03); // exactly where a click seeks
+    expect(rows[0]!.querySelector(".t").textContent).toBe(entry.text.title);
+    expect(rows[0]!.querySelector(".p").textContent).toBe(entry.text.prose);
+  });
+
+  it("still inks the text while playing", () => {
+    const entry = entries[2]!;
+    const { draw, rows, store } = setup([entry]);
+    store.set({ playing: true });
+    draw(entry.at + 0.03);
+    const typedTitle = rows[0]!.querySelector(".t").textContent!;
+    expect(typedTitle.length).toBeLessThan(entry.text.title.length);
+  });
+
   it("Enter and Space seek like a click; other keys do nothing", () => {
     const { ol, seek, rows } = setup();
     const enter = ol.fire("keydown", { key: "Enter" }, rows[1]!);
@@ -140,7 +157,9 @@ describe("createReel", () => {
     it("keeps each rendered prefix, partial anchor and caret correct while scrubbing backwards", () => {
       wide = false;
       const e = entry("a", "Ann");
-      const { draw, rows, ol, openPerson, reel } = setup([e]);
+      const { draw, rows, ol, openPerson, reel, store } = setup([e]);
+      // Partial text only happens while the clock runs; paused rows are shown complete (see below).
+      store.set({ playing: true });
       const title = rows[0]!.querySelector(".t");
       const by = rows[0]!.querySelector(".by");
       const prose = rows[0]!.querySelector(".p");
@@ -189,7 +208,8 @@ describe("createReel", () => {
       wide = false;
       const source = { ...chronicle.entries[0]!, at: 0, title: "a < b & c", prose: "{{a}} + {{missing}} suffix{{a}}", links: [{ personId: "a", name: name }] };
       const resolved = reelEntries([source]);
-      const { draw, rows, reel } = setup(resolved);
+      const { draw, rows, reel, store } = setup(resolved);
+      store.set({ playing: true }); // partial text is a playing-only effect
       draw(0.016 * 5.5);
       expect(rows[0]!.querySelector(".t").textContent).toBe("a < b");
       draw(10);

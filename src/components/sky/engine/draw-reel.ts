@@ -193,6 +193,11 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
   const draw = (frame: Frame) => {
     last = frame;
     const t = frame.t;
+    // Clicking an entry seeks and pauses (`createSkyEngine.seek` sets `playing: false`), and the click
+    // used to land a hair after the moment, so the typewriter restarted and several rows sat half
+    // written at once — the entry the reader asked for was unreadable. While paused, everything already
+    // told is shown complete: reading beats the animation.
+    const playing = store.get().playing;
     // The tape shifted under the present: ease that shift out over GLIDE_MS (travel's brake, no overshoot).
     shift = tapeOffset * (1 - travel(Math.min(1, (performance.now() - glideFrom) / GLIDE_MS)));
     const ys = shift === 0 ? entryYs(ats, tape, t) : entryYs(ats, tape, t).map((y) => y - shift);
@@ -238,7 +243,9 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
       row.li.style.opacity = look.opacity.toFixed(3);
       row.node.style.opacity = String(look.node);
       row.body.style.opacity = future ? "0" : "1";
-      const state = typed(entry.parts, t - entry.at);
+      const state: Typed = !playing && !future
+        ? { counts: entry.parts.map((part) => part.text.length), done: true, caret: -1 }
+        : typed(entry.parts, t - entry.at);
       const key = typedKey(state);
       if (key !== row.key) {
         row.key = key;
