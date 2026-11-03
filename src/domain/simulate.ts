@@ -24,7 +24,7 @@ import { decisionFragility, isSurprise, keyedDraw, keyedRng, normalizeDistributi
 import { ruleDistribution } from "./rule-heuristics";
 import { seasonFor } from "./town";
 import type { Event, EventKind, JsonValue, Job, Override, Person, Sex, SimulationResult, SocialClass, WorldConfig, YearSnapshot } from "./types";
-import { VIGNETTES, eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, vignetteVariant, type Vignette, type VignetteContext } from "./vignettes";
+import { VIGNETTES, eligibleVignettePool, getVignette, getVignetteForOption, pickVignette, type Vignette, type VignetteContext } from "./vignettes";
 import { pickJobForClass } from "./worldgen";
 
 const DEFAULT_CONCURRENCY_LIMIT = 8;
@@ -1835,7 +1835,6 @@ function buildDailyLifeVignetteCandidates(
   const recentIds = new Set(
     events.filter((e) => e.kind === "vignette" && e.actors.includes(protagonist.id) && e.year >= year - 5 && e.year < year).map((e) => e.payload.vignette as string),
   );
-  const pacingPool = eligibleVignettePool(ctx, recentIds);
   // Spec S3 (`odd/tasks/chronicle-variation.md`): never offer a situation the protagonist has
   // already lived through as many times as it has phrasings. The count is the number of past
   // vignette events with this id — the exact same occurrence index narration uses to pick the

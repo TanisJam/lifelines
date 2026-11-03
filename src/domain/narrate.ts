@@ -883,7 +883,7 @@ function withArticle(noun: string): string {
  * is expected to refine titles further — this proves the `{title, prose}`
  * shape works, not final copy for all fifteen event kinds).
  */
-function titleFor(event: Event, viewerId: string, people: Readonly<Record<string, Person>>, townName = "town", allEvents: readonly Event[] = [], locale: Locale = DEFAULT_LOCALE, seed = "narrate"): string {
+function titleFor(event: Event, viewerId: string, people: Readonly<Record<string, Person>>, townName = "town", allEvents: readonly Event[] = [], locale: Locale = DEFAULT_LOCALE): string {
   const [a, b] = event.actors;
   const viewer = people[viewerId];
   const otherId = a === viewerId ? b : a;
@@ -1081,7 +1081,7 @@ export function narrateEventForViewer(
   allEvents: readonly Event[] = [],
   locale: Locale = DEFAULT_LOCALE,
 ): RenderedEvent {
-  const title = titleFor(event, viewerId, people, townName, allEvents, locale, seed);
+  const title = titleFor(event, viewerId, people, townName, allEvents, locale);
   const viewer = people[viewerId];
   const [a] = event.actors;
 

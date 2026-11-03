@@ -1167,7 +1167,7 @@ async function addExtraEverydayMoment<TownEvent extends string>(
   year: number,
   townEvent: TownEvent | undefined,
 ): Promise<void> {
-  const { config, people, events, buildDailyLifeVignetteDescriptor, optionLabel: _unused } = context;
+  const { config, people, events, buildDailyLifeVignetteDescriptor } = context;
   const seed = config.seed;
   const { vignette, deciderId } = buildDailyLifeVignetteDescriptor(protagonist, year, seed, people, events, townEvent, 2);
   const options = Object.keys(vignette.outcomes);
