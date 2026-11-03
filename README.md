@@ -78,7 +78,7 @@ src/domain/            Pure TypeScript engine — no Next.js, no SDK imports.
   fork.ts, replay.ts     restore a snapshot, force one option, re-simulate forward
   e-*.ts                 the new lifecycle engine (see "What's next"), created only with
                          `?engine=lifecycle`
-  worldgen.ts, mind.ts, situations.ts, hazards.ts, ...  supporting simulation modules
+  worldgen.ts, mind.ts, hazards.ts, ...    supporting simulation modules
 
 src/adapters/decision/ DecisionMaker adapters: rule-decision-maker.ts (offline, deterministic)
                        and jev-decision-maker.ts (TypeSafe SDK), behind a shared stable-hash cache.
