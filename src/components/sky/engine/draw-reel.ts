@@ -1,4 +1,4 @@
-import { A_NOW, R_COMPASS, R_PROGRESS } from "@/lib/sky/constants";
+import { A_NOW, GAP, R_COMPASS, R_PROGRESS } from "@/lib/sky/constants";
 import { domCoordinate } from "@/lib/sky/dom-coordinate";
 import { dialAngle, type Timeline } from "@/lib/sky/dial";
 import { paramAt, polar, quad, travel } from "@/lib/sky/motion";
@@ -210,10 +210,13 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
     const named = new Set<string>();
     leaders.forEach((l) => (l.used = false));
     let order = 0;
+    // The tape keeps rows GAP apart, but a narrow column can wrap a row taller than that: each row
+    // shown pushes every older row down by its excess, so text never lands on text.
+    let pushed = 0;
     for (let i = entries.length - 1; i >= 0; i--) {
       const row = rows[i]!;
       const entry = entries[i]!;
-      const y = ys[i]!;
+      const y = ys[i]! + pushed;
       const future = entry.at > t;
       const look = entryLook(y, future);
       const hide = () => {
@@ -256,6 +259,7 @@ export function createReel({ area, ol, rail, entries, store, timeline: line, foc
       toggle(row.li, "focus", focused);
       // The rules above and below arrive only once the entry is fully written.
       toggle(row.li, "ruled", focused && state.done);
+      if (wide && !future) pushed += Math.max(0, row.body.offsetHeight - GAP + 8);
       if (row.bead) {
         toggle(row.bead, "on", !future);
         toggle(row.bead, "lit", focused);

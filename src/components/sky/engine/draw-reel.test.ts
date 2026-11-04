@@ -69,6 +69,20 @@ function setup(entries: readonly ReelEntry[] = reelEntries(chronicle.entries)) {
 }
 
 describe("createReel", () => {
+  it("a row taller than the tape gap pushes older rows down by its excess, so text never overlaps", () => {
+    const pair = [{ ...entries[0]!, at: 0 }, { ...entries[1]!, at: 1 }];
+    const position = (height: number) => {
+      const { rows, draw, reel } = setup(pair);
+      rows[1]!.querySelector(".body").offsetHeight = height;
+      draw(1.12);
+      const y = Number(/, ([\d.-]+)px/.exec(String(rows[0]!.style.transform))![1]);
+      reel.destroy();
+      return y;
+    };
+    expect(position(100)).toBe(position(110));
+    expect(position(180) - position(110)).toBe(60);
+  });
+
   it("clicking a row seeks just past its entry, so the typewriter has started", () => {
     const { ol, seek, rows } = setup();
     ol.fire("click", {}, rows[2]!);
