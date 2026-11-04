@@ -36,6 +36,7 @@ import { deriveLifeScene } from "@/domain/scene";
 import type { Event, Person, WorldConfig, YearSnapshot } from "@/domain/types";
 import { buildEpilogue, buildProvisionalTickEntries, finishAtDeath } from "./life-chronicle";
 import { createSceneTracker } from "./life-scene";
+import { crisisEntries, isRecordedCrisis } from "./lifecycle-crisis-projection";
 
 /**
  * The trusted pair a projection accepts. Deliberately narrower than `LifecycleCapsule`: no
@@ -365,16 +366,29 @@ function withCauseLinks(entries: readonly ChronicleEntry[], events: readonly Eve
   });
 }
 
+/** Compose both lifecycle views without modifying the trusted event log. */
+async function entriesForYear(trusted: Trusted, year: number, scene: LifeScene, locale: Locale): Promise<ChronicleEntry[]> {
+  const entries = await buildProvisionalTickEntries(
+    trusted.protagonistId, year, trusted.events, trusted.people, trusted.decisions,
+    trusted.protagonist.sex, trusted.config.seed, trusted.config.town.name, locale, scene,
+  );
+  const journal = trusted.output.journal as unknown as readonly { year: number; final: { owned: { people: Readonly<Record<string, Person>> } } }[];
+  const previous = journal.find(record => record.year === year - 1)?.final.owned.people[trusted.protagonistId]
+    ?? (trusted.genesis.initial.people as unknown as Readonly<Record<string, Person>>)[trusted.protagonistId];
+  const context = crisisEntries({ year, frontier: trusted.output.frontier, events: trusted.events,
+    protagonist: trusted.protagonist, previousPerson: previous as Person | undefined, seed: trusted.config.seed,
+    town: trusted.config.town.name, locale });
+  const ids = new Set(entries.map(entry => entry.id));
+  return [...entries, ...context.filter(entry => !ids.has(entry.id))].sort((a, b) => a.at - b.at);
+}
+
 /** Every narrated protagonist entry, built year by year from the trusted log. */
 async function chronicleEntries(trusted: Trusted, scene: LifeScene, locale: Locale): Promise<ChronicleEntry[]> {
   const years = new Set<number>();
-  for (const event of trusted.events) if (event.actors.includes(trusted.protagonistId)) years.add(event.year);
+  for (const event of trusted.events) if (event.actors.includes(trusted.protagonistId) || isRecordedCrisis(event)) years.add(event.year);
   const entries: ChronicleEntry[] = [];
   for (const year of years) {
-    entries.push(...await buildProvisionalTickEntries(
-      trusted.protagonistId, year, trusted.events, trusted.people, trusted.decisions,
-      trusted.protagonist.sex, trusted.config.seed, trusted.config.town.name, locale, scene,
-    ));
+    entries.push(...await entriesForYear(trusted, year, scene, locale));
   }
   return withCauseLinks(entries, trusted.events);
 }
@@ -477,10 +491,7 @@ export async function projectLifecycleTick(input: ProjectLifecycleTickInput): Pr
   } else {
     scene = sceneOf(trusted, year);
   }
-  const entries = await buildProvisionalTickEntries(
-    trusted.protagonistId, year, trusted.events, trusted.people, trusted.decisions,
-    trusted.protagonist.sex, trusted.config.seed, trusted.config.town.name, locale, scene,
-  );
+  const entries = await entriesForYear(trusted, year, scene, locale);
   if (tracker && token && typeof token === "object") {
     tickStates.set(token, { genesis: source.genesis, lastRecord: journal.at(-1), count: journal.length,
       eventCount: trusted.events.length, tracker });
