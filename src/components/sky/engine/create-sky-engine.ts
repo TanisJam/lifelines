@@ -66,6 +66,7 @@ export function createSkyEngine({ svg, scene: initialScene, timeline: initialLin
   let selfId: string | undefined;
   /** The names that fit without landing on each other: settled from the resting layout, never per frame. */
   let kept: ReadonlySet<string> = new Set<string>();
+  let mobileKept: ReadonlySet<string> = new Set<string>();
   /** Finds the nodes SkySvg rendered for the current scene. */
   const bind = () => {
     personEls = new Map();
@@ -82,12 +83,12 @@ export function createSkyEngine({ svg, scene: initialScene, timeline: initialLin
     villageEls = [...svg.querySelectorAll<SVGElement>("[data-village]")];
     bandEls = [...svg.querySelectorAll<SVGElement>("[data-band]")];
     selfId = scene.people.find((p) => p.group === "self")?.id;
-    kept = keptLabels(
-      scene.people.flatMap((p) => {
-        const home = layout.homes.get(p.id);
-        return home ? [{ id: p.id, x: home[0], y: home[1], name: p.name, rank: labelRank(p) }] : [];
-      }),
-    );
+    const candidates = scene.people.flatMap((p) => {
+      const home = layout.homes.get(p.id);
+      return home ? [{ id: p.id, x: home[0], y: home[1], name: p.name, rank: labelRank(p) }] : [];
+    });
+    kept = keptLabels(candidates);
+    mobileKept = keptLabels(candidates, true);
   };
   bind();
   const progress = one<SVGPathElement>(svg, "[data-progress]");
@@ -125,7 +126,8 @@ export function createSkyEngine({ svg, scene: initialScene, timeline: initialLin
       els.g.setAttribute("transform", `translate(${pos[0].toFixed(1)},${pos[1].toFixed(1)})${arriving ? ` scale(${s.toFixed(3)})` : ""}`);
       els.g.setAttribute("opacity", arriving ? Math.min(1, pf.presence * 2.5).toFixed(3) : "1");
       els.core.style.opacity = pf.coreOpacity.toFixed(3);
-      els.nm.style.display = kept.has(p.id) ? "" : "none";
+      setClass(els.nm, "desktop-hidden", !kept.has(p.id));
+      setClass(els.nm, "mobile-hidden", !mobileKept.has(p.id));
       setClass(els.g, "circle", pf.inCircle);
       setClass(els.g, "outside", !pf.inCircle);
       setClass(els.g, "dead", !pf.alive);

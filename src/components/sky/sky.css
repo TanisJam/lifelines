@@ -123,6 +123,7 @@
 .sky-spin { transform-box: fill-box; transform-origin: center; }
 .sky-nm { font-family: var(--font-cormorant), Georgia, serif; font-weight: 500; font-size: 14.5px; fill: var(--ll-ink); text-anchor: middle; paint-order: stroke; stroke: var(--sky-bg); stroke-width: 3px; stroke-linejoin: round; transition: fill 0.9s linear; }
 .sky-node.self .sky-nm { font-size: 18px; }
+.sky-nm.desktop-hidden { display: none; }
 .sky-node.outside .sky-nm { fill: var(--ll-ink-soft); font-style: italic; }
 .sky-node.dead .sky-nm { fill: var(--ll-ink-faint); }
 
@@ -238,7 +239,18 @@
   .sky-area { display: grid; gap: 18px; padding: 14px 18px 8px; }
   .sky-left { display: contents; }
   .sky-intro, .sky-place, .sky-now, .sky-edge-panel { position: static; width: auto; }
+  .sky-back { order: -3; }
+  .sky-intro { order: -2; gap: 6px; }
+  .sky-heading { font-size: 30px; }
+  .sky-lede { max-width: none; font-size: 13px; line-height: 1.35; }
+  .sky-motto, .sky-motto.epitaph { font-size: 14px; }
+  .sky-now { order: -1; }
   .sky-place { order: 1; }
+  .sky-nm.desktop-hidden { display: initial; }
+  .sky-nm.mobile-hidden { display: none; }
+  .sky-nm { font-size: 28px; transform: translateY(7px); }
+  .sky-node.self .sky-nm { font-size: 32px; }
+  .sky-dial-label { font-size: 24px; }
   .sky-edge-panel { display: block; }
   .sky-edge-panel q { text-align: left; }
   .sky-timebar { display: none; }

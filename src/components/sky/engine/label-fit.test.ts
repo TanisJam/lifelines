@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { keptLabels } from "./label-fit";
 
 describe("keptLabels", () => {
+  it("uses larger collision boxes for mobile without changing desktop labels", () => {
+    const candidates = [
+      { id: "first", x: 0, y: 0, name: "Alice", rank: 1 },
+      { id: "second", x: 45, y: 0, name: "Sarah", rank: 1 },
+    ];
+    expect([...keptLabels(candidates)]).toEqual(["first", "second"]);
+    expect([...keptLabels(candidates, true)]).toEqual(["first"]);
+  });
+
   it("drops a name that would be drawn over one already placed, keeping the story circle ahead of the village", () => {
     const kept = keptLabels([
       // Parents close together in the same sector: their names would overprint each other.
