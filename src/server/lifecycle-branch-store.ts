@@ -3,7 +3,7 @@ import { deserializeLifecycleForkCapsule, serializeLifecycleForkCapsule } from "
 import { admitLifecycleGenesis } from "../domain/e-lifecycle-genesis";
 import { LIFECYCLE_COMPACT_CAPSULE_MANIFEST, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3 } from "../domain/e-lifecycle-capsule";
 import { withTransaction } from "./db";
-import { LifecycleRepository, admitStoredLifecycleFork, loadStoredLifecycleFork, type LifecycleForkBranchBinding } from "./lifecycle-repository";
+import { LIFECYCLE_BINDING_VERSION, LifecycleRepository, admitStoredLifecycleFork, loadStoredLifecycleFork, type LifecycleForkBranchBinding } from "./lifecycle-repository";
 import { LOCALES } from "../domain/locale";
 import { projectLifecycleChronicle, projectLifecyclePersonSheet, type LifecycleProjectionSource } from "./lifecycle-projection";
 import { LifecyclePersonSheetStore, LifecycleProjectionStore } from "./lifecycle-projection-store";
@@ -118,7 +118,7 @@ export class LifecycleBranchStore {
     if (!row || typeof row.binding_json !== "string") return undefined;
     const b = JSON.parse(row.binding_json);
     if (!b || typeof b !== "object" || Object.keys(b).sort().join(",") !== keys.join(",") ||
-        b.lifeId !== lifeId || b.branchId !== branchId || b.version !== "canonical-lifecycle-cb1-1" ||
+        b.lifeId !== lifeId || b.branchId !== branchId || b.version !== LIFECYCLE_BINDING_VERSION ||
         ![LIFECYCLE_COMPACT_CAPSULE_MANIFEST.capsuleSchema, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3.capsuleSchema].includes(b.capsuleSchema) ||
         typeof b.capsuleDigest !== "string" || !digestPattern.test(b.capsuleDigest) || typeof b.genesisDigest !== "string" || !digestPattern.test(b.genesisDigest)) throw new Error("Corrupt lifecycle binding");
     return b.capsuleDigest;

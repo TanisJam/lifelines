@@ -76,16 +76,16 @@ it("refuses absent, incomplete, sibling and stale digest decision summaries", as
   } finally { db.close(); }
 });
 
-it("prepares a complete digest-bound index from an admitted root outside lookup", async () => {
+it.each([["default", false], ["cb3 thread", true]] as const)("prepares a complete digest-bound index from an admitted %s root outside lookup", async (_name, thread) => {
   const { LifecycleBranchStore } = await import("./lifecycle-branch-store");
   const { LifecycleRepository } = await import("./lifecycle-repository");
-  const { createLifecycleGenesis } = await import("../domain/e-lifecycle-genesis");
+  const { createLifecycleGenesis, LIFECYCLE_THREAD_VERSIONS } = await import("../domain/e-lifecycle-genesis");
   const { createLifecycleRuntime } = await import("../domain/e-lifecycle-runtime");
   const { createLifecycleCompactCapsule } = await import("../domain/e-lifecycle-capsule");
   const { initializeWorld } = await import("../domain/world-origin");
   const initialization = { seed: "fork-a", startYear: 1327, endYear: 1329, founderCount: 6, protagonist: { name: "Alice", sex: "random" as const } };
   const { world } = initializeWorld(initialization);
-  const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+  const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", ...(thread ? { versions: LIFECYCLE_THREAD_VERSIONS } : {}), resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
   const runtime = createLifecycleRuntime(genesis, { journal: "compact" });
   await runtime.advance(1327);
   const capsule = await createLifecycleCompactCapsule({ genesis, output: runtime.snapshot() }, "compact");
@@ -95,6 +95,7 @@ it("prepares a complete digest-bound index from an admitted root outside lookup"
     await new LifecycleRepository(db).publish({ lifeId: "life", branchId: "root", config: world.config, protagonistName: person.name, protagonistSex: person.sex, capsule });
     const store = new LifecycleBranchStore(db);
     await store.prepareDecisions("life", "root", capsule.digest);
+    if (thread) expect(capsule.manifest.capsuleSchema).toBe("lifecycle-capsule-compact-cb3-1");
     const target = capsule.output.owned.decisions[0];
     expect(target).toBeDefined();
     expect(store.decision("life", "root", capsule.digest, target.id, target.year)?.chosen).toBe(target.chosen);
