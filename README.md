@@ -131,3 +131,14 @@ The design log lives in [`docs/`](./docs), newest first:
 - Add a container healthcheck in `deploy/compose.yaml`.
 - Make a blank `TYPESAFE_MODEL` fall back to the Jev default.
 - Add a generic public-host deploy recipe; the current compose is homelab/Traefik-specific.
+
+### Lifecycle story-quality smoke check
+
+Run `node --import tsx scripts/story-quality.ts` for a deterministic three-year lifecycle
+projection in English and Spanish. The JSON labels the source as real (runtime-generated)
+and reports repetition, visible earlier-entry cause links, Black Death coverage in each
+applicable year, and a small Spanish leak vocabulary separately. A missing link or crisis
+entry is a failed check; a crisis outside the observed lifetime is not applicable. These are
+heuristics, not comprehensive language detection or a judgment of story quality. Synthetic
+50-year recorded-event fixtures and negative controls live in `src/server/story-quality.test.ts`;
+they do not simulate 50 years.
