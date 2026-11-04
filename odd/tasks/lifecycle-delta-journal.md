@@ -31,3 +31,8 @@ Branch: `feat/lifecycle-delta-journal` (worktree `../lifelines-delta-journal`). 
 
 ### Writer handoff
 Baseline script: commit e05ffef. Fixed-seed legacy golden: commit 7438d0b; index readback added in the following commit. Golden test passed for two years in each legacy journal mode. S2 remains open: the benchmark's heap peak is sampled at phase boundaries, not a continuous peak, and no after measurement exists. S1, S4 and S5 remain unimplemented; S3 has baseline coverage only. T3 independent verification remains coordinator-owned and pending.
+
+### T2 partial representation foundation
+Added a standalone, version-tagged structural delta and append-log chunk codec, with three-year reconstruction, frozen state, alias and history-mutation regression coverage. It is **not wired into** the lifecycle runtime, capsule schemas, persistence, or projections; T2 remains open. The codec currently rejects modifications to an earlier log entry; before integrating it, verify that all production mutation paths preserve that invariant or extend the representation. Its previous-state argument is not yet bound to the supplied journal. No S1/S4/S5 completion is claimed.
+
+After-foundation benchmark (same legacy runtime, not a delta performance result): init 164.13 ms; years 74.17/92.59/105.72 ms; ticks 5.31/2.08/1.67 ms; chronicles 6.40 ms; sheets 18.72 ms; persistence 445.84 ms; phase-sampled heap 63,149,400 bytes; max RSS 199,319,552 bytes; serialized journal 220,184/557,822/1,014,632 bytes. Foreground, cap-0, three years, in-memory SQLite. Continuous heap peak remains unmeasured; a timer cannot observe synchronous CPU-bound phases.
