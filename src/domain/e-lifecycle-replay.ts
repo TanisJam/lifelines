@@ -25,13 +25,13 @@ export async function replayLifecycleRuntime(input: unknown, journal: LifecycleJ
   if (!Array.isArray(candidate.output.journal)) throw new Error("Expected lifecycle journal");
   const runtime = createLifecycleRuntime(candidate.genesis, { journal }); // complete LR1a semantic regeneration
   if (!lifecycleVersionsMatch(candidate.output.versions, runtime.initial.versions)) {
-    throw new Error("Lifecycle replay versions disagree");
+    throw new Error("Lifecycle final output disagreement");
   }
   let nextYear = runtime.initial.frontier + 1;
   for (const entry of candidate.output.journal) {
     record(entry);
     if (!lifecycleVersionsMatch(entry.versions, runtime.initial.versions)) {
-      throw new Error("Lifecycle replay versions disagree");
+      throw new Error("Lifecycle annual record disagreement");
     }
     if (!Number.isSafeInteger(entry.year) || Object.is(entry.year, -0) || entry.year !== nextYear) {
       throw new Error("Lifecycle replay years must be contiguous safe integers");

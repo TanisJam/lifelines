@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { admitLifecycleGenesis, canonicalLifecycleData, LIFECYCLE_GENESIS_VERSIONS,
+import { admitLifecycleGenesis, canonicalLifecycleData, lifecycleVersionsMatch, LIFECYCLE_GENESIS_VERSIONS,
   type LifecycleGenesis } from "./e-lifecycle-genesis";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "./e-lifecycle-dag";
 import { replayLifecycleRuntime } from "./e-lifecycle-replay";
@@ -154,6 +154,9 @@ async function regenerate(candidate: Record<string, unknown>): Promise<Lifecycle
   // Genesis admission detaches synchronously. Replay guards/clones its whole
   // envelope before its first await; after this await never read candidate again.
   const genesis = admitLifecycleGenesis(candidate.genesis);
+  if (!lifecycleVersionsMatch(genesis.versions, LIFECYCLE_GENESIS_VERSIONS)) {
+    throw new Error("Thread lifecycle genesis is unsupported by the legacy capsule manifest");
+  }
   const output = await replayOrReuse(genesis, candidate.output);
   certifiedOutputs.add(output);
   const manifest = freeze(structuredClone(LIFECYCLE_CAPSULE_MANIFEST));

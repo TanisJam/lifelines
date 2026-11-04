@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { createLifecycleGenesis, admitLifecycleGenesis, LIFECYCLE_THREAD_VERSIONS } from "./e-lifecycle-genesis";
+import { admitLifecycleCapsule, createLifecycleCapsule, LIFECYCLE_CAPSULE_MANIFEST } from "./e-lifecycle-capsule";
+import { createLifecycleGenesis, admitLifecycleGenesis, canonicalLifecycleData, LIFECYCLE_THREAD_VERSIONS } from "./e-lifecycle-genesis";
 import { createLifecycleRuntime } from "./e-lifecycle-runtime";
 import { replayLifecycleRuntime } from "./e-lifecycle-replay";
 import { runLifecycle } from "./e-lifecycle-run";
@@ -38,7 +40,7 @@ describe("lifecycle execution versions", () => {
     expect(await replayLifecycleRuntime({ genesis, output: c }, "compact")).toEqual(c);
     const mixed = structuredClone(a);
     Object.assign(mixed.journal[0].versions, { runtime: "foreign" });
-    await expect(replayLifecycleRuntime({ genesis, output: mixed })).rejects.toThrow(/versions disagree/);
+    await expect(replayLifecycleRuntime({ genesis, output: mixed })).rejects.toThrow(/disagreement/);
     const before = audit.snapshot();
     await expect(audit.advance(1329)).rejects.toThrow();
     expect(audit.snapshot()).toBe(before);
@@ -48,6 +50,18 @@ describe("lifecycle execution versions", () => {
     const old = createLifecycleGenesis(input());
     expect(() => createLifecycleGenesis({ ...input(), versions: { ...old.versions, runtime: "foreign" } })).toThrow();
     expect(() => admitLifecycleGenesis({ ...old, versions: { ...old.versions, runtime: LIFECYCLE_THREAD_VERSIONS.runtime } })).toThrow();
+  });
+  it("rejects thread genesis at legacy capsule creation and admission without mutation", async () => {
+    const genesis = createLifecycleGenesis({ ...input(), versions: LIFECYCLE_THREAD_VERSIONS });
+    const output = createLifecycleRuntime(genesis).snapshot();
+    const evidence = { genesis, output };
+    const encoded = canonicalLifecycleData(evidence);
+    const digest = createHash("sha256").update(JSON.stringify([canonicalLifecycleData(LIFECYCLE_CAPSULE_MANIFEST), encoded]), "utf8").digest("hex");
+    const candidate = { manifest: LIFECYCLE_CAPSULE_MANIFEST, digest, ...evidence };
+    const before = canonicalLifecycleData(candidate);
+    await expect(createLifecycleCapsule(evidence)).rejects.toThrow(/thread/i);
+    await expect(admitLifecycleCapsule(candidate)).rejects.toThrow(/thread/i);
+    expect(canonicalLifecycleData(candidate)).toBe(before);
   });
   it("rejects thread-aware legacy capsule runs before observing a year", async () => {
     const genesis = createLifecycleGenesis({ ...input(), versions: LIFECYCLE_THREAD_VERSIONS });
