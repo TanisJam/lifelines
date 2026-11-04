@@ -4,7 +4,7 @@ import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { runLifecycleOutput } from "@/domain/e-lifecycle-run";
 import { LOCALES, type Locale } from "@/domain/locale";
 import { initializeWorld } from "@/domain/world-origin";
-import { projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "./lifecycle-projection";
+import { createLifecycleTickAccumulator, projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "./lifecycle-projection";
 import type { LifecyclePublication } from "./lifecycle-repository";
 
 /**
@@ -123,11 +123,12 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
   // The COMPACT run: no legacy capsule, because `createLifecycleCapsule` builds a canonical string
   // about 15x the payload that throws past ~17 years. The compact journal is what lets a life run to
   // its protagonist's death instead of to a year horizon.
+  const accumulator = createLifecycleTickAccumulator();
   const run = await runLifecycleOutput({ kind: "start", genesis }, {
     maxSteps,
     signal,
     onYear: async (output) => {
-      const projection = await projectLifecycleTick({ source: { genesis, output }, year: output.frontier, locale });
+      const projection = await projectLifecycleTick({ source: { genesis, output }, year: output.frontier, locale, accumulator });
       if (signal.aborted) return;
       emit({ type: "tick", ...projection.view });
       await flushFrame();

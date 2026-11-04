@@ -6,7 +6,7 @@ import { LOCALES } from "../src/domain/locale";
 import { initializeWorld } from "../src/domain/world-origin";
 import { openDb } from "../src/server/db";
 import { LifecycleRepository } from "../src/server/lifecycle-repository";
-import { projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "../src/server/lifecycle-projection";
+import { createLifecycleTickAccumulator, projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "../src/server/lifecycle-projection";
 
 // Approximate retained graph size, counting each object and string occurrence once per edge.
 function retainedBytes(root: unknown): number {
@@ -35,13 +35,14 @@ async function main() {
     const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
     return { world, genesis, runtime: createLifecycleRuntime(genesis, { journal: "compact" }) };
   });
+  const accumulator = createLifecycleTickAccumulator();
   const bytes: number[] = [];
   const retained: number[] = [];
   for (let i = 0; i < 3 && runtime.snapshot().status !== "complete"; i++) {
     const output = await measure(`year_${i + 1}`, () => runtime.advance(runtime.snapshot().frontier + 1));
     bytes.push(serialize(output.journal).byteLength);
     retained.push(retainedBytes(output.journal));
-    await measure(`tick_${i + 1}`, () => projectLifecycleTick({ source: { genesis, output }, year: output.frontier, locale: "en" }));
+    await measure(`tick_${i + 1}`, () => projectLifecycleTick({ source: { genesis, output }, year: output.frontier, locale: "en", accumulator }));
   }
   const output = runtime.snapshot();
   const source = { genesis, output };

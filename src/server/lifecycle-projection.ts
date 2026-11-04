@@ -2,7 +2,7 @@
  * Read-side projection for new-engine lives (RI1b, spec S8): a trusted, FULLY REGENERATED lifecycle
  * capsule becomes the view model the existing routes already render.
  *
- * DERIVED VIEW ONLY — NEVER AUTHORITY. A projection is never persisted, stored, cached or read
+ * DERIVED VIEW ONLY — NEVER AUTHORITY. A projection is never persisted or read
  * back as truth, and no caller may treat one as a certificate of what happened. Authority is the
  * lifecycle capsule: cold admission and full replay of that capsule (the repository's `load`, the
  * capsule module's admission) regenerate every year and refuse a payload that disagrees. This
@@ -10,8 +10,8 @@
  * digest, so it cannot verify, recompute or defer to one: it maps what admission already produced.
  * A projection of a source that regeneration would refuse is therefore worth nothing as evidence.
  *
- * PURE and DETERMINISTIC. No I/O, no database, no clock, no randomness, no global state, no
- * caching, and the input is never mutated or frozen. Every helper it calls is a pure domain or
+ * DETERMINISTIC. No I/O, database, clock or randomness. An optional per-stream accumulator caches
+ * derived scene state only; the input is never mutated or frozen. Every helper it calls is a pure domain or
  * pure server derivation: narration is the deterministic (no decision-adapter) path, months are
  * seeded, the scene tracker is an in-memory builder, and `life-chronicle`/`life-scene` are read
  * only for those pure builders — no store, no database and no adapter is reached from here.
@@ -27,6 +27,7 @@ import { ageInYear } from "@/domain/actuarial";
 import type { DecisionRecord } from "@/domain/decisions";
 import type { LifecycleCapsule } from "@/domain/e-lifecycle-capsule";
 import { LIFECYCLE_GENESIS_VERSIONS } from "@/domain/e-lifecycle-genesis";
+import { isLifecycleRuntimeOutput } from "@/domain/e-lifecycle-runtime";
 import { DEFAULT_LOCALE, isLocale, type Locale } from "@/domain/locale";
 import { renderPortrait } from "@/domain/mind";
 import { DEATH_CAUSE_PHRASE, type DeathCause } from "@/domain/mortality";
@@ -59,6 +60,8 @@ export interface ProjectLifecycleTickInput {
   /** One regenerated journal year — the year this tick reports. */
   readonly year: number;
   readonly locale?: Locale;
+  /** Optional per-stream derived state; never authority or a persisted projection. */
+  readonly accumulator?: LifecycleTickAccumulator;
 }
 
 export interface ProjectLifecyclePersonSheetInput {
@@ -87,6 +90,16 @@ interface Trusted {
   readonly protagonistId: string;
   readonly protagonist: Person;
   readonly journal: readonly TrustedYear[];
+}
+
+/** Opaque per-stream scene state, scoped to one sequence of live runtime publications. */
+export interface LifecycleTickAccumulator { readonly __lifecycleTickAccumulator: unique symbol }
+type TickState = { genesis: unknown; lastRecord: unknown; count: number; eventCount: number; tracker: ReturnType<typeof createSceneTracker> };
+const tickStates = new WeakMap<object, TickState | null>();
+export function createLifecycleTickAccumulator(): LifecycleTickAccumulator {
+  const token = Object.freeze({}) as LifecycleTickAccumulator;
+  tickStates.set(token, null);
+  return token;
 }
 
 // --- Admission -----------------------------------------------------------------------------------
@@ -144,7 +157,7 @@ function admitYearSnapshot(year: number, owned: unknown, what: string): YearSnap
  * authority: no digest is read, no year is replayed and no semantic regeneration is repeated —
  * that already happened before the caller had this pair.
  */
-function admitSource(value: unknown): Trusted {
+function admitSource(value: unknown, incremental?: { count: number; eventCount: number }): Trusted {
   const source = requireRecord(value, "projection source");
   const genesisRecord = requireRecord(source.genesis, "source.genesis");
   const outputRecord = requireRecord(source.output, "source.output");
@@ -174,7 +187,14 @@ function admitSource(value: unknown): Trusted {
   const frontier = requireInteger(outputRecord.frontier, "source.output.frontier");
   const owned = requireRecord(outputRecord.owned, "source.output.owned");
   const people = requireRecord(owned.people, "source.output.owned.people");
-  const events = requireArray(owned.events, "source.output.owned.events").map((event, index) => admitEvent(event, `source.output.owned.events[${index}]`));
+  const rawEvents = requireArray(owned.events, "source.output.owned.events");
+  const events = incremental
+    ? rawEvents as readonly Event[]
+    : rawEvents.map((event, index) => admitEvent(event, `source.output.owned.events[${index}]`));
+  if (incremental) {
+    if (rawEvents.length < incremental.eventCount) fail("source.output.owned.events shrank");
+    for (let i = incremental.eventCount; i < rawEvents.length; i++) admitEvent(rawEvents[i], `source.output.owned.events[${i}]`);
+  }
   requireArray(owned.decisions, "source.output.owned.decisions");
   const protagonist = requireRecord(people[protagonistId], `source.output.owned.people[${protagonistId}]`);
   if (protagonist.sex !== "f" && protagonist.sex !== "m") fail("the protagonist's sex must be \"f\" or \"m\"");
@@ -183,7 +203,10 @@ function admitSource(value: unknown): Trusted {
 
   // Journal order is the trusted traversal order and is never re-sorted here; a gap or a ragged
   // frontier means this pair is not a regenerated lifecycle output.
-  const journal = requireArray(outputRecord.journal, "source.output.journal").map((entry, index) => {
+  const rawJournal = requireArray(outputRecord.journal, "source.output.journal");
+  const start = incremental ? incremental.count : 0;
+  const journal = rawJournal.slice(start).map((entry, offset) => {
+    const index = start + offset;
     const record = requireRecord(entry, `source.output.journal[${index}]`);
     const year = requireInteger(record.year, `source.output.journal[${index}].year`);
     const final = requireRecord(record.final, `source.output.journal[${index}].final`);
@@ -431,15 +454,37 @@ export async function projectLifecycleChronicle(input: ProjectLifecycleChronicle
 export async function projectLifecycleTick(input: ProjectLifecycleTickInput): Promise<LifecycleProjection<LifecycleTickView>> {
   const root = requireRecord(input, "tick projection input");
   const locale = admitLocale(root.locale);
-  const trusted = admitSource(root.source);
   const year = requireInteger(root.year, "tick year");
+  const token = root.accumulator;
+  if (token !== undefined && (typeof token !== "object" || token === null || !tickStates.has(token))) fail("invalid tick accumulator");
+  const source = requireRecord(root.source, "projection source");
+  const output = requireRecord(source.output, "source.output");
+  const journal = requireArray(output.journal, "source.output.journal");
+  const cached = token && typeof token === "object" ? tickStates.get(token) : null;
+  const live = isLifecycleRuntimeOutput(source.output);
+  const next = live && cached && cached.genesis === source.genesis && journal.length === cached.count + 1
+    && journal[cached.count - 1] === cached.lastRecord && year === output.frontier;
+  const trusted = admitSource(root.source, next ? cached : undefined);
   if (!trusted.journal.some((entry) => entry.year === year)) fail(`year ${year} is not a regenerated lifecycle year`);
 
-  const scene = sceneOf(trusted, year);
+  let tracker: ReturnType<typeof createSceneTracker> | undefined;
+  let scene: LifeScene;
+  if (token && live && year === trusted.output.frontier) {
+    tracker = next ? cached.tracker : createSceneTracker({ seed: trusted.config.seed, protagonistId: trusted.protagonistId });
+    for (const item of trusted.journal) tracker.observe(item.snapshot);
+    const latest = trusted.journal.at(-1)!;
+    scene = tracker.scene({ people: latest.snapshot.people, events: latest.snapshot.events });
+  } else {
+    scene = sceneOf(trusted, year);
+  }
   const entries = await buildProvisionalTickEntries(
     trusted.protagonistId, year, trusted.events, trusted.people, trusted.decisions,
     trusted.protagonist.sex, trusted.config.seed, trusted.config.town.name, locale, scene,
   );
+  if (tracker && token && typeof token === "object") {
+    tickStates.set(token, { genesis: source.genesis, lastRecord: journal.at(-1), count: journal.length,
+      eventCount: trusted.events.length, tracker });
+  }
   return { view: { year, entries, scene }, gaps: tickGaps() };
 }
 

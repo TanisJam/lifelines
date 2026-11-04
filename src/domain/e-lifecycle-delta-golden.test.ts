@@ -8,7 +8,7 @@ import { initializeWorld } from "./world-origin";
 import { openDb } from "@/server/db";
 import { LifecycleRepository } from "@/server/lifecycle-repository";
 import { LifecyclePersonSheetStore, LifecycleProjectionStore } from "@/server/lifecycle-projection-store";
-import { projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "@/server/lifecycle-projection";
+import { createLifecycleTickAccumulator, projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "@/server/lifecycle-projection";
 
 const hash = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
 const canonicalHash = (value: unknown) => hash(canonicalLifecycleData(value));
@@ -20,8 +20,9 @@ it("preserves the fixed-seed ticks, indexed views, capsule bytes and cold loads"
   const observed: Record<string, unknown> = {};
   for (const mode of ["audit", "compact"] as const) {
     const ticks: unknown[] = [];
+    const accumulator = createLifecycleTickAccumulator();
     const run = await runLifecycleOutput({ kind: "start", genesis }, { maxSteps: 2, onYear: async output => {
-      ticks.push({ type: "tick", ...(await projectLifecycleTick({ source: { genesis, output }, year: output.frontier, locale: "en" })).view });
+      ticks.push({ type: "tick", ...(await projectLifecycleTick({ source: { genesis, output }, year: output.frontier, locale: "en", accumulator })).view });
     } }, mode);
     const identity = { lifeId: `golden-${mode}`, branchId: `branch-${mode}` };
     const projections = [];

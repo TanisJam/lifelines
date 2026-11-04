@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import * as sceneModule from "./life-scene";
 import { isRealTurn } from "@/domain/chronicle-view";
 import type { DecisionRecord } from "@/domain/decisions";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
@@ -15,6 +16,7 @@ import { causeNounPhrase } from "@/server/chronicle-data";
 import { buildEpilogue } from "@/server/life-chronicle";
 import { createSceneTracker } from "@/server/life-scene";
 import {
+  createLifecycleTickAccumulator,
   projectLifecycleChronicle,
   projectLifecyclePersonSheet,
   projectLifecycleProtagonist,
@@ -460,4 +462,27 @@ describe("lifecycle view projection (RI1b)", () => {
     expect(chronicle.view.protagonist.deathYear).toBe(PEOPLE[protagonistId]!.deathYear);
     expect(chronicle.view.protagonist).not.toHaveProperty("horizonYear");
   }, 240_000);
+});
+
+it("accumulates consecutive ticks without re-observing earlier years", async () => {
+  const { world } = initializeWorld(initialization);
+  const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist",
+    resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+  const runtime = createLifecycleRuntime(genesis, { journal: "compact" });
+  const first = await runtime.advance(1327);
+  const second = await runtime.advance(1328);
+  const expected = await projectLifecycleTick({ source: { genesis, output: second }, year: 1328 });
+  const original = sceneModule.createSceneTracker;
+  const observe = vi.fn();
+  const spy = vi.spyOn(sceneModule, "createSceneTracker").mockImplementation(options => {
+    const tracker = original(options);
+    return { ...tracker, observe(snapshot) { observe(snapshot.year); tracker.observe(snapshot); } };
+  });
+  try {
+    const accumulator = createLifecycleTickAccumulator();
+    await projectLifecycleTick({ source: { genesis, output: first }, year: 1327, accumulator });
+    const result = await projectLifecycleTick({ source: { genesis, output: second }, year: 1328, accumulator });
+    expect(result).toEqual(expected);
+    expect(observe.mock.calls.map(call => call[0])).toEqual([1327, 1328]);
+  } finally { spy.mockRestore(); }
 });
