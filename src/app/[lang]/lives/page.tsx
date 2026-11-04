@@ -68,7 +68,7 @@ export default function LivesPage() {
 
       <div className="mt-10 text-center">
         <Link href={`/${lang}`} className="font-label text-xs uppercase tracking-widest text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-brass">
-          {dict.lives.writeAnother}
+          {lives?.length === 0 ? dict.home.submit : dict.lives.writeAnother}
         </Link>
       </div>
     </div>
