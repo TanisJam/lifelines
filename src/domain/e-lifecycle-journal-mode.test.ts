@@ -6,6 +6,7 @@ import { serializeCompactLifecycleDag } from "@/domain/e-lifecycle-dag";
 import {
   LIFECYCLE_COMPACT_CAPSULE_MANIFEST,
   LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2,
+  LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3,
   createLifecycleCompactCapsule,
   deserializeLifecycleCompactCapsule,
   serializeLifecycleCompactCapsule,
@@ -71,7 +72,7 @@ describe("lifecycle full lifetime — journal modes and capsule schema", () => {
     expect(run.output.journal).toHaveLength(2);
   }, 120_000);
 
-  it("S1: no maxSteps persists a cb2 life that died, not a horizon survivor", async () => {
+  it("S1: no maxSteps persists a thread-aware cb3 life that died, not a horizon survivor", async () => {
     const db = openDb(":memory:");
     const { events, emit } = frames();
     await streamLifecycleLife({
@@ -85,7 +86,7 @@ describe("lifecycle full lifetime — journal modes and capsule schema", () => {
     expect(done?.chronicle.protagonist.horizonYear).toBeUndefined();
     expect(events.filter((event) => event.type === "tick")).toHaveLength(2);
     const loaded = await new LifecycleRepository(db).load("life-default", "branch-default");
-    expect(loaded?.binding.capsuleSchema).toBe(LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema);
+    expect(loaded?.binding.capsuleSchema).toBe(LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3.capsuleSchema);
     expect(loaded?.capsule.output.status).toBe("complete");
   }, 120_000);
 
