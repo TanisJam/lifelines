@@ -46,7 +46,24 @@ describe("story quality", () => {
     const entry = base.entries[0]!;
     const entries = [{ ...entry, id: "a", year: 1348, prose: "The Black Death reached her.", who: ["protagonist"] }, { ...entry, id: "b", year: 1349, prose: "The plague affected her.", who: ["protagonist"], cause: { entryId: "a", year: 1348, phrase: "the plague" } }];
     const report = checkStoryQuality({ ...base, entries }, { source: "synthetic", locale: "en", protagonistId: "protagonist" });
+    expect(report.repetition.pass).toBe(true);
     expect(report.arcs.pass).toBe(true);
     expect(report.crisisCoverage.pass).toBe(true);
+    expect(report.localization.pass).toBe(true);
+  });
+  it("fails only the check whose defect is present", async () => {
+    const base = await fixture("es");
+    const entry = base.entries[0]!;
+    const good = [
+      { ...entry, id: "a", year: 1348, kind: "event", prose: "La peste llegó a la aldea.", who: ["protagonist"] },
+      { ...entry, id: "b", year: 1349, kind: "event", prose: "La peste volvió en invierno.", who: ["protagonist"], cause: { entryId: "a", year: 1348, phrase: "la peste" } },
+    ];
+    const check = (entries: typeof good) => checkStoryQuality({ ...base, entries }, { source: "synthetic", locale: "es", protagonistId: "protagonist" });
+    const failing = (entries: typeof good) => Object.entries(check(entries)).filter(([, value]) => typeof value === "object" && !value.pass).map(([key]) => key);
+    expect(failing(good)).toEqual([]);
+    expect(failing([good[0]!, { ...good[1]!, prose: good[0]!.prose }])).toEqual(["repetition"]);
+    expect(failing([good[0]!, { ...good[1]!, cause: undefined }])).toEqual(["arcs"]);
+    expect(failing([good[0]!, { ...good[1]!, prose: "Un invierno duro." }])).toEqual(["crisisCoverage"]);
+    expect(failing([good[0]!, { ...good[1]!, prose: "Tras marrying, la peste volvió." }])).toEqual(["localization"]);
   });
 });
