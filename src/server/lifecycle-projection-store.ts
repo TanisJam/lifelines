@@ -23,7 +23,7 @@ import { isLocale, type Locale } from "../domain/locale";
  * deliberate point of the task, and it is only sound because SQLite file access is already the trust
  * boundary for the stored capsules, bindings and protagonist rows.
  */
-export const LIFECYCLE_VIEW_VERSION = "lifecycle-chronicle-view-1" as const;
+export const LIFECYCLE_VIEW_VERSION = "lifecycle-chronicle-view-2" as const;
 export const LIFECYCLE_VIEW_TABLE = "lifecycle_projections_v1";
 
 /**
