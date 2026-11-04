@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as projection from "./lifecycle-projection";
 import type { LifeStreamEvent } from "@/contracts/life";
 import { createLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis, LIFECYCLE_THREAD_VERSIONS } from "@/domain/e-lifecycle-genesis";
@@ -221,8 +222,7 @@ describe("lifecycle create orchestration (RI1c)", () => {
   }, 120_000);
 
   it("persists nothing when the client aborts during a still-alive run", async () => {
-    // The horizon path persists an alive life, so an abort AFTER the run but BEFORE the save must
-    // still write nothing: cancellation is a real failure, not a horizon.
+    // Abort on the tick interrupts the run before it can publish.
     const { db, repository } = database();
     try {
       const wire = harness();
@@ -242,6 +242,42 @@ describe("lifecycle create orchestration (RI1c)", () => {
     } finally {
       db.close();
     }
+  }, 120_000);
+
+  it.each(["catch", "pre-publish"] as const)("handles an abort at the %s guard", async (stage) => {
+    const { db, repository } = database();
+    const controller = new AbortController();
+    const wire = harness();
+    const real = projection.projectLifecycleChronicle;
+    const spy = vi.spyOn(projection, "projectLifecycleChronicle").mockImplementation(async (...args) => {
+      controller.abort();
+      if (stage === "catch") throw new Error("projection refused");
+      return real(...args);
+    });
+    try {
+      await streamLifecycleLife({ ...request({ repository, maxSteps: 1, signal: controller.signal }), ...wire });
+      for (const table of ["lifecycle_lives", "lifecycle_bindings", "lifecycle_capsules_v2", "lifecycle_projections_v1", "lifecycle_person_sheets_v1"]) expect(count(db, table)).toBe(0);
+      expect(wire.frames.map(frame => frame.type)).toEqual(["start", "tick"]);
+      expect(spy).toHaveBeenCalledOnce();
+    } finally { spy.mockRestore(); db.close(); }
+  }, 120_000);
+
+  it("suppresses done when abort follows a successful publish", async () => {
+    const { db, repository } = database();
+    const controller = new AbortController();
+    const wire = harness();
+    try {
+      await streamLifecycleLife({ ...request({ maxSteps: 1, signal: controller.signal, repository: { publish: async input => {
+        await repository.publish(input);
+        controller.abort();
+      } } }), ...wire });
+      expect(wire.frames.map(frame => frame.type)).toEqual(["start", "tick"]);
+      expect(count(db, "lifecycle_lives")).toBe(1);
+      expect(count(db, "lifecycle_bindings")).toBe(1);
+      expect(count(db, "lifecycle_capsules_v2")).toBe(1);
+      expect(count(db, "lifecycle_projections_v1")).toBe(2);
+      expect(count(db, "lifecycle_person_sheets_v1")).toBeGreaterThan(0);
+    } finally { db.close(); }
   }, 120_000);
 
   it("persists nothing and sends no done when the client already aborted", async () => {
