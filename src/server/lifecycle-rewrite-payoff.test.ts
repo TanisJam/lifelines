@@ -4,7 +4,6 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { expect, it, vi } from "vitest";
 import * as annualPolicy from "@/domain/e-annual-policy";
-import { buildLifecycleChronicle } from "./lifecycle-read";
 import type { LifeStreamEvent } from "@/contracts/life";
 
 const state = vi.hoisted(() => ({ db: undefined as DatabaseSync | undefined }));
@@ -66,7 +65,11 @@ it("recomputes a payoff for the prefix setup in suffix ticks and the chronicle",
     expect(done?.type === "done" && done.chronicle.entries.find(entry => entry.id === payoff.source))
       .toMatchObject({ kind: "thread-payoff", cause: { entryId: setup.source, year: 1327 } });
     expect(events.filter(event => event.type === "tick").map(event => event.year)).toEqual([1328, 1329, 1330]);
-    const chronicle = await buildLifecycleChronicle("thread", "child", "en");
-    expect("data" in chronicle && chronicle.data?.entries.find(entry => entry.id === payoff.source)).toMatchObject({ kind: "thread-payoff", cause: { entryId: setup.source, year: 1327 } });
+    const { GET } = await import("@/app/api/lives/[lifeId]/route");
+    const response = await GET(new Request("http://local/api/lives/thread?branchId=child&lang=en"), { params: Promise.resolve({ lifeId: "thread" }) });
+    expect(response.status).toBe(200);
+    const chronicle = await response.json();
+    expect(chronicle.entries.find((entry: { id: string }) => entry.id === payoff.source))
+      .toMatchObject({ kind: "thread-payoff", cause: { entryId: setup.source, year: 1327 } });
   } finally { vi.restoreAllMocks(); db.close(); rmSync(dir, { recursive: true, force: true }); }
 }, 1200000);

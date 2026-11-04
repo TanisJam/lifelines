@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
     // A full-span simulation test legitimately takes 7-30 s when several workers share the CPU, and
     // the 5 s default produced a ROTATING set of false failures: the same commit was green on one run
     // and red on the next, with different tests. This is a ceiling, not a target - a hanging test

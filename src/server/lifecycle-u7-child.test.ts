@@ -5,7 +5,8 @@ import type { RuntimeOutput } from "@/domain/e-runtime";
 import * as database from "./db";
 import { projectLifecycleTick } from "./lifecycle-projection";
 import { buildLifecycleChronicle } from "./lifecycle-read";
-import { LifecycleRepository } from "./lifecycle-repository";
+import { LifecycleRepository, loadStoredLifecycleFork } from "./lifecycle-repository";
+import { LifecycleBranchStore } from "./lifecycle-branch-store";
 
 it.skipIf(!process.env.U7_CHILD_DB)("child process regeneration", async () => {
   const realPlan = annualPolicy.planAnnualFavorDraft;
@@ -51,8 +52,27 @@ it.skipIf(!process.env.U7_PUBLIC_DB)("child public route reads", async () => {
     const savedResponse = await chronicle(new Request(`http://local/api/lives/u7-public?branchId=${process.env.U7_PUBLIC_SAVED}`), ctx);
     if (!savedResponse.ok) throw new Error(`Saved branch failed: ${await savedResponse.text()}`);
     const saved = await savedResponse.json();
-    const sheet = await person(new Request(`http://local/api/lives/u7-public/people/protagonist?branchId=${process.env.U7_PUBLIC_BRANCH}`), { params: Promise.resolve({ lifeId: "u7-public", personId: "protagonist" }) });
+    const store = new LifecycleBranchStore(db);
+    const childBinding = store.binding("u7-public", process.env.U7_PUBLIC_BRANCH!);
+    if (!childBinding) throw new Error("Missing child binding for person-sheet comparison");
+    const stored = await store.resolve("u7-public", childBinding.capsuleDigest);
+    if (!stored) throw new Error("Missing child capsule for person-sheet comparison");
+    const loadedChild = await loadStoredLifecycleFork(childBinding, stored.capsule, digest => store.resolve("u7-public", digest));
+    const sheetFor = async (branchId: string, personId: string) => {
+      const response = await person(new Request(`http://local/api/lives/u7-public/people/${personId}?branchId=${branchId}`),
+        { params: Promise.resolve({ lifeId: "u7-public", personId }) });
+      return { status: response.status, data: await response.json() };
+    };
+    let branchSheet;
+    for (const personId of Object.keys(loadedChild.capsule.output.owned.people)) {
+      const [rootSheet, childSheet] = await Promise.all([sheetFor("root", personId), sheetFor(process.env.U7_PUBLIC_BRANCH!, personId)]);
+      if (rootSheet.status === 404 && childSheet.status === 200) {
+        branchSheet = { personId, rootSheet, childSheet };
+        break;
+      }
+    }
+    if (!branchSheet) throw new Error("The fork produced no person sheet that differs from the root branch");
     const listing = await list(new Request("http://local/api/lives"));
-    writeFileSync(process.env.U7_CHILD_RESULT!, JSON.stringify({ pid: process.pid, views, saved, sheetStatus: sheet.status, listing: await listing.json() }));
+    writeFileSync(process.env.U7_CHILD_RESULT!, JSON.stringify({ pid: process.pid, views, saved, branchSheet, listing: await listing.json() }));
   } finally { vi.restoreAllMocks(); db.close(); }
 }, 120_000);

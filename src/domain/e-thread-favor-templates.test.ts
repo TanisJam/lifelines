@@ -42,6 +42,13 @@ describe("thread favor text", () => {
     expect(renderThreadFavorBeat({ ...bare, effects: [...bare.effects!, tie] }, names, "en")).toBe(renderThreadFavorBeat(bare, names, "en"));
   });
 
+  it.each(["setup", "payoff"] as const)("ignores recorded appraisal facts on %s text", kind => {
+    const beat = kind === "setup" ? setup : payoff("help");
+    const appraisal = { kind: "appraisal" as const, id: "a1", origin: beat.source, actor: "q", interpretation: "gratitude" as const, intensity: 1 };
+    expect(renderThreadFavorBeat({ ...beat, effects: [...beat.effects!, appraisal] }, names, "en"))
+      .toBe(renderThreadFavorBeat(beat, names, "en"));
+  });
+
   it("rejects a death beat even with valid payoff facts", () => {
     expect(() => renderThreadFavorBeat({ ...payoff("help"), kind: "death" } as ThreadBeat, names, "en")).toThrow();
   });
