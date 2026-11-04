@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
-import { createLifecycleGenesis, LIFECYCLE_THREAD_VERSIONS } from "../domain/e-lifecycle-genesis";
+import { createLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS, LIFECYCLE_THREAD_VERSIONS } from "../domain/e-lifecycle-genesis";
 import { createLifecycleRuntime } from "../domain/e-lifecycle-runtime";
 import { createLifecycleCompactCapsule, serializeLifecycleCompactCapsule } from "../domain/e-lifecycle-capsule";
 import { initializeWorld } from "../domain/world-origin";
@@ -42,6 +42,7 @@ it("reopens old audit and compact records from genesis and archived wire without
       const loaded = await new LifecycleRepository(db).load(input.lifeId, input.branchId);
       expect(loaded?.binding).toEqual(bindings[index]);
       expect(loaded?.capsule.digest).toBe(input.capsule.digest);
+      expect(loaded?.capsule.genesis.versions).toEqual(LIFECYCLE_GENESIS_VERSIONS);
     }
     expect(rows(db)).toEqual(genesisRows);
     for (const input of inputs) {
@@ -57,6 +58,7 @@ it("reopens old audit and compact records from genesis and archived wire without
       const loaded = await new LifecycleRepository(db).load(input.lifeId, input.branchId);
       expect(loaded?.binding).toEqual(bindings[index]);
       expect(loaded?.capsule.digest).toBe(input.capsule.digest);
+      expect(loaded?.capsule.genesis.versions).toEqual(LIFECYCLE_GENESIS_VERSIONS);
     }
     expect(rows(db)).toEqual(archivedRows);
   } finally { if (db.isOpen) db.close(); rmSync(dir, { recursive: true, force: true }); }

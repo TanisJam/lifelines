@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { LifeStreamEvent } from "@/contracts/life";
 import { createLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
-import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
+import { createLifecycleGenesis, LIFECYCLE_THREAD_VERSIONS } from "@/domain/e-lifecycle-genesis";
 import { runLifecycleOutput } from "@/domain/e-lifecycle-run";
 import { initializeWorld } from "@/domain/world-origin";
 import { openDb } from "./db";
@@ -36,7 +36,7 @@ function resourcesFor(world: ReturnType<typeof initializeWorld>["world"]) {
 async function freshCapsule(maxSteps: number): Promise<LifecycleCompactCapsule> {
   const { world } = initializeWorld(initialization);
   const genesis = createLifecycleGenesis({
-    initialization, protagonistId: "protagonist", resources: resourcesFor(world),
+    initialization, protagonistId: "protagonist", versions: LIFECYCLE_THREAD_VERSIONS, resources: resourcesFor(world),
   });
   // Mirrors the create path exactly: the compact run, then the compact capsule.
   const run = await runLifecycleOutput({ kind: "start", genesis }, { maxSteps }, "compact");
@@ -97,6 +97,14 @@ function ticksOf(frames: readonly LifeStreamEvent[]): Extract<LifeStreamEvent, {
 }
 
 describe("lifecycle create orchestration (RI1c)", () => {
+  it("records the thread profile for newly created lives", async () => {
+    let published: LifecycleCompactCapsule | undefined;
+    const wire = harness();
+    await streamLifecycleLife({ ...request({ repository: { publish: async (input) => { published = input.capsule as LifecycleCompactCapsule; } }, maxSteps: 1 }), ...wire });
+    expect(published?.genesis.versions).toEqual(LIFECYCLE_THREAD_VERSIONS);
+    expect(published?.manifest.capsuleSchema).toBe("lifecycle-capsule-compact-cb3-1");
+  }, 120_000);
+
   it("streams a start, one tick per regenerated journal year, then done, and publishes a reloadable capsule", async () => {
     const { db, repository } = database();
     try {
@@ -229,6 +237,8 @@ describe("lifecycle create orchestration (RI1c)", () => {
       expect(count(db, "lifecycle_lives")).toBe(0);
       expect(count(db, "lifecycle_bindings")).toBe(0);
       expect(count(db, "lifecycle_capsules_v2")).toBe(0);
+      expect(count(db, "lifecycle_projections_v1")).toBe(0);
+      expect(count(db, "lifecycle_person_sheets_v1")).toBe(0);
     } finally {
       db.close();
     }

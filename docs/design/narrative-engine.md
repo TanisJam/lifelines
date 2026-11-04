@@ -4,13 +4,13 @@
 
 | Profile | Selection | Canonical thread data | Storage |
 |---|---|---|---|
-| `lifecycle-genesis-lr1a-1` / `native-rules-lifecycle-lr1-1` | Existing default | No thread fields | Existing capsule profiles |
-| `lifecycle-genesis-thread-1` / `native-rules-lifecycle-thread-1` | Explicit tuple only; not enabled for ordinary creation | Empty `thread-state-1` state and annual `thread-beats-1` deltas | Not ready for persistence; distinct capsule profile is U2 |
+| `lifecycle-genesis-lr1a-1` / `native-rules-lifecycle-lr1-1` | Engine default and existing lives | No thread fields | Existing cb1/cb2 capsule profiles |
+| `lifecycle-genesis-thread-1` / `native-rules-lifecycle-thread-1` | Newly created lifecycle lives | `thread-state-1` state and annual `thread-beats-1` deltas | Compact cb3 capsule |
 
 The first intended kind is debt/help; other kinds are deferred. The three-year eligibility rule
-will apply to all new lifecycle HELP. Outcomes describe literal help given or help refused, not
+applies to all new lifecycle HELP. Outcomes describe literal help given or help refused, not
 repayment or betrayal. Death ends a thread; absence suspends it. There is no explicit cancel path. The thread-aware profile uses `thread-help-maturity-1`: all HELP obligations become eligible at the actual grant year plus three, subject to current actors, resources, and keyed activation. Older lifecycle profiles and standalone annual composition retain their original timing.
-These decisions are not implemented by the empty profile.
+Existing lives retain their recorded profile; there is no migration. The lifecycle engine remains opt-in.
 
 **Status: architecture proposal, not implementation authorization.** Lifelines should generate a
 seeded, deterministic world without LLM decisions, preserve its consequences, and select a much

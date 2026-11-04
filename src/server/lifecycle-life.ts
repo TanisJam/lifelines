@@ -1,6 +1,6 @@
 import type { Chronicle, LifeSex, LifeStreamEvent } from "@/contracts/life";
 import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
-import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
+import { createLifecycleGenesis, LIFECYCLE_THREAD_VERSIONS } from "@/domain/e-lifecycle-genesis";
 import { runLifecycleOutput } from "@/domain/e-lifecycle-run";
 import { LOCALES, type Locale } from "@/domain/locale";
 import { initializeWorld } from "@/domain/world-origin";
@@ -113,6 +113,7 @@ export async function streamLifecycleLife(request: LifecycleLifeRequest): Promis
   const genesis = createLifecycleGenesis({
     initialization,
     protagonistId: PROTAGONIST_ID,
+    versions: LIFECYCLE_THREAD_VERSIONS,
     resources: Object.fromEntries(Object.keys(world.people).map((id) => [id, REPRESENTATIVE_ALLOCATION])),
   });
 

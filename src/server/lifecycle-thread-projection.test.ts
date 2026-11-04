@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as runtimeModule from "@/domain/e-lifecycle-runtime";
+import { evolveThreadLedger } from "@/domain/e-thread-ledger";
+import type { RuntimeEntry } from "@/domain/e-runtime";
 import { createLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS, LIFECYCLE_THREAD_VERSIONS } from "@/domain/e-lifecycle-genesis";
 import { createLifecycleRuntime } from "@/domain/e-lifecycle-runtime";
 import { initializeWorld } from "@/domain/world-origin";
@@ -21,6 +23,24 @@ function source(include = true): LifecycleProjectionSource {
 }
 
 describe("thread view", () => {
+  it.each(["en", "es"] as const)("projects a synthetic committed grant and eligible response (%s)", async locale => {
+    const common = { position: 0, declarationIndex: 0, outcome: "committed", consumed: undefined } as const;
+    const grant = { ...common, id: "grant", year: 1327, phase: "grants", kind: "grain-grant", actors, causes: [], effects: setup.effects } as RuntimeEntry;
+    const response = { ...common, id: "response", year: 1330, phase: "help", kind: "help-response", actors, causes: ["grant", "request"], effects: payoff.effects, authority: { source: "rules", selected: "help", baseline: "help", noise: 0 } } as RuntimeEntry;
+    const opened = evolveThreadLedger([], [grant], "protagonist", 1327, {});
+    expect(opened.threads[0]).toMatchObject({ setup: "grant", openedYear: 1327, eligibleYear: 1330, status: "open" });
+    const resolved = evolveThreadLedger(opened.threads, [response], "protagonist", 1330, {});
+    expect(resolved.threads[0]).toMatchObject({ terminal: "response", terminalYear: 1330, status: "fulfilled" });
+    const s = source();
+    const records = s.output.journal as unknown as { threadBeats: { beats: unknown[] } }[];
+    records[0]!.threadBeats.beats = opened.beats;
+    records[3]!.threadBeats.beats = resolved.beats;
+    const chronicle = (await projectLifecycleChronicle({ source: s, identity: { lifeId: "life", branchId: "branch" }, locale })).view;
+    expect(chronicle.entries.map(entry => entry.id)).toEqual(["grant", "response"]);
+    expect(chronicle.entries[1]!.cause).toMatchObject({ entryId: "grant", year: 1327 });
+    expect((await projectLifecycleTick({ source: s, year: 1327, locale })).view.entries).toEqual([chronicle.entries[0]]);
+    expect((await projectLifecycleTick({ source: s, year: 1330, locale })).view.entries).toEqual([chronicle.entries[1]]);
+  });
   it.each(["en", "es"] as const)("projects identical setup and payoff in tick and chronicle (%s)", async locale => {
     const s = source();
     const all = (await projectLifecycleChronicle({ source: s, identity: { lifeId: "life", branchId: "branch" }, locale })).view.entries;

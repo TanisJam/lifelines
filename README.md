@@ -119,8 +119,9 @@ The design log lives in [`docs/`](./docs), newest first:
 - **The full-lifetime lifecycle engine.** It exists and runs, but only behind the hidden
   `?engine=lifecycle` flag: a full life takes ~46 s and ~1.5 GB of JS heap, too slow and heavy
   for the default path.
-- **Replay versions and journals.** The new lifecycle engine still needs its own closed journal
-  and versioned replay before it can replace the default path — see
+- **Replay versions and journals.** New opt-in lifecycle lives record the thread-aware generation
+  profile and compact cb3 capsules; existing lives keep their recorded versions without migration.
+  The lifecycle engine is still not the default path — see
   [`odd/tasks/narrative-release-execution.md`](./odd/tasks/narrative-release-execution.md).
 - **The childhood survival guard.** A guard that makes a child's death rare exists on the parked
   `feat/childhood-survival` branch, but its suite is red and its fixtures need redesign, not
