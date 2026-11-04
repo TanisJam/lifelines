@@ -94,7 +94,9 @@ export function renderThreadFavorBeat(beat: ThreadBeat, identities: readonly { i
     throw new Error("Unsupported thread facts");
   }
   const factBeat = { id: beat.source, kind: beat.kind === "setup" ? "grain-grant" : "help-response",
-    year: beat.year, position: null, causes: beat.causes, actors, facts: beat.effects, response: beat.selected } as Selected["beats"][number];
+    year: beat.year, position: null, causes: beat.causes, actors, response: beat.selected,
+    // Ties and appraisals are relationship deltas, not recorded facts; the text renders only recorded facts.
+    facts: beat.effects.filter(f => f.kind !== "tie" && f.kind !== "appraisal") } as Selected["beats"][number];
   const text = renderFavorFactText(factBeat, locale);
   return beat.kind === "setup" ? text : `${text} ${locale === "en" ? "This response concerned the obligation from the earlier grain grant." : "Esta respuesta correspondió a la obligación de la entrega anterior de grano."}`;
 }

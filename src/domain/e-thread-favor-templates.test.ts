@@ -36,6 +36,12 @@ describe("thread favor text", () => {
     expect(renderThreadFavorBeat(payoff("refuse"), names, locale)).toBe(refusal);
   });
 
+  it.each(["help", "refuse"] as const)("renders a runtime %s payoff carrying its tie effect like the bare facts", selected => {
+    const bare = payoff(selected);
+    const tie = { kind: "tie" as const, origin: "r/response", actor: "p", counterpart: "q", trust: selected === "help" ? 5 : -5, resentment: selected === "help" ? 0 : 5 };
+    expect(renderThreadFavorBeat({ ...bare, effects: [...bare.effects!, tie] }, names, "en")).toBe(renderThreadFavorBeat(bare, names, "en"));
+  });
+
   it("rejects a death beat even with valid payoff facts", () => {
     expect(() => renderThreadFavorBeat({ ...payoff("help"), kind: "death" } as ThreadBeat, names, "en")).toThrow();
   });
