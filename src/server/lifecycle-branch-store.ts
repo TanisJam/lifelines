@@ -1,9 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
-import { deserializeLifecycleForkCapsule } from "../domain/e-lifecycle-fork-capsule";
+import { deserializeLifecycleForkCapsule, serializeLifecycleForkCapsule } from "../domain/e-lifecycle-fork-capsule";
 import { admitLifecycleGenesis } from "../domain/e-lifecycle-genesis";
 import { LIFECYCLE_COMPACT_CAPSULE_MANIFEST, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3 } from "../domain/e-lifecycle-capsule";
 import { withTransaction } from "./db";
-import { LifecycleRepository, loadStoredLifecycleFork, type LifecycleForkBranchBinding } from "./lifecycle-repository";
+import { LifecycleRepository, admitStoredLifecycleFork, loadStoredLifecycleFork, type LifecycleForkBranchBinding } from "./lifecycle-repository";
+import { LOCALES } from "../domain/locale";
+import { projectLifecycleChronicle, projectLifecyclePersonSheet, type LifecycleProjectionSource } from "./lifecycle-projection";
+import { LifecyclePersonSheetStore, LifecycleProjectionStore } from "./lifecycle-projection-store";
 
 const MAX_DECISION_SUMMARY_BYTES = 1_000_000;
 const MAX_DECISIONS = 10_000;
@@ -33,6 +36,42 @@ function validTarget(value: unknown): value is LifecycleDecisionTarget {
 /** Read-only fork storage. The SQLite file remains a trust boundary; admission replays all ancestry. */
 export class LifecycleBranchStore {
   constructor(private readonly db: DatabaseSync) {}
+
+  async publishFork(input: { readonly lifeId: string; readonly branchId: string; readonly capsule: unknown }, options: { readonly onStage?: (stage: "fork-row" | "views" | "sheets") => void } = {}): Promise<LifecycleForkBranchBinding> {
+    const { lifeId, branchId } = input;
+    if (typeof lifeId !== "string" || !lifeId || lifeId.includes("\0") || typeof branchId !== "string" || !branchId || branchId.includes("\0") || Buffer.from(branchId).toString() !== branchId) throw new Error("Invalid branch identifier");
+    const capsule = await admitStoredLifecycleFork(lifeId, input.capsule, digest => this.resolve(lifeId, digest));
+    const wire = Buffer.from(await serializeLifecycleForkCapsule(capsule), "utf16le");
+    const genesis = admitLifecycleGenesis(capsule.genesis);
+    const binding: LifecycleForkBranchBinding = Object.freeze({ version: "canonical-lifecycle-fork-binding-v1", lifeId, branchId, capsuleDigest: capsule.digest, capsuleSchema: capsule.manifest.capsuleSchema, genesisDigest: genesis.digest });
+    const source = { genesis, output: capsule.output } as unknown as LifecycleProjectionSource;
+    const views = await Promise.all(LOCALES.map(async locale => ({ locale, view: (await projectLifecycleChronicle({ source, identity: { lifeId, branchId }, locale })).view })));
+    const sheets = (await Promise.all(LOCALES.map(async locale => Promise.all(Object.keys(capsule.output.owned.people).map(async personId => ({ locale, personId, view: (await projectLifecyclePersonSheet({ source, personId, locale })).view })))))).flat();
+    const projections = new LifecycleProjectionStore(this.db), personSheets = new LifecyclePersonSheetStore(this.db);
+    const repository = new LifecycleRepository(this.db);
+    const choice = capsule.lineage.choices.at(-1)!;
+    return withTransaction(this.db, () => {
+      const parent = this.db.prepare("SELECT 1 FROM lifecycle_forks_v1 WHERE life_id = ? AND digest = ?").get(lifeId, capsule.recipe.parentDigest);
+      const root = this.db.prepare("SELECT l.branch_id FROM lifecycle_lives l WHERE l.id = ?").get(lifeId);
+      const rootBinding = root ? repository.binding(lifeId, String(root.branch_id)) : undefined;
+      if (!parent && rootBinding?.genesisDigest !== capsule.recipe.parentDigest) throw new Error("Missing or cross-life fork ancestry");
+      const existing = this.binding(lifeId, branchId);
+      const sameDigest = this.db.prepare("SELECT branch_id FROM lifecycle_forks_v1 WHERE life_id = ? AND digest = ?").get(lifeId, capsule.digest);
+      if (existing || sameDigest) {
+        const row = this.db.prepare("SELECT parent_digest, fork_year, decision_id, option_id, binding_json, wire FROM lifecycle_forks_v1 WHERE life_id = ? AND branch_id = ?").get(lifeId, branchId);
+        if (!existing || sameDigest?.branch_id !== branchId || !row || row.binding_json !== JSON.stringify(binding) || row.parent_digest !== capsule.recipe.parentDigest || row.fork_year !== choice.year || row.decision_id !== choice.decisionId || row.option_id !== choice.optionId || !(row.wire instanceof Uint8Array) || !Buffer.from(row.wire).equals(wire)) throw new Error("Conflicting immutable fork binding");
+        return existing;
+      }
+      if (root?.branch_id === branchId) throw new Error("Conflicting immutable fork binding");
+      this.db.prepare("INSERT INTO lifecycle_forks_v1 (life_id, branch_id, digest, parent_digest, fork_year, decision_id, option_id, binding_json, wire) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(lifeId, branchId, capsule.digest, capsule.recipe.parentDigest, choice.year, choice.decisionId, choice.optionId, JSON.stringify(binding), wire);
+      options.onStage?.("fork-row");
+      projections.write({ lifeId, branchId, capsuleDigest: capsule.digest }, views);
+      options.onStage?.("views");
+      personSheets.write({ lifeId, branchId, capsuleDigest: capsule.digest }, sheets);
+      options.onStage?.("sheets");
+      return binding;
+    });
+  }
 
   binding(lifeId: string, branchId: string): LifecycleForkBranchBinding | undefined {
     const row = this.db.prepare("SELECT digest, binding_json FROM lifecycle_forks_v1 WHERE life_id = ? AND branch_id = ?").get(lifeId, branchId);
