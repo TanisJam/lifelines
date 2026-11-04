@@ -1,15 +1,12 @@
 import { instantiateLifecycleGenesis, type LifecycleGenesis } from "./e-lifecycle-genesis";
 import { createRulesYearSource } from "./e-year-source";
-import { planAnnualFavorDraft, stableAnnualIdOrder } from "./e-annual-policy";
-import { planAnnualHelpSlot } from "./e-annual-composition";
-import { createFavorExecutor } from "./e-favor-executor";
 import { inspectHelpOpportunities, trustFavorState } from "./effects";
 import { captureLegacyYear } from "./legacy-year";
 import type { LegacyOwnedRunState } from "./simulate";
 import type { GrantIntention, RequestIntention, ResourceOperation, RuntimeEntry, RuntimeOutput } from "./e-runtime";
 import type { YearSnapshot } from "./types";
-import { eligibleThreadHelp, planThreadHelpSlot } from "./e-thread-policy";
-import { evolveThreadLedger, type HelpThread, type ThreadBeat } from "./e-thread-ledger";
+import type { HelpThread, ThreadBeat } from "./e-thread-ledger";
+import { executeLifecycleAnnual } from "./e-lifecycle-annual";
 
 type Immutable<T> = T extends object ? { readonly [K in keyof T]: Immutable<T[K]> } : T;
 
@@ -204,58 +201,10 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
     if (year !== committed.frontier + 1) throw new Error("Lifecycle years must be contiguous");
     advancing = true;
     try {
-      // Never separately clone owned and favors: native phases and FE1 borrow ONE graph.
-      const draft = structuredClone(committed.state);
-      trustFavorState(draft.favors);
-      const lifeStart = draft.owned.events.length;
-      const decisionStart = draft.owned.decisions.length;
-      const economicStart = draft.favors.events.length;
-      // A fresh trusted source/resolver on every attempt; origin endYear is metadata only.
-      const source = createRulesYearSource(genesis.source, config, draft.owned, protagonistId, config.startYear);
-      const physicalSnapshot = await source.execute(year);
-      const allowances = planAnnualFavorDraft(draft.favors, config.seed, year);
-      const entries: RuntimeEntry[] = [];
-      const favor = createFavorExecutor(draft.favors, year, entries, undefined, { auditEvidence: journalMode === "audit" });
-      allowances.resources.forEach(favor.executeResource);
-      allowances.grants.forEach(favor.executeGrant);
-      const creditors = [...new Set(inspectHelpOpportunities(draft.favors, year)
-        .filter(candidate => candidate.reason === null).map(candidate => candidate.creditor))].sort(stableAnnualIdOrder);
-      const slots: LifecycleHelpSlot[] = [];
-      const requests: RequestIntention[] = [];
-      for (const creditor of creditors) {
-        for (const slot of [0, 1] as const) {
-          const opportunities = inspectHelpOpportunities(draft.favors, year);
-          const planned = draft.threads
-            ? planThreadHelpSlot(draft.favors, draft.threads.threads, config.seed, year, creditor, slot)
-            : planAnnualHelpSlot(draft.favors, config.seed, year, creditor, slot);
-          const request = planned && draft.threads && !eligibleThreadHelp(draft.favors, draft.threads.threads, year).has(planned.obligation) ? null : planned;
-          slots.push({ creditor, slot, opportunities, request });
-          if (request !== null) {
-            requests.push(request);
-            favor.executeRequest(request, requests.length - 1);
-          }
-        }
-      }
-      const ledger = draft.threads && evolveThreadLedger(draft.threads.threads, entries, protagonistId, year,
-        Object.fromEntries(draft.owned.events.filter(event => event.kind === "death" && event.year <= year)
-          .map(event => [event.actors[0], { year: event.year, id: event.id }])));
-      if (draft.threads && ledger) draft.threads.threads = ledger.threads;
-      // Compact mode omits ONLY fields no production reader consumes; `final` is what the chronicle,
-      // the person sheets and the replay comparison all read, so it is never dropped.
-      const record: LifecycleYearRecord = journalMode === "compact"
-        ? { year, versions: genesis.versions, final: draft }
-        : {
-          year, versions: genesis.versions, physicalSnapshot,
-          economics: { resources: allowances.resources, grants: allowances.grants, creditors, slots, requests, entries },
-          positions: {
-            life: { start: lifeStart, end: draft.owned.events.length },
-            decisions: { start: decisionStart, end: draft.owned.decisions.length },
-            economic: { start: economicStart, end: draft.favors.events.length },
-          },
-          final: draft,
-        };
-      // The ledger exists exactly when the admitted profile initialized thread state.
-      if (ledger) record.threadBeats = { version: "thread-beats-1", beats: ledger.beats };
+      const { draft, record } = await executeLifecycleAnnual(
+        committed.state, year, config, protagonistId, genesis.versions, journalMode,
+        owned => createRulesYearSource(genesis.source, config, owned, protagonistId, config.startYear),
+      );
       // Detach only the NEW annual record. Reuse the privately frozen version
       // tuple to preserve its aliases across annual evidence/publication frames.
       const newRecord = structuredClone(record);
