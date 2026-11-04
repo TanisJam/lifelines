@@ -728,6 +728,24 @@ describe("thread annual publication", () => {
 
 
 describe("thread bounded paths", () => {
+  it("routes eligible slots through the real thread planner", async () => {
+    const options = { ...defaults, seed: "thread-atomic" };
+    const { world } = initializeWorld(options);
+    const actor = Object.keys(world.people).find(id => id !== "protagonist")!;
+    const admitted = createLifecycleGenesis({ initialization: options, protagonistId: "protagonist", resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])), versions: LIFECYCLE_THREAD_VERSIONS });
+    const real = annualPolicy.planAnnualFavorDraft;
+    vi.spyOn(annualPolicy, "planAnnualFavorDraft").mockImplementation((view, seed, year) => ({ ...real(view, seed, year), grants: year === 1327 ? [{ id: "thread-grant", creditor: "protagonist", debtor: actor, causes: [] }] : [] }));
+    const planner = vi.spyOn(threadPolicy, "planThreadHelpSlot");
+    const runtime = createLifecycleRuntime(admitted);
+    await runtime.advance(1327);
+    await runtime.advance(1328);
+    expect(planner).toHaveBeenCalledWith(expect.anything(), expect.anything(), options.seed, 1328, "protagonist", 0);
+    expect(planner.mock.results.some(result => result.value !== null)).toBe(false);
+    await runtime.advance(1329);
+    const fourth = await runtime.advance(1330);
+    expect(auditRecord(fourth.journal[3]).economics.entries).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "help-response", outcome: "committed", causes: expect.arrayContaining(["thread-grant"]) })]));
+    expect(fourth.journal[3].threadBeats!.beats).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "payoff", year: 1330 })]));
+  });
   it("rechecks maturity before executing an early request", async () => {
     const options = { ...defaults, seed: "thread-payoff" };
     const { world } = initializeWorld(options);

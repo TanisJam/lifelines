@@ -26,6 +26,10 @@ describe("thread HELP maturity", () => {
   it.each([[1327, false], [1328, false], [1329, false], [1330, true], [1331, true]])("year %i permits response: %s", (year, allowed) => {
     const f = fixture(); expect(Boolean(active(f, year))).toBe(allowed);
   });
+  it.each([[1328, false], [1329, false], [1330, true]])("thread-less grant at year %i permits response: %s", (year, allowed) => {
+    const f = fixture();
+    expect(Array.from({ length: 100 }, (_, i) => planThreadHelpSlot(f.state, [], `seed-${i}`, year, f.creditor, 0)).some(Boolean)).toBe(allowed);
+  });
   it("does not force activation, or require protagonist thread membership", () => {
     const f = fixture();
     expect(Array.from({ length: 100 }, (_, i) => planThreadHelpSlot(f.state, [], `seed-${i}`, 1330, f.creditor, 0)).some(Boolean)).toBe(true);
