@@ -724,3 +724,44 @@ describe("thread annual publication", () => {
     expect(second.journal[1].final.threads!.threads[0]).toBe(first.journal[0].final.threads!.threads[0]);
   });
 });
+
+
+describe("thread bounded paths", () => {
+  it("records a real grant and help response as a payoff", async () => {
+    const options = { ...defaults, seed: "thread-payoff" };
+    const { world } = initializeWorld(options);
+    const actor = Object.keys(world.people).find(id => id !== "protagonist")!;
+    const admitted = createLifecycleGenesis({ initialization: options, protagonistId: "protagonist", resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])), versions: LIFECYCLE_THREAD_VERSIONS });
+    const real = annualPolicy.planAnnualFavorDraft;
+    vi.spyOn(annualPolicy, "planAnnualFavorDraft").mockImplementation((view, seed, year) => ({ ...real(view, seed, year), grants: year === 1327 ? [{ id: "thread-grant", creditor: "protagonist", debtor: actor, causes: [] }] : [] }));
+    vi.spyOn(composition, "planAnnualHelpSlot").mockImplementation((_view, _seed, year, creditor, slot) => year === 1328 && creditor === "protagonist" && slot === 0 ? { id: "thread-request", obligation: "thread-grant/help", noise: 0 } : null);
+    const runtime = createLifecycleRuntime(admitted);
+    const first = await runtime.advance(1327);
+    expect(first.threads!.threads).toHaveLength(1);
+    const second = await runtime.advance(1328);
+    const response = auditRecord(second.journal[1]).economics.entries.find(entry => entry.kind === "help-response")!;
+    expect(response).toBeDefined();
+    expect(second.threads!.threads[0].terminal).toBe(response.id);
+    expect(second.journal[1].threadBeats!.beats).toEqual([expect.objectContaining({ kind: "payoff", source: response.id, effects: response.effects })]);
+  });
+  it("closes a thread from an owned death event without a payoff", async () => {
+    const options = { ...defaults, seed: "thread-atomic" };
+    const { world } = initializeWorld(options);
+    const actor = Object.keys(world.people).find(id => id !== "protagonist")!;
+    const admitted = createLifecycleGenesis({ initialization: options, protagonistId: "protagonist", resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])), versions: LIFECYCLE_THREAD_VERSIONS });
+    const real = annualPolicy.planAnnualFavorDraft;
+    vi.spyOn(annualPolicy, "planAnnualFavorDraft").mockImplementation((view, seed, year) => ({ ...real(view, seed, year), grants: year === 1327 ? [{ id: "thread-grant", creditor: "protagonist", debtor: actor, causes: [] }] : [] }));
+    vi.spyOn(composition, "planAnnualHelpSlot").mockReturnValue(null);
+    const source = sourceModule.createRulesYearSource;
+    vi.spyOn(sourceModule, "createRulesYearSource").mockImplementation((...args) => {
+      const actual = source(...args);
+      return { ...actual, execute: async year => { const frame = await actual.execute(year); if (year === 1328) args[2].events.push({ id: "death-test", year, kind: "death", actors: [actor], causes: [], payload: {} }); return frame; } };
+    });
+    const runtime = createLifecycleRuntime(admitted);
+    await runtime.advance(1327);
+    const second = await runtime.advance(1328);
+    expect(second.threads!.threads[0].status).toBe("dead");
+    expect(second.journal[1].threadBeats!.beats).toEqual([expect.objectContaining({ kind: "death", source: "death-test" })]);
+    expect(second.journal[1].threadBeats!.beats[0]).not.toHaveProperty("effects");
+  });
+});

@@ -571,3 +571,9 @@ describe("whole-tree descriptor safety before reads, hashing or cloning", () => 
     expect(hooks).toBe(0);
   });
 });
+
+ it("ordinary creation retains the non-thread genesis profile", () => {
+  const genesis = createLifecycleGenesis(fixture());
+  expect(genesis.versions).toEqual(LIFECYCLE_GENESIS_VERSIONS);
+  expect(genesis.versions).not.toHaveProperty("threadState");
+});

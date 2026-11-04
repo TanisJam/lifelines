@@ -250,6 +250,7 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
           },
           final: draft,
         };
+      // The ledger exists exactly when the admitted profile initialized thread state.
       if (ledger) record.threadBeats = { version: "thread-beats-1", beats: ledger.beats };
       // Detach only the NEW annual record. Reuse the privately frozen version
       // tuple to preserve its aliases across annual evidence/publication frames.

@@ -39,6 +39,8 @@ export function evolveThreadLedger(previous: readonly HelpThread[], entries: rea
         && thread.actors[0] === entry.actors[0] && thread.actors[1] === entry.actors[1]);
       if (index < 0) continue;
       const thread = threads[index];
+      // A same-year death takes precedence over a response in the derived thread;
+      // the committed response is not converted into a thread payoff.
       if (thread.actors.some(actor => deaths[actor] !== undefined && deaths[actor]!.year <= year)) continue;
       threads[index] = { ...thread, status: settlement.status, terminal: entry.id, terminalYear: entry.year };
       beats.push({ kind: "payoff", thread: thread.id, source: entry.id, year: entry.year,
