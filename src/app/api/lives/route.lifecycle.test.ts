@@ -119,6 +119,7 @@ async function registerLegacyLife(): Promise<{ lifeId: string; branchId: string 
 
 const FIRST = { lifeId: "life-ri1d-route-1", branchId: "branch-ri1d-route-1", seed: "ri1d-route-1", name: "Alice" };
 const SECOND = { lifeId: "life-ri1d-route-2", branchId: "branch-ri1d-route-2", seed: "ri1d-route-2", name: "Beatrice" };
+const ROOT_BRANCH = { branchId: FIRST.branchId, label: "Original life", parentBranchId: null, forkYear: null };
 
 let first: Fixture;
 let second: Fixture;
@@ -215,9 +216,8 @@ describe("GET /api/lives/:lifeId — detail activation (RI1d)", () => {
     const response = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
     expect(response.status).toBe(200);
     const chronicle = (await response.json()) as Chronicle;
-    expect(chronicle).toEqual(first.chronicle);
-    // The engine has one branch: no branch switcher is invented for a lifecycle life.
-    expect(chronicle.branches).toEqual([]);
+    // Branch metadata is decorated at read time, outside the cached core projection.
+    expect(chronicle).toEqual({ ...first.chronicle, branches: [ROOT_BRANCH] });
 
     // The legacy life still gets its real legacy chronicle, including its branch metadata — the
     // observable proof that the legacy builder (not the lifecycle one) served it.
@@ -231,14 +231,14 @@ describe("GET /api/lives/:lifeId — detail activation (RI1d)", () => {
     expect(legacyChronicle).toEqual((await buildLifeChronicle(legacy.lifeId)).data);
   }, 120_000);
 
-  it("honors the stored branch, and answers an unknown branch or unknown life with the legacy not-found", async () => {
+  it("honors the stored branch, and answers an unknown branch with Branch not found and an unknown life with Life not found", async () => {
     const explicit = await getLife(lifeRequest(FIRST.lifeId, FIRST.branchId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
     expect(explicit.status).toBe(200);
-    expect((await explicit.json()) as Chronicle).toEqual(first.chronicle);
+    expect((await explicit.json()) as Chronicle).toEqual({ ...first.chronicle, branches: [ROOT_BRANCH] });
 
     const wrongBranch = await getLife(lifeRequest(FIRST.lifeId, "branch-of-another-life"), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
     expect(wrongBranch.status).toBe(404);
-    await expect(wrongBranch.json()).resolves.toEqual({ error: "Life not found." });
+    await expect(wrongBranch.json()).resolves.toEqual({ error: "Branch not found." });
 
     const unknown = await getLife(lifeRequest("life-that-was-never-saved"), { params: Promise.resolve({ lifeId: "life-that-was-never-saved" }) });
     expect(unknown.status).toBe(404);
@@ -281,10 +281,11 @@ describe("GET /api/lives/:lifeId — refused capsule (RI1d)", () => {
     db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?")
       .run(serializeCompactLifecycleDag(foreign), key);
     try {
-      // P3's deliberate cost: the index answers by capsule digest without re-proving regeneration.
+      // The branch resolver re-admits the canonical genesis on every read, so even a warm index
+      // cannot serve a row whose genesis disagrees with its binding.
       const indexed = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
-      expect(indexed.status).toBe(200);
-      expect((await indexed.json()) as Chronicle).toEqual(first.chronicle);
+      expect(indexed.status).toBe(500);
+      expect(((await indexed.json()) as { error?: string }).error).toMatch(/binding\/capsule disagreement/i);
       // Without the index, the replay path refuses the same row instead of repairing it.
       db.prepare("DELETE FROM main.lifecycle_projections_v1").run();
       const response = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
@@ -298,6 +299,6 @@ describe("GET /api/lives/:lifeId — refused capsule (RI1d)", () => {
     // Restored: the same request is the same life again, and the miss re-indexes it.
     const restored = await getLife(lifeRequest(FIRST.lifeId), { params: Promise.resolve({ lifeId: FIRST.lifeId }) });
     expect(restored.status).toBe(200);
-    expect((await restored.json()) as Chronicle).toEqual(first.chronicle);
+    expect((await restored.json()) as Chronicle).toEqual({ ...first.chronicle, branches: [ROOT_BRANCH] });
   }, 120_000);
 });
