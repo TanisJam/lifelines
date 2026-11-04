@@ -1,7 +1,8 @@
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import { runLegacyYear } from "./legacy-year";
 import { createLegacyRunContext, type LegacyOwnedRunState } from "./simulate";
-import type { WorldConfig, YearSnapshot } from "./types";
+import type { WorldConfig, YearSnapshot, Override } from "./types";
+import { admitLifecycleChoice, type LifecycleChoiceAppliedEvidence } from "./e-lifecycle-choice";
 
 export const RULES_YEAR_SOURCE_VERSION = "native-rules/person-year-batched/v1";
 
@@ -42,18 +43,57 @@ export function createRulesYearSource(
   originalOverrideYear: number = origin.startYear,
 ): RulesYearSource {
   const admitted = admitDeclaration(declaration);
-  // WorldConfig is a trusted origin, captured once rather than supplied again at execute.
+  const context = createSourceContext(origin, owned, protagonistId, originalOverrideYear);
+  return Object.freeze({
+    declaration: admitted,
+    execute: (year: number) => runLegacyYear(context, year),
+  });
+}
+
+function createSourceContext(origin: WorldConfig, owned: LegacyOwnedRunState, protagonistId: string | undefined,
+  originalOverrideYear: number, overrides?: readonly Override[]) {
+  // WorldConfig is trusted and captured once rather than supplied again at execute.
   const config: WorldConfig = Object.freeze({
     seed: origin.seed, startYear: origin.startYear, endYear: origin.endYear,
     town: Object.freeze({ name: origin.town.name }),
   });
-  const context = createLegacyRunContext(config, owned, Object.freeze({
+  return createLegacyRunContext(config, owned, Object.freeze({
     decisionMaker: new RuleDecisionMaker(), engineSource: "rules" as const,
-    protagonistId, fromYear: originalOverrideYear,
+    protagonistId, fromYear: originalOverrideYear, ...(overrides ? { overrides } : {}),
     concurrencyLimit: 8, yearBatchConcurrency: 64,
   }));
+}
+
+/** Fork-only adapter. A successful target year proves its exact native decision was forced once. */
+export function createLifecycleChoiceYearSource(
+  declaration: unknown,
+  target: Parameters<typeof admitLifecycleChoice>[1],
+  origin: WorldConfig,
+  owned: LegacyOwnedRunState,
+  protagonistId?: string,
+) {
+  const choice = admitLifecycleChoice(declaration, target);
+  const override = Object.freeze({ id: `lifecycle-choice:${choice.decisionId}:${choice.optionId}`,
+    decisionId: choice.decisionId, optionId: choice.optionId });
+  const context = createSourceContext(origin, owned, protagonistId, choice.year, Object.freeze([override]));
+  let targetAttempted = false;
   return Object.freeze({
-    declaration: admitted,
-    execute: (year: number) => runLegacyYear(context, year),
+    declaration: choice,
+    async execute(year: number): Promise<{ snapshot: YearSnapshot; evidence?: LifecycleChoiceAppliedEvidence }> {
+      if (year === choice.year) {
+        if (targetAttempted) throw new Error("Lifecycle choice target applied twice");
+        targetAttempted = true;
+      }
+      const snapshot = await runLegacyYear(context, year);
+      if (year !== choice.year) return { snapshot };
+      const forced = snapshot.decisions.filter((decision) => decision.year === year && decision.source === "forced");
+      if (forced.length === 0) throw new Error("Lifecycle choice target not reached");
+      if (forced.length > 1) throw new Error("Lifecycle choice target is ambiguous");
+      if (forced[0].id !== choice.decisionId || forced[0].chosen !== choice.optionId) {
+        throw new Error("Lifecycle choice forced decision mismatch");
+      }
+      return { snapshot, evidence: Object.freeze({ decisionId: choice.decisionId, optionId: choice.optionId,
+        year: choice.year, appliedCount: 1 as const }) };
+    },
   });
 }

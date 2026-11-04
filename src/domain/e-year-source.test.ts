@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { canonicalLifecycleData, createLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS, LIFECYCLE_THREAD_VERSIONS } from "./e-lifecycle-genesis";
+import { createLifecycleRuntime } from "./e-lifecycle-runtime";
+import { initializeWorld } from "./world-origin";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
 import { createMind } from "./mind";
 import * as simulation from "./simulate";
 import * as kernel from "./legacy-year";
-import { createRulesYearSource, RULES_YEAR_SOURCE_VERSION } from "./e-year-source";
+import { createRulesYearSource, createLifecycleChoiceYearSource, RULES_YEAR_SOURCE_VERSION } from "./e-year-source";
+import { LIFECYCLE_CHOICE_VERSION } from "./e-lifecycle-choice";
 import type { LegacyOwnedRunState, SimulateOptions } from "./simulate";
 import type { Person, WorldConfig, YearSnapshot } from "./types";
 import { generateWorld } from "./worldgen";
@@ -315,4 +320,66 @@ describe("closed trusted rules-year source", () => {
     expect(state.people.protagonist.mind).toBe(mind);
     expect(Object.isFrozen(snapshot)).toBe(false);
   });
+});
+
+describe("versioned lifecycle choice source", () => {
+  const config = { seed: "choice-source", startYear: 1500, endYear: 1501, town: { name: "Testville" } };
+  const target = { id: "death:actor#1.1", kind: "death", personId: "actor", year: 1500,
+    chosen: "die", options: [{ id: "die" }, { id: "survive" }] };
+  const choice = { version: LIFECYCLE_CHOICE_VERSION, decisionId: target.id, optionId: "survive", year: 1500 };
+  const make = (state = owned({ actor: person(config.seed, "actor", 1400) }), declaration: unknown = choice) =>
+    createLifecycleChoiceYearSource(declaration, target, config, state, "actor");
+
+  it("forces the exact real target once and returns evidence", async () => {
+    const source = make();
+    const result = await source.execute(1500);
+    expect(result.snapshot.decisions.filter(d => d.source === "forced").map(d => [d.id, d.chosen])).toEqual([[target.id, "survive"]]);
+    expect(result.evidence).toEqual({ decisionId: target.id, optionId: "survive", year: 1500, appliedCount: 1 });
+    await expect(source.execute(1500)).rejects.toThrow("Lifecycle choice target applied twice");
+  });
+
+  it("refuses an unreached target", async () => {
+    await expect(make(owned()).execute(1500)).rejects.toThrow("Lifecycle choice target not reached");
+  });
+
+  it("refuses partner collisions and mismatched forced identity", async () => {
+    const fake = vi.spyOn(kernel, "runLegacyYear");
+    try {
+      const record = { ...target, source: "forced", chosen: "survive", partnerId: "bob" };
+      fake.mockResolvedValueOnce({ year: 1500, people: {}, events: [], decisions: [record, { ...record, partnerId: "carol" }] } as unknown as YearSnapshot);
+      await expect(make().execute(1500)).rejects.toThrow("Lifecycle choice target is ambiguous");
+      fake.mockResolvedValueOnce({ year: 1500, people: {}, events: [], decisions: [{ ...record, id: "death:actor#2.1" }] } as unknown as YearSnapshot);
+      await expect(make().execute(1500)).rejects.toThrow("Lifecycle choice forced decision mismatch");
+    } finally { fake.mockRestore(); }
+  });
+
+  it("leaves a non-target year unchanged and emits no evidence", async () => {
+    const first = owned({ actor: person(config.seed, "actor", 1400) });
+    const second = owned({ actor: person(config.seed, "actor", 1400) });
+    const actual = await make(first).execute(1501);
+    const expected = await createRulesYearSource(declaration, config, second, "actor").execute(1501);
+    expect(ownData(actual.snapshot)).toBe(ownData(expected));
+    expect(actual.evidence).toBeUndefined();
+  });
+
+  it("refuses invalid declarations through existing admission", () => {
+    expect(() => make(undefined, { ...choice, optionId: "missing" })).toThrow("Lifecycle choice does not match target");
+  });
+});
+
+
+it("pins prior execution in both lifecycle profiles with choice source unused", async () => {
+  const initialization = { seed: "u1b-profile", startYear: 1327, endYear: 1327, founderCount: 6,
+    protagonist: { name: "Alice", sex: "random" as const } };
+  for (const [versions, expected] of [
+    [LIFECYCLE_GENESIS_VERSIONS, "38900646bbd52640e34a1d3594ca604729f8f1658a10aaeea1bfb216f5af0b0b"],
+    [LIFECYCLE_THREAD_VERSIONS, "266a38ef18a6c4412dbf09ded031469a75d0cce92dd6c21774aa14b9cb7aec20"],
+  ] as const) {
+    const { world } = initializeWorld(initialization);
+    const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", versions,
+      resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+    const runtime = createLifecycleRuntime(genesis, { journal: "compact" });
+    await runtime.advance(1327);
+    expect(createHash("sha256").update(canonicalLifecycleData(runtime.snapshot())).digest("hex")).toBe(expected);
+  }
 });

@@ -63,3 +63,7 @@ Legacy parsing is unchanged: `/\{\{([^{}]+)\}\}/g` recognizes markers, unknown m
 ### Lifecycle choice declaration
 
 A fork choice is admitted separately from the authority-free rules-year source. Its closed, immutable `lifecycle-native-choice/v1` declaration binds the exact exposed decision ID, recorded year, and selected option to a matching native subject and kind. Admission does not execute or certify the choice; the later execution adapter must supply exact target and applied-once evidence. The existing rules-year source continues to reject override fields.
+
+### Fork-only native choice execution
+
+The versioned lifecycle choice source admits a declaration against the exposed target using the existing choice admission boundary. It anchors the native override to that year only. After execution it requires exactly one forced decision in that year, with the admitted decision ID and option; it returns applied-once evidence only then. An unreached, ambiguous, mismatched, or repeated target is refused. Native PR6 invariant errors also propagate as refusals; other execution errors are not swallowed. A rejected execution mutates its owned draft and the caller must discard it. This adapter does not grant fork provenance or alter genesis profile dispatch.
