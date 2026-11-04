@@ -1,8 +1,14 @@
 import { expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { openDb } from "./db";
+import { LifecycleBranchStore } from "./lifecycle-branch-store";
+import { LifecycleRepository } from "./lifecycle-repository";
 import { createLifecycleGenesis } from "../domain/e-lifecycle-genesis";
 import { createLifecycleRuntime } from "../domain/e-lifecycle-runtime";
 import { createLifecycleCompactCapsule } from "../domain/e-lifecycle-capsule";
-import { createLifecycleForkCapsule } from "../domain/e-lifecycle-fork-capsule";
+import { createLifecycleForkCapsule, serializeLifecycleForkCapsule } from "../domain/e-lifecycle-fork-capsule";
 import { forkLifecycle } from "../domain/e-lifecycle-fork";
 import { LIFECYCLE_CHOICE_VERSION } from "../domain/e-lifecycle-choice";
 import { initializeWorld } from "../domain/world-origin";
@@ -47,6 +53,32 @@ it("cold dispatch admits forks and nested forks and refuses missing, unknown and
   await expect(admitStoredLifecycleFork("life", parent, async () => ({ lifeId: "life", capsule: otherRoot }))).rejects.toThrow("Fork root ancestry disagreement");
   await expect(admitStoredLifecycleFork("life", parent, async () => ({ lifeId: "life", capsule: {} }))).rejects.toThrow();
   await expect(loadStoredLifecycleFork({ ...binding, capsuleDigest: nested.digest }, parent, resolve)).rejects.toThrow("Fork binding/capsule disagreement");
+  const dir = mkdtempSync(join(tmpdir(), "lifelines-u4a-fork-"));
+  const db = openDb(join(dir, "db.sqlite"));
+  try {
+    const person = world.people.protagonist;
+    await new LifecycleRepository(db).publish({ lifeId: "life", branchId: "root", config: world.config, protagonistName: person.name, protagonistSex: person.sex, capsule: rootCapsule });
+    const store = new LifecycleBranchStore(db);
+    expect((await store.resolve("life", genesis.digest))?.lifeId).toBe("life");
+    expect(await store.resolve("other", genesis.digest)).toBeUndefined();
+    const choice = parent.lineage.choices.at(-1)!;
+    db.prepare("INSERT INTO lifecycle_forks_v1 (life_id, branch_id, digest, parent_digest, fork_year, decision_id, option_id, binding_json, wire) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("bad", "child", parent.digest, genesis.digest, choice.year + 1, choice.decisionId, choice.optionId, JSON.stringify({ ...binding, lifeId: "bad" }), Buffer.from(await serializeLifecycleForkCapsule(parent), "utf16le"));
+    expect(await store.resolve("other", parent.digest)).toBeUndefined();
+    await expect(store.resolve("bad", parent.digest)).rejects.toThrow("Fork metadata disagreement");
+    const wire = Buffer.from(await serializeLifecycleForkCapsule(parent), "utf16le");
+    for (const [life, field] of [["bad-parent", "parent_digest"], ["bad-decision", "decision_id"], ["bad-option", "option_id"]] as const) {
+      const row = { parent_digest: genesis.digest, decision_id: choice.decisionId, option_id: choice.optionId, [field]: "tampered" };
+      db.prepare("INSERT INTO lifecycle_forks_v1 (life_id, branch_id, digest, parent_digest, fork_year, decision_id, option_id, binding_json, wire) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(life, "child", parent.digest, row.parent_digest, choice.year, row.decision_id, row.option_id, JSON.stringify({ ...binding, lifeId: life }), wire);
+      await expect(store.resolve(life, parent.digest)).rejects.toThrow("Fork metadata disagreement");
+    }
+    expect(await store.resolve("life", otherGenesis.digest)).toBeUndefined();
+    await expect(store.prepareDecisions("life", "root", "b".repeat(64))).rejects.toThrow("Decision index binding disagreement");
+    db.prepare("INSERT INTO lifecycle_forks_v1 (life_id, branch_id, digest, parent_digest, fork_year, decision_id, option_id, binding_json, wire) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run("life", "child", parent.digest, genesis.digest, choice.year, choice.decisionId, choice.optionId, JSON.stringify(binding), Buffer.from(await serializeLifecycleForkCapsule(parent), "utf16le"));
+    expect((await store.resolve("life", parent.digest))?.lifeId).toBe("life");
+    await store.prepareDecisions("life", "child", parent.digest);
+    const target = parent.output.owned.decisions.find(d => d.id === choice.decisionId && d.year === choice.year)!;
+    expect(store.decision("life", "child", parent.digest, target.id, target.year)?.chosen).toBe(target.chosen);
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
   const sibling = await createLifecycleForkCapsule(await fork(root, 1328));
   await expect(admitStoredLifecycleFork("life", nested, async digest => digest === parent.digest ? { lifeId: "life", capsule: sibling } : rootRecord))
     .rejects.toThrow("Fork ancestry disagreement");

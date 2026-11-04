@@ -127,6 +127,27 @@ function createSchema(db: DatabaseSync): void {
         SELECT RAISE(ABORT, 'Lifecycle history cannot be deleted');
       END;
 
+    -- Fork history is separate from root capsules and bindings. Publication owns the inserts.
+    CREATE TABLE IF NOT EXISTS lifecycle_forks_v1 (
+      publish_order INTEGER PRIMARY KEY AUTOINCREMENT,
+      life_id TEXT NOT NULL, branch_id TEXT NOT NULL, digest TEXT NOT NULL,
+      parent_digest TEXT NOT NULL, fork_year INTEGER NOT NULL,
+      decision_id TEXT NOT NULL, option_id TEXT NOT NULL, binding_json TEXT NOT NULL,
+      wire BLOB NOT NULL, UNIQUE (life_id, branch_id), UNIQUE (life_id, digest)
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS idx_lifecycle_forks_parent ON lifecycle_forks_v1(life_id, parent_digest, publish_order);
+    CREATE TRIGGER IF NOT EXISTS lifecycle_forks_no_update BEFORE UPDATE ON lifecycle_forks_v1
+      BEGIN SELECT RAISE(ABORT, 'Fork history is immutable'); END;
+    CREATE TRIGGER IF NOT EXISTS lifecycle_forks_no_delete BEFORE DELETE ON lifecycle_forks_v1
+      BEGIN SELECT RAISE(ABORT, 'Fork history cannot be deleted'); END;
+
+    -- A derived, complete decision set; never a substitute for capsule admission.
+    CREATE TABLE IF NOT EXISTS lifecycle_fork_decision_sets_v1 (
+      life_id TEXT NOT NULL, branch_id TEXT NOT NULL, capsule_digest TEXT NOT NULL,
+      decision_count INTEGER NOT NULL, decisions_json TEXT NOT NULL,
+      PRIMARY KEY (life_id, branch_id, capsule_digest)
+    ) STRICT;
+
     -- Abuse protection (per-IP rate limiting on simulation-triggering endpoints): one row per
     -- allowed attempt, so a sliding window can be computed by counting/pruning rows younger than
     -- the window instead of maintaining separate hour/day counters that could drift out of sync.
