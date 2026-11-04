@@ -1455,3 +1455,7 @@ reported metric tracked as open risk CQ1. The cohort itself is unchanged: the sa
 five predeclared seeds still run in order, every member is still fully cold-verified,
 and an unproved 60-year life is still printed as `coverage-open`. No member, rerun,
 substitution or observation-based cap is added, and no mortality behavior changed.
+
+### Thread favor text
+
+Lifecycle setup and payoff beats use the historical favor fact vocabulary directly, without constructing annual history. The renderer admits only recorded grant or settlement/assistance facts with matching ordered parties and setup reference. Payoff text refers to the earlier grant's help obligation; it does not assert repayment of grain or motives. Text is plain, unescaped output; presentation layers must escape names as appropriate. Death beats are not favor-text payoffs.

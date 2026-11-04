@@ -1,4 +1,5 @@
 import { HISTORICAL_EVIDENCE_VERSION, selectHistoricalEvidence, type HistoricalEvidence } from "./e-selection";
+import type { ThreadBeat } from "./e-thread-ledger";
 import { isLocale, type Locale } from "./locale";
 
 export const FAVOR_TEMPLATE_VERSION = "historical-rules-e4-templates-1" as const;
@@ -26,6 +27,14 @@ function freeze<T>(value: T): Immutable<T> {
 function render(selected: Selected, locale: Locale): HistoricalFavorTemplates {
   if (selected.version !== HISTORICAL_EVIDENCE_VERSION) throw new Error("Unsupported historical evidence version");
   const entries = selected.beats.map(beat => {
+    const text = renderFavorFactText(beat, locale);
+    return { ...beat, sourceEvidenceID: beat.id, text };
+  });
+  return freeze(structuredClone({ version: FAVOR_TEMPLATE_VERSION, historicalVersion: selected.version,
+    locale, asOfYear: selected.asOfYear, subject: selected.subject, evidence: selected.evidence, entries }));
+}
+
+function renderFavorFactText(beat: Selected["beats"][number], locale: Locale): string {
     if (beat.actors.length !== 2) throw new Error("Unsupported favor parties");
     const [creditor, debtor] = beat.actors.map(actor => actor.id);
     const identities = new Map(beat.actors.map(actor => [actor.id, actor]));
@@ -58,14 +67,34 @@ function render(selected: Selected, locale: Locale): HistoricalFavorTemplates {
           : "Respuesta de ayuda registrada: rechazo. La obligación de ayuda quedó registrada como incumplida.");
       text = `${label(debtor)} → ${label(creditor)}. ${response}`;
     } else throw new Error("Unsupported favor beat");
-    return { ...beat, sourceEvidenceID: beat.id, text };
-  });
-  return freeze(structuredClone({ version: FAVOR_TEMPLATE_VERSION, historicalVersion: selected.version,
-    locale, asOfYear: selected.asOfYear, subject: selected.subject, evidence: selected.evidence, entries }));
+    return text;
 }
 
 /** Inactive rules-only plain text; literal names are not HTML-safe output or authenticated provenance. */
 export function renderHistoricalFavorTemplates(input: unknown, locale: Locale): HistoricalFavorTemplates {
   if (typeof locale !== "string" || !isLocale(locale)) throw new Error("Explicit en/es locale required");
   return render(selectHistoricalEvidence(input), locale);
+}
+
+/** Render only the facts recorded in a lifecycle beat; names are literal plain text. */
+export function renderThreadFavorBeat(beat: ThreadBeat, identities: readonly { id: string; name: string }[], locale: Locale): string {
+  if (typeof locale !== "string" || !isLocale(locale)) throw new Error("Explicit en/es locale required");
+  if (!beat || (beat.kind !== "setup" && beat.kind !== "payoff") || !Array.isArray(beat.actors)
+    || beat.actors.length !== 2 || beat.actors[0] === beat.actors[1] || !Array.isArray(beat.effects)
+    || !Array.isArray(beat.causes) || typeof beat.source !== "string" || !beat.source) throw new Error("Unsupported thread beat");
+  const actors = beat.actors.map(id => {
+    const matches = identities.filter(actor => actor.id === id && typeof actor.name === "string" && actor.name.length > 0);
+    if (matches.length !== 1) throw new Error("Missing favor identity");
+    return matches[0];
+  });
+  const anchor = beat.effects.find(f => f.kind === (beat.kind === "setup" ? "obligation" : "settlement"));
+  if (!anchor || (anchor.kind !== "obligation" && anchor.kind !== "settlement") || !anchor.id || !anchor.origin
+    || beat.thread !== `help/${anchor.id}` || (beat.kind === "setup" && (anchor.origin !== beat.source || beat.selected !== undefined))
+    || (beat.kind === "payoff" && (!beat.causes.includes(anchor.origin) || !["help", "refuse"].includes(beat.selected ?? "")))) {
+    throw new Error("Unsupported thread facts");
+  }
+  const factBeat = { id: beat.source, kind: beat.kind === "setup" ? "grain-grant" : "help-response",
+    year: beat.year, position: null, causes: beat.causes, actors, facts: beat.effects, response: beat.selected } as Selected["beats"][number];
+  const text = renderFavorFactText(factBeat, locale);
+  return beat.kind === "setup" ? text : `${text} ${locale === "en" ? "This response concerned the obligation from the earlier grain grant." : "Esta respuesta correspondió a la obligación de la entrega anterior de grano."}`;
 }
