@@ -7,6 +7,7 @@ import { LOCALES } from "./locale";
 import { initializeWorld } from "./world-origin";
 import { openDb } from "@/server/db";
 import { LifecycleRepository } from "@/server/lifecycle-repository";
+import { LifecyclePersonSheetStore, LifecycleProjectionStore } from "@/server/lifecycle-projection-store";
 import { projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "@/server/lifecycle-projection";
 
 const hash = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
@@ -34,6 +35,13 @@ it("preserves the fixed-seed ticks, indexed views, capsule bytes and cold loads"
     try {
       const repository = new LifecycleRepository(db);
       const binding = await repository.publish({ ...identity, config: world.config, protagonistName: "Probe", protagonistSex: "f", capsule, projections, personSheets });
+      for (const locale of LOCALES) {
+        const key = { ...identity, locale, capsuleDigest: binding.capsuleDigest };
+        expect(new LifecycleProjectionStore(db).read(key)).toEqual(projections.find(item => item.locale === locale)!.view);
+        const indexed = new LifecyclePersonSheetStore(db).readComplete(key);
+        expect(indexed?.size).toBe(personSheets.filter(item => item.locale === locale).length);
+        for (const sheet of personSheets.filter(item => item.locale === locale)) expect(indexed?.get(sheet.personId)).toEqual(sheet.view);
+      }
       const loaded = await repository.load(identity.lifeId, identity.branchId);
       expect(loaded?.binding).toEqual(binding);
       observed[mode] = { ticks: ticks.map(canonicalHash), projections: canonicalHash(projections), personSheets: canonicalHash(personSheets), capsuleDigest: capsule.digest, canonicalBytes: hash(await serializeLifecycleCompactCapsule(capsule)), coldDigest: loaded?.capsule.digest, coldBytes: hash(await serializeLifecycleCompactCapsule(loaded!.capsule)) };

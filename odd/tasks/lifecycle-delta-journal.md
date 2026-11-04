@@ -28,3 +28,6 @@ Branch: `feat/lifecycle-delta-journal` (worktree `../lifelines-delta-journal`). 
 
 ### Baseline benchmark (T1)
 `pnpm --config.verify-deps-before-run=ignore exec tsx scripts/lifecycle-delta-benchmark.ts` (foreground, cap-0, 3 years, in-memory SQLite): init 135.66 ms; years 69.85/89.35/124.91 ms; ticks 4.90/1.90/2.16 ms; chronicles 7.68 ms; person sheets 11.00 ms; persistence 377.14 ms. Sampled heap peak 80,427,624 bytes; process max RSS 219,009,024 bytes; V8-serialized retained journal 220,184/557,822/1,014,632 bytes by year. Heap is sampled at phase boundaries, not a continuous peak; serialization is a comparable retained-size proxy.
+
+### Writer handoff
+Baseline script: commit e05ffef. Fixed-seed legacy golden: commit 7438d0b; index readback added in the following commit. Golden test passed for two years in each legacy journal mode. S2 remains open: the benchmark's heap peak is sampled at phase boundaries, not a continuous peak, and no after measurement exists. S1, S4 and S5 remain unimplemented; S3 has baseline coverage only. T3 independent verification remains coordinator-owned and pending.
