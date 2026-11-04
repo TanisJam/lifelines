@@ -33,6 +33,8 @@ state through the same key and you get the same draw, every time.
 
 ![Changing a decision: the modal lists the other options, and the life is rewritten live](./docs/screenshots/rewrite.png)
 
+[See the life page on mobile](./docs/screenshots/mobile.png).
+
 ## Run it locally
 
 ```bash
@@ -126,3 +128,6 @@ The design log lives in [`docs/`](./docs), newest first:
 - **The test suite's memory.** `pnpm test` peaks around 5 GB of RAM, which is why it is not run
   on small machines.
 - **A light theme.** The app is dark only, by design.
+- Add a container healthcheck in `deploy/compose.yaml`.
+- Make a blank `TYPESAFE_MODEL` fall back to the Jev default.
+- Add a generic public-host deploy recipe; the current compose is homelab/Traefik-specific.
