@@ -153,7 +153,7 @@ describe("lifecycle view projection (RI1b)", () => {
     const narratedById = new Map(timeline.map((narrated) => [narrated.event.id, narrated]));
 
     expect(chronicle.view.entries.length).toBeGreaterThan(0);
-    for (const entry of chronicle.view.entries) {
+    for (const entry of chronicle.view.entries.filter((entry) => entry.kind !== "town")) {
       const event = byId.get(entry.id);
       expect(event).toBeDefined();
       expect(entry.year).toBe(event!.year);
@@ -217,7 +217,21 @@ describe("lifecycle view projection (RI1b)", () => {
       .filter((item) => item.at <= deathAt)
       .sort((left, right) => left.at - right.at || left.index - right.index)
       .map((item) => item.id);
-    expect(chronicle.view.entries.map((entry) => entry.id)).toEqual(expected);
+    expect(chronicle.view.entries.filter((entry) => entry.kind !== "town").map((entry) => entry.id)).toEqual(expected);
+
+    const crises = chronicle.view.entries.filter((entry) => entry.kind === "town");
+    expect(crises).toHaveLength(4);
+    expect(crises.map((entry) => entry.id)).toEqual([
+      "ev-1348-town--0", "ev-1349-town--0", "ev-1361-town--0", "ev-1362-town--0",
+    ]);
+    expect([1348, 1349, 1361, 1362].map((year) =>
+      chronicle.view.entries.filter((entry) => entry.year === year).map((entry) => entry.id),
+    )).toEqual([
+      ["ev-1348-reflection-protagonist-gentry-suitor-protagonist-1342-0", "ev-1348-town--0"],
+      ["ev-1349-town--0", "ev-1349-widowed-protagonist-gentry-suitor-protagonist-1342-0"],
+      ["ev-1361-town--0", "ev-1361-reflection-protagonist-gentry-suitor-protagonist-1352-0"],
+      ["ev-1362-town--0", "ev-1362-reflection-protagonist-0"],
+    ]);
 
     const projected = chronicle.view.entries.map((entry) => entry.at);
     expect(projected).toEqual([...projected].sort((left, right) => left - right));
