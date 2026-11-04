@@ -486,3 +486,61 @@ it("accumulates consecutive ticks without re-observing earlier years", async () 
     expect(observe.mock.calls.map(call => call[0])).toEqual([1327, 1328]);
   } finally { spy.mockRestore(); }
 });
+
+describe("tick accumulator falls back to the full projection", () => {
+  function startRuntime(init: typeof initialization = initialization) {
+    const { world } = initializeWorld(init);
+    const genesis = createLifecycleGenesis({ initialization: init, protagonistId: "protagonist",
+      resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+    return { genesis, runtime: createLifecycleRuntime(genesis, { journal: "compact" }) };
+  }
+
+  it("projects a skipped year like a fresh projection", async () => {
+    const { genesis, runtime } = startRuntime();
+    const first = await runtime.advance(1327);
+    await runtime.advance(1328);
+    const third = await runtime.advance(1329);
+    const accumulator = createLifecycleTickAccumulator();
+    await projectLifecycleTick({ source: { genesis, output: first }, year: 1327, accumulator });
+    const result = await projectLifecycleTick({ source: { genesis, output: third }, year: 1329, accumulator });
+    expect(result).toEqual(await projectLifecycleTick({ source: { genesis, output: third }, year: 1329 }));
+  });
+
+  it("does not reuse cached state for an output that is not a live runtime publication", async () => {
+    const { genesis, runtime } = startRuntime();
+    const first = await runtime.advance(1327);
+    const second = await runtime.advance(1328);
+    const copy = structuredClone(second);
+    const accumulator = createLifecycleTickAccumulator();
+    await projectLifecycleTick({ source: { genesis, output: first }, year: 1327, accumulator });
+    const result = await projectLifecycleTick({ source: { genesis, output: copy }, year: 1328, accumulator });
+    expect(result).toEqual(await projectLifecycleTick({ source: { genesis, output: second }, year: 1328 }));
+  });
+
+  it("keeps interleaved streams independent", async () => {
+    const a = startRuntime();
+    const b = startRuntime({ ...initialization, seed: `${initialization.seed}/other` });
+    const a1 = await a.runtime.advance(1327);
+    const b1 = await b.runtime.advance(1327);
+    const a2 = await a.runtime.advance(1328);
+    const b2 = await b.runtime.advance(1328);
+    const accA = createLifecycleTickAccumulator();
+    const accB = createLifecycleTickAccumulator();
+    await projectLifecycleTick({ source: { genesis: a.genesis, output: a1 }, year: 1327, accumulator: accA });
+    await projectLifecycleTick({ source: { genesis: b.genesis, output: b1 }, year: 1327, accumulator: accB });
+    const resultA = await projectLifecycleTick({ source: { genesis: a.genesis, output: a2 }, year: 1328, accumulator: accA });
+    // An accumulator that last saw A's first year, fed B's next year, must not reuse A's scene.
+    const accCrossed = createLifecycleTickAccumulator();
+    await projectLifecycleTick({ source: { genesis: a.genesis, output: a1 }, year: 1327, accumulator: accCrossed });
+    const crossed = await projectLifecycleTick({ source: { genesis: b.genesis, output: b2 }, year: 1328, accumulator: accCrossed });
+    expect(resultA).toEqual(await projectLifecycleTick({ source: { genesis: a.genesis, output: a2 }, year: 1328 }));
+    expect(crossed).toEqual(await projectLifecycleTick({ source: { genesis: b.genesis, output: b2 }, year: 1328 }));
+  });
+
+  it("rejects a forged accumulator", async () => {
+    const { genesis, runtime } = startRuntime();
+    const first = await runtime.advance(1327);
+    await expect(projectLifecycleTick({ source: { genesis, output: first }, year: 1327,
+      accumulator: {} as ReturnType<typeof createLifecycleTickAccumulator> })).rejects.toThrow("invalid tick accumulator");
+  });
+});

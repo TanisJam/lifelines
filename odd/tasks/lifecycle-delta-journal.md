@@ -15,9 +15,9 @@ Branch: `feat/lifecycle-delta-journal` (worktree `../lifelines-delta-journal`). 
 
 | ID | Specs | Route | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| T1 | S2 (baseline) | delegated (herdr builder-terra; reason: substantial cross-module change, thin-coordinator rule) | open | |
-| T2 | S1, S3, S4, S5, S2 (after) | delegated, same worker after T1 | open | |
-| T3 | S3, S4 | independent verifier (Risk item 1: persisted format) | open | |
+| T1 | S2 (baseline) | delegated (herdr builder-terra; reason: substantial cross-module change, thin-coordinator rule) | done | e05ffef, 7438d0b, 920a96f |
+| T2 | S1, S3, S4, S5, S2 (after) | delegated (herdr `delta-share`) | done | 8b6e8f3 (sharing), 1bfb27b (incremental tick) |
+| T3 | S1, S3, S4, S5 | independent verifier (Risk item 6: shared frozen objects; no format change after L5) | done (herdr `delta-verify`): no blockers | VERIFY report; regression tests in the next commit |
 
 ## Log
 
@@ -37,3 +37,16 @@ Added a standalone, version-tagged structural delta and append-log chunk codec, 
 
 After-foundation benchmark (same legacy runtime, not a delta performance result): init 164.13 ms; years 74.17/92.59/105.72 ms; ticks 5.31/2.08/1.67 ms; chronicles 6.40 ms; sheets 18.72 ms; persistence 445.84 ms; phase-sampled heap 63,149,400 bytes; max RSS 199,319,552 bytes; serialized journal 220,184/557,822/1,014,632 bytes. Foreground, cap-0, three years, in-memory SQLite. Continuous heap peak remains unmeasured; a timer cannot observe synchronous CPU-bound phases.
 - L5 (2026-11-04, coordinator): Two builder runs produced the baseline, the golden and an unused standalone codec (c4dee89), but no integration. Route change for S1: instead of a new versioned stored format, apply structural sharing in memory at year commit. Each new year's final reuses, by reference, every frozen object of the previous final that is deep-equal, and appends only the new tail of the append-only logs. Only what changed is newly allocated. Canonical data, digests and wire bytes stay identical, so S4 holds without a new format and nothing is migrated. The draft clone made for rollback is transient and not retained. If unused, the c4dee89 codec is removed. Fresh builder: `delta-share`.
+- L6 (2026-11-04, coordinator): T2 done.
+  - Shared-aware retained size by year: before 559,374 / 1,397,210 / 2,517,418 bytes; after 559,374 / 952,782 / 1,361,260 bytes.
+  - V8-serialized journal: after 220,184 / 382,860 / 552,486 bytes.
+  - Year-on-year increments are now roughly constant (linear growth).
+  - All six full test files pass: memory, runtime, replay, journal-mode, guard, perf-identity. The memory test was run by the coordinator outside the worker sandbox, which blocks child spawn. The projection, life and golden tests also pass, as does tsc.
+  - Observed memory hotspot, out of scope: capsule, serialize and cold-admit dominate peak RSS (1.61 GB for a 4-year memory test; wire is 51.6 MB).
+- L7 (2026-11-04): T3 verdicts.
+  - S3 pass: a 3-year base-vs-head probe is identical.
+  - S4 pass: no format change; the cold-load, capsule and repository tests pass.
+  - Mutation safety pass.
+  - S5 partial: per-tick work still scans all events (`life-chronicle.ts:194-195`, `life-scene.ts:47-53`). The coordinator accepted it as met (D2): the journal re-walk is gone, and the linear event scan is a follow-up.
+  - S1: object-level sharing re-copies people who changed (only 4 of 89 are shared per year). The owner accepted object-level sharing over a field-level delta (D3, 2026-11-04).
+  - A3: added committed tests for the skipped-year, untrusted-copy, interleaved-stream and forged-accumulator cases. A mutant that drops the reuse guards fails the interleaved-stream test. The full projection file passes (18), and so does tsc.
