@@ -666,3 +666,19 @@ describe("native lifecycle annual transaction", () => {
     expect(() => createLifecycleRuntime(structuredClone(input), { journal: "lean" as never })).toThrow(/journal mode/);
   }, 30_000);
 });
+
+ it("shares unchanged annual state and replaces changed people", async () => {
+  const runtime = createLifecycleRuntime(genesis(), { journal: "compact" });
+  const first = await runtime.advance(1327);
+  const second = await runtime.advance(1328);
+  const a = first.journal[0].final;
+  const b = second.journal[1].final;
+  const ids = Object.keys(a.owned.people);
+  const changed = ids.find(id => ownData(a.owned.people[id]) !== ownData(b.owned.people[id]));
+  expect(changed).toBeDefined();
+  expect(a.owned.events.length).toBeGreaterThan(0);
+  expect(b.owned.events[0]).toBe(a.owned.events[0]);
+  expect(b.owned.people[changed!]).not.toBe(a.owned.people[changed!]);
+  expect(b.owned.people).toBe(b.favors.people);
+  expect(b.owned.events).toBe(b.favors.legacyEvents);
+});

@@ -75,12 +75,38 @@ export interface LifecycleOutput extends LifecycleState {
 }
 
 function freeze<T>(value: T, seen = new Set<object>()): Immutable<T> {
-  if (value !== null && typeof value === "object" && !seen.has(value)) {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value) && !seen.has(value)) {
     seen.add(value);
     for (const entry of Object.values(value)) freeze(entry, seen);
     Object.freeze(value);
   }
   return value as Immutable<T>;
+}
+// Reconcile a detached annual graph against the prior frozen graph. Walking the full
+// prefix is intentional: a cloned draft cannot prove that historical entries were
+// not mutated, so every candidate must be compared before it can be shared.
+function shareFrozen<T>(current: T, previous: unknown, seen = new WeakMap<object, object>()): T {
+  if (current === null || typeof current !== "object") return current;
+  const existing = seen.get(current);
+  if (existing) return existing as T;
+  const comparable = previous !== null && typeof previous === "object"
+    && Array.isArray(current) === Array.isArray(previous);
+  const old = comparable ? previous as Record<string, unknown> : undefined;
+  const value = current as Record<string, unknown>;
+  const keys = Object.keys(value);
+  const oldKeys = old ? Object.keys(old) : [];
+  let equal = !!old && keys.length === oldKeys.length && keys.every((key, i) => key === oldKeys[i]);
+  // The runtime state is acyclic; register before recursion to preserve aliases.
+  seen.set(current, current);
+  for (const key of keys) {
+    value[key] = shareFrozen(value[key], old?.[key], seen);
+    if (!old || !Object.is(value[key], old[key])) equal = false;
+  }
+  if (equal && old) {
+    seen.set(current, old);
+    return old as T;
+  }
+  return current;
 }
 function requireYear(year: number): void {
   if (!Number.isSafeInteger(year) || Object.is(year, -0)) throw new Error("Invalid lifecycle year frontier");
@@ -204,7 +230,7 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
       // Compact mode omits ONLY fields no production reader consumes; `final` is what the chronicle,
       // the person sheets and the replay comparison all read, so it is never dropped.
       const record: LifecycleYearRecord = journalMode === "compact"
-        ? { year, versions: genesis.versions, final: structuredClone(draft) }
+        ? { year, versions: genesis.versions, final: draft }
         : {
           year, versions: genesis.versions, physicalSnapshot,
           economics: { resources: allowances.resources, grants: allowances.grants, creditors, slots, requests, entries },
@@ -213,12 +239,14 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
             decisions: { start: decisionStart, end: draft.owned.decisions.length },
             economic: { start: economicStart, end: draft.favors.events.length },
           },
-          final: structuredClone(draft),
+          final: draft,
         };
       // Detach only the NEW annual record. Reuse the privately frozen version
       // tuple to preserve its aliases across annual evidence/publication frames.
       const newRecord = structuredClone(record);
       newRecord.versions = publishedVersions;
+      const previous = committed.journal.at(-1)?.final;
+      if (previous) newRecord.final = shareFrozen(newRecord.final, previous);
       const frozenRecord = freeze(newRecord, new Set<object>([publishedVersions]));
       const journal: Journal = Object.freeze([...committed.journal, frozenRecord]);
       // ALL potentially failing work, including complete detachment/deep freezing, precedes swap.

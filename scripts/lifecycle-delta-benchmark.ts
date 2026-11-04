@@ -8,6 +8,19 @@ import { openDb } from "../src/server/db";
 import { LifecycleRepository } from "../src/server/lifecycle-repository";
 import { projectLifecycleChronicle, projectLifecyclePersonSheet, projectLifecycleTick } from "../src/server/lifecycle-projection";
 
+// Approximate retained graph size, counting each object and string occurrence once per edge.
+function retainedBytes(root: unknown): number {
+  const seen = new WeakSet<object>();
+  function walk(value: unknown): number {
+    if (typeof value === "string") return value.length * 2;
+    if (typeof value !== "object" || value === null) return 8;
+    if (seen.has(value)) return 0;
+    seen.add(value);
+    return 24 + Object.entries(value).reduce((sum, [key, child]) => sum + key.length * 2 + 8 + walk(child), 0);
+  }
+  return walk(root);
+}
+
 async function main() {
   let heapPeak = process.memoryUsage().heapUsed;
   const times: Record<string, number> = {};
@@ -23,9 +36,11 @@ async function main() {
     return { world, genesis, runtime: createLifecycleRuntime(genesis, { journal: "compact" }) };
   });
   const bytes: number[] = [];
+  const retained: number[] = [];
   for (let i = 0; i < 3 && runtime.snapshot().status !== "complete"; i++) {
     const output = await measure(`year_${i + 1}`, () => runtime.advance(runtime.snapshot().frontier + 1));
     bytes.push(serialize(output.journal).byteLength);
+    retained.push(retainedBytes(output.journal));
     await measure(`tick_${i + 1}`, () => projectLifecycleTick({ source: { genesis, output }, year: output.frontier, locale: "en" }));
   }
   const output = runtime.snapshot();
@@ -41,6 +56,6 @@ async function main() {
     const db = openDb(":memory:");
     try { await new LifecycleRepository(db).publish({ lifeId: "bench", branchId: "bench", config: world.config, protagonistName: "Probe", protagonistSex: "f", capsule, projections, personSheets }); } finally { db.close(); }
   });
-  console.log(JSON.stringify({ times_ms: times, heap_peak_sampled_bytes: heapPeak, max_rss_bytes: process.resourceUsage().maxRSS * 1024, retained_journal_v8_serialized_bytes_by_year: bytes }, null, 2));
+  console.log(JSON.stringify({ times_ms: times, heap_peak_sampled_bytes: heapPeak, max_rss_bytes: process.resourceUsage().maxRSS * 1024, retained_journal_shared_aware_estimated_bytes_by_year: retained, retained_journal_v8_serialized_bytes_by_year: bytes }, null, 2));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
