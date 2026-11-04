@@ -26,7 +26,7 @@ import type { LifecycleProjection, LifecycleTickView, LifecycleViewGap, Lifecycl
 import { ageInYear } from "@/domain/actuarial";
 import type { DecisionRecord } from "@/domain/decisions";
 import type { LifecycleCapsule } from "@/domain/e-lifecycle-capsule";
-import { LIFECYCLE_GENESIS_VERSIONS } from "@/domain/e-lifecycle-genesis";
+import { LIFECYCLE_GENESIS_VERSIONS, LIFECYCLE_THREAD_VERSIONS } from "@/domain/e-lifecycle-genesis";
 import { isLifecycleRuntimeOutput } from "@/domain/e-lifecycle-runtime";
 import { DEFAULT_LOCALE, isLocale, type Locale } from "@/domain/locale";
 import { renderPortrait } from "@/domain/mind";
@@ -37,6 +37,7 @@ import type { Event, Person, WorldConfig, YearSnapshot } from "@/domain/types";
 import { buildEpilogue, buildProvisionalTickEntries, finishAtDeath } from "./life-chronicle";
 import { createSceneTracker } from "./life-scene";
 import { crisisEntries, isRecordedCrisis } from "./lifecycle-crisis-projection";
+import { threadEntries, type ThreadYear } from "./lifecycle-thread-projection";
 
 /**
  * The trusted pair a projection accepts. Deliberately narrower than `LifecycleCapsule`: no
@@ -163,9 +164,9 @@ function admitSource(value: unknown, incremental?: { count: number; eventCount: 
   const genesisRecord = requireRecord(source.genesis, "source.genesis");
   const outputRecord = requireRecord(source.output, "source.output");
   const genesisVersions = requireRecord(genesisRecord.versions, "source.genesis.versions");
-  if (genesisVersions.schema !== LIFECYCLE_GENESIS_VERSIONS.schema) fail("source.genesis is not a recognized lifecycle genesis");
+  if (genesisVersions.schema !== LIFECYCLE_GENESIS_VERSIONS.schema && genesisVersions.schema !== LIFECYCLE_THREAD_VERSIONS.schema) fail("source.genesis is not a recognized lifecycle genesis");
   const outputVersions = requireRecord(outputRecord.versions, "source.output.versions");
-  if (outputVersions.schema !== LIFECYCLE_GENESIS_VERSIONS.schema) fail("source.output is not a recognized lifecycle runtime output");
+  if (outputVersions.schema !== genesisVersions.schema) fail("source.output is not a recognized lifecycle runtime output");
 
   const protagonistId = requireText(outputRecord.protagonistId, "source.output.protagonistId");
   if (requireText(genesisRecord.protagonistId, "source.genesis.protagonistId") !== protagonistId) {
@@ -367,7 +368,7 @@ function withCauseLinks(entries: readonly ChronicleEntry[], events: readonly Eve
 }
 
 /** Compose both lifecycle views without modifying the trusted event log. */
-async function entriesForYear(trusted: Trusted, year: number, scene: LifeScene, locale: Locale): Promise<ChronicleEntry[]> {
+async function entriesForYear(trusted: Trusted, year: number, scene: LifeScene, locale: Locale, threadScene: LifeScene = scene): Promise<ChronicleEntry[]> {
   const entries = await buildProvisionalTickEntries(
     trusted.protagonistId, year, trusted.events, trusted.people, trusted.decisions,
     trusted.protagonist.sex, trusted.config.seed, trusted.config.town.name, locale, scene,
@@ -378,17 +379,24 @@ async function entriesForYear(trusted: Trusted, year: number, scene: LifeScene, 
   const context = crisisEntries({ year, frontier: trusted.output.frontier, events: trusted.events,
     protagonist: trusted.protagonist, previousPerson: previous as Person | undefined, seed: trusted.config.seed,
     town: trusted.config.town.name, locale });
+  const thread = trusted.genesis.versions.schema === LIFECYCLE_THREAD_VERSIONS.schema
+    ? threadEntries({ journal: trusted.output.journal as unknown as readonly ThreadYear[], year, protagonistId: trusted.protagonistId, locale,
+      scene: threadScene, nativeIds: new Set(trusted.events.filter(event => event.year <= year).map(event => event.id)) }) : [];
   const ids = new Set(entries.map(entry => entry.id));
-  return [...entries, ...context.filter(entry => !ids.has(entry.id))].sort((a, b) => a.at - b.at);
+  return [...entries, ...context.filter(entry => !ids.has(entry.id)), ...thread].sort((a, b) => a.at - b.at);
 }
 
 /** Every narrated protagonist entry, built year by year from the trusted log. */
 async function chronicleEntries(trusted: Trusted, scene: LifeScene, locale: Locale): Promise<ChronicleEntry[]> {
   const years = new Set<number>();
   for (const event of trusted.events) if (event.actors.includes(trusted.protagonistId) || isRecordedCrisis(event)) years.add(event.year);
+  if (trusted.genesis.versions.schema === LIFECYCLE_THREAD_VERSIONS.schema) {
+    for (const record of trusted.output.journal) if (record.threadBeats?.beats.length) years.add(record.year);
+  }
   const entries: ChronicleEntry[] = [];
-  for (const year of years) {
-    entries.push(...await entriesForYear(trusted, year, scene, locale));
+  for (const year of trusted.genesis.versions.schema === LIFECYCLE_THREAD_VERSIONS.schema ? [...years].sort((a, b) => a - b) : years) {
+    entries.push(...await entriesForYear(trusted, year, scene, locale,
+      trusted.genesis.versions.schema === LIFECYCLE_THREAD_VERSIONS.schema ? sceneOf(trusted, year) : scene));
   }
   return withCauseLinks(entries, trusted.events);
 }

@@ -1459,3 +1459,11 @@ substitution or observation-based cap is added, and no mortality behavior change
 ### Thread favor text
 
 Lifecycle setup and payoff beats use the historical favor fact vocabulary directly, without constructing annual history. The renderer admits only recorded grant or settlement/assistance facts with matching ordered parties and setup reference. Payoff text refers to the earlier grant's help obligation; it does not assert repayment of grain or motives. Text is plain, unescaped output; presentation layers must escape names as appropriate. Death beats are not favor-text payoffs.
+
+### Thread chronicle projection
+
+The thread-aware lifecycle projects recorded setup and payoff beats into the same localized tick
+and chronicle entries. Payoff causes link to the recorded economic setup at least three years
+prior; economic source identifiers are not native event identifiers. Old profiles do not synthesize
+thread entries. The derived chronicle index uses `lifecycle-chronicle-view-3`; the person-sheet
+index is unchanged.
