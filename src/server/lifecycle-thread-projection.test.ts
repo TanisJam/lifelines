@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as runtimeModule from "@/domain/e-lifecycle-runtime";
 import { createLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS, LIFECYCLE_THREAD_VERSIONS } from "@/domain/e-lifecycle-genesis";
 import { createLifecycleRuntime } from "@/domain/e-lifecycle-runtime";
 import { initializeWorld } from "@/domain/world-origin";
@@ -36,6 +37,75 @@ describe("thread view", () => {
     expect((await projectLifecycleTick({ source: s, year: 1330, locale, accumulator: createLifecycleTickAccumulator() })).view.entries).toEqual(payoffTick);
   });
 
+  it.each(["en", "es"] as const)("pins exact setup and payoff prose in both views (%s)", async locale => {
+    const s = source();
+    const all = (await projectLifecycleChronicle({ source: s, identity: { lifeId: "life", branchId: "branch" }, locale })).view.entries;
+    const a = `${world.people[actors[0]]!.name} [${actors[0]}]`;
+    const b = `${world.people[actors[1]]!.name} [${actors[1]}]`;
+    const expected = locale === "en" ? [
+      `${a} transferred 1 unit of grain to ${b}. An open help obligation was recorded.`,
+      `${b} → ${a}. Recorded help response: help. The help obligation was recorded as fulfilled; 1 unit of assistance was recorded. This response concerned the obligation from the earlier grain grant.`,
+    ] : [
+      `${a} transfirió 1 unidad de grano a ${b}. Se registró una obligación de ayuda abierta.`,
+      `${b} → ${a}. Respuesta de ayuda registrada: ayuda. La obligación de ayuda quedó registrada como cumplida; se registró 1 unidad de asistencia. Esta respuesta correspondió a la obligación de la entrega anterior de grano.`,
+    ];
+    expect(all.map(entry => entry.prose)).toEqual(expected);
+    for (const [index, year] of [1327, 1330].entries()) {
+      expect((await projectLifecycleTick({ source: s, year, locale })).view.entries[0]!.prose).toBe(expected[index]);
+    }
+  });
+  it("omits a thread closed by death without changing other entries", async () => {
+    // D26: a death closure never adds a chronicle entry.
+    const s = source();
+    const before = (await projectLifecycleChronicle({ source: s, identity: { lifeId: "life", branchId: "branch" } })).view.entries;
+    const records = s.output.journal as unknown as { threadBeats: { beats: unknown[] } }[];
+    records[0]!.threadBeats.beats.push({ kind: "death", year: 1327, source: "death-beat", actors: [] });
+    expect((await projectLifecycleChronicle({ source: s, identity: { lifeId: "life", branchId: "branch" } })).view.entries).toEqual(before);
+    expect((await projectLifecycleTick({ source: s, year: 1327 })).view.entries).toEqual([before[0]]);
+  });
+  it("rejects a thread source without the protagonist", async () => {
+    const s = source();
+    const records = s.output.journal as unknown as { threadBeats: { beats: unknown[] } }[];
+    records[0]!.threadBeats.beats = [{ ...setup, actors: [other, "someone"] }];
+    await expect(projectLifecycleTick({ source: s, year: 1327 })).rejects.toThrow("Invalid thread source");
+  });
+  it("rejects a thread source colliding with a native event ID", async () => {
+    const s = source();
+    const event = { id: "grant", year: 1327, kind: "town", actors: [], causes: [], payload: {} };
+    const output = s.output as unknown as { owned: { events: unknown[] }; journal: { final: { owned: { events: unknown[] } } }[] };
+    output.owned.events = [event];
+    output.journal[0]!.final.owned.events = [event];
+    await expect(projectLifecycleTick({ source: s, year: 1327 })).rejects.toThrow("Invalid thread source");
+  });
+  it("rejects a payoff linked to a setup from another thread", async () => {
+    const s = source();
+    const records = s.output.journal as unknown as { threadBeats: { beats: unknown[] } }[];
+    records[3]!.threadBeats.beats = [{ ...payoff, thread: "help/another", effects: [{ ...payoff.effects[0], id: "another" }, payoff.effects[1]] }];
+    await expect(projectLifecycleTick({ source: s, year: 1330 })).rejects.toThrow("Invalid thread payoff cause");
+  });
+  it("rejects a payoff with reversed actor order", async () => {
+    const s = source();
+    const records = s.output.journal as unknown as { threadBeats: { beats: unknown[] } }[];
+    records[3]!.threadBeats.beats = [{ ...payoff, actors: [...actors].reverse(), effects: [
+      { ...payoff.effects[0], creditor: actors[1], debtor: actors[0] },
+      { ...payoff.effects[1], from: actors[0], to: actors[1] },
+    ] }];
+    await expect(projectLifecycleTick({ source: s, year: 1330 })).rejects.toThrow("Invalid thread payoff cause");
+  });
+  it("uses the year scene for who in both tick and chronicle", async () => {
+    const s = source();
+    const records = s.output.journal as unknown as { final: { owned: { people: typeof world.people; events: unknown[] } } }[];
+    const people = { ...world.people, protagonist: { ...world.people.protagonist!, motherId: undefined, fatherId: undefined, spouseId: undefined, relationships: [] } };
+    for (const record of records) record.final.owned = { ...record.final.owned, people, events: [] };
+    const marriage = { id: "later-marriage", year: 1330, kind: "marriage", actors, causes: [], payload: {} };
+    records[3]!.final.owned.events = [marriage];
+    (s.output as unknown as { owned: { people: typeof world.people; events: unknown[] } }).owned = { ...s.output.owned, people, events: [marriage] };
+    const tick = (await projectLifecycleTick({ source: s, year: 1327 })).view;
+    const all = (await projectLifecycleChronicle({ source: s, identity: { lifeId: "life", branchId: "branch" } })).view.entries;
+    expect(tick.scene.people.map(person => person.id)).not.toContain(other);
+    expect(tick.entries.find(entry => entry.id === "grant")!.who).toEqual(["protagonist"]);
+    expect(all.find(entry => entry.id === "grant")!.who).toEqual(["protagonist"]);
+  });
   it("does not duplicate repeated beats", async () => {
     const s = source();
     const records = s.output.journal as unknown as { threadBeats: { beats: unknown[] } }[];
@@ -80,16 +150,42 @@ describe("thread view", () => {
   it("keeps a live accumulator equivalent across successive ticks", async () => {
     const runtime = createLifecycleRuntime(genesis, { journal: "compact" });
     const accumulator = createLifecycleTickAccumulator();
-    for (let year = 1327; year <= 1328; year++) {
-      const output = await runtime.advance(year);
-      const s = { genesis, output } as LifecycleProjectionSource;
-      expect((await projectLifecycleTick({ source: s, year, accumulator })).view)
-        .toEqual((await projectLifecycleTick({ source: s, year })).view);
-    }
+    const provenance = vi.spyOn(runtimeModule, "isLifecycleRuntimeOutput").mockReturnValue(true);
+    let priorRecord: (typeof runtime.initial.journal)[number] | undefined;
+    try {
+      for (let year = 1327; year <= 1328; year++) {
+        const output = structuredClone(await runtime.advance(year));
+        if (priorRecord) (output.journal as unknown as unknown[])[0] = priorRecord;
+        const records = output.journal as unknown as { threadBeats: { beats: unknown[] } }[];
+        records[0]!.threadBeats.beats = [setup];
+        priorRecord = output.journal[0];
+        const s = { genesis, output } as LifecycleProjectionSource;
+        const withAccumulator = (await projectLifecycleTick({ source: s, year, accumulator })).view;
+        const withoutAccumulator = (await projectLifecycleTick({ source: s, year })).view;
+        expect(withAccumulator).toEqual(withoutAccumulator);
+        const setupWith = (await projectLifecycleTick({ source: s, year: 1327, accumulator })).view.entries;
+        const setupWithout = (await projectLifecycleTick({ source: s, year: 1327 })).view.entries;
+        expect(setupWith.find(entry => entry.id === "grant")).toBeDefined();
+        expect(setupWith).toEqual(setupWithout);
+      }
+    } finally { provenance.mockRestore(); }
   });
   it("changes only the chronicle view index version", () => {
     expect(LIFECYCLE_VIEW_VERSION).toBe("lifecycle-chronicle-view-3");
     expect(LIFECYCLE_PERSON_SHEET_VIEW_VERSION).toBe("lifecycle-person-sheet-view-1");
+  });
+  it("preserves baseline legacy tick and chronicle bytes with native events", async () => {
+    const s = source(false);
+    const event = { id: "native-move", year: 1327, kind: "move", actors: ["protagonist"], causes: [], payload: { away: true } };
+    const output = s.output as unknown as { owned: { events: unknown[] }; journal: { final: { owned: { events: unknown[] } }; threadBeats?: unknown }[] };
+    output.owned.events = [event];
+    for (const record of output.journal) record.final.owned.events = [event];
+    output.journal[0]!.threadBeats = { version: "thread-beats-1", beats: [setup] };
+    const tick = await projectLifecycleTick({ source: s, year: 1327 });
+    const chronicle = await projectLifecycleChronicle({ source: s, identity: { lifeId: "life", branchId: "branch" } });
+    expect(tick.view.entries.some(entry => entry.id === "native-move")).toBe(true);
+    expect(tick.view.entries.some(entry => entry.id === "grant")).toBe(false);
+    expect(JSON.stringify({ tick: tick.view, chronicle: chronicle.view })).toMatchSnapshot();
   });
   it("does not invent arcs for old records", async () => {
     const s = source(false);
