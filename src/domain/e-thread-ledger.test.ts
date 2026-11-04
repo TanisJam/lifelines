@@ -24,9 +24,10 @@ describe("thread ledger", () => {
     expect(evolveThreadLedger(opened, [], "p", 4, {}).threads[0].status).toBe("open");
   });
   it("closes on death, including the setup year, without payoff effects", () => {
-    const result = evolveThreadLedger([], [grant], "p", 1, { q: 1 });
+    const result = evolveThreadLedger([], [grant], "p", 1, { q: { year: 1, id: "death-q" } });
     expect(result.threads[0].status).toBe("dead");
     expect(result.beats.map(beat => beat.kind)).toEqual(["setup", "death"]);
     expect(result.beats[1]).not.toHaveProperty("effects");
+    expect(result.beats[1].source).toBe("death-q");
   });
 });

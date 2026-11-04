@@ -13,7 +13,7 @@ export type ThreadBeat = {
 
 /** Derive compact facts exclusively from operations already committed in this draft year. */
 export function evolveThreadLedger(previous: readonly HelpThread[], entries: readonly RuntimeEntry[], protagonist: string,
-  year: number, deaths: Readonly<Record<string, number | undefined>>): { threads: HelpThread[]; beats: ThreadBeat[] } {
+  year: number, deaths: Readonly<Record<string, { year: number; id: string } | undefined>>): { threads: HelpThread[]; beats: ThreadBeat[] } {
   const threads = [...previous];
   const beats: ThreadBeat[] = [];
   for (const entry of entries) {
@@ -39,6 +39,7 @@ export function evolveThreadLedger(previous: readonly HelpThread[], entries: rea
         && thread.actors[0] === entry.actors[0] && thread.actors[1] === entry.actors[1]);
       if (index < 0) continue;
       const thread = threads[index];
+      if (thread.actors.some(actor => deaths[actor] !== undefined && deaths[actor]!.year <= year)) continue;
       threads[index] = { ...thread, status: settlement.status, terminal: entry.id, terminalYear: entry.year };
       beats.push({ kind: "payoff", thread: thread.id, source: entry.id, year: entry.year,
         actors: [...entry.actors], causes: [...entry.causes], effects: structuredClone(effects), selected: entry.authority.selected });
@@ -47,10 +48,11 @@ export function evolveThreadLedger(previous: readonly HelpThread[], entries: rea
   for (let i = 0; i < threads.length; i++) {
     const thread = threads[i];
     if (thread.status !== "open") continue;
-    const dead = thread.actors.find(actor => deaths[actor] !== undefined && deaths[actor]! <= year);
+    const dead = thread.actors.find(actor => deaths[actor] !== undefined && deaths[actor]!.year <= year);
     if (dead === undefined) continue;
-    threads[i] = { ...thread, status: "dead", terminalYear: year };
-    beats.push({ kind: "death", thread: thread.id, source: dead, year, actors: [...thread.actors], causes: [] });
+    const death = deaths[dead]!;
+    threads[i] = { ...thread, status: "dead", terminal: death.id, terminalYear: death.year };
+    beats.push({ kind: "death", thread: thread.id, source: death.id, year: death.year, actors: [...thread.actors], causes: [] });
   }
   return { threads, beats };
 }

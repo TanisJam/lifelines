@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalLifecycleData } from "./e-lifecycle-genesis";
 import { createLifecycleCapsule, serializeLifecycleCapsule } from "./e-lifecycle-capsule";
 import { RuleDecisionMaker } from "@/adapters/decision/rule-decision-maker";
-import { createLifecycleGenesis } from "./e-lifecycle-genesis";
+import { createLifecycleGenesis, LIFECYCLE_THREAD_VERSIONS } from "./e-lifecycle-genesis";
 import { initializeWorld } from "./world-origin";
 import { createLifecycleRuntime, auditRecord } from "./e-lifecycle-runtime";
 import { simulateYears, type LegacyOwnedRunState } from "./simulate";
@@ -12,6 +12,7 @@ import * as sourceModule from "./e-year-source";
 import * as annualPolicy from "./e-annual-policy";
 import * as composition from "./e-annual-composition";
 import * as executorModule from "./e-favor-executor";
+import * as threadLedger from "./e-thread-ledger";
 import { inspectHelpOpportunities } from "./effects";
 import type { RuntimeEntry, RuntimeOutput } from "./e-runtime";
 import type { GenerateWorldOptions } from "./worldgen";
@@ -681,4 +682,45 @@ describe("native lifecycle annual transaction", () => {
   expect(b.owned.people[changed!]).not.toBe(a.owned.people[changed!]);
   expect(b.owned.people).toBe(b.favors.people);
   expect(b.owned.events).toBe(b.favors.legacyEvents);
+});
+
+describe("thread annual publication", () => {
+  it("publishes compact beats atomically and shares unchanged history", async () => {
+    const options = { ...defaults, seed: "thread-atomic" };
+    const { world } = initializeWorld(options);
+    const admitted = createLifecycleGenesis({ initialization: options, protagonistId: "protagonist",
+      resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])),
+      versions: LIFECYCLE_THREAD_VERSIONS });
+    const real = annualPolicy.planAnnualFavorDraft;
+    vi.spyOn(annualPolicy, "planAnnualFavorDraft").mockImplementation((view, seed, year) => {
+      const plan = real(view, seed, year);
+      const actor = Object.keys((view as RuntimeOutput["state"]).people).find(id => id !== "protagonist")!;
+      return { ...plan, grants: year === 1327 ? [{ id: "thread-grant", creditor: "protagonist", debtor: actor, causes: [] }] : [] };
+    });
+    const runtime = createLifecycleRuntime(admitted, { journal: "compact" });
+    const first = await runtime.advance(1327);
+    expect(first.threads!.threads).toHaveLength(1);
+    expect(first.journal[0].threadBeats!.beats).toHaveLength(1);
+    expect(first.journal[0]).not.toHaveProperty("economics");
+    expect(JSON.stringify(first.journal[0].threadBeats)).not.toContain("consumed");
+    const evolve = threadLedger.evolveThreadLedger;
+    const ledgerSpy = vi.spyOn(threadLedger, "evolveThreadLedger").mockImplementation((...args) => {
+      evolve(...args);
+      throw new Error("ledger draft failure");
+    });
+    await expect(runtime.advance(1328)).rejects.toThrow("ledger draft failure");
+    expect(runtime.snapshot()).toBe(first);
+    ledgerSpy.mockRestore();
+    const source = sourceModule.createRulesYearSource;
+    const spy = vi.spyOn(sourceModule, "createRulesYearSource").mockImplementation((...args) => {
+      const next = source(...args);
+      return { ...next, execute: async year => { await next.execute(year); throw new Error("draft failure"); } };
+    });
+    await expect(runtime.advance(1328)).rejects.toThrow("draft failure");
+    expect(runtime.snapshot()).toBe(first);
+    spy.mockRestore();
+    const second = await runtime.advance(1328);
+    expect(second.journal[0]).toBe(first.journal[0]);
+    expect(second.journal[1].final.threads!.threads[0]).toBe(first.journal[0].final.threads!.threads[0]);
+  });
 });

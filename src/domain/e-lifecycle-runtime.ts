@@ -8,6 +8,7 @@ import { captureLegacyYear } from "./legacy-year";
 import type { LegacyOwnedRunState } from "./simulate";
 import type { GrantIntention, RequestIntention, ResourceOperation, RuntimeEntry, RuntimeOutput } from "./e-runtime";
 import type { YearSnapshot } from "./types";
+import { evolveThreadLedger, type HelpThread, type ThreadBeat } from "./e-thread-ledger";
 
 type Immutable<T> = T extends object ? { readonly [K in keyof T]: Immutable<T[K]> } : T;
 
@@ -15,7 +16,7 @@ type Immutable<T> = T extends object ? { readonly [K in keyof T]: Immutable<T[K]
 export interface LifecycleState {
   owned: LegacyOwnedRunState;
   favors: RuntimeOutput["state"];
-  threads?: { version: "thread-state-1"; threads: never[] };
+  threads?: { version: "thread-state-1"; threads: HelpThread[] };
 }
 export interface LifecycleHelpSlot {
   creditor: string;
@@ -35,7 +36,7 @@ export interface LifecycleHelpSlot {
 export interface LifecycleYearRecord {
   year: number;
   versions: LifecycleGenesis["versions"];
-  threadBeats?: { version: "thread-beats-1"; beats: never[] };
+  threadBeats?: { version: "thread-beats-1"; beats: ThreadBeat[] };
   /** Pre-economic people/events/decisions. The pre-economic favor ledger copy is NOT retained. */
   physicalSnapshot?: YearSnapshot;
   economics?: {
@@ -231,6 +232,10 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
           }
         }
       }
+      const ledger = draft.threads && evolveThreadLedger(draft.threads.threads, entries, protagonistId, year,
+        Object.fromEntries(draft.owned.events.filter(event => event.kind === "death" && event.year <= year)
+          .map(event => [event.actors[0], { year: event.year, id: event.id }])));
+      if (draft.threads && ledger) draft.threads.threads = ledger.threads;
       // Compact mode omits ONLY fields no production reader consumes; `final` is what the chronicle,
       // the person sheets and the replay comparison all read, so it is never dropped.
       const record: LifecycleYearRecord = journalMode === "compact"
@@ -245,7 +250,7 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
           },
           final: draft,
         };
-      if ("threadBeats" in genesis.versions) record.threadBeats = { version: "thread-beats-1", beats: [] };
+      if (ledger) record.threadBeats = { version: "thread-beats-1", beats: ledger.beats };
       // Detach only the NEW annual record. Reuse the privately frozen version
       // tuple to preserve its aliases across annual evidence/publication frames.
       const newRecord = structuredClone(record);
