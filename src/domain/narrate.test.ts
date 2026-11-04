@@ -461,3 +461,15 @@ describe("chronicle variation — repeated reflections read differently", () => 
     expect(second.prose).toContain("siguió tras el sueño");
   });
 });
+
+describe("Spanish death ages", () => {
+  it("uses the singular for age one in ordinary, away and family prose", () => {
+    const people = { child: makePerson("child", { birthYear: 1327, motherId: "mother" }), mother: makePerson("mother") };
+    for (const payload of [{ age: 1 }, { age: 1, cause: "old-age" }, { age: 1, awayFromTown: true }] as Event["payload"][]) {
+      const event: Event = { id: "death", year: 1328, kind: "death", actors: ["child"], payload, causes: [] };
+      expect(narrateEvent(event, people, "seed", "town", [], "es")).toContain("a los 1 año");
+      expect(narrateEvent(event, people, "seed", "town", [], "es")).not.toContain("1 años");
+      expect(narrateEventForViewer(event, "mother", people, "seed", "town", [], "es").prose).not.toContain("1 años");
+    }
+  });
+});

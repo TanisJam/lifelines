@@ -24,6 +24,11 @@ describe("ageAt", () => {
     expect(ageAt(scene, 1520.4)).toEqual({ age: 30, alive: true });
   });
 
+  it("uses calendar years at death, even when less than a full simulated year elapsed", () => {
+    const infant = { ...scene, span: { start: 1327.8, end: 1328.3 }, people: [person("self", { group: "self", born: 1327, diedAt: 1328.2 })] };
+    expect(ageAt(infant, 1328.3)).toEqual({ age: 1, alive: false });
+  });
+
   it("freezes at the age of death once the protagonist has died", () => {
     expect(ageAt(scene, 1560)).toEqual({ age: 60, alive: false });
   });

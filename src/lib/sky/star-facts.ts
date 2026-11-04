@@ -19,7 +19,7 @@ export function ageAt(scene: LifeScene, t: number): { age: number; alive: boolea
   const self = selfOf(scene);
   const living = self === undefined || alive(self, t);
   const until = living || self?.diedAt === undefined ? t : self.diedAt;
-  return { age: Math.max(0, Math.floor(until - scene.span.start)), alive: living };
+  return { age: Math.max(0, (living ? Math.floor(until - scene.span.start) : Math.floor(until) - Math.floor(scene.span.start))), alive: living };
 }
 
 /** What a star's tooltip says about a person at `t`. */

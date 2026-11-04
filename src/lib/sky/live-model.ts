@@ -83,7 +83,7 @@ export function liveChronicle(state: LiveLifeState): Chronicle | null {
     protagonist: {
       ...protagonist,
       deathYear: diedAt === undefined ? null : Math.floor(diedAt),
-      ageAtDeath: diedAt === undefined || self === undefined ? null : Math.floor(diedAt - self.born),
+      ageAtDeath: diedAt === undefined || self === undefined ? null : Math.floor(diedAt) - Math.floor(self.born),
       causeOfDeath: null,
     },
     summary: "",

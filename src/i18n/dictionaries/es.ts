@@ -66,11 +66,11 @@ export const es: Dictionary = {
     loading: "Cargando…",
     empty: "Todavía no hay vidas.",
     entry: (ageAtDeath: number, causeOfDeath: string, branchCount: number) =>
-      `Murió a los ${ageAtDeath} años, de ${causeOfDeath}. ${branchCount} ${branchCount === 1 ? "versión" : "versiones"} de esta vida.`,
+      `Murió a los ${ageAtDeath} año${ageAtDeath === 1 ? "" : "s"}, de ${causeOfDeath}. ${branchCount} ${branchCount === 1 ? "versión" : "versiones"} de esta vida.`,
     /** A life alive at its horizon (spec S5): it shows as alive in the year its chronicle reached, never as a death. */
     spanAlive: (birthYear: number) => `${birthYear}–…`,
     aliveEntry: (age: number, horizonYear: number, branchCount: number) =>
-      `Sigue con vida en ${horizonYear}, con ${age} años. ${branchCount} ${branchCount === 1 ? "versión" : "versiones"} de esta vida.`,
+      `Sigue con vida en ${horizonYear}, con ${age} año${age === 1 ? "" : "s"}. ${branchCount} ${branchCount === 1 ? "versión" : "versiones"} de esta vida.`,
     writeAnother: "Escribir otra vida",
   },
   life: {
@@ -111,7 +111,7 @@ export const es: Dictionary = {
       born: (year: number) => `nació en ${year}`,
       lived: (born: number, died: number) => `${born}–${died}`,
       status: (kind: string, sex: LifeSex, age: number) => {
-        if (kind === "age") return `${age} años`;
+        if (kind === "age") return `${age} año${age === 1 ? "" : "s"}`;
         if (kind === "written") return "Su vida está escrita";
         if (kind === "circle") return "En su círculo de historia";
         if (kind === "deadFamily") return "Fallecido, aún familia";

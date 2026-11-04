@@ -14,9 +14,20 @@ export interface ReelEntry {
   readonly who: readonly string[];
 }
 
+/** Translate display-only decision tags without changing the underlying chronicle. */
+export function localizeReelEntries(entries: readonly ChronicleEntry[], locale: "en" | "es"): readonly ChronicleEntry[] {
+  if (locale !== "es") return entries;
+  return entries.map((entry) => {
+    if (!entry.turn) return entry;
+    const { deciderId, decidedBy } = entry.turn;
+    const label = deciderId === "chance" ? "Azar" : deciderId === "lord" ? "La exigencia del señor" : deciderId === "self" || decidedBy === "Their choice" ? "Su elección" : `Elección de ${decidedBy.replace(/'s choice$/i, "")}`;
+    return { ...entry, turn: { ...entry.turn, decidedBy: label } };
+  });
+}
+
 /** The reel's rows: period summaries stay in the chronicle but never on the reel; sorted by moment (ties by id). */
-export function reelEntries(entries: readonly ChronicleEntry[]): ReelEntry[] {
-  return entries
+export function reelEntries(entries: readonly ChronicleEntry[], locale: "en" | "es" = "en"): ReelEntry[] {
+  return localizeReelEntries(entries, locale)
     .filter((e) => e.kind !== "period")
     .map((e) => {
       const text = entryText(e);

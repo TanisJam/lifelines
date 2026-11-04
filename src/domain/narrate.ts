@@ -334,7 +334,7 @@ export function narrateEvent(
       const causeCode = typeof event.payload.cause === "string" ? event.payload.cause : undefined;
       const causePhrase = causeCode && causeCode in DEATH_CAUSE_PHRASE ? deathCauseDisplay(locale, causeCode as DeathCause) : undefined;
       if (event.payload.awayFromTown)
-        return t(locale, `Word reached town that ${A} had died elsewhere, at age ${String(event.payload.age)}.`, `Llegó al pueblo la noticia de que ${A} había muerto en tierras lejanas, a los ${String(event.payload.age)} años.`);
+        return t(locale, `Word reached town that ${A} had died elsewhere, at age ${String(event.payload.age)}.`, `Llegó al pueblo la noticia de que ${A} había muerto en tierras lejanas, a los ${String(event.payload.age)} año${event.payload.age === 1 ? "" : "s"}.`);
       if (causePhrase)
         return pick(
           seed,
@@ -342,13 +342,13 @@ export function narrateEvent(
           t(
             locale,
             [`${A} died of ${causePhrase} at age ${String(event.payload.age)}.`, `${A} was taken by ${causePhrase}, at age ${String(event.payload.age)}.`],
-            [`${A} murió de ${causePhrase} a los ${String(event.payload.age)} años.`, `${A} fue llevad${actorSex === "f" ? "a" : "o"} por ${causePhrase}, a los ${String(event.payload.age)} años.`],
+            [`${A} murió de ${causePhrase} a los ${String(event.payload.age)} año${event.payload.age === 1 ? "" : "s"}.`, `${A} fue llevad${actorSex === "f" ? "a" : "o"} por ${causePhrase}, a los ${String(event.payload.age)} año${event.payload.age === 1 ? "" : "s"}.`],
           ),
         );
       return pick(
         seed,
         event,
-        t(locale, [`${A} died at age ${String(event.payload.age)}.`, `${A} passed away at age ${String(event.payload.age)}.`], [`${A} murió a los ${String(event.payload.age)} años.`, `${A} falleció a los ${String(event.payload.age)} años.`]),
+        t(locale, [`${A} died at age ${String(event.payload.age)}.`, `${A} passed away at age ${String(event.payload.age)}.`], [`${A} murió a los ${String(event.payload.age)} año${event.payload.age === 1 ? "" : "s"}.`, `${A} falleció a los ${String(event.payload.age)} año${event.payload.age === 1 ? "" : "s"}.`]),
       );
     }
     case "widowed": {
@@ -1091,7 +1091,7 @@ export function narrateEventForViewer(
     // once `spouseId` has been cleared by the death itself.
     const relation = deceased ? (familyRelation(viewer, deceased) ?? (a && wasSpouseAtDeath(viewerId, a, allEvents) ? (deceased.sex === "m" ? "husband" : "wife") : undefined)) : undefined;
     if (deceased && relation) {
-      const ageStr = typeof event.payload.age === "number" ? t(locale, `, at age ${event.payload.age}`, `, a los ${event.payload.age} años`) : "";
+      const ageStr = typeof event.payload.age === "number" ? t(locale, `, at age ${event.payload.age}`, `, a los ${event.payload.age} año${event.payload.age === 1 ? "" : "s"}`) : "";
       const awayNote = event.payload.awayFromTown ? t(locale, " (word reached town from afar)", " (la noticia llegó desde lejos)") : "";
       const prose = pick(
         seed,

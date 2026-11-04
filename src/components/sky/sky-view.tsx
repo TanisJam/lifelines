@@ -9,7 +9,7 @@ import type { Locale } from "@/i18n/config";
 import type { Dictionary } from "@/i18n/dictionary";
 import { describeStar, relationLabel } from "@/lib/sky/describe-star";
 import { timeline } from "@/lib/sky/dial";
-import { reelEntries } from "@/lib/sky/reel-model";
+import { localizeReelEntries, reelEntries } from "@/lib/sky/reel-model";
 import { useTurnstileSiteKey } from "@/lib/turnstile-client";
 import "./sky.css";
 import { BackdropCanvas } from "./backdrop-canvas";
@@ -45,9 +45,10 @@ export function SkyView({ chronicle: base, dict, lang, saved = true, frontier: l
   const frontier = rewrite.frontier ?? (saved ? undefined : liveFrontier);
   const { scene } = chronicle;
   const { sky } = dict;
-  const line = useMemo(() => timeline(scene, scene.span.end ?? frontier ?? chronicle.protagonist.horizonYear ?? scene.span.start, chronicle.entries), [scene, frontier, chronicle.entries, chronicle.protagonist.horizonYear]);
+  const localizedEntries = useMemo(() => localizeReelEntries(chronicle.entries, lang), [chronicle.entries, lang]);
+  const line = useMemo(() => timeline(scene, scene.span.end ?? frontier ?? chronicle.protagonist.horizonYear ?? scene.span.start, localizedEntries), [scene, frontier, localizedEntries, chronicle.protagonist.horizonYear]);
   const { svgRef, store, state, controls } = useSkyEngine(scene, line, { frontier, autoplay: !saved });
-  const entries = useMemo(() => reelEntries(chronicle.entries), [chronicle.entries]);
+  const entries = useMemo(() => reelEntries(localizedEntries), [localizedEntries]);
   useForkGlide(rw.phase, rw.fork, store, controls.seek, controls.toggle);
 
   const tipRef = useRef<HTMLDivElement>(null);
