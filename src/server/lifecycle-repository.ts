@@ -336,7 +336,7 @@ export class LifecycleRepository {
     const binding: LifecycleBranchBinding = frozen({ version: LIFECYCLE_BINDING_VERSION,
       lifeId: captured.lifeId, branchId: captured.branchId, capsuleDigest: admitted.digest,
       capsuleSchema: admitted.manifest.capsuleSchema, genesisDigest: admitted.genesis.digest });
-    return withTransaction(this.db, () => {
+    const published = withTransaction(this.db, () => {
       const existing = this.binding(captured.lifeId, captured.branchId);
       if (existing && !same(existing, binding)) throw new Error("Conflicting immutable lifecycle binding");
       if (!existing) {
@@ -367,6 +367,14 @@ export class LifecycleRepository {
       }
       return binding;
     });
+    // Decision summaries are a derived admission cache. Persist them from the already-admitted
+    // publication output, but never turn a successful canonical publication into a failure.
+    try {
+      const { LifecycleBranchStore } = await import("./lifecycle-branch-store");
+      new LifecycleBranchStore(this.db).prepareDecisionsFromPublished(captured.lifeId, captured.branchId,
+        admitted.digest, { lifeId: captured.lifeId, branchId: captured.branchId, capsuleDigest: admitted.digest, output: admitted.output });
+    } catch { /* A cache miss falls back to the existing ticket-gated preparation path. */ }
+    return published;
   }
 
   private transaction<T>(body: () => T): T {

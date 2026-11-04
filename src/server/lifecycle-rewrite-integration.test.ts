@@ -32,14 +32,17 @@ it.each(["audit", "compact"] as const)("reopens a public %s rewrite in a fresh p
     const repo = new LifecycleRepository(db), store = new LifecycleBranchStore(db), person = world.people.protagonist;
     const binding = await repo.publish({ lifeId: "u7-public", branchId: "root", config: world.config, protagonistName: person.name, protagonistSex: person.sex, capsule });
     expect(binding.capsuleSchema).toBe(journal === "audit" ? "lifecycle-capsule-compact-cb1-1" : "lifecycle-capsule-compact-cb2-1");
-    store.prepareDecisionsFromLoaded("u7-public", "root", binding.capsuleDigest, { binding, capsule });
+    expect(db.prepare("SELECT count(*) AS n FROM lifecycle_fork_decision_sets_v1 WHERE life_id = ? AND branch_id = ? AND capsule_digest = ?").get("u7-public", "root", binding.capsuleDigest)?.n).toBe(1);
     const rootRows = () => JSON.stringify({ life: db.prepare("SELECT * FROM lifecycle_lives WHERE id = ?").get("u7-public"), capsule: db.prepare("SELECT * FROM lifecycle_capsules_v2 WHERE key = ?").get(Buffer.from(binding.capsuleDigest, "utf16le")) });
     const before = rootRows();
     const decision = capsule.output.owned.decisions.find(d => d.id === "immigration:world#1328.1")!;
     const body = { branchId: "root", decisionId: decision.id, optionId: decision.options.find(o => o.id !== decision.chosen)!.id };
     const request = (value: unknown) => new Request("http://local/rewrite", { method: "POST", body: JSON.stringify(value) });
     const ctx = { params: Promise.resolve({ lifeId: "u7-public" }) };
+    const load = vi.spyOn(LifecycleRepository.prototype, "load");
     const same = await POST(request({ ...body, optionId: decision.chosen }), ctx);
+    expect(load).not.toHaveBeenCalled();
+    load.mockRestore();
     expect(same.status).toBe(400);
     expect(await same.json()).toEqual({ error: "The selected option is already the choice for this decision." });
     const malformed = await POST(request({}), ctx);
@@ -89,6 +92,7 @@ it.each(["audit", "compact"] as const)("reopens a public %s rewrite in a fresh p
     const publish = LifecycleBranchStore.prototype.publishFork;
     const publishSpy = vi.spyOn(LifecycleBranchStore.prototype, "publishFork").mockImplementation(async function (this: LifecycleBranchStore, input, options) {
       const result = await publish.call(this, input, options);
+      expect(db.prepare("SELECT count(*) AS n FROM lifecycle_fork_decision_sets_v1 WHERE life_id = ? AND branch_id = ? AND capsule_digest = ?").get("u7-public", input.branchId, result.capsuleDigest)?.n).toBe(1);
       duringSave.abort();
       return result;
     });
@@ -117,7 +121,9 @@ it.each(["audit", "compact"] as const)("reopens a public %s rewrite in a fresh p
     expect(child.views[3].branchId).toBe(nested);
     expect(child.views[0].branches.map((branch: { label: string }) => branch.label)).toEqual(["Original life", "Changed in 1328", "Changed in 1327", "Changed in 1329", "Changed in 1329"]);
     expect(child.views[5].branches.map((branch: { label: string }) => branch.label)).toEqual(["Vida original", "Cambiado en 1328", "Cambiado en 1327", "Cambiado en 1329", "Cambiado en 1329"]);
-    expect(child.sheetStatus).toBe(200);
+    expect(child.branchSheet.rootSheet.status).toBe(404);
+    expect(child.branchSheet.childSheet.status).toBe(200);
+    expect(child.branchSheet.childSheet.data).toMatchObject({ personId: child.branchSheet.personId, name: expect.any(String), birthYear: expect.any(Number), job: expect.anything(), blurb: expect.any(String), moments: expect.any(Array) });
     expect(child.listing.find((item: { lifeId: string }) => item.lifeId === "u7-public").branchCount).toBe(5);
   } finally { if (db.isOpen) db.close(); rmSync(dir, { recursive: true, force: true }); }
 }, 240_000);

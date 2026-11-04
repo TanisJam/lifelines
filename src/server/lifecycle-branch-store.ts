@@ -50,7 +50,7 @@ export class LifecycleBranchStore {
     const projections = new LifecycleProjectionStore(this.db), personSheets = new LifecyclePersonSheetStore(this.db);
     const repository = new LifecycleRepository(this.db);
     const choice = capsule.lineage.choices.at(-1)!;
-    return withTransaction(this.db, () => {
+    const published = withTransaction(this.db, () => {
       const parent = this.db.prepare("SELECT 1 FROM lifecycle_forks_v1 WHERE life_id = ? AND digest = ?").get(lifeId, capsule.recipe.parentDigest);
       const root = this.db.prepare("SELECT l.branch_id FROM lifecycle_lives l WHERE l.id = ?").get(lifeId);
       const rootBinding = root ? repository.binding(lifeId, String(root.branch_id)) : undefined;
@@ -71,6 +71,11 @@ export class LifecycleBranchStore {
       options.onStage?.("sheets");
       return binding;
     });
+    try {
+      this.prepareDecisionsFromPublished(lifeId, branchId, capsule.digest,
+        { lifeId, branchId, capsuleDigest: capsule.digest, output: capsule.output });
+    } catch { /* A derived-cache miss does not undo or hide successful publication. */ }
+    return published;
   }
 
   binding(lifeId: string, branchId: string): LifecycleForkBranchBinding | undefined {
@@ -146,6 +151,12 @@ export class LifecycleBranchStore {
   prepareDecisionsFromLoaded(lifeId: string, branchId: string, digest: string, loaded: { readonly binding: { readonly lifeId: string; readonly branchId: string; readonly capsuleDigest: string }; readonly capsule: { readonly digest: string; readonly output: { readonly owned: { readonly decisions: readonly LifecycleDecisionTarget[] } } } }): void {
     if (this.boundDigest(lifeId, branchId) !== digest || loaded.binding.lifeId !== lifeId || loaded.binding.branchId !== branchId || loaded.binding.capsuleDigest !== digest || loaded.capsule.digest !== digest) throw new Error("Decision index binding disagreement");
     this.writeDecisionSummary(lifeId, branchId, digest, loaded.capsule.output.owned.decisions);
+  }
+
+  /** Cache admitted publication decisions without replaying; the canonical binding remains authoritative. */
+  prepareDecisionsFromPublished(lifeId: string, branchId: string, digest: string, published: { readonly lifeId: string; readonly branchId: string; readonly capsuleDigest: string; readonly output: { readonly owned: { readonly decisions: readonly LifecycleDecisionTarget[] } } }): void {
+    if (this.boundDigest(lifeId, branchId) !== digest || published.lifeId !== lifeId || published.branchId !== branchId || published.capsuleDigest !== digest) throw new Error("Decision index binding disagreement");
+    this.writeDecisionSummary(lifeId, branchId, digest, published.output.owned.decisions);
   }
 
   private writeDecisionSummary(lifeId: string, branchId: string, digest: string, decisions: readonly LifecycleDecisionTarget[]): void {

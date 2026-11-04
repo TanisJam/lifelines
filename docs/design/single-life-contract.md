@@ -23,6 +23,8 @@ Errors are returned as JSON `{ error }` with a 4xx status, or as an SSE `error` 
 
 ## Rules both sides rely on
 
+Lifecycle branch labels are localized at read time: English uses “Original life” and “Changed in <year>”; Spanish uses “Vida original” and “Cambiado en <year>”.
+
 - The protagonist's id is always `"protagonist"`. Their birth is immutable: rewrites are allowed only at or after their birth year.
 - The simulation stops when the protagonist dies.
 - The protagonist's death is **always** a turn. The alternative is "survived", and choosing it continues the life.
@@ -71,7 +73,7 @@ The versioned lifecycle choice source admits a declaration against the exposed t
 ### Lifecycle rewrite admission and publication
 
 Lifecycle requests validate the branch and decision before simulation. A complete digest-bound
-decision index rejects an already-selected option with HTTP 400 before replay or branch ID
+decision index is written from admitted output at successful publication for both roots and forks; a complete digest-bound index rejects an already-selected option with HTTP 400 before replay or branch ID
 allocation. If the index is absent, the admitted parent is loaded under the shared lifecycle
 create/rewrite ticket and checked before a branch ID is allocated. The abuse guard retains its
 existing behavior; the ticket is released on completion, error, or cancellation. Legacy rewrite
