@@ -305,6 +305,17 @@ describe("lifecycle view projection (RI1b)", () => {
   }, 240_000);
 
   it("refuses a foreign or malformed source with a clear error", async () => {
+    // Only copy the paths these malformed cases change; the remaining frozen data is shared.
+    const malformed = () => ({
+      genesis: { ...source.genesis },
+      output: {
+        ...source.output,
+        owned: {
+          ...source.output.owned,
+          people: { ...source.output.owned.people, [protagonistId]: { ...source.output.owned.people[protagonistId]! } },
+        },
+      },
+    });
     const incomplete = (() => {
       const { world } = initializeWorld(initialization);
       const genesis = createLifecycleGenesis({
@@ -315,11 +326,11 @@ describe("lifecycle view projection (RI1b)", () => {
     })();
     await incomplete.runtime.advance(source.genesis.initial.config.startYear);
     const unfinished: LifecycleProjectionSource = { genesis: incomplete.genesis, output: incomplete.runtime.snapshot() };
-    const forgedVersion = forgeable(source);
+    const forgedVersion = malformed();
     (forgedVersion.output as { versions: Record<string, unknown> }).versions = {
       ...forgedVersion.output.versions, schema: "annual-capsule-rb1-1",
     };
-    const disagreed = forgeable(source);
+    const disagreed = malformed();
     disagreed.genesis.protagonistId = "someone-else";
 
     const refusals: unknown[] = [
@@ -327,7 +338,7 @@ describe("lifecycle view projection (RI1b)", () => {
       {},
       { genesis: source.genesis },
       { config: {}, people: {}, events: [], decisions: [] },
-      { genesis: source.genesis, output: { ...structuredClone(source.output), status: "finished" } },
+      { genesis: source.genesis, output: { ...source.output, status: "finished" } },
       forgedVersion,
       disagreed,
     ];
@@ -338,9 +349,9 @@ describe("lifecycle view projection (RI1b)", () => {
     await expect(projectLifecycleChronicle({ source: unfinished, identity })).resolves.toHaveProperty("view.protagonist.deathYear", null);
     // A status that disagrees with the protagonist's own record is still refused: the two states are
     // never merged, in either direction.
-    const completeWithoutDeath = forgeable(source);
+    const completeWithoutDeath = malformed();
     delete (completeWithoutDeath.output.owned.people[protagonistId] as { deathYear?: number }).deathYear;
-    const incompleteWithDeath = forgeable(source);
+    const incompleteWithDeath = malformed();
     (incompleteWithDeath.output as { status: string }).status = "incomplete";
     await expect(projectLifecycleChronicle({ source: completeWithoutDeath as LifecycleProjectionSource, identity }))
       .rejects.toThrow(/must record the protagonist's death/);
