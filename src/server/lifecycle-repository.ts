@@ -6,6 +6,7 @@ import {
   deserializeLifecycleCompactCapsule,
   LIFECYCLE_COMPACT_CAPSULE_MANIFEST,
   LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2,
+  LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3,
   type LifecycleCompactCapsule,
 } from "../domain/e-lifecycle-capsule";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "../domain/e-lifecycle-dag";
@@ -194,7 +195,8 @@ export class LifecycleRepository {
     if (!same(Object.keys(binding).sort(), [...BINDING_KEYS])
       || binding.version !== LIFECYCLE_BINDING_VERSION
       || (binding.capsuleSchema !== LIFECYCLE_COMPACT_CAPSULE_MANIFEST.capsuleSchema
-        && binding.capsuleSchema !== LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema)
+        && binding.capsuleSchema !== LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema
+        && binding.capsuleSchema !== LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3.capsuleSchema)
       || binding.lifeId !== lifeId || binding.branchId !== branchId) throw new Error("Corrupt lifecycle binding");
     key(binding.capsuleDigest); key(binding.genesisDigest);
     return frozen(binding);

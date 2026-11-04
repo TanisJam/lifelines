@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { admitLifecycleGenesis, canonicalLifecycleData, lifecycleVersionsMatch, LIFECYCLE_GENESIS_VERSIONS,
+import { admitLifecycleGenesis, canonicalLifecycleData, lifecycleVersionsMatch, LIFECYCLE_GENESIS_VERSIONS, LIFECYCLE_THREAD_VERSIONS,
   type LifecycleGenesis } from "./e-lifecycle-genesis";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "./e-lifecycle-dag";
 import { replayLifecycleRuntime } from "./e-lifecycle-replay";
@@ -256,9 +256,15 @@ export const LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2 = Object.freeze({
   codec: "canonical-dag-dictionary-cb1-1",
   ...LIFECYCLE_GENESIS_VERSIONS,
 });
+export const LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3 = Object.freeze({
+  capsuleSchema: "lifecycle-capsule-compact-cb3-1",
+  codec: "canonical-dag-dictionary-cb1-1",
+  ...LIFECYCLE_THREAD_VERSIONS,
+});
 export type LifecycleCompactCapsuleManifest =
   | typeof LIFECYCLE_COMPACT_CAPSULE_MANIFEST
-  | typeof LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2;
+  | typeof LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2
+  | typeof LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3;
 
 export interface LifecycleCompactCapsule {
   readonly manifest: LifecycleCompactCapsuleManifest;
@@ -268,6 +274,7 @@ export interface LifecycleCompactCapsule {
 }
 const COMPACT_DOMAIN = "lifecycle-compact-capsule-cb1-1";
 const COMPACT_DOMAIN_V2 = "lifecycle-compact-capsule-cb2-1";
+const COMPACT_DOMAIN_V3 = "lifecycle-compact-capsule-cb3-1";
 function requireCompactManifest(value: unknown, expected: LifecycleCompactCapsuleManifest): void {
   if (canonicalLifecycleData(value) !== canonicalLifecycleData(expected)) {
     throw new Error("Unsupported lifecycle compact capsule manifest");
@@ -276,6 +283,10 @@ function requireCompactManifest(value: unknown, expected: LifecycleCompactCapsul
 /** Maps a manifest to the schema it declares, refusing anything else. */
 function compactManifestOf(value: unknown): LifecycleCompactCapsuleManifest {
   const schema = (value as { readonly capsuleSchema?: unknown } | null)?.capsuleSchema;
+  if (schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3.capsuleSchema) {
+    requireCompactManifest(value, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3);
+    return LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3;
+  }
   if (schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema) {
     requireCompactManifest(value, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2);
     return LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2;
@@ -292,11 +303,11 @@ export function compactManifestForJournal(journal: LifecycleJournalMode): Lifecy
 }
 /** The journal retention a schema declares. Anything unrecognized reads as audit, the stricter mode. */
 export function journalModeOfSchema(schema: unknown): LifecycleJournalMode {
-  return schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema ? "compact" : "audit";
+  return schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema || schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3.capsuleSchema ? "compact" : "audit";
 }
 /** The journal retention a schema's bytes were produced with, for regeneration and replay. */
 export function journalModeOfManifest(manifest: LifecycleCompactCapsuleManifest): LifecycleJournalMode {
-  return manifest.capsuleSchema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema ? "compact" : "audit";
+  return journalModeOfSchema(manifest.capsuleSchema);
 }
 function compactPayload(genesis: unknown, output: unknown): string {
   // The canonical COMPACT dictionary wire, never the unfolded tagged grammar.
@@ -307,8 +318,9 @@ function compactDigest(manifest: unknown, table: string): string {
   // no legacy bytes can be replayed as a compact capsule, or the reverse. Each
   // schema version also gets its own domain, so cb1 bytes can never satisfy a
   // cb2 digest or the reverse.
-  const domain = (manifest as { readonly capsuleSchema?: unknown }).capsuleSchema
-    === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema ? COMPACT_DOMAIN_V2 : COMPACT_DOMAIN;
+  const schema = (manifest as { readonly capsuleSchema?: unknown }).capsuleSchema;
+  const domain = schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3.capsuleSchema ? COMPACT_DOMAIN_V3
+    : schema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2.capsuleSchema ? COMPACT_DOMAIN_V2 : COMPACT_DOMAIN;
   const hash = createHash("sha256");
   hash.update(`["${domain}",${JSON.stringify(canonicalLifecycleData(manifest))},"`, "utf8");
   hashEscaped(hash, table);
@@ -327,6 +339,10 @@ async function regenerateCompact(candidate: Record<string, unknown>,
   // SAME journal mode the schema declares, or the comparison would compare a
   // compact record against an audit one.
   const genesis = admitLifecycleGenesis(candidate.genesis);
+  const threadProfile = lifecycleVersionsMatch(genesis.versions, LIFECYCLE_THREAD_VERSIONS);
+  if (threadProfile !== (declared.capsuleSchema === LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3.capsuleSchema)) {
+    throw new Error("Lifecycle compact capsule execution profile disagreement");
+  }
   const output = await replayOrReuse(genesis, candidate.output, journalModeOfManifest(declared));
   certifiedOutputs.add(output);
   const manifest = freeze(structuredClone(declared));
@@ -341,7 +357,13 @@ export async function createLifecycleCompactCapsule(
   journal: LifecycleJournalMode = "audit",
 ): Promise<LifecycleCompactCapsule> {
   if (journal !== "audit" && journal !== "compact") throw new Error("Invalid lifecycle journal mode");
-  return regenerateCompact(checkedRecord(input, ["genesis", "output"]), compactManifestForJournal(journal));
+  const candidate = checkedRecord(input, ["genesis", "output"]);
+  const genesis = admitLifecycleGenesis(candidate.genesis);
+  if (lifecycleVersionsMatch(genesis.versions, LIFECYCLE_THREAD_VERSIONS)) {
+    if (journal !== "compact") throw new Error("Thread lifecycle audit capsule is unsupported");
+    return regenerateCompact(candidate, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3);
+  }
+  return regenerateCompact(candidate, compactManifestForJournal(journal));
 }
 /** Cold admission re-derives the compact table from regenerated data, not from trust. */
 export async function admitLifecycleCompactCapsule(input: unknown): Promise<LifecycleCompactCapsule> {

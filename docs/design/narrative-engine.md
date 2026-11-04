@@ -1310,6 +1310,11 @@ LR2b's separate lossless capsule, long death continuation, RI1 and RA1 remain la
 
 ## Lifecycle LR2b: lossless capsule with full replay on every admission
 
+Compact storage profiles remain distinct: `cb1` records the original audit journal;
+`cb2` records the original compact journal; `cb3` records the thread-aware compact
+journal with its own digest domain. Thread-aware audit capsule serialization is
+unsupported and rejected. Existing bindings and stored formats are not migrated.
+
 `src/domain/e-lifecycle-capsule.ts` preserves one complete LR1a genesis and LR1b
 output as an inactive, storage-free capsule. It does not activate production,
 branch persistence, human authority or release readiness.
