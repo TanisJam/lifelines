@@ -1,5 +1,5 @@
 import { executeLifecycleAnnual } from "./e-lifecycle-annual";
-import type { LifecycleChoiceAppliedEvidence, LifecycleChoiceDeclaration } from "./e-lifecycle-choice";
+import { LIFECYCLE_CHOICE_VERSION, type LifecycleChoiceAppliedEvidence, type LifecycleChoiceDeclaration } from "./e-lifecycle-choice";
 import { canonicalLifecycleDataEqual, instantiateLifecycleGenesis, lifecycleVersionsMatch } from "./e-lifecycle-genesis";
 import {
   createLifecycleRuntime, type LifecycleJournalMode, type LifecycleState, type LifecycleYearRecord,
@@ -9,7 +9,7 @@ import { requireFavorData } from "./effects";
 import { captureLegacyYear } from "./legacy-year";
 import { requireFields } from "./obligations";
 
-export const LIFECYCLE_FORK_VERSION = "lifecycle-fork/v1";
+export const LIFECYCLE_FORK_VERSION = "lifecycle-fork/v2";
 
 export interface LifecycleForkOptions {
   /** Inclusive last year the suffix may execute; defaults to, and may not exceed, the origin endYear. */
@@ -22,8 +22,8 @@ export interface LifecycleForkLineage {
   readonly version: typeof LIFECYCLE_FORK_VERSION;
   readonly parentGenesisDigest: string;
   readonly forkYear: number;
-  readonly choice: LifecycleChoiceDeclaration;
-  readonly evidence: LifecycleChoiceAppliedEvidence;
+  readonly choices: LifecycleChoiceDeclaration[];
+  readonly evidence: LifecycleChoiceAppliedEvidence[];
 }
 
 /** Compare the entire replayed closed prefix, not just its final state.
@@ -65,8 +65,7 @@ function deepFreeze<T>(value: T, seen = new Set<object>()): T {
 export async function forkLifecycle(parent: unknown, choice: unknown, options: LifecycleForkOptions = {}) {
   requireFavorData(parent, true);
   record(parent, "parent");
-  if ("lineage" in parent) throw new Error("Nested lifecycle fork not supported yet");
-  requireFields(parent, ["genesis", "output"]);
+  requireFields(parent, "lineage" in parent ? ["genesis", "output", "lineage"] : ["genesis", "output"]);
   // Capture the parent before any await; later caller mutations cannot reach the fork.
   const candidate = structuredClone(parent);
   record(candidate.output, "parent output");
@@ -94,51 +93,80 @@ export async function forkLifecycle(parent: unknown, choice: unknown, options: L
   // A parent journal is homogeneous: compact records carry no physical snapshot.
   const journalMode: LifecycleJournalMode = "physicalSnapshot" in forked ? "audit" : "compact";
 
-  // Prefix: the runtime itself replays genesis, so its records are the authority being compared.
-  const runtime = createLifecycleRuntime(candidate.genesis, { journal: journalMode });
-  for (let year = config.startYear; year < forkYear; year++) {
-    options.signal?.throwIfAborted();
-    await runtime.advance(year);
+  const inherited: LifecycleChoiceDeclaration[] = [];
+  if ("lineage" in candidate) {
+    const lineage = candidate.lineage as LifecycleForkLineage | null;
+    if (!lineage || lineage.version !== LIFECYCLE_FORK_VERSION || lineage.parentGenesisDigest !== genesis.digest ||
+        !Number.isSafeInteger(lineage.forkYear) || !Array.isArray(lineage.choices) || !lineage.choices.length ||
+        !Array.isArray(lineage.evidence) || lineage.evidence.length !== lineage.choices.length ||
+        lineage.choices.some((entry, index) => !entry || entry.version !== LIFECYCLE_CHOICE_VERSION || typeof entry.decisionId !== "string" || !entry.decisionId ||
+          typeof entry.optionId !== "string" || !entry.optionId || !Number.isSafeInteger(entry.year) || Object.is(entry.year, -0) ||
+          entry.year < config.startYear || entry.year > config.endYear ||
+          !canonicalLifecycleDataEqual(lineage.evidence[index], { decisionId: entry.decisionId, optionId: entry.optionId, year: entry.year, appliedCount: 1 }) ||
+          (index > 0 && lineage.choices[index - 1].year >= entry.year)) ||
+        lineage.choices.at(-1)?.year !== lineage.forkYear) {
+      throw new Error("Invalid lifecycle fork lineage");
+    }
+    inherited.push(...lineage.choices.filter(entry => entry.year < forkYear));
   }
-  const prefix = runtime.snapshot();
-  assertLifecycleForkPrefix(parentJournal as LifecycleYearRecord[], prefix.journal as unknown as LifecycleYearRecord[], forkYear);
 
-  // Native state and its economic view are cloned together inside the annual owner.
-  let state = (prefix.threads
-    ? { owned: prefix.owned, favors: prefix.favors, threads: prefix.threads }
-    : { owned: prefix.owned, favors: prefix.favors }) as unknown as LifecycleState;
-  const journal: LifecycleYearRecord[] = [...prefix.journal as unknown as LifecycleYearRecord[]];
-  let evidence: LifecycleChoiceAppliedEvidence | undefined;
-  let declaration: LifecycleChoiceDeclaration | undefined;
-  let frontier = forkYear - 1;
-  for (let year = forkYear; year <= lastYear; year++) {
-    options.signal?.throwIfAborted();
-    const { draft, record: annual } = await executeLifecycleAnnual(
-      state, year, config, protagonistId, genesis.versions, journalMode,
-      owned => {
-        if (year !== forkYear) return createRulesYearSource(genesis.source, config, owned, protagonistId, config.startYear);
-        const source = createLifecycleChoiceYearSource(choice, target, config, owned, protagonistId);
-        declaration = source.declaration;
-        return {
-          async execute(executed: number) {
+  const initial = createLifecycleRuntime(candidate.genesis, { journal: journalMode }).initial;
+  let state = (initial.threads
+    ? { owned: initial.owned, favors: initial.favors, threads: initial.threads }
+    : { owned: initial.owned, favors: initial.favors }) as unknown as LifecycleState;
+  const journal: LifecycleYearRecord[] = [];
+  const choices: LifecycleChoiceDeclaration[] = [];
+  const evidence: LifecycleChoiceAppliedEvidence[] = [];
+  let frontier = config.startYear - 1;
+
+  async function runYears(start: number, end: number, select: (year: number) => unknown | undefined) {
+    for (let year = start; year <= end; year++) {
+      options.signal?.throwIfAborted();
+      const selected = select(year);
+      let applied: LifecycleChoiceAppliedEvidence | undefined;
+      let declaration: LifecycleChoiceDeclaration | undefined;
+      const { draft, record: annual } = await executeLifecycleAnnual(
+        state, year, config, protagonistId, genesis.versions, journalMode,
+        owned => {
+          if (!selected) return createRulesYearSource(genesis.source, config, owned, protagonistId, config.startYear);
+          const selectedChoice = selected as LifecycleChoiceDeclaration;
+          const selectedTarget = year === forkYear ? target : (parentJournal as LifecycleYearRecord[])
+            .find(entry => entry.year === year)?.final.owned.decisions
+            .find(entry => entry.year === year && entry.id === selectedChoice.decisionId);
+          if (!selectedTarget) throw new Error("Invalid lifecycle fork lineage");
+          // The parent's exposed decision already contains the forced selection. Admission needs
+          // an alternative prior selection; the replay and full-prefix comparison verify the result.
+          const previous = year === forkYear ? selectedTarget : { ...selectedTarget,
+            chosen: selectedTarget.options.find(option => option.id !== selectedChoice.optionId)?.id ?? "" };
+          const source = createLifecycleChoiceYearSource(selected, previous, config, owned, protagonistId);
+          declaration = source.declaration;
+          return { async execute(executed: number) {
             const result = await source.execute(executed);
-            evidence = result.evidence;
+            applied = result.evidence;
             return result.snapshot;
-          },
-        };
-      },
-    );
-    journal.push(annual);
-    state = draft;
-    frontier = year;
-    const deathYear = draft.owned.people[protagonistId].deathYear;
-    if (deathYear !== undefined && deathYear <= year) break;
+          } };
+        },
+      );
+      if (selected) {
+        if (!applied || !declaration) throw new Error("Lifecycle choice target not reached");
+        choices.push(declaration);
+        evidence.push(applied);
+      }
+      journal.push(annual);
+      state = draft;
+      frontier = year;
+      const deathYear = draft.owned.people[protagonistId].deathYear;
+      if (deathYear !== undefined && deathYear <= year) break;
+    }
   }
-  if (!evidence || !declaration) throw new Error("Lifecycle choice target not reached");
+  await runYears(config.startYear, forkYear - 1, year => inherited.find(entry => entry.year === year));
+  assertLifecycleForkPrefix(parentJournal as LifecycleYearRecord[], journal, forkYear);
+  await runYears(forkYear, lastYear, year => year === forkYear ? choice : undefined);
+  if (choices.length !== inherited.length + 1) throw new Error("Lifecycle choice target not reached");
 
   const deathYear = state.owned.people[protagonistId].deathYear;
   const lineage: LifecycleForkLineage = {
-    version: LIFECYCLE_FORK_VERSION, parentGenesisDigest: genesis.digest, forkYear, choice: declaration, evidence,
+    version: LIFECYCLE_FORK_VERSION, parentGenesisDigest: genesis.digest, forkYear, choices, evidence,
   };
   // One clone keeps the native/economic aliases of the final state and its snapshot together.
   return deepFreeze(structuredClone({
