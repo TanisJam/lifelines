@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { canonicalLifecycleData, createLifecycleGenesis, LIFECYCLE_THREAD_VERSIONS } from "./e-lifecycle-genesis";
 import { createLifecycleRuntime } from "./e-lifecycle-runtime";
-import { createLifecycleCapsule, createLifecycleCompactCapsule, deserializeLifecycleCapsule, deserializeLifecycleCompactCapsule, serializeLifecycleCapsule, serializeLifecycleCompactCapsule, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2 } from "./e-lifecycle-capsule";
+import { admitLifecycleCompactCapsule, createLifecycleCapsule, createLifecycleCompactCapsule, deserializeLifecycleCapsule, deserializeLifecycleCompactCapsule, serializeLifecycleCapsule, serializeLifecycleCompactCapsule, LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V2 } from "./e-lifecycle-capsule";
 import { initializeWorld } from "./world-origin";
 
 describe("thread-aware compact capsules", () => {
@@ -53,4 +53,26 @@ it("cold replays one committed thread-aware year", async () => {
   const cold = await deserializeLifecycleCompactCapsule(await serializeLifecycleCompactCapsule(capsule));
   expect(cold.digest).toBe(capsule.digest);
   expect(cold.output.journal[0].threadBeats).toEqual({ version: "thread-beats-1", beats: [] });
+});
+
+it("keeps root and fork capsule wire and digest authority separate", async () => {
+  const { createLifecycleForkCapsule, admitLifecycleForkCapsule, serializeLifecycleForkCapsule, deserializeLifecycleForkCapsule } = await import("./e-lifecycle-fork-capsule");
+  const { forkLifecycle } = await import("./e-lifecycle-fork");
+  const { LIFECYCLE_CHOICE_VERSION } = await import("./e-lifecycle-choice");
+  const initialization = { seed: "fork-c", startYear: 1327, endYear: 1329, founderCount: 6, protagonist: { name: "Alice", sex: "random" as const } };
+  const { world } = initializeWorld(initialization);
+  const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", versions: LIFECYCLE_THREAD_VERSIONS,
+    resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+  const runtime = createLifecycleRuntime(genesis, { journal: "compact" });
+  for (let year = 1327; year <= 1329; year++) if ((await runtime.advance(year)).status === "complete") break;
+  const root = { genesis, output: runtime.snapshot() };
+  const rootCapsule = await createLifecycleCompactCapsule(root, "compact");
+  const decisionId = "immigration:world#1328.1";
+  const decision = root.output.owned.decisions.find(entry => entry.id === decisionId)!;
+  const fork = await createLifecycleForkCapsule(await forkLifecycle(root, { version: LIFECYCLE_CHOICE_VERSION, decisionId, optionId: decision.options.find(option => option.id !== decision.chosen)!.id, year: 1328 }));
+  await expect(deserializeLifecycleCompactCapsule(await serializeLifecycleForkCapsule(fork))).rejects.toThrow();
+  await expect(deserializeLifecycleForkCapsule(await serializeLifecycleCompactCapsule(rootCapsule))).rejects.toThrow();
+  await expect(admitLifecycleForkCapsule(rootCapsule)).rejects.toThrow();
+  await expect(admitLifecycleCompactCapsule(fork)).rejects.toThrow();
+  await expect(deserializeLifecycleCompactCapsule(JSON.stringify({ ...JSON.parse(await serializeLifecycleCompactCapsule(rootCapsule)), digest: fork.digest }))).rejects.toThrow();
 });

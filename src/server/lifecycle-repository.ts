@@ -9,6 +9,9 @@ import {
   LIFECYCLE_COMPACT_CAPSULE_MANIFEST_V3,
   type LifecycleCompactCapsule,
 } from "../domain/e-lifecycle-capsule";
+import { forkLifecycle } from "../domain/e-lifecycle-fork";
+import { admitLifecycleForkCapsule, type LifecycleForkCapsule } from "../domain/e-lifecycle-fork-capsule";
+import { admitLifecycleGenesis, canonicalLifecycleDataEqual } from "../domain/e-lifecycle-genesis";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "../domain/e-lifecycle-dag";
 import { regenerateLifecycleOutput } from "../domain/e-lifecycle-run";
 import { requireFavorData } from "../domain/effects";
@@ -91,6 +94,71 @@ export interface LifecyclePublication {
 export interface LoadedLifecycle {
   readonly binding: LifecycleBranchBinding;
   readonly capsule: LifecycleCompactCapsule;
+}
+
+export interface LifecycleForkBranchBinding extends Omit<LifecycleBranchBinding, "version"> {
+  readonly version: "canonical-lifecycle-fork-binding-v1";
+}
+
+/** Isolated fork binding dispatch for a future storage owner; existing load stays root-only. */
+export async function loadStoredLifecycleFork(
+  input: unknown,
+  capsule: unknown,
+  resolve: (digest: string) => Promise<{ readonly lifeId: string; readonly capsule: unknown } | undefined>,
+): Promise<{ readonly binding: LifecycleForkBranchBinding; readonly capsule: LifecycleForkCapsule }> {
+  requireFavorData(input);
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Corrupt fork binding");
+  const binding = structuredClone(input) as LifecycleForkBranchBinding;
+  if (!same(Object.keys(binding).sort(), [...BINDING_KEYS])
+    || binding.version !== "canonical-lifecycle-fork-binding-v1"
+    || binding.capsuleSchema !== "lifecycle-fork-capsule-v1") throw new Error("Corrupt fork binding");
+  identifier(binding.lifeId); identifier(binding.branchId);
+  key(binding.capsuleDigest); key(binding.genesisDigest);
+  const admitted = await admitStoredLifecycleFork(binding.lifeId, capsule, resolve);
+  if (admitted.digest !== binding.capsuleDigest || admitLifecycleGenesis(admitted.genesis).digest !== binding.genesisDigest) {
+    throw new Error("Fork binding/capsule disagreement");
+  }
+  return Object.freeze({ binding: frozen(binding), capsule: admitted });
+}
+
+/** Internal cold-admission seam. U4 supplies storage; no route or repository load calls it. */
+export async function admitStoredLifecycleFork(
+  lifeId: string,
+  input: unknown,
+  resolve: (digest: string) => Promise<{ readonly lifeId: string; readonly capsule: unknown } | undefined>,
+): Promise<LifecycleForkCapsule> {
+  identifier(lifeId);
+  const admitted = await admitLifecycleForkCapsule(input);
+  let child = admitted;
+  const seen = new Set<string>([child.digest]);
+  for (;;) {
+    const digest = child.recipe.parentDigest;
+    if (seen.has(digest)) throw new Error("Cyclic fork ancestry");
+    seen.add(digest);
+    const stored = await resolve(digest);
+    if (!stored || stored.lifeId !== lifeId) throw new Error("Missing or cross-life fork ancestry");
+    if (child.parent === null) {
+      const root = await admitLifecycleCompactCapsule(stored.capsule);
+      if (root.genesis.digest !== digest || !canonicalLifecycleDataEqual(root.genesis, child.genesis)) {
+        throw new Error("Fork root ancestry disagreement");
+      }
+      if (journalModeOfSchema(root.manifest.capsuleSchema) !== child.manifest.journal) {
+        throw new Error("Fork root journal disagreement");
+      }
+      // Defense in depth: fork admission already replayed this fork from its genesis, so a valid stored
+      // root with the same genesis cannot disagree here; this binds the fork to the stored root record.
+      const replay = await forkLifecycle({ genesis: root.genesis, output: root.output }, child.lineage.choices.at(-1));
+      if (!canonicalLifecycleDataEqual(replay.output, child.output) || !canonicalLifecycleDataEqual(replay.lineage, child.lineage)) {
+        throw new Error("Fork root replay disagreement");
+      }
+      return admitted;
+    }
+    const parent = await admitLifecycleForkCapsule(stored.capsule);
+    if (parent.digest !== digest || !canonicalLifecycleDataEqual(parent, child.parent)) {
+      throw new Error("Fork ancestry disagreement");
+    }
+    child = parent;
+  }
 }
 
 /** Record order/prototypes are not meaning; array order, key presence and -0 are. */
