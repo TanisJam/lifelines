@@ -4,7 +4,12 @@ import { getDb, withTransaction } from "./db";
 import type { ChronicleResult, PersonSheetResult } from "./life-chronicle";
 import { projectLifecycleChronicle, projectLifecyclePersonSheet } from "./lifecycle-projection";
 import { LifecyclePersonSheetStore, LifecycleProjectionStore } from "./lifecycle-projection-store";
-import { LifecycleRepository, type LoadedLifecycle } from "./lifecycle-repository";
+import { LifecycleRepository, loadStoredLifecycleFork, type LifecycleBranchBinding, type LifecycleForkBranchBinding } from "./lifecycle-repository";
+import { LifecycleBranchStore } from "./lifecycle-branch-store";
+import type { LifecycleProjectionSource } from "./lifecycle-projection";
+import { deserializeCompactLifecycleDag } from "../domain/e-lifecycle-dag";
+import { admitLifecycleGenesis } from "../domain/e-lifecycle-genesis";
+import { deserializeLifecycleCompactCapsule } from "../domain/e-lifecycle-capsule";
 
 /**
  * Read activation for new-engine lives (RI1d, specs S2/S8).
@@ -16,7 +21,7 @@ import { LifecycleRepository, type LoadedLifecycle } from "./lifecycle-repositor
  *
  * AUTHORITY. The capsule remains the only authority: it is content-addressed, and the binding row
  * owns the only (life, branch) -> capsule digest mapping. `lifecycle_lives` is a persistence fact
- * (which life exists, and on which single branch) and never a source of view-model fields.
+ * (which life exists, and which branch is its root) and never a source of view-model fields.
  *
  * THE INDEX IS NOT A SECOND TRUTH. Reads consult `lifecycle_projections_v1` FIRST, keyed by that same
  * capsule digest plus the current `LIFECYCLE_VIEW_VERSION` and the request locale. A hit serves the
@@ -32,6 +37,7 @@ import { LifecycleRepository, type LoadedLifecycle } from "./lifecycle-repositor
  */
 
 const LIFE_NOT_FOUND = { error: "Life not found.", status: 404 } as const;
+const BRANCH_NOT_FOUND = { error: "Branch not found.", status: 404 } as const;
 const PERSON_NOT_FOUND = { error: "Person not found.", status: 404 } as const;
 
 function messageOf(error: unknown): string {
@@ -46,25 +52,104 @@ export function isLifecycleLife(lifeId: string): boolean {
   return getDb().prepare("SELECT 1 FROM lifecycle_lives WHERE id = ?").get(lifeId) !== undefined;
 }
 
-/**
- * The one branch a lifecycle life lives on. The engine has exactly one branch, and this row records
- * which branch the binding was published for — a persistence fact, never a view-model field.
- */
-function storedBranchId(lifeId: string): string | undefined {
-  const row = getDb().prepare("SELECT branch_id FROM lifecycle_lives WHERE id = ?").get(lifeId) as { readonly branch_id: string } | undefined;
-  return row?.branch_id;
+type BranchBinding = LifecycleBranchBinding | LifecycleForkBranchBinding;
+type BranchEntry = {
+  readonly branchId: string; readonly binding: BranchBinding; readonly publishOrder: number;
+  readonly parentDigest?: string; readonly forkYear?: number; readonly decisionId?: string; readonly optionId?: string;
+};
+type Resolution = { readonly kind: "life-missing" } | { readonly kind: "branch-missing" } | {
+  readonly kind: "found"; readonly selected: BranchEntry; readonly branches: readonly BranchEntry[];
+};
+
+/** Resolve the complete committed ancestry, retaining publication order for latest selection. */
+export function resolveLifecycleBranch(lifeId: string, branchId?: string): Resolution {
+  const db = getDb();
+  const root = db.prepare("SELECT branch_id FROM lifecycle_lives WHERE id = ?").get(lifeId);
+  if (!root) return { kind: "life-missing" };
+  const repository = new LifecycleRepository(db);
+  const store = new LifecycleBranchStore(db);
+  const rootId = String(root.branch_id);
+  const binding = repository.binding(lifeId, rootId);
+  if (!binding) throw new Error("Missing lifecycle root binding");
+  // Even a warm derived view cannot substitute for a missing canonical row.
+  const key = Buffer.from(binding.capsuleDigest, "utf16le");
+  const rootV2 = db.prepare("SELECT genesis_table, max_steps FROM lifecycle_capsules_v2 WHERE key = ?").get(key);
+  if (rootV2) {
+    if (typeof rootV2.genesis_table !== "string" || typeof rootV2.max_steps !== "number" || !Number.isSafeInteger(rootV2.max_steps) || rootV2.max_steps < 0 ||
+      admitLifecycleGenesis(deserializeCompactLifecycleDag(rootV2.genesis_table)).digest !== binding.genesisDigest) {
+      throw new Error("Lifecycle binding/capsule disagreement");
+    }
+  } else if (!db.prepare("SELECT 1 FROM lifecycle_capsules_v1 WHERE key = ?").get(key)) {
+    throw new Error("Missing lifecycle capsule");
+  }
+  const branches: BranchEntry[] = [{ branchId: rootId, binding, publishOrder: 0 }];
+  const queue = [binding.genesisDigest];
+  const seen = new Set(queue);
+  for (let i = 0; i < queue.length; i++) {
+    for (const row of store.children(lifeId, queue[i])) {
+      const id = String(row.branch_id), digest = String(row.digest);
+      const forkBinding = store.binding(lifeId, id);
+      if (!forkBinding || forkBinding.capsuleDigest !== digest || forkBinding.genesisDigest !== binding.genesisDigest || seen.has(digest) || id === rootId) {
+        throw new Error("Corrupt lifecycle branch ancestry");
+      }
+      seen.add(digest);
+      queue.push(digest);
+      branches.push({ branchId: id, binding: forkBinding, publishOrder: Number(row.publish_order),
+        parentDigest: String(row.parent_digest), forkYear: Number(row.fork_year),
+        decisionId: String(row.decision_id), optionId: String(row.option_id) });
+    }
+  }
+  const count = db.prepare("SELECT count(*) AS count FROM lifecycle_forks_v1 WHERE life_id = ?").get(lifeId);
+  if (Number(count?.count) !== branches.length - 1) throw new Error("Corrupt lifecycle branch ancestry");
+  branches.sort((a, b) => a.publishOrder - b.publishOrder);
+  const selected = branchId === undefined ? branches[branches.length - 1] : branches.find(branch => branch.branchId === branchId);
+  return selected ? { kind: "found", selected, branches } : { kind: "branch-missing" };
+}
+
+/** Validate canonical envelopes even on cache hits; full root replay runs on a miss. */
+async function checkFork(lifeId: string, binding: BranchBinding): Promise<unknown | undefined> {
+  if (binding.version !== "canonical-lifecycle-fork-binding-v1") {
+    const key = Buffer.from(binding.capsuleDigest, "utf16le");
+    const db = getDb();
+    if (!db.prepare("SELECT 1 FROM lifecycle_capsules_v2 WHERE key = ?").get(key)) {
+      const row = db.prepare("SELECT wire FROM lifecycle_capsules_v1 WHERE key = ?").get(key);
+      if (!row || !(row.wire instanceof Uint8Array) || row.wire.byteLength % 2) throw new Error("Corrupt lifecycle capsule");
+      const capsule = await deserializeLifecycleCompactCapsule(Buffer.from(row.wire).toString("utf16le"));
+      if (capsule.digest !== binding.capsuleDigest || capsule.genesis.digest !== binding.genesisDigest || capsule.manifest.capsuleSchema !== binding.capsuleSchema) {
+        throw new Error("Lifecycle binding/capsule disagreement");
+      }
+    }
+    return undefined;
+  }
+  const store = new LifecycleBranchStore(getDb());
+  const stored = await store.resolve(lifeId, binding.capsuleDigest);
+  if (!stored) throw new Error("Missing lifecycle fork capsule");
+  await loadStoredLifecycleFork(binding, stored.capsule, digest => store.resolve(lifeId, digest));
+  return stored.capsule;
+}
+
+async function loadBranch(lifeId: string, binding: BranchBinding, capsule?: unknown) {
+  if (binding.version !== "canonical-lifecycle-fork-binding-v1") {
+    const loaded = await new LifecycleRepository(getDb()).load(lifeId, binding.branchId);
+    if (!loaded) throw new Error("Missing lifecycle capsule");
+    return loaded;
+  }
+  const store = new LifecycleBranchStore(getDb());
+  const stored = capsule ?? (await store.resolve(lifeId, binding.capsuleDigest))?.capsule;
+  if (!stored) throw new Error("Missing lifecycle fork capsule");
+  return loadStoredLifecycleFork(binding, stored, digest => store.resolve(lifeId, digest));
 }
 
 /** The stored view, admitted only when it claims the life the binding owns. */
-function storedChronicle(value: unknown, lifeId: string): Chronicle {
-  const record = value as { readonly lifeId?: unknown; readonly protagonist?: Record<string, unknown> } | null;
+function storedChronicle(value: unknown, lifeId: string, branchId: string): Chronicle {
+  const record = value as { readonly lifeId?: unknown; readonly branchId?: unknown; readonly protagonist?: Record<string, unknown> } | null;
   const protagonist = record?.protagonist;
   if (record === null || typeof record !== "object" || typeof record.lifeId !== "string"
     || protagonist === null || typeof protagonist !== "object"
     || typeof protagonist.name !== "string" || typeof protagonist.birthYear !== "number") {
     throw new Error("Corrupt lifecycle projection row");
   }
-  if (record.lifeId !== lifeId) throw new Error("Lifecycle projection identity disagreement");
+  if (record.lifeId !== lifeId || record.branchId !== branchId) throw new Error("Lifecycle projection identity disagreement");
   return value as Chronicle;
 }
 
@@ -77,7 +162,7 @@ function readIndexed(lifeId: string, branchId: string, capsuleDigest: string, lo
   try {
     const store = new LifecycleProjectionStore(getDb());
     const view = store.read({ lifeId, branchId, capsuleDigest, locale });
-    return view === undefined ? undefined : storedChronicle(view, lifeId);
+    return view === undefined ? undefined : storedChronicle(view, lifeId, branchId);
   } catch {
     return undefined;
   }
@@ -128,58 +213,51 @@ function indexSheets(
 
 type Indexed =
   | { readonly kind: "view"; readonly view: Chronicle }
-  | { readonly kind: "life"; readonly loaded: LoadedLifecycle }
-  | { readonly kind: "missing" }
+  | { readonly kind: "life"; readonly source: LifecycleProjectionSource; readonly binding: BranchBinding }
+  | { readonly kind: "life-missing" }
+  | { readonly kind: "branch-missing" }
   | { readonly kind: "refused"; readonly error: string };
 
-/** Index-first open: the stored view when the digest and version address one, the replay otherwise. */
-async function openChronicleView(lifeId: string, branchIdParam: string | undefined, locale: Locale): Promise<Indexed> {
-  const stored = storedBranchId(lifeId);
-  if (stored === undefined) return { kind: "missing" };
-  const branchId = branchIdParam ?? stored;
-  if (branchId !== stored) return { kind: "missing" };
-  const repository = new LifecycleRepository(getDb());
+async function openChronicleView(lifeId: string, branchId: string | undefined, locale: Locale): Promise<Indexed> {
   try {
-    const binding = repository.binding(lifeId, branchId);
-    if (binding === undefined) return { kind: "missing" };
-    const indexed = readIndexed(lifeId, branchId, binding.capsuleDigest, locale);
+    const resolved = resolveLifecycleBranch(lifeId, branchId);
+    if (resolved.kind !== "found") return resolved;
+    const binding = resolved.selected.binding;
+    const capsule = await checkFork(lifeId, binding);
+    const indexed = readIndexed(lifeId, binding.branchId, binding.capsuleDigest, locale);
     if (indexed !== undefined) return { kind: "view", view: indexed };
-    const loaded = await repository.load(lifeId, branchId);
-    return loaded === undefined ? { kind: "missing" } : { kind: "life", loaded };
+    const loaded = await loadBranch(lifeId, binding, capsule);
+    return { kind: "life", binding, source: { genesis: loaded.capsule.genesis, output: loaded.capsule.output } as LifecycleProjectionSource };
   } catch (error) {
     return { kind: "refused", error: messageOf(error) };
   }
 }
 
-function listItemOf(view: Chronicle): LifeListItem {
+function listItemOf(view: Chronicle, branchCount: number): LifeListItem {
   const protagonist = view.protagonist;
   return {
-    lifeId: view.lifeId,
-    name: protagonist.name,
-    birthYear: protagonist.birthYear,
-    deathYear: protagonist.deathYear,
-    ageAtDeath: protagonist.ageAtDeath,
-    causeOfDeath: protagonist.causeOfDeath,
-    ...(protagonist.horizonYear === undefined ? {} : { horizonYear: protagonist.horizonYear }),
-    branchCount: 1,
+    lifeId: view.lifeId, name: protagonist.name, birthYear: protagonist.birthYear,
+    deathYear: protagonist.deathYear, ageAtDeath: protagonist.ageAtDeath, causeOfDeath: protagonist.causeOfDeath,
+    ...(protagonist.horizonYear === undefined ? {} : { horizonYear: protagonist.horizonYear }), branchCount,
   };
 }
 
 /** `GET /api/lives/:lifeId?branchId=&lang=`: the indexed view, or one cold replay that indexes itself. */
 export async function buildLifecycleChronicle(lifeId: string, branchId?: string, locale: Locale = DEFAULT_LOCALE): Promise<ChronicleResult> {
   const opened = await openChronicleView(lifeId, branchId, locale);
-  if (opened.kind === "missing") return { ...LIFE_NOT_FOUND };
+  if (opened.kind === "life-missing") return { ...LIFE_NOT_FOUND };
+  if (opened.kind === "branch-missing") return { ...BRANCH_NOT_FOUND };
   if (opened.kind === "refused") return { error: opened.error, status: 500 };
   if (opened.kind === "view") return { data: opened.view };
-  const { loaded } = opened;
+  const { source, binding } = opened;
   try {
     const projection = await projectLifecycleChronicle({
-      source: { genesis: loaded.capsule.genesis, output: loaded.capsule.output },
+      source,
       // Route identity, copied from the binding this replay was keyed by — never derived from data.
-      identity: { lifeId: loaded.binding.lifeId, branchId: loaded.binding.branchId },
+      identity: { lifeId: binding.lifeId, branchId: binding.branchId },
       locale,
     });
-    indexView(loaded.binding.lifeId, loaded.binding.branchId, loaded.binding.capsuleDigest, locale, projection.view);
+    indexView(binding.lifeId, binding.branchId, binding.capsuleDigest, locale, projection.view);
     return { data: projection.view };
   } catch (error) {
     return { error: messageOf(error), status: 500 };
@@ -193,18 +271,18 @@ export async function buildLifecyclePersonSheet(
   branchId?: string,
   locale: Locale = DEFAULT_LOCALE,
 ): Promise<PersonSheetResult> {
-  const stored = storedBranchId(lifeId);
-  if (stored === undefined) return { ...LIFE_NOT_FOUND };
-  const branch = branchId ?? stored;
-  if (branch !== stored) return { ...LIFE_NOT_FOUND };
-  const repository = new LifecycleRepository(getDb());
-  let binding;
+  let binding: BranchBinding;
+  let capsule: unknown;
   try {
-    binding = repository.binding(lifeId, branch);
+    const resolved = resolveLifecycleBranch(lifeId, branchId);
+    if (resolved.kind === "life-missing") return { ...LIFE_NOT_FOUND };
+    if (resolved.kind === "branch-missing") return { ...BRANCH_NOT_FOUND };
+    binding = resolved.selected.binding;
+    capsule = await checkFork(lifeId, binding);
   } catch (error) {
     return { error: messageOf(error), status: 500 };
   }
-  if (binding === undefined) return { ...LIFE_NOT_FOUND };
+  const branch = binding.branchId;
 
   // Index-first: a life published with its sheets never regenerates a year to answer this.
   const indexed = readIndexedSheets(lifeId, branch, binding.capsuleDigest, locale);
@@ -216,17 +294,16 @@ export async function buildLifecyclePersonSheet(
 
   // Cold: this life predates the sheet index (or its rows were never written). ONE regeneration heals
   // every locale at once, which is the same bounded cost the chronicle miss already pays.
-  let loaded: LoadedLifecycle | undefined;
+  let loaded: Awaited<ReturnType<typeof loadBranch>>;
   try {
-    loaded = await repository.load(lifeId, branch);
+    loaded = await loadBranch(lifeId, binding, capsule);
   } catch (error) {
     return { error: messageOf(error), status: 500 };
   }
-  if (loaded === undefined) return { ...LIFE_NOT_FOUND };
   // Existence is read from the same regenerated output the sheet is derived from: an unknown person
   // is the honest legacy not-found, never a fabricated sheet.
   if (!Object.hasOwn(loaded.capsule.output.owned.people, personId)) return { ...PERSON_NOT_FOUND };
-  const source = { genesis: loaded.capsule.genesis, output: loaded.capsule.output };
+  const source = { genesis: loaded.capsule.genesis, output: loaded.capsule.output } as LifecycleProjectionSource;
   try {
     const sheets: { locale: Locale; personId: string; view: unknown }[] = [];
     for (const target of LOCALES) {
@@ -243,38 +320,25 @@ export async function buildLifecyclePersonSheet(
   }
 }
 
-/**
- * `GET /api/lives`'s lifecycle rows: one per lifecycle life, newest first by the life's own
- * `created_at`. Every field comes from that life's own full replay, and `branchCount` is `1` because
- * the engine makes exactly one branch — never an invented count. `causeOfDeath` is the projection's
- * display text, produced by the same `deathCauseDisplay` mapping the legacy list uses today. A life
- * alive at its horizon keeps an explicit `null` in every death field plus its `horizonYear` (spec
- * S5); a completed life carries its own death and no horizon year. A refusal propagates: a listing
- * that cannot be regenerated is not quietly dropped or filled from the stored row.
- */
+/** List each life's latest committed branch and its actual branch count. */
 export async function listLifecycleSummaries(locale: Locale = DEFAULT_LOCALE): Promise<LifeListItem[]> {
-  const rows = getDb()
-    .prepare("SELECT id, branch_id FROM lifecycle_lives ORDER BY created_at DESC, rowid DESC")
-    .all() as { readonly id: string; readonly branch_id: string }[];
-  const repository = new LifecycleRepository(getDb());
+  const rows = getDb().prepare("SELECT id FROM lifecycle_lives ORDER BY created_at DESC, rowid DESC").all();
   const items: LifeListItem[] = [];
   for (const row of rows) {
-    const binding = repository.binding(row.id, row.branch_id);
-    if (binding === undefined) throw new Error(`Missing lifecycle capsule for ${row.id}`);
-    const indexed = readIndexed(row.id, binding.branchId, binding.capsuleDigest, locale);
-    if (indexed !== undefined) {
-      items.push(listItemOf(indexed));
-      continue;
+    const lifeId = String(row.id);
+    const resolved = resolveLifecycleBranch(lifeId);
+    if (resolved.kind !== "found") throw new Error(`Missing lifecycle life ${lifeId}`);
+    const opened = await openChronicleView(lifeId, resolved.selected.branchId, locale);
+    if (opened.kind === "refused") throw new Error(opened.error);
+    if (opened.kind === "life-missing" || opened.kind === "branch-missing") throw new Error(`Missing lifecycle capsule for ${lifeId}`);
+    if (opened.kind === "view") {
+      items.push(listItemOf(opened.view, resolved.branches.length));
+    } else {
+      const { binding, source } = opened;
+      const projection = await projectLifecycleChronicle({ source, identity: { lifeId, branchId: binding.branchId }, locale });
+      indexView(lifeId, binding.branchId, binding.capsuleDigest, locale, projection.view);
+      items.push(listItemOf(projection.view, resolved.branches.length));
     }
-    const loaded = await repository.load(row.id, row.branch_id);
-    if (loaded === undefined) throw new Error(`Missing lifecycle capsule for ${row.id}`);
-    const projection = await projectLifecycleChronicle({
-      source: { genesis: loaded.capsule.genesis, output: loaded.capsule.output },
-      identity: { lifeId: loaded.binding.lifeId, branchId: loaded.binding.branchId },
-      locale,
-    });
-    indexView(loaded.binding.lifeId, loaded.binding.branchId, loaded.binding.capsuleDigest, locale, projection.view);
-    items.push(listItemOf(projection.view));
   }
   return items;
 }

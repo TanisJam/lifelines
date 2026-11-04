@@ -147,7 +147,7 @@ describe("lifecycle read path (RI1d)", () => {
 
     // An explicit branch id resolves to the same life; an unknown one is the legacy not-found.
     await expect(buildLifecycleChronicle(LIFE, BRANCH, "en")).resolves.toEqual({ data: expectedChronicle });
-    await expect(buildLifecycleChronicle(LIFE, "branch-not-this-life", "en")).resolves.toEqual({ error: "Life not found.", status: 404 });
+    await expect(buildLifecycleChronicle(LIFE, "branch-not-this-life", "en")).resolves.toEqual({ error: "Branch not found.", status: 404 });
   }, 120_000);
 
   it("serves a person sheet from the regenerated output and the honest not-found for an unknown person", async () => {
@@ -201,24 +201,16 @@ describe("lifecycle read path (RI1d)", () => {
     }
   }, 120_000);
 
-  it("serves the index for a tampered genesis and refuses it wherever the index cannot answer", async () => {
+  it("refuses a tampered genesis even when indexes are warm", async () => {
     const db = getDb();
     const digest = (await new LifecycleRepository(db).load(LIFE, BRANCH))!.capsule.digest;
     const stored = storedCapsuleRow(db, Buffer.from(digest, "utf16le"));
     db.prepare("UPDATE main.lifecycle_capsules_v2 SET genesis_table = ? WHERE key = ?")
       .run(foreignGenesisTable(), stored.key);
     try {
-      // P3's deliberate cost: the index is addressed by the capsule digest, so it still answers with
-      // the view it was written from. A read no longer re-proves regeneration.
-      const indexed = await buildLifecycleChronicle(LIFE, undefined, "en");
-      expect(indexed.error).toBeUndefined();
-      expect(indexed.data).toEqual(expectedChronicle);
-      expect((await listLifecycleSummaries("en"))[0]!.lifeId).toBe(LIFE);
-      // P9 made the sheet an indexed read too, so it answers from the index for the same reason.
-      const indexedSheet = await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en");
-      expect(indexedSheet.error).toBeUndefined();
-      expect(indexedSheet.data!.personId).toBe("protagonist");
-      // Every path that still replays refuses the same row, never repairs it.
+      expect((await buildLifecycleChronicle(LIFE, undefined, "en")).status).toBe(500);
+      expect((await buildLifecyclePersonSheet(LIFE, "protagonist", undefined, "en")).status).toBe(500);
+      await expect(listLifecycleSummaries("en")).rejects.toThrow();
       db.prepare("DELETE FROM main.lifecycle_projections_v1").run();
       db.prepare("DELETE FROM main.lifecycle_person_sheets_v1").run();
       const refused = await buildLifecycleChronicle(LIFE, undefined, "en");

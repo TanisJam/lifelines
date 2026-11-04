@@ -67,3 +67,12 @@ A fork choice is admitted separately from the authority-free rules-year source. 
 ### Fork-only native choice execution
 
 The versioned lifecycle choice source admits a declaration against the exposed target using the existing choice admission boundary. It anchors the native override to that year only. After execution it requires exactly one forced decision in that year, with the admitted decision ID and option; it returns applied-once evidence only then. An unreached, ambiguous, mismatched, or repeated target is refused. Native PR6 invariant errors also propagate as refusals; other execution errors are not swallowed. A rejected execution mutates its owned draft and the caller must discard it. This adapter does not grant fork provenance or alter genesis profile dispatch.
+
+### Lifecycle branch reads
+
+Lifecycle chronicle and person-sheet reads share branch resolution. An explicit branch selects that
+committed root or fork; an omitted branch selects the most recently published fork, falling back to
+the root. Life listings use the same latest branch and count the complete committed ancestry. Unknown
+lives, branches, and people return their respective not-found errors. Fork envelopes and root genesis
+are checked before serving derived indexes; a cold fork is admitted against its same-life ancestry.
+Branch labels and chronicle metadata composition are separate from this resolution seam.
