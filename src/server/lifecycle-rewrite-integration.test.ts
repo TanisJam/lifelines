@@ -19,18 +19,19 @@ import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { initializeWorld } from "@/domain/world-origin";
 import { POST } from "@/app/api/lives/[lifeId]/rewrite/stream/route";
 
-it("reopens a public rewrite in a fresh process without changing root storage", async () => {
+it.each(["audit", "compact"] as const)("reopens a public %s rewrite in a fresh process without changing root storage", async journal => {
   const dir = mkdtempSync(join(tmpdir(), "lifelines-u7-public-"));
   const path = join(dir, "life.sqlite"), db = state.db = openDb(path);
   try {
     const initialization = { seed: "fork-a", startYear: 1327, endYear: 1329, founderCount: 6, protagonist: { name: "Alice", sex: "random" as const } };
     const { world } = initializeWorld(initialization);
     const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
-    const runtime = createLifecycleRuntime(genesis, { journal: "compact" });
+    const runtime = createLifecycleRuntime(genesis, { journal });
     for (let year = 1327; year <= 1329; year++) await runtime.advance(year);
-    const capsule = await createLifecycleCompactCapsule({ genesis, output: runtime.snapshot() }, "compact");
+    const capsule = await createLifecycleCompactCapsule({ genesis, output: runtime.snapshot() }, journal);
     const repo = new LifecycleRepository(db), store = new LifecycleBranchStore(db), person = world.people.protagonist;
     const binding = await repo.publish({ lifeId: "u7-public", branchId: "root", config: world.config, protagonistName: person.name, protagonistSex: person.sex, capsule });
+    expect(binding.capsuleSchema).toBe(journal === "audit" ? "lifecycle-capsule-compact-cb1-1" : "lifecycle-capsule-compact-cb2-1");
     store.prepareDecisionsFromLoaded("u7-public", "root", binding.capsuleDigest, { binding, capsule });
     const rootRows = () => JSON.stringify({ life: db.prepare("SELECT * FROM lifecycle_lives WHERE id = ?").get("u7-public"), capsule: db.prepare("SELECT * FROM lifecycle_capsules_v2 WHERE key = ?").get(Buffer.from(binding.capsuleDigest, "utf16le")) });
     const before = rootRows();
