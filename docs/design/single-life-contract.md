@@ -59,3 +59,7 @@ Legacy parsing is unchanged: `/\{\{([^{}]+)\}\}/g` recognizes markers, unknown m
 - **The UI builds against the contract with a fixture adapter.** It uses `src/lib/fixtures/life-fixture.ts`, generated from the types, until the engine merges.
 - **The engine verifies its endpoints with curl** and unit tests.
 - **Docs:** the engine appends decisions 034 and up to `docs/decisions.md`; the UI appends decisions 040 and up. This keeps the numbers from clashing.
+
+### Lifecycle choice declaration
+
+A fork choice is admitted separately from the authority-free rules-year source. Its closed, immutable `lifecycle-native-choice/v1` declaration binds the exact exposed decision ID, recorded year, and selected option to a matching native subject and kind. Admission does not execute or certify the choice; the later execution adapter must supply exact target and applied-once evidence. The existing rules-year source continues to reject override fields.
