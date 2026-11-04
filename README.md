@@ -142,3 +142,10 @@ entry is a failed check; a crisis outside the observed lifetime is not applicabl
 heuristics, not comprehensive language detection or a judgment of story quality. Synthetic
 50-year recorded-event fixtures and negative controls live in `src/server/story-quality.test.ts`;
 they do not simulate 50 years.
+
+Lifecycle chronicles and live ticks show Black Death and second pestilence context only when
+an eligible town event was recorded. These entries describe the village, not infection or
+personal loss. Presence is evaluated at the existing derived event moment: a crisis after
+birth and before death is omitted while the protagonist is away. These moments are display
+ordering, not historical evidence. Changing this derived chronicle view invalidates its cache;
+older lives can require a cold replay on their next read.
