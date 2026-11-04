@@ -151,6 +151,10 @@ export async function runLifecycleOutput(
 
 /** The certified legacy path: the same run, plus the legacy capsule the legacy format requires. */
 export async function runLifecycle(input: unknown, options: LifecycleRunOptions): Promise<LifecycleRunResult> {
+  const candidate = capture(input);
+  if (candidate.kind === "start" && "threadState" in admitLifecycleGenesis(candidate.genesis).versions) {
+    throw new Error("Thread-aware lifecycle requires a versioned capsule profile");
+  }
   const run = await runLifecycleOutput(input, options, "audit");
   const capsule = await createLifecycleCapsule({ genesis: run.genesis, output: run.output });
   return result(capsule, run.aborted);

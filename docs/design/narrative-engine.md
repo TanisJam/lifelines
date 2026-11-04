@@ -1,5 +1,17 @@
 # Narrative engine: simulate life, discover story, render language
 
+## Lifecycle execution versions
+
+| Profile | Selection | Canonical thread data | Storage |
+|---|---|---|---|
+| `lifecycle-genesis-lr1a-1` / `native-rules-lifecycle-lr1-1` | Existing default | No thread fields | Existing capsule profiles |
+| `lifecycle-genesis-thread-1` / `native-rules-lifecycle-thread-1` | Explicit tuple only; not enabled for ordinary creation | Empty `thread-state-1` state and annual `thread-beats-1` deltas | Not ready for persistence; distinct capsule profile is U2 |
+
+The first intended kind is debt/help; other kinds are deferred. The three-year eligibility rule
+will apply to all new lifecycle HELP. Outcomes describe literal help given or help refused, not
+repayment or betrayal. Death ends a thread; absence suspends it. There is no explicit cancel path.
+These decisions are not implemented by the empty profile.
+
 **Status: architecture proposal, not implementation authorization.** Lifelines should generate a
 seeded, deterministic world without LLM decisions, preserve its consequences, and select a much
 smaller story from that history. This evolves the existing engine; it is not a replacement built

@@ -15,6 +15,7 @@ type Immutable<T> = T extends object ? { readonly [K in keyof T]: Immutable<T[K]
 export interface LifecycleState {
   owned: LegacyOwnedRunState;
   favors: RuntimeOutput["state"];
+  threads?: { version: "thread-state-1"; threads: never[] };
 }
 export interface LifecycleHelpSlot {
   creditor: string;
@@ -34,6 +35,7 @@ export interface LifecycleHelpSlot {
 export interface LifecycleYearRecord {
   year: number;
   versions: LifecycleGenesis["versions"];
+  threadBeats?: { version: "thread-beats-1"; beats: never[] };
   /** Pre-economic people/events/decisions. The pre-economic favor ledger copy is NOT retained. */
   physicalSnapshot?: YearSnapshot;
   economics?: {
@@ -185,7 +187,9 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
   }
 
   // One pointer owns the entire committed frontier/state/journal/publication boundary.
-  const state = { owned, favors };
+  const state: LifecycleState = "threadState" in genesis.versions
+    ? { owned, favors, threads: { version: "thread-state-1", threads: [] } }
+    : { owned, favors };
   const emptyJournal: Journal = Object.freeze([]);
   const initial = publish(state, initialFrontier, emptyJournal);
   const publishedVersions = initial.versions;
@@ -241,6 +245,7 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
           },
           final: draft,
         };
+      if ("threadBeats" in genesis.versions) record.threadBeats = { version: "thread-beats-1", beats: [] };
       // Detach only the NEW annual record. Reuse the privately frozen version
       // tuple to preserve its aliases across annual evidence/publication frames.
       const newRecord = structuredClone(record);

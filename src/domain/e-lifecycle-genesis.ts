@@ -21,9 +21,19 @@ export const LIFECYCLE_GENESIS_VERSIONS = Object.freeze({
   origin: WORLD_ORIGIN_VERSIONS,
 } as const);
 
+export const LIFECYCLE_THREAD_VERSIONS = Object.freeze({
+  ...LIFECYCLE_GENESIS_VERSIONS,
+  schema: "lifecycle-genesis-thread-1",
+  runtime: "native-rules-lifecycle-thread-1",
+  threadState: "thread-state-1",
+  threadBeats: "thread-beats-1",
+} as const);
+
+export type LifecycleVersions = typeof LIFECYCLE_GENESIS_VERSIONS | typeof LIFECYCLE_THREAD_VERSIONS;
+
 type Immutable<T> = T extends object ? { readonly [K in keyof T]: Immutable<T[K]> } : T;
 interface GenesisPayload {
-  versions: typeof LIFECYCLE_GENESIS_VERSIONS;
+  versions: LifecycleVersions;
   origin: WorldOrigin;
   source: RulesYearSourceDeclaration;
   protagonistId: string;
@@ -123,7 +133,17 @@ function resourcesFor(input: unknown, ids: string[]): ResourcePlan {
   }
   return structuredClone(input) as ResourcePlan;
 }
-function payloadFor(origin: WorldOrigin, world: InitialWorld, protagonistId: unknown, resources: unknown): GenesisPayload {
+function versionsFor(input: unknown): LifecycleVersions {
+  if (canonical(input) === canonical(LIFECYCLE_GENESIS_VERSIONS)) return LIFECYCLE_GENESIS_VERSIONS;
+  if (canonical(input) === canonical(LIFECYCLE_THREAD_VERSIONS)) return LIFECYCLE_THREAD_VERSIONS;
+  throw new Error("Unsupported lifecycle versions");
+}
+/** Compare admitted execution identities without interpreting a digest as authority. */
+export function lifecycleVersionsMatch(left: unknown, right: LifecycleVersions): boolean {
+  requireFavorData(left, true);
+  return canonical(left) === canonical(right);
+}
+function payloadFor(origin: WorldOrigin, world: InitialWorld, protagonistId: unknown, resources: unknown, versions: LifecycleVersions): GenesisPayload {
   requireId(protagonistId);
   if (!Object.hasOwn(world.people, protagonistId)) throw new Error("Unknown lifecycle protagonist");
   const ids = Object.keys(world.people);
@@ -132,7 +152,7 @@ function payloadFor(origin: WorldOrigin, world: InitialWorld, protagonistId: unk
     if (world.people[id].id !== id) throw new Error("Lifecycle registry identity disagreement");
   }
   return {
-    versions: LIFECYCLE_GENESIS_VERSIONS,
+    versions,
     origin,
     source: { version: RULES_YEAR_SOURCE_VERSION },
     protagonistId,
@@ -147,9 +167,10 @@ function payloadFor(origin: WorldOrigin, world: InitialWorld, protagonistId: unk
 export function createLifecycleGenesis(input: unknown): LifecycleGenesis {
   requireFavorData(input, true);
   record(input);
-  requireFields(input, ["initialization", "protagonistId", "resources"]);
+  requireFields(input, Object.hasOwn(input, "versions") ? ["initialization", "protagonistId", "resources", "versions"] : ["initialization", "protagonistId", "resources"]);
+  const versions = versionsFor(Object.hasOwn(input, "versions") ? input.versions : LIFECYCLE_GENESIS_VERSIONS);
   const { world, origin } = initializeWorld(input.initialization);
-  const payload = payloadFor(origin, world, input.protagonistId, input.resources);
+  const payload = payloadFor(origin, world, input.protagonistId, input.resources, versions);
   // Clone constants too: freezing a publication must never freeze caller data.
   return freeze(structuredClone({ ...payload, digest: digest(payload) }));
 }
@@ -163,14 +184,14 @@ export function admitLifecycleGenesis(input: unknown): LifecycleGenesis {
   requireFavorData(input, true);
   record(input);
   requireFields(input, ["versions", "origin", "source", "protagonistId", "resources", "initial", "digest"]);
-  if (canonical(input.versions) !== canonical(LIFECYCLE_GENESIS_VERSIONS)) throw new Error("Unsupported lifecycle versions");
+  const versions = versionsFor(input.versions);
   if (canonical(input.source) !== canonical({ version: RULES_YEAR_SOURCE_VERSION })) throw new Error("Unsupported lifecycle source");
   if (typeof input.digest !== "string" || !/^[a-f0-9]{64}$/.test(input.digest)) throw new Error("Invalid lifecycle SHA256");
   const { digest: recordedDigest, ...payload } = input;
   if (digest(payload) !== recordedDigest) throw new Error("Lifecycle digest disagreement");
   const origin = admitWorldOrigin(input.origin);
   const world = generateInitialWorld(origin.requested).world;
-  const reproduced = payloadFor(origin, world, input.protagonistId, input.resources);
+  const reproduced = payloadFor(origin, world, input.protagonistId, input.resources, versions);
   if (canonical(payload) !== canonical(reproduced)) throw new Error("Lifecycle generation disagreement");
   return freeze(structuredClone({ ...reproduced, digest: recordedDigest }));
 }
