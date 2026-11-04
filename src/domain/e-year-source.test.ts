@@ -353,6 +353,9 @@ describe("versioned lifecycle choice source", () => {
     } finally { fake.mockRestore(); }
   });
 
+  // Both year sources take no lifecycle profile: the genesis/thread split lives in the runtime
+  // above them, which the profile test at the end of this file pins. Identity at this layer is
+  // therefore the same for both profiles.
   it("leaves a non-target year unchanged and emits no evidence", async () => {
     const first = owned({ actor: person(config.seed, "actor", 1400) });
     const second = owned({ actor: person(config.seed, "actor", 1400) });
