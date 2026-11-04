@@ -78,10 +78,13 @@ describe("branch-aware lifecycle reads", () => {
 
   it("cold-admits a fork and rebuilds unchanged chronicle and sheet indexes", async () => {
     const view = await buildLifecycleChronicle("life", "child", "es");
+    expect(view.data?.entries.filter(entry => entry.kind.startsWith("thread-"))).toEqual([]);
     const sheet = await buildLifecyclePersonSheet("life", "protagonist", "child", "es");
     state.db!.prepare("DELETE FROM lifecycle_projections_v1 WHERE branch_id = ?").run("child");
     state.db!.prepare("DELETE FROM lifecycle_person_sheet_sets_v1 WHERE branch_id = ?").run("child");
-    expect(await buildLifecycleChronicle("life", "child", "es")).toEqual(view);
+    const cold = await buildLifecycleChronicle("life", "child", "es");
+    expect(cold).toEqual(view);
+    expect(cold.data?.entries.filter(entry => entry.kind.startsWith("thread-"))).toEqual([]);
     expect(await buildLifecyclePersonSheet("life", "protagonist", "child", "es")).toEqual(sheet);
   }, 180000);
 
@@ -91,6 +94,40 @@ describe("branch-aware lifecycle reads", () => {
     expect(await buildLifecyclePersonSheet("life", "protagonist", "missing")).toEqual({ error: "Branch not found.", status: 404 });
     expect(await buildLifecyclePersonSheet("life", "missing", "child")).toEqual({ error: "Person not found.", status: 404 });
   });
+
+  it("composes fresh localized metadata without changing warm story bytes after reopen", async () => {
+    const db = state.db!;
+    const initialization = { seed: "fork-a", startYear: 1327, endYear: 1329, founderCount: 6, protagonist: { name: "Alice", sex: "random" as const } };
+    const { world } = initializeWorld(initialization);
+    const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+    const runtime = createLifecycleRuntime(genesis, { journal: "compact" });
+    for (let year = 1327; year <= 1329; year++) await runtime.advance(year);
+    const root = { genesis, output: runtime.snapshot() };
+    const capsule = await createLifecycleCompactCapsule(root, "compact");
+    const person = world.people.protagonist;
+    await new LifecycleRepository(db).publish({ lifeId: "fresh", branchId: "root", config: world.config, protagonistName: person.name, protagonistSex: person.sex, capsule });
+    db.close(); state.db = openDb(path);
+    for (const locale of ["en", "es"] as const) {
+      const result = await buildLifecycleChronicle("fresh", "root", locale);
+      expect(result.data?.branches).toEqual([{ branchId: "root", label: locale === "en" ? "Original life" : "Vida original", parentBranchId: null, forkYear: null }]);
+    }
+    const rows = () => state.db!.prepare("SELECT locale, view_json FROM lifecycle_projections_v1 WHERE life_id = 'fresh' AND branch_id = 'root' ORDER BY locale").all();
+    const before = JSON.stringify(rows());
+    const target = root.output.owned.decisions.find(d => d.id === "immigration:world#1328.1")!;
+    const sibling = await createLifecycleForkCapsule(await forkLifecycle(root, { version: LIFECYCLE_CHOICE_VERSION, year: 1328, decisionId: target.id, optionId: target.options.find(o => o.id !== target.chosen)!.id }));
+    await new LifecycleBranchStore(state.db!).publishFork({ lifeId: "fresh", branchId: "sibling", capsule: sibling });
+    state.db!.close(); state.db = openDb(path);
+    for (const locale of ["en", "es"] as const) {
+      const view = (await buildLifecycleChronicle("fresh", "root", locale)).data!;
+      expect(view.branches).toEqual([
+        { branchId: "root", label: locale === "en" ? "Original life" : "Vida original", parentBranchId: null, forkYear: null },
+        { branchId: "sibling", label: locale === "en" ? "Changed in 1328" : "Cambiado en 1328", parentBranchId: "root", forkYear: 1328 },
+      ]);
+    }
+    expect(JSON.stringify(rows())).toBe(before);
+    const index = new LifecycleBranchStore(state.db!);
+    expect(index.decision("fresh", "root", capsule.digest, target.id, target.year)?.chosen).toBe(target.chosen);
+  }, 180000);
 
   it("refuses corrupt canonical fork wire even with cached projections and sheets", async () => {
     state.db!.exec("DROP TRIGGER lifecycle_forks_no_update");

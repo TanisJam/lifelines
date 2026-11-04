@@ -115,9 +115,10 @@ beforeAll(async () => {
   });
   fresh = await freshCapsule();
   freshSource = { genesis: fresh.genesis, output: fresh.output };
-  expectedChronicle = (await projectLifecycleChronicle({
+  const coreChronicle = (await projectLifecycleChronicle({
     source: freshSource, identity: { lifeId: LIFE, branchId: BRANCH }, locale: "en",
   })).view;
+  expectedChronicle = { ...coreChronicle, branches: [{ branchId: BRANCH, label: "Original life", parentBranchId: null, forkYear: null }] };
   legacy = await registerLegacyLife();
 }, 240_000);
 
@@ -143,7 +144,7 @@ describe("lifecycle read path (RI1d)", () => {
     expect(result.data!.branchId).toBe(BRANCH);
     expect(result.data).toEqual(expectedChronicle);
     // The engine has one branch, so the projection reports no branch switcher (an honest gap).
-    expect(result.data!.branches).toEqual([]);
+    expect(result.data!.branches).toEqual(expectedChronicle.branches);
 
     // An explicit branch id resolves to the same life; an unknown one is the legacy not-found.
     await expect(buildLifecycleChronicle(LIFE, BRANCH, "en")).resolves.toEqual({ data: expectedChronicle });

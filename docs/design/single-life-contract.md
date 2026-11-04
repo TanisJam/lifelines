@@ -75,4 +75,4 @@ committed root or fork; an omitted branch selects the most recently published fo
 the root. Life listings use the same latest branch and count the complete committed ancestry. Unknown
 lives, branches, and people return their respective not-found errors. Fork envelopes and root genesis
 are checked before serving derived indexes; a cold fork is admitted against its same-life ancestry.
-Branch labels and chronicle metadata composition are separate from this resolution seam.
+Chronicle reads compose the current branch list after retrieving the cached story. Root and changed-year labels are localized at read time; publishing a fork never rewrites existing cached story bytes. Cold chronicle reads prepare the digest-bound decision index from the admitted output without another replay.

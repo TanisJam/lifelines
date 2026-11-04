@@ -1,5 +1,6 @@
 import type { Chronicle, LifeListItem, PersonSheet } from "@/contracts/life";
 import { DEFAULT_LOCALE, LOCALES, type Locale } from "@/domain/locale";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { getDb, withTransaction } from "./db";
 import type { ChronicleResult, PersonSheetResult } from "./life-chronicle";
 import { projectLifecycleChronicle, projectLifecyclePersonSheet } from "./lifecycle-projection";
@@ -212,8 +213,8 @@ function indexSheets(
 }
 
 type Indexed =
-  | { readonly kind: "view"; readonly view: Chronicle }
-  | { readonly kind: "life"; readonly source: LifecycleProjectionSource; readonly binding: BranchBinding }
+  | { readonly kind: "view"; readonly view: Chronicle; readonly branches: readonly BranchEntry[] }
+  | { readonly kind: "life"; readonly source: LifecycleProjectionSource; readonly binding: BranchBinding; readonly branches: readonly BranchEntry[] }
   | { readonly kind: "life-missing" }
   | { readonly kind: "branch-missing" }
   | { readonly kind: "refused"; readonly error: string };
@@ -225,9 +226,10 @@ async function openChronicleView(lifeId: string, branchId: string | undefined, l
     const binding = resolved.selected.binding;
     const capsule = await checkFork(lifeId, binding);
     const indexed = readIndexed(lifeId, binding.branchId, binding.capsuleDigest, locale);
-    if (indexed !== undefined) return { kind: "view", view: indexed };
+    if (indexed !== undefined) return { kind: "view", view: indexed, branches: resolved.branches };
     const loaded = await loadBranch(lifeId, binding, capsule);
-    return { kind: "life", binding, source: { genesis: loaded.capsule.genesis, output: loaded.capsule.output } as LifecycleProjectionSource };
+    new LifecycleBranchStore(getDb()).prepareDecisionsFromLoaded(lifeId, binding.branchId, binding.capsuleDigest, loaded);
+    return { kind: "life", binding, branches: resolved.branches, source: { genesis: loaded.capsule.genesis, output: loaded.capsule.output } as LifecycleProjectionSource };
   } catch (error) {
     return { kind: "refused", error: messageOf(error) };
   }
@@ -242,13 +244,24 @@ function listItemOf(view: Chronicle, branchCount: number): LifeListItem {
   };
 }
 
+function composeBranches(view: Chronicle, entries: readonly BranchEntry[], locale: Locale): Chronicle {
+  const labels = getDictionary(locale).chronicle;
+  const byDigest = new Map(entries.map(entry => [entry.publishOrder === 0 ? entry.binding.genesisDigest : entry.binding.capsuleDigest, entry.branchId]));
+  return { ...view, branches: entries.map(entry => {
+    const parentBranchId = entry.parentDigest === undefined ? null : byDigest.get(entry.parentDigest);
+    if (parentBranchId === undefined) throw new Error("Corrupt lifecycle branch ancestry");
+    const forkYear = entry.forkYear ?? null;
+    return { branchId: entry.branchId, parentBranchId, forkYear, label: forkYear === null ? labels.originalLife : labels.changedInYear(forkYear) };
+  }) };
+}
+
 /** `GET /api/lives/:lifeId?branchId=&lang=`: the indexed view, or one cold replay that indexes itself. */
 export async function buildLifecycleChronicle(lifeId: string, branchId?: string, locale: Locale = DEFAULT_LOCALE): Promise<ChronicleResult> {
   const opened = await openChronicleView(lifeId, branchId, locale);
   if (opened.kind === "life-missing") return { ...LIFE_NOT_FOUND };
   if (opened.kind === "branch-missing") return { ...BRANCH_NOT_FOUND };
   if (opened.kind === "refused") return { error: opened.error, status: 500 };
-  if (opened.kind === "view") return { data: opened.view };
+  if (opened.kind === "view") return { data: composeBranches(opened.view, opened.branches, locale) };
   const { source, binding } = opened;
   try {
     const projection = await projectLifecycleChronicle({
@@ -258,7 +271,7 @@ export async function buildLifecycleChronicle(lifeId: string, branchId?: string,
       locale,
     });
     indexView(binding.lifeId, binding.branchId, binding.capsuleDigest, locale, projection.view);
-    return { data: projection.view };
+    return { data: composeBranches(projection.view, opened.branches, locale) };
   } catch (error) {
     return { error: messageOf(error), status: 500 };
   }

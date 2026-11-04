@@ -139,6 +139,16 @@ export class LifecycleBranchStore {
       if (!loaded || loaded.binding.capsuleDigest !== digest) throw new Error("Decision index binding disagreement");
       decisions = loaded.capsule.output.owned.decisions;
     }
+    this.writeDecisionSummary(lifeId, branchId, digest, decisions);
+  }
+
+  /** Prepare from a capsule already admitted by the cold-read loader, without replaying again. */
+  prepareDecisionsFromLoaded(lifeId: string, branchId: string, digest: string, loaded: { readonly binding: { readonly lifeId: string; readonly branchId: string; readonly capsuleDigest: string }; readonly capsule: { readonly digest: string; readonly output: { readonly owned: { readonly decisions: readonly LifecycleDecisionTarget[] } } } }): void {
+    if (this.boundDigest(lifeId, branchId) !== digest || loaded.binding.lifeId !== lifeId || loaded.binding.branchId !== branchId || loaded.binding.capsuleDigest !== digest || loaded.capsule.digest !== digest) throw new Error("Decision index binding disagreement");
+    this.writeDecisionSummary(lifeId, branchId, digest, loaded.capsule.output.owned.decisions);
+  }
+
+  private writeDecisionSummary(lifeId: string, branchId: string, digest: string, decisions: readonly LifecycleDecisionTarget[]): void {
     const targets = decisions.map(({ id, year, kind, personId, partnerId, chosen, options }) => ({
       id, year, kind, personId, ...(partnerId === undefined ? {} : { partnerId }), chosen, options: options.map(({ id }) => ({ id })),
     }));

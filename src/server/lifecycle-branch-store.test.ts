@@ -102,3 +102,16 @@ it.each([["default", false], ["cb3 thread", true]] as const)("prepares a complet
     expect(store.decision("life", "root", "b".repeat(64), target.id, target.year)).toBeUndefined();
   } finally { db.close(); }
 });
+
+it("refuses preparation when admitted capsule digest differs from the binding", async () => {
+  const { LifecycleBranchStore } = await import("./lifecycle-branch-store");
+  const db = openDb(pathForTest());
+  try {
+    const digest = "a".repeat(64);
+    db.prepare("INSERT INTO lifecycle_lives VALUES (?, ?, ?, ?, ?, ?)").run("life", "A", "female", "{}", "branch", 1);
+    db.prepare("INSERT INTO lifecycle_bindings VALUES (?, ?, ?)").run("life", "branch", JSON.stringify({ version: "canonical-lifecycle-cb1-1", lifeId: "life", branchId: "branch", capsuleDigest: digest, capsuleSchema: "lifecycle-capsule-compact-cb2-1", genesisDigest: "c".repeat(64) }));
+    const loaded = { binding: { lifeId: "life", branchId: "branch", capsuleDigest: digest }, capsule: { digest: "b".repeat(64), output: { owned: { decisions: [] } } } };
+    expect(() => new LifecycleBranchStore(db).prepareDecisionsFromLoaded("life", "branch", digest, loaded)).toThrow("Decision index binding disagreement");
+    expect(db.prepare("SELECT count(*) AS n FROM lifecycle_fork_decision_sets_v1").get()?.n).toBe(0);
+  } finally { db.close(); }
+});
