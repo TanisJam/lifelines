@@ -33,6 +33,7 @@ describe("fork capsule", () => {
       const decoded = await deserializeLifecycleForkCapsule(await serializeLifecycleForkCapsule(capsule));
       expect(decoded.output).toEqual(result.output);
       expect(decoded.lineage).toEqual(result.lineage);
+      expect([decoded.manifest, decoded.digest]).toEqual([capsule.manifest, capsule.digest]);
     });
   }
   it("round trips nested forks", async () => {
@@ -69,12 +70,38 @@ describe("fork capsule", () => {
     const first = await fork(await life("compact"), 1327);
     const parent = await createLifecycleForkCapsule(first);
     const second = await fork(first, 1328);
-    await expect(createLifecycleForkCapsule(second)).rejects.toThrow();
+    // Without its parent, a nested fork replays as a root fork and disagrees.
+    await expect(createLifecycleForkCapsule(second)).rejects.toThrow("Fork replay disagreement");
+    // A rehashed capsule that drops its recorded parent is refused before any replay.
+    const nested = await createLifecycleForkCapsule(second, { parent });
+    const { manifest, genesis, output, lineage, recipe } = nested;
+    const table = serializeCompactLifecycleDag({ genesis, output, lineage, recipe, parent: null });
+    const digest = createHash("sha256").update(JSON.stringify(["lifecycle-fork-capsule-v1", canonicalLifecycleData(manifest), table])).digest("hex");
+    await expect(admitLifecycleForkCapsule({ ...nested, parent: null, digest })).rejects.toThrow("Missing fork ancestry");
     const cyclic = structuredClone(parent) as unknown as { parent: unknown };
     cyclic.parent = cyclic;
     await expect(admitLifecycleForkCapsule(cyclic)).rejects.toThrow();
     const other = await createLifecycleForkCapsule(await fork(await life("compact", false, "fork-b"), 1327));
-    await expect(createLifecycleForkCapsule(second, { parent: other })).rejects.toThrow();
+    await expect(createLifecycleForkCapsule(second, { parent: other })).rejects.toThrow("Fork ancestry disagreement");
+  });
+  it("refuses an unknown manifest even when the digest covers it", async () => {
+    const capsule = await createLifecycleForkCapsule(await fork(await life("compact"), 1328));
+    const manifest = { ...capsule.manifest, capsuleSchema: "lifecycle-fork-capsule-v9" };
+    const { genesis, output, lineage, recipe, parent } = capsule;
+    const table = serializeCompactLifecycleDag({ genesis, output, lineage, recipe, parent });
+    const digest = createHash("sha256").update(JSON.stringify(["lifecycle-fork-capsule-v1", canonicalLifecycleData(manifest), table])).digest("hex");
+    await expect(admitLifecycleForkCapsule({ ...capsule, manifest, digest })).rejects.toThrow("Unsupported fork capsule manifest");
+    await expect(deserializeLifecycleForkCapsule(JSON.stringify({ manifest, table, digest }))).rejects.toThrow("Unsupported fork capsule manifest");
+  });
+  it("refuses a capsule or wire whose digest disagrees", async () => {
+    const capsule = await createLifecycleForkCapsule(await fork(await life("compact"), 1328));
+    await expect(admitLifecycleForkCapsule({ ...capsule, digest: "0".repeat(64) })).rejects.toThrow("Fork capsule digest disagreement");
+    const wire = JSON.parse(await serializeLifecycleForkCapsule(capsule));
+    await expect(deserializeLifecycleForkCapsule(JSON.stringify({ ...wire, digest: "0".repeat(64) }))).rejects.toThrow("Fork capsule digest disagreement");
+  });
+  it("refuses a thread fork carried by an audit journal", async () => {
+    const result = await fork(await life("audit", true), 1328);
+    await expect(createLifecycleForkCapsule(result)).rejects.toThrow("Invalid fork journal mode");
   });
   it("does not allow the root capsule creator to certify a fork output", async () => {
     const result = await fork(await life("compact"), 1328);
