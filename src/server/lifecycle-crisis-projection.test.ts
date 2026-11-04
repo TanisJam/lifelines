@@ -78,3 +78,63 @@ it("preserves an unrelated personal event without attributing it to a crisis", a
   expect(withCrisis.find(entry => entry.id === "ill")).toMatchObject({ id: original.id, title: original.title, prose: original.prose, links: original.links, cause: original.cause, turn: original.turn });
   expect(original.prose).not.toMatch(/plague|pestilence/i);
 });
+
+it("keeps the static non-crisis illness entry stable", async () => {
+  const illness: Event = { id: "ill", year: 1348, kind: "illness", actors: ["protagonist"], causes: [], payload: {} };
+  const item = (await entries(source([illness]))).find(entry => entry.id === "ill")!;
+  expect({ id: item.id, year: item.year, kind: item.kind, title: item.title, prose: item.prose, level: item.level, links: item.links, at: item.at, who: item.who }).toMatchInlineSnapshot(`
+    {
+      "at": 1348.7916666666667,
+      "id": "ill",
+      "kind": "illness",
+      "level": 1,
+      "links": [],
+      "prose": "Alice fell ill.",
+      "title": "Falls ill",
+      "who": [
+        "protagonist",
+      ],
+      "year": 1348,
+    }
+  `);
+});
+
+it("uses year-local residence for an absence and a later return", async () => {
+  const events = [move("leave", 1348, true), town("crisis", 1349), move("return", 1349, false)];
+  const s = source(events);
+  const journal = s.output.journal as unknown as { final: { owned: { people: Record<string, Person> } } }[];
+  journal[0]!.final.owned.people = { ...world.people, protagonist: { ...person, birthYear: 1320, away: true } };
+  const times = eventTimes(init.seed, events.filter(e => e.year === 1349), "protagonist");
+  const expected = times.get("return")! < times.get("crisis")!;
+  expect(crisis(await entries(s)).some(e => e.id === "crisis")).toBe(expected);
+});
+
+it("keeps recorded plague causes on personal death without inventing a link", async () => {
+  const d = death("death", 1348, "black-death");
+  const result = await entries(source([town("plague", 1348), d], { protagonist: { deathYear: 1348 } }));
+  const personal = result.find(entry => entry.id === "death")!;
+  expect(personal).toBeDefined();
+  expect(personal.prose.toLowerCase()).toMatch(/plague|black death/);
+  expect(personal.cause?.entryId).toBeUndefined();
+});
+
+it("cuts live tick context at a same-year death without retiming", async () => {
+  const d = death("d", 1348);
+  const ids = Array.from({ length: 80 }, (_, i) => `plague-${i}`);
+  const crisisEvent = ids.map(id => town(id, 1348)).find(c => eventTimes(init.seed, [d, c], "protagonist").get(c.id)! > eventTimes(init.seed, [d, c], "protagonist").get(d.id)!)!;
+  expect(crisisEvent).toBeDefined();
+  const s = source([d, crisisEvent], { protagonist: { deathYear: 1348 } });
+  expect(crisis((await projectLifecycleTick({ source: s, year: 1348 })).view.entries)).toEqual([]);
+  expect(crisis(await entries(s))).toEqual([]);
+});
+
+it("derives absence from prior moves when snapshots do not carry residence", async () => {
+  const s = source([move("leave", 1348, true), town("later", 1349)]);
+  expect(crisis(await entries(s)).some(e => e.id === "later")).toBe(false);
+});
+
+it("recognizes native residence moves recorded by destination", async () => {
+  const c = town("crisis", 1349);
+  const leave: Event = { id: "leave-native", year: 1348, kind: "move", actors: ["protagonist"], causes: [], payload: { destination: "away" } };
+  expect(crisis(await entries(source([leave, c])))).toEqual([]);
+});
