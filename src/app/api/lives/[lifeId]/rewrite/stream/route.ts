@@ -12,6 +12,16 @@ import { buildCandidateLifeChronicle, buildProvisionalTickEntries } from "@/serv
 import { createSceneTracker, friendSeenBefore } from "@/server/life-scene";
 import { getLife, getLifeBranch, listLifeBranches, newLifeBranchId, registerLifeBranch, type LifeBranchRecord } from "@/server/life-store";
 import { sseResponse, yieldToEventLoop } from "@/server/sse";
+import type { LifecycleForkCapsule } from "@/domain/e-lifecycle-fork-capsule";
+import type { LifecycleProjectionSource } from "@/server/lifecycle-projection";
+import { LIFECYCLE_CHOICE_VERSION } from "@/domain/e-lifecycle-choice";
+import { getDb } from "@/server/db";
+import { LifecycleBranchStore, type LifecycleDecisionTarget } from "@/server/lifecycle-branch-store";
+import { LifecycleQueueFullError, requestLifecycleCreateSlot } from "@/server/lifecycle-create-queue";
+import { isLifecycleLife, resolveLifecycleBranch } from "@/server/lifecycle-read";
+import { LifecycleRepository, loadStoredLifecycleFork } from "@/server/lifecycle-repository";
+import { streamLifecycleRewrite } from "@/server/lifecycle-rewrite";
+
 
 export const runtime = "nodejs";
 
@@ -37,6 +47,7 @@ function errorResponse(message: string, status = 400): Response {
  */
 export async function POST(request: Request, context: { params: Promise<{ lifeId: string }> }): Promise<Response> {
   const { lifeId } = await context.params;
+  if (isLifecycleLife(lifeId)) return lifecycleRewrite(request, lifeId);
   const life = getLife(lifeId);
   if (!life) return errorResponse("Life not found.", 404);
 
@@ -179,4 +190,77 @@ export async function POST(request: Request, context: { params: Promise<{ lifeId
     }
     send("done", done);
   });
+}
+
+function lifecycleTargetError(target: LifecycleDecisionTarget | undefined, decisionId: string, optionId: string): string | undefined {
+  if (!target) return `No such decision "${decisionId}" in this branch.`;
+  if (!target.options.some(option => option.id === optionId)) return `"${optionId}" is not one of this decision's options.`;
+  if (target.chosen === optionId) return "The selected option is already the choice for this decision.";
+  return undefined;
+}
+
+async function lifecycleRewrite(request: Request, lifeId: string): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as Partial<RewriteRequest>;
+  const branchId = body.branchId?.trim();
+  if (!branchId) return errorResponse('"branchId" is required.');
+  if (!body.decisionId || !body.optionId) return errorResponse('"decisionId" and "optionId" are required.');
+  const decisionId = body.decisionId, optionId = body.optionId;
+  const resolved = resolveLifecycleBranch(lifeId, branchId);
+  if (resolved.kind === "life-missing") return errorResponse("Life not found.", 404);
+  if (resolved.kind === "branch-missing") return errorResponse("Branch not found.", 404);
+  const binding = resolved.selected.binding;
+  const store = new LifecycleBranchStore(getDb());
+  const indexed = store.decisionById(lifeId, branchId, binding.capsuleDigest, decisionId);
+  if (indexed.kind !== "absent") {
+    const error = lifecycleTargetError(indexed.kind === "found" ? indexed.target : undefined, decisionId, optionId);
+    if (error) return errorResponse(error);
+  }
+  const guard = await guardSimulation(request, body);
+  if (guard instanceof Response) return guard;
+  let ticket;
+  try { ticket = requestLifecycleCreateSlot(); }
+  catch (error) {
+    if (error instanceof LifecycleQueueFullError) return errorResponse(error.message, 429);
+    throw error;
+  }
+  const locale = body.lang && isLocale(body.lang) ? body.lang : "en";
+  let handedOff = false;
+  try {
+    await ticket.ready(request.signal);
+    request.signal.throwIfAborted();
+    let loaded;
+    let parentCapsule: LifecycleForkCapsule | undefined;
+    if (binding.version === "canonical-lifecycle-fork-binding-v1") {
+      const stored = await store.resolve(lifeId, binding.capsuleDigest);
+      if (!stored) throw new Error("Missing fork capsule");
+      loaded = await loadStoredLifecycleFork(binding, stored.capsule, digest => store.resolve(lifeId, digest));
+      parentCapsule = loaded.capsule;
+    } else {
+      loaded = await new LifecycleRepository(getDb()).load(lifeId, branchId);
+      if (!loaded) throw new Error("Missing lifecycle parent");
+    }
+    request.signal.throwIfAborted();
+    const target = loaded.capsule.output.owned.decisions.find(decision => decision.id === decisionId);
+    const error = lifecycleTargetError(target, decisionId, optionId);
+    if (error) return errorResponse(error);
+    if (!target) throw new Error("Missing lifecycle decision");
+    const response = sseResponse(async (send, streamSignal) => {
+      const signal = AbortSignal.any([request.signal, streamSignal]);
+      try {
+        if (signal.aborted) return;
+        const childId = newLifeBranchId();
+        await streamLifecycleRewrite({ lifeId, branchId: childId,
+          parent: { ...( { genesis: loaded.capsule.genesis, output: loaded.capsule.output } as unknown as LifecycleProjectionSource),
+            ...(parentCapsule ? { lineage: parentCapsule.lineage } : {}) },
+          ...(parentCapsule ? { parentCapsule } : {}),
+          choice: { version: LIFECYCLE_CHOICE_VERSION, decisionId, optionId, year: target.year }, locale, signal, store,
+          send: async event => { send(event.type, event); await yieldToEventLoop(); },
+        });
+      } finally { ticket.release(); }
+    });
+    handedOff = true;
+    return response;
+  } finally {
+    if (!handedOff) ticket.release();
+  }
 }

@@ -115,3 +115,36 @@ it("refuses preparation when admitted capsule digest differs from the binding", 
     expect(db.prepare("SELECT count(*) AS n FROM lifecycle_fork_decision_sets_v1").get()?.n).toBe(0);
   } finally { db.close(); }
 });
+
+it.each(["absent", "unknown", "found"] as const)("looks up a decision by ID with %s outcome without replay", async (outcome) => {
+  const { LifecycleBranchStore } = await import("./lifecycle-branch-store");
+  const { LifecycleRepository } = await import("./lifecycle-repository");
+  const { vi } = await import("vitest");
+  const db = openDb(pathForTest()), digest = "a".repeat(64);
+  try {
+    db.prepare("INSERT INTO lifecycle_lives VALUES (?, ?, ?, ?, ?, ?)").run("life", "A", "female", "{}", "branch", 1);
+    db.prepare("INSERT INTO lifecycle_bindings VALUES (?, ?, ?)").run("life", "branch", JSON.stringify({ version: "canonical-lifecycle-cb1-1", lifeId: "life", branchId: "branch", capsuleDigest: digest, capsuleSchema: "lifecycle-capsule-compact-cb2-1", genesisDigest: "c".repeat(64) }));
+    const target = { id: "d", year: 1327, kind: "immigration", personId: "world", chosen: "yes", options: [{ id: "yes" }, { id: "no" }] };
+    if (outcome !== "absent") db.prepare("INSERT INTO lifecycle_fork_decision_sets_v1 VALUES (?, ?, ?, ?, ?)").run("life", "branch", digest, 1, JSON.stringify([target]));
+    const load = vi.spyOn(LifecycleRepository.prototype, "load");
+    const result = new LifecycleBranchStore(db).decisionById("life", "branch", digest, outcome === "unknown" ? "missing" : "d");
+    expect(result).toEqual(outcome === "found" ? { kind: "found", target } : { kind: outcome });
+    expect(load).not.toHaveBeenCalled();
+    load.mockRestore();
+  } finally { db.close(); }
+});
+
+it("refuses corrupt, stale and ambiguous decision-ID summaries without replay", async () => {
+  const { LifecycleBranchStore } = await import("./lifecycle-branch-store");
+  const db = openDb(pathForTest()), digest = "a".repeat(64), store = new LifecycleBranchStore(db);
+  try {
+    db.prepare("INSERT INTO lifecycle_lives VALUES (?, ?, ?, ?, ?, ?)").run("life", "A", "female", "{}", "branch", 1);
+    db.prepare("INSERT INTO lifecycle_bindings VALUES (?, ?, ?)").run("life", "branch", JSON.stringify({ version: "canonical-lifecycle-cb1-1", lifeId: "life", branchId: "branch", capsuleDigest: digest, capsuleSchema: "lifecycle-capsule-compact-cb2-1", genesisDigest: "c".repeat(64) }));
+    const target = { id: "d", year: 1327, kind: "immigration", personId: "world", chosen: "yes", options: [{ id: "yes" }, { id: "no" }] };
+    db.prepare("INSERT INTO lifecycle_fork_decision_sets_v1 VALUES (?, ?, ?, ?, ?)").run("life", "branch", digest, 2, JSON.stringify([target]));
+    expect(store.decisionById("life", "branch", digest, "d")).toEqual({ kind: "absent" });
+    db.prepare("UPDATE lifecycle_fork_decision_sets_v1 SET decisions_json = ?").run(JSON.stringify([target, { ...target, year: 1328 }]));
+    expect(store.decisionById("life", "branch", digest, "d")).toEqual({ kind: "absent" });
+    expect(store.decisionById("life", "branch", "b".repeat(64), "d")).toEqual({ kind: "absent" });
+  } finally { db.close(); }
+});

@@ -163,16 +163,31 @@ export class LifecycleBranchStore {
     });
   }
 
-  /** A miss is not evidence of absence. Preparation must run separately under the replay gate. */
-  decision(lifeId: string, branchId: string, digest: string, decisionId: string, year: number): LifecycleDecisionTarget | undefined {
-    if (!digestPattern.test(digest) || !Number.isSafeInteger(year) || this.boundDigest(lifeId, branchId) !== digest) return undefined;
+  private decisionSummary(lifeId: string, branchId: string, digest: string): readonly LifecycleDecisionTarget[] | undefined {
+    if (!digestPattern.test(digest) || this.boundDigest(lifeId, branchId) !== digest) return undefined;
     const row = this.db.prepare("SELECT decision_count, decisions_json FROM lifecycle_fork_decision_sets_v1 WHERE life_id = ? AND branch_id = ? AND capsule_digest = ?").get(lifeId, branchId, digest);
     if (!row || typeof row.decisions_json !== "string" || typeof row.decision_count !== "number" || row.decision_count > MAX_DECISIONS || Buffer.byteLength(row.decisions_json, "utf8") > MAX_DECISION_SUMMARY_BYTES) return undefined;
     try {
       const data: unknown = JSON.parse(row.decisions_json);
       if (!Array.isArray(data) || data.length !== row.decision_count || !data.every(validTarget) ||
           new Set(data.map(d => `${d.id}\u0000${d.year}`)).size !== data.length) return undefined;
-      return data.find(d => d.id === decisionId && d.year === year);
+      return data;
     } catch { return undefined; }
+  }
+
+  /** A miss is not evidence of absence. Preparation must run separately under the replay gate. */
+  decision(lifeId: string, branchId: string, digest: string, decisionId: string, year: number): LifecycleDecisionTarget | undefined {
+    if (!Number.isSafeInteger(year)) return undefined;
+    return this.decisionSummary(lifeId, branchId, digest)?.find(d => d.id === decisionId && d.year === year);
+  }
+
+  /** Distinguish a complete negative lookup from an unavailable, stale or corrupt index. */
+  decisionById(lifeId: string, branchId: string, digest: string, decisionId: string):
+    { readonly kind: "absent" | "unknown" } | { readonly kind: "found"; readonly target: LifecycleDecisionTarget } {
+    const summary = this.decisionSummary(lifeId, branchId, digest);
+    if (!summary) return { kind: "absent" };
+    const matches = summary.filter(d => d.id === decisionId);
+    if (matches.length > 1) return { kind: "absent" };
+    return matches[0] ? { kind: "found", target: matches[0] } : { kind: "unknown" };
   }
 }
