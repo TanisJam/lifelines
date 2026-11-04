@@ -38,33 +38,33 @@ describe("recorded lifecycle crisis context", () => {
     expect(await entries(s, locale)).toEqual(await entries(s, locale));
     expect(s).toEqual(before);
   });
-  it("requires actual supported records, window, birth and observed frontier", async () => {
-    expect(crisis(await entries(source([])))).toEqual([]);
+  it.each(["en", "es"] as const)("requires actual supported records, window, birth and observed frontier (%s)", async locale => {
+    expect(crisis(await entries(source([]), locale))).toEqual([]);
     const s = source([town("early", 1348, "second-pestilence"), town("late", 1350), town("pest", 1361, "second-pestilence"), town("other", 1348, "festival")], { end: 1361, protagonist: { birthYear: 1349 } });
-    expect(crisis(await entries(s)).map(e => e.id)).toEqual(["pest"]);
-    expect(crisis(await entries(source([town("future", 1349)], { end: 1348 })))).toEqual([]);
+    expect(crisis(await entries(s, locale)).map(e => e.id)).toEqual(["pest"]);
+    expect(crisis(await entries(source([town("future", 1349)], { end: 1348 }), locale))).toEqual([]);
   });
   it("retains distinct records and never asserts personal illness", async () => {
     const all = crisis(await entries(source([town("a", 1348), town("b", 1348)])));
     expect(all.map(e => e.id).sort()).toEqual(["a", "b"]);
     for (const e of all) { expect(e.level).toBe(2); expect(e.prose).not.toMatch(/infect|died|disease|illness/i); expect(e.turn).toBeUndefined(); expect(e.who).toEqual([]); }
   });
-  it("suppresses context during absence and after recorded death using unchanged moments", async () => {
+  it.each(["en", "es"] as const)("suppresses context during absence and after recorded death using unchanged moments (%s)", async locale => {
     const a = town("a", 1348); const b = town("b", 1349);
-    expect(crisis(await entries(source([move("leave", 1348, true), b], { protagonist: { away: true } })))).toEqual([]);
+    expect(crisis(await entries(source([move("leave", 1348, true), b], { protagonist: { away: true } }), locale))).toEqual([]);
     const d = death("d", 1348); const events = [a, d, b];
     const times = eventTimes(init.seed, events.filter(e => e.year === 1348), "protagonist");
-    const all = crisis(await entries(source(events, { protagonist: { deathYear: 1348 } })));
+    const all = crisis(await entries(source(events, { protagonist: { deathYear: 1348 } }), locale));
     expect(all.some(e => e.id === "a")).toBe(times.get("a")! < times.get("d")!);
     expect(all.some(e => e.id === "b")).toBe(false);
   });
-  it("uses same-year departure and return at their derived moments", async () => {
+  it.each(["en", "es"] as const)("uses same-year departure and return at their derived moments (%s)", async locale => {
     for (const moves of [[move("leave", 1348, true)], [move("leave", 1348, true), move("return", 1348, false)]]) {
       const c = town("a", 1348); const events = [...moves, c];
       const times = eventTimes(init.seed, events, "protagonist");
       const prior = moves.filter(m => times.get(m.id)! < times.get(c.id)!).sort((x, y) => times.get(x.id)! - times.get(y.id)!);
       const expected = prior.at(-1)?.payload.away !== true;
-      expect(crisis(await entries(source(events))).length > 0).toBe(expected);
+      expect(crisis(await entries(source(events), locale)).length > 0).toBe(expected);
     }
   });
 });
@@ -99,42 +99,42 @@ it("keeps the static non-crisis illness entry stable", async () => {
   `);
 });
 
-it("uses year-local residence for an absence and a later return", async () => {
+it.each(["en", "es"] as const)("uses year-local residence for an absence and a later return (%s)", async locale => {
   const events = [move("leave", 1348, true), town("crisis", 1349), move("return", 1349, false)];
   const s = source(events);
   const journal = s.output.journal as unknown as { final: { owned: { people: Record<string, Person> } } }[];
   journal[0]!.final.owned.people = { ...world.people, protagonist: { ...person, birthYear: 1320, away: true } };
   const times = eventTimes(init.seed, events.filter(e => e.year === 1349), "protagonist");
   const expected = times.get("return")! < times.get("crisis")!;
-  expect(crisis(await entries(s)).some(e => e.id === "crisis")).toBe(expected);
+  expect(crisis(await entries(s, locale)).some(e => e.id === "crisis")).toBe(expected);
 });
 
-it("keeps recorded plague causes on personal death without inventing a link", async () => {
+it.each(["en", "es"] as const)("keeps recorded plague causes on personal death without inventing a link (%s)", async locale => {
   const d = death("death", 1348, "black-death");
-  const result = await entries(source([town("plague", 1348), d], { protagonist: { deathYear: 1348 } }));
+  const result = await entries(source([town("plague", 1348), d], { protagonist: { deathYear: 1348 } }), locale);
   const personal = result.find(entry => entry.id === "death")!;
   expect(personal).toBeDefined();
-  expect(personal.prose.toLowerCase()).toMatch(/plague|black death/);
+  expect(personal.prose.toLowerCase()).toMatch(/plague|black death|peste/);
   expect(personal.cause?.entryId).toBeUndefined();
 });
 
-it("cuts live tick context at a same-year death without retiming", async () => {
+it.each(["en", "es"] as const)("cuts live tick context at a same-year death without retiming (%s)", async locale => {
   const d = death("d", 1348);
   const ids = Array.from({ length: 80 }, (_, i) => `plague-${i}`);
   const crisisEvent = ids.map(id => town(id, 1348)).find(c => eventTimes(init.seed, [d, c], "protagonist").get(c.id)! > eventTimes(init.seed, [d, c], "protagonist").get(d.id)!)!;
   expect(crisisEvent).toBeDefined();
   const s = source([d, crisisEvent], { protagonist: { deathYear: 1348 } });
-  expect(crisis((await projectLifecycleTick({ source: s, year: 1348 })).view.entries)).toEqual([]);
-  expect(crisis(await entries(s))).toEqual([]);
+  expect(crisis((await projectLifecycleTick({ source: s, year: 1348, locale })).view.entries)).toEqual([]);
+  expect(crisis(await entries(s, locale))).toEqual([]);
 });
 
-it("derives absence from prior moves when snapshots do not carry residence", async () => {
+it.each(["en", "es"] as const)("derives absence from prior moves when snapshots do not carry residence (%s)", async locale => {
   const s = source([move("leave", 1348, true), town("later", 1349)]);
-  expect(crisis(await entries(s)).some(e => e.id === "later")).toBe(false);
+  expect(crisis(await entries(s, locale)).some(e => e.id === "later")).toBe(false);
 });
 
-it("recognizes native residence moves recorded by destination", async () => {
+it.each(["en", "es"] as const)("recognizes native residence moves recorded by destination (%s)", async locale => {
   const c = town("crisis", 1349);
   const leave: Event = { id: "leave-native", year: 1348, kind: "move", actors: ["protagonist"], causes: [], payload: { destination: "away" } };
-  expect(crisis(await entries(source([leave, c])))).toEqual([]);
+  expect(crisis(await entries(source([leave, c]), locale))).toEqual([]);
 });

@@ -379,8 +379,7 @@ async function entriesForYear(trusted: Trusted, year: number, scene: LifeScene, 
     protagonist: trusted.protagonist, previousPerson: previous as Person | undefined, seed: trusted.config.seed,
     town: trusted.config.town.name, locale });
   const ids = new Set(entries.map(entry => entry.id));
-  const deathId = trusted.events.find(event => event.kind === "death" && event.actors[0] === trusted.protagonistId)?.id;
-  return finishAtDeath([...entries, ...context.filter(entry => !ids.has(entry.id))], deathId);
+  return [...entries, ...context.filter(entry => !ids.has(entry.id))].sort((a, b) => a.at - b.at);
 }
 
 /** Every narrated protagonist entry, built year by year from the trusted log. */
