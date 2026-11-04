@@ -182,8 +182,7 @@
 /* Rewrite: ghost line and "Change what happened" show on a focused entry once it is fully written; the old future blurs away. */
 .sky-reel .ghost, .sky-reel .change { display: none; }
 .sky-reel li.ruled .ghost { display: block; margin-top: 6px; font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 13.5px; line-height: 1.35; color: var(--sky-gold); opacity: 0.85; }
-.sky-reel .txt { position: relative; }
-.sky-reel li.ruled .change { position: absolute; top: -9px; right: 0; display: block; padding: 0; border: 0; background: transparent; font: italic 12px/1 var(--font-cormorant), Georgia, serif; color: var(--sky-gold-ink); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+.sky-reel li.ruled .change { display: block; margin: 8px 0 0 auto; padding: 0; border: 0; background: transparent; font: italic 12px/1 var(--font-cormorant), Georgia, serif; color: var(--sky-gold-ink); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
 .sky-reel li.ruled .change:hover, .sky-reel li.ruled .change:focus-visible { color: var(--ll-starlight); }
 .sky-frame [data-after] { transition: filter 0.9s linear; }
 .sky-frame.rewriting [data-after] { filter: blur(2.5px) saturate(0.15) brightness(0.8); }
