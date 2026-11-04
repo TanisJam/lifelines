@@ -1467,3 +1467,18 @@ and chronicle entries. Payoff causes link to the recorded economic setup at leas
 prior; economic source identifiers are not native event identifiers. Old profiles do not synthesize
 thread entries. The derived chronicle index uses `lifecycle-chronicle-view-3`; the person-sheet
 index is unchanged.
+
+### Lifecycle rewrite and thread continuity
+
+A lifecycle rewrite selects an admitted parent and replays its original execution profile.
+It retains closed years before the changed decision, executes the changed year again, and
+recomputes the suffix. Nested rewrites retain only ancestor choices strictly before the new
+fork year. Older cb1/cb2 profiles remain non-threaded; cb3 retains prefix thread setups while
+recomputing later transitions. Tick and chronicle projection use the complete regenerated
+journal so a payoff can reference its earlier economic setup.
+
+The public stream shares the lifecycle creation ticket. A digest-bound decision index permits
+same-choice HTTP 400 rejection before replay; when absent, validation follows ticketed parent
+loading. Successful publication is atomic: cancellation before it saves no child, whereas
+cancellation during a successful save leaves the child available without a `done` frame.
+Branch lists are composed on reads with localized original and changed-year labels.

@@ -1,0 +1,122 @@
+import { execFile } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import { promisify } from "node:util";
+import { expect, it, vi } from "vitest";
+import type { LifeStreamEvent } from "@/contracts/life";
+
+const state = vi.hoisted(() => ({ db: undefined as DatabaseSync | undefined }));
+vi.mock("./db", async importOriginal => ({ ...await importOriginal<typeof import("./db")>(), getDb: () => state.db! }));
+vi.mock("./abuse-guard", () => ({ guardSimulation: async () => ({ engine: {} }) }));
+import { openDb } from "./db";
+import { LifecycleRepository, loadStoredLifecycleFork } from "./lifecycle-repository";
+import { LifecycleBranchStore } from "./lifecycle-branch-store";
+import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
+import { createLifecycleRuntime } from "@/domain/e-lifecycle-runtime";
+import { createLifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
+import { initializeWorld } from "@/domain/world-origin";
+import { POST } from "@/app/api/lives/[lifeId]/rewrite/stream/route";
+
+it("reopens a public rewrite in a fresh process without changing root storage", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "lifelines-u7-public-"));
+  const path = join(dir, "life.sqlite"), db = state.db = openDb(path);
+  try {
+    const initialization = { seed: "fork-a", startYear: 1327, endYear: 1329, founderCount: 6, protagonist: { name: "Alice", sex: "random" as const } };
+    const { world } = initializeWorld(initialization);
+    const genesis = createLifecycleGenesis({ initialization, protagonistId: "protagonist", resources: Object.fromEntries(Object.keys(world.people).map(id => [id, { grain: 2, effort: 3, need: 1 }])) });
+    const runtime = createLifecycleRuntime(genesis, { journal: "compact" });
+    for (let year = 1327; year <= 1329; year++) await runtime.advance(year);
+    const capsule = await createLifecycleCompactCapsule({ genesis, output: runtime.snapshot() }, "compact");
+    const repo = new LifecycleRepository(db), store = new LifecycleBranchStore(db), person = world.people.protagonist;
+    const binding = await repo.publish({ lifeId: "u7-public", branchId: "root", config: world.config, protagonistName: person.name, protagonistSex: person.sex, capsule });
+    store.prepareDecisionsFromLoaded("u7-public", "root", binding.capsuleDigest, { binding, capsule });
+    const rootRows = () => JSON.stringify({ life: db.prepare("SELECT * FROM lifecycle_lives WHERE id = ?").get("u7-public"), capsule: db.prepare("SELECT * FROM lifecycle_capsules_v2 WHERE key = ?").get(Buffer.from(binding.capsuleDigest, "utf16le")) });
+    const before = rootRows();
+    const decision = capsule.output.owned.decisions.find(d => d.id === "immigration:world#1328.1")!;
+    const body = { branchId: "root", decisionId: decision.id, optionId: decision.options.find(o => o.id !== decision.chosen)!.id };
+    const request = (value: unknown) => new Request("http://local/rewrite", { method: "POST", body: JSON.stringify(value) });
+    const ctx = { params: Promise.resolve({ lifeId: "u7-public" }) };
+    const same = await POST(request({ ...body, optionId: decision.chosen }), ctx);
+    expect(same.status).toBe(400);
+    expect(await same.json()).toEqual({ error: "The selected option is already the choice for this decision." });
+    const malformed = await POST(request({}), ctx);
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({ error: '"branchId" is required.' });
+    expect(db.prepare("SELECT count(*) AS n FROM lifecycle_forks_v1").get()?.n).toBe(0);
+    const beforeAbort = new AbortController();
+    const abortResponse = await POST(new Request("http://local/rewrite", { method: "POST", body: JSON.stringify(body), signal: beforeAbort.signal }), ctx);
+    const reader = abortResponse.body!.getReader();
+    const firstFrame = await reader.read();
+    expect(new TextDecoder().decode(firstFrame.value)).toContain('"type":"start"');
+    beforeAbort.abort();
+    while (!(await reader.read()).done) { /* Drain until the handler releases its ticket. */ }
+    expect(db.prepare("SELECT count(*) AS n FROM lifecycle_forks_v1").get()?.n).toBe(0);
+
+    const response = await POST(request(body), ctx);
+    expect(response.status).toBe(200);
+    const frames = (await response.text()).trim().split("\n\n").map(frame => JSON.parse(frame.split("\n").find(line => line.startsWith("data: "))!.slice(6)) as LifeStreamEvent);
+    expect(frames.map(frame => frame.type)).toEqual(["start", "divergence", "tick", "tick", "done"]);
+    const start = frames[0]; if (start.type !== "start") throw new Error("Missing start");
+    const done = frames.at(-1); if (done?.type !== "done") throw new Error("Missing done");
+    const rewrite = async (branchId: string, target: typeof decision) => {
+      const alternate = target.options.find(option => option.id !== target.chosen);
+      if (!alternate) throw new Error("Fixture target has no alternative");
+      const res = await POST(request({ branchId, decisionId: target.id, optionId: alternate.id }), ctx);
+      expect(res.status).toBe(200);
+      const events = (await res.text()).trim().split("\n\n").map(frame => JSON.parse(frame.split("\n").find(line => line.startsWith("data: "))!.slice(6)) as LifeStreamEvent);
+      const first = events[0], last = events.at(-1);
+      if (first.type !== "start" || last?.type !== "done") throw new Error("Rewrite did not finish");
+      return first.branchId;
+    };
+    const siblingTarget = capsule.output.owned.decisions.find(d => d.id === "immigration:world#1327.1")!;
+    const sibling = await rewrite("root", siblingTarget);
+    const firstBinding = store.binding("u7-public", start.branchId)!;
+    const stored = await store.resolve("u7-public", firstBinding.capsuleDigest);
+    const loaded = await loadStoredLifecycleFork(firstBinding, stored!.capsule, digest => store.resolve("u7-public", digest));
+    expect((loaded.capsule.genesis as typeof genesis).versions).toEqual(genesis.versions);
+    expect(loaded.capsule.output.journal.map(record => record.year)).toEqual(capsule.output.journal.map(record => record.year));
+    expect(loaded.capsule.output.journal[0]).toEqual(capsule.output.journal[0]);
+    expect(loaded.capsule.output.threads).toBeUndefined();
+    expect(loaded.capsule.output.journal.every(record => record.threadBeats === undefined)).toBe(true);
+    const nestedTarget = loaded.capsule.output.owned.decisions.find(d => d.id === "immigration:world#1329.1")!;
+    const nested = await rewrite(start.branchId, nestedTarget);
+    const savedTarget = capsule.output.owned.decisions.find(d => d.id === "immigration:world#1329.1")!;
+    const savedBody = { branchId: "root", decisionId: savedTarget.id, optionId: savedTarget.options.find(o => o.id !== savedTarget.chosen)!.id };
+    const duringSave = new AbortController();
+    const publish = LifecycleBranchStore.prototype.publishFork;
+    const publishSpy = vi.spyOn(LifecycleBranchStore.prototype, "publishFork").mockImplementation(async function (this: LifecycleBranchStore, input, options) {
+      const result = await publish.call(this, input, options);
+      duringSave.abort();
+      return result;
+    });
+    let savedBranch: string;
+    try {
+      const savedResponse = await POST(new Request("http://local/rewrite", { method: "POST", body: JSON.stringify(savedBody), signal: duringSave.signal }), ctx);
+      const savedFrames = (await savedResponse.text()).trim().split("\n\n").map(frame => JSON.parse(frame.split("\n").find(line => line.startsWith("data: "))!.slice(6)) as LifeStreamEvent);
+      const savedStart = savedFrames.find(frame => frame.type === "start");
+      if (!savedStart || savedStart.type !== "start") throw new Error("Missing saved branch start");
+      savedBranch = savedStart.branchId;
+      expect(savedFrames.some(frame => frame.type === "done")).toBe(false);
+    } finally { publishSpy.mockRestore(); }
+    expect(store.binding("u7-public", savedBranch)).toBeDefined();
+    expect(rootRows()).toBe(before);
+    db.close();
+    const result = join(dir, "child.json");
+    await promisify(execFile)("pnpm", ["--config.verify-deps-before-run=ignore", "exec", "vitest", "run", "src/server/lifecycle-u7-child.test.ts", "--maxWorkers=1", "-t", "child public route reads"], { env: { ...process.env, U7_PUBLIC_DB: path, U7_PUBLIC_BRANCH: start.branchId, U7_PUBLIC_SIBLING: sibling, U7_PUBLIC_NESTED: nested, U7_PUBLIC_SAVED: savedBranch, U7_CHILD_RESULT: result }, timeout: 120_000 });
+    const child = JSON.parse(readFileSync(result, "utf8"));
+    expect(child.pid).not.toBe(process.pid);
+    expect(child.views[1].entries).toEqual(done.chronicle.entries);
+    expect(child.views[4].branchId).toBe(savedBranch);
+    expect(child.saved.branchId).toBe(savedBranch);
+    expect(child.views[9].branchId).toBe(savedBranch);
+    expect(child.views[0].branchId).toBe("root");
+    expect(child.views[2].branchId).toBe(sibling);
+    expect(child.views[3].branchId).toBe(nested);
+    expect(child.views[0].branches.map((branch: { label: string }) => branch.label)).toEqual(["Original life", "Changed in 1328", "Changed in 1327", "Changed in 1329", "Changed in 1329"]);
+    expect(child.views[5].branches.map((branch: { label: string }) => branch.label)).toEqual(["Vida original", "Cambiado en 1328", "Cambiado en 1327", "Cambiado en 1329", "Cambiado en 1329"]);
+    expect(child.sheetStatus).toBe(200);
+    expect(child.listing.find((item: { lifeId: string }) => item.lifeId === "u7-public").branchCount).toBe(5);
+  } finally { if (db.isOpen) db.close(); rmSync(dir, { recursive: true, force: true }); }
+}, 240_000);

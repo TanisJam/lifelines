@@ -121,6 +121,10 @@ The design log lives in [`docs/`](./docs), newest first:
   for the default path.
 - **Replay versions and journals.** New opt-in lifecycle lives record the thread-aware generation
   profile and compact cb3 capsules; existing lives keep their recorded versions without migration.
+  Lifecycle rewrites replay the selected branch from its original profile, preserving earlier
+  history and publishing a new branch. Reads select the latest branch by default and localize
+  branch labels; cancellation before publication saves nothing, while a completed save remains
+  available even if the stream disconnects before `done`.
   The lifecycle engine is still not the default path — see
   [`odd/tasks/narrative-release-execution.md`](./odd/tasks/narrative-release-execution.md).
 - **The childhood survival guard.** A guard that makes a child's death rare exists on the parked

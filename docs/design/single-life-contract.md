@@ -28,7 +28,7 @@ Errors are returned as JSON `{ error }` with a 4xx status, or as an SSE `error` 
 - The protagonist's death is **always** a turn. The alternative is "survived", and choosing it continues the life.
 - `level: 3` entries always have a `turn`; other levels never do.
 - Legacy prose marks people as `{{personId}}`, and `links` resolves them. Entries may opt into literal structured prose as described below. The UI renders person links as buttons that open the read-only `PersonSheet`.
-- Branch labels are "Original life" and "Changed in <year>". The UI never shows git terms.
+- Branch labels are localized at read time (English: "Original life" and "Changed in <year>"). The UI never shows git terms.
 - `tick.entries` contains only the protagonist's **new** entries for that year, in chronicle order. For a rewrite, ticks start at the divergence year.
 
 ## Optional literal entry prose
@@ -67,6 +67,19 @@ A fork choice is admitted separately from the authority-free rules-year source. 
 ### Fork-only native choice execution
 
 The versioned lifecycle choice source admits a declaration against the exposed target using the existing choice admission boundary. It anchors the native override to that year only. After execution it requires exactly one forced decision in that year, with the admitted decision ID and option; it returns applied-once evidence only then. An unreached, ambiguous, mismatched, or repeated target is refused. Native PR6 invariant errors also propagate as refusals; other execution errors are not swallowed. A rejected execution mutates its owned draft and the caller must discard it. This adapter does not grant fork provenance or alter genesis profile dispatch.
+
+### Lifecycle rewrite admission and publication
+
+Lifecycle requests validate the branch and decision before simulation. A complete digest-bound
+decision index rejects an already-selected option with HTTP 400 before replay or branch ID
+allocation. If the index is absent, the admitted parent is loaded under the shared lifecycle
+create/rewrite ticket and checked before a branch ID is allocated. The abuse guard retains its
+existing behavior; the ticket is released on completion, error, or cancellation. Legacy rewrite
+admission remains separate.
+
+The stream sends `start`, `divergence`, suffix-year `tick` frames, and `done` after atomic
+publication. An abort before publication leaves no child. An abort during a successful publication
+leaves the saved child available but suppresses `done`; a publication failure rolls back.
 
 ### Lifecycle branch reads
 

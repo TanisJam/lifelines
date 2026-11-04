@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseLifeStreamFrame } from "./life-client";
+import { describe, expect, it, vi } from "vitest";
+import { getChronicle, getPersonSheet, parseLifeStreamFrame } from "./life-client";
 
 describe("parseLifeStreamFrame", () => {
   it("parses a tick frame with an event: line and a data: line", () => {
@@ -34,4 +34,20 @@ describe("parseLifeStreamFrame", () => {
     const frame = 'event: error\ndata: {"type":"error","message":"That life could not be found."}';
     expect(parseLifeStreamFrame(frame)).toEqual({ type: "error", message: "That life could not be found." });
   });
+});
+
+
+it("maps the page branch value to branchId on chronicle and person requests", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("{}", { status: 200 }));
+  try {
+    const pageBranch = new URLSearchParams("branch=child%2Fone").get("branch") ?? undefined;
+    await getChronicle("life 1", pageBranch, "es");
+    await getPersonSheet("life 1", "person 1", pageBranch, "es");
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/lives/life%201?branchId=child%2Fone&lang=es",
+      "/api/lives/life%201/people/person%201?branchId=child%2Fone&lang=es",
+    ]);
+    await getChronicle("life 1");
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/lives/life%201");
+  } finally { fetchMock.mockRestore(); }
 });
