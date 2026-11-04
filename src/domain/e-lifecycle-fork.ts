@@ -162,6 +162,8 @@ export async function forkLifecycle(parent: unknown, choice: unknown, options: L
   await runYears(config.startYear, forkYear - 1, year => inherited.find(entry => entry.year === year));
   assertLifecycleForkPrefix(parentJournal as LifecycleYearRecord[], journal, forkYear);
   await runYears(forkYear, lastYear, year => year === forkYear ? choice : undefined);
+  // The last executed year also closes at a boundary; an abort raised while it ran rejects the fork.
+  options.signal?.throwIfAborted();
   if (choices.length !== inherited.length + 1) throw new Error("Lifecycle choice target not reached");
 
   const deathYear = state.owned.people[protagonistId].deathYear;

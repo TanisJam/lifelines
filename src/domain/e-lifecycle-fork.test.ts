@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LIFECYCLE_CHOICE_VERSION } from "./e-lifecycle-choice";
 import { assertLifecycleForkPrefix, forkLifecycle, LIFECYCLE_FORK_VERSION } from "./e-lifecycle-fork";
 import { canonicalLifecycleDataEqual, createLifecycleGenesis, LIFECYCLE_GENESIS_VERSIONS, LIFECYCLE_THREAD_VERSIONS } from "./e-lifecycle-genesis";
 import { createLifecycleRuntime, type LifecycleJournalMode, type LifecycleYearRecord } from "./e-lifecycle-runtime";
+import * as sourceModule from "./e-year-source";
 import { initializeWorld } from "./world-origin";
 
 function record(year: number): LifecycleYearRecord {
@@ -116,6 +117,48 @@ describe("fork executor", () => {
     const pending = forkLifecycle(parent, choose(1328, id, other), { signal: late.signal });
     late.abort(new Error("late stop"));
     await expect(pending).rejects.toThrow("late stop");
+    // The last year closes at a boundary too: an abort raised while it runs rejects the fork.
+    const final = new AbortController();
+    const real = sourceModule.createLifecycleChoiceYearSource;
+    const spy = vi.spyOn(sourceModule, "createLifecycleChoiceYearSource").mockImplementation((...args) => {
+      const source = real(...args);
+      return { ...source, execute: async (year: number) => {
+        final.abort(new Error("final stop"));
+        return source.execute(year);
+      } };
+    });
+    try {
+      const lastId = "immigration:world#1329.1";
+      const lastOption = decision(parent, lastId).options.map(option => option.id).find(option => option !== decision(parent, lastId).chosen)!;
+      await expect(forkLifecycle(parent, choose(1329, lastId, lastOption), { signal: final.signal })).rejects.toThrow("final stop");
+    } finally { spy.mockRestore(); }
+  });
+
+  it("forks the final year into a death in that same year", async () => {
+    const parent = await lifeOf("fork-a");
+    // Death decision ordinals advance per roll, so locate the protagonist's 1329 roll by kind and year.
+    const id = parent.output.owned.decisions.find(entry => entry.year === 1329 && entry.id.startsWith("death:protagonist#"))!.id;
+    const fork = await forkLifecycle(parent, choose(1329, id, "die"));
+    expect([fork.output.frontier, fork.output.status, fork.output.owned.people.protagonist.deathYear]).toEqual([1329, "complete", 1329]);
+  });
+
+  it("rejects a failure after the forced year without leaving partial state or touching the parent", async () => {
+    const parent = structuredClone(await lifeOf("fork-a"));
+    const before = structuredClone(parent);
+    const id = "immigration:world#1328.1";
+    const other = decision(parent, id).options.map(option => option.id).find(option => option !== decision(parent, id).chosen)!;
+    const real = sourceModule.createRulesYearSource;
+    const spy = vi.spyOn(sourceModule, "createRulesYearSource").mockImplementation((...args) => {
+      const source = real(...args);
+      return { ...source, execute: async (year: number) => {
+        if (year === 1329) throw new Error("suffix failure");
+        return source.execute(year);
+      } };
+    });
+    try {
+      await expect(forkLifecycle(parent, choose(1328, id, other))).rejects.toThrow("suffix failure");
+    } finally { spy.mockRestore(); }
+    expect(parent).toEqual(before);
   });
 
   it("refuses a choice that does not match a decision of the fork year", async () => {
