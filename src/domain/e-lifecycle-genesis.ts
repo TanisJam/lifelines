@@ -1,3 +1,4 @@
+import { THREAD_HELP_POLICY_VERSION } from "./e-thread-policy";
 import { createHash } from "node:crypto";
 import { ANNUAL_FAVOR_POLICY_VERSION } from "./e-annual-policy";
 import { ANNUAL_COMPOSITION_POLICY_VERSION } from "./e-annual-composition";
@@ -27,6 +28,7 @@ export const LIFECYCLE_THREAD_VERSIONS = Object.freeze({
   runtime: "native-rules-lifecycle-thread-1",
   threadState: "thread-state-1",
   threadBeats: "thread-beats-1",
+  threadHelpPolicy: THREAD_HELP_POLICY_VERSION,
 } as const);
 
 export type LifecycleVersions = typeof LIFECYCLE_GENESIS_VERSIONS | typeof LIFECYCLE_THREAD_VERSIONS;

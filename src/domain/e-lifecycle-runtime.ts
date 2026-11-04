@@ -8,6 +8,7 @@ import { captureLegacyYear } from "./legacy-year";
 import type { LegacyOwnedRunState } from "./simulate";
 import type { GrantIntention, RequestIntention, ResourceOperation, RuntimeEntry, RuntimeOutput } from "./e-runtime";
 import type { YearSnapshot } from "./types";
+import { eligibleThreadHelp, planThreadHelpSlot } from "./e-thread-policy";
 import { evolveThreadLedger, type HelpThread, type ThreadBeat } from "./e-thread-ledger";
 
 type Immutable<T> = T extends object ? { readonly [K in keyof T]: Immutable<T[K]> } : T;
@@ -224,7 +225,10 @@ export function createLifecycleRuntime(input: unknown, options: LifecycleRuntime
       for (const creditor of creditors) {
         for (const slot of [0, 1] as const) {
           const opportunities = inspectHelpOpportunities(draft.favors, year);
-          const request = planAnnualHelpSlot(draft.favors, config.seed, year, creditor, slot);
+          const planned = draft.threads
+            ? planThreadHelpSlot(draft.favors, draft.threads.threads, config.seed, year, creditor, slot)
+            : planAnnualHelpSlot(draft.favors, config.seed, year, creditor, slot);
+          const request = planned && draft.threads && !eligibleThreadHelp(draft.favors, draft.threads.threads, year).has(planned.obligation) ? null : planned;
           slots.push({ creditor, slot, opportunities, request });
           if (request !== null) {
             requests.push(request);

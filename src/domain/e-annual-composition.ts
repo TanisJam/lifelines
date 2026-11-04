@@ -19,12 +19,17 @@ function draw(seed: string, year: number, purpose: Purpose, ...parts: (string | 
  * adding a candidate cannot alias either activation or response noise draws.
  */
 export function planAnnualHelpSlot(view: unknown, seed: string, year: number, creditor: string, slot: 0 | 1): RequestIntention | null {
+  return planAnnualHelpSlotFiltered(view, seed, year, creditor, slot);
+}
+
+/** Versioned callers may restrict candidates before keyed selection. */
+export function planAnnualHelpSlotFiltered(view: unknown, seed: string, year: number, creditor: string, slot: 0 | 1, eligible?: ReadonlySet<string>): RequestIntention | null {
   requireAnnualPolicyView(view);
   if (typeof seed !== "string" || typeof creditor !== "string" || !Number.isSafeInteger(year) || Object.is(year, -0)
     || (slot !== 0 && slot !== 1)) throw new Error("Invalid annual HELP context");
   // Inspect before drawing: current-view validation cannot be skipped by an
   // inactive slot. This is evolving runtime physics, not frozen C2 certification.
-  const candidates = inspectHelpOpportunities(view, year).filter(candidate => candidate.creditor === creditor && candidate.reason === null);
+  const candidates = inspectHelpOpportunities(view, year).filter(candidate => candidate.creditor === creditor && candidate.reason === null && (eligible === undefined || eligible.has(candidate.obligation)));
   if (draw(seed, year, "help-activation", creditor, slot) >= 0.25) return null;
   candidates.sort((a, b) => draw(seed, year, "help-selection", creditor, slot, a.obligation)
     - draw(seed, year, "help-selection", creditor, slot, b.obligation) || stableAnnualIdOrder(a.obligation, b.obligation));
