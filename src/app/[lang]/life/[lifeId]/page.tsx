@@ -65,5 +65,9 @@ function ChronicleLoader({ lifeId, lang, initialBranchId }: { lifeId: string; la
     );
   }
 
-  return <SkyView chronicle={data} dict={dict} lang={lang} />;
+  return (
+    <div className="sky-page">
+      <SkyView chronicle={data} dict={dict} lang={lang} />
+    </div>
+  );
 }

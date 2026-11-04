@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence } from "motion/react";
+import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { PersonSheet } from "@/components/person-sheet";
 import type { Chronicle } from "@/contracts/life";
@@ -89,14 +90,21 @@ export function SkyView({ chronicle: base, dict, lang, saved = true, frontier: l
     <section className={`sky-frame${forkAt === null ? "" : " rewriting"}`} aria-label={sky.title(chronicle.protagonist.name)}>
       <BackdropCanvas />
       <div className="sky-area">
-        <IntroPanel chronicle={chronicle} sky={sky} store={store} labels={dict.chronicle} busy={rewrite.busy} seek={controls.seek} onBranch={rewrite.switchBranch} />
+        {/* One column for the left edge: the intro grows (a rewritten life adds the fork ribbon and the history
+            switcher), so the place has to sit below it in flow instead of being pinned to the same edge. */}
+        <div className="sky-left">
+          <Link href={`/${lang}/lives`} className="sky-back">
+            <span aria-hidden="true">←</span> {dict.nav.yourLives}
+          </Link>
+          <IntroPanel chronicle={chronicle} sky={sky} store={store} labels={dict.chronicle} busy={rewrite.busy} seek={controls.seek} onBranch={rewrite.switchBranch} />
+          <PlacePanel village={chronicle.villageName} sex={chronicle.protagonist.sex} sky={sky} store={store} />
+        </div>
         <div className="sky-disc">
           <SkySvg svgRef={svgRef} scene={scene} timeline={line} label={sky.constellationLabel(chronicle.protagonist.name)} relation={relation} bandLabels={bandLabels} entries={entries} forkAt={forkAt} />
           <StarTip tipRef={tipRef} />
         </div>
         <NowPanel scene={scene} store={store} lang={lang} village={chronicle.villageName} sky={sky} yearFloor={line.dialStart} />
         <TimeBar sky={sky} store={store} start={line.start} end={line.end} />
-        <PlacePanel village={chronicle.villageName} sex={chronicle.protagonist.sex} sky={sky} store={store} />
         <Reel entries={entries} store={store} timeline={line} focus={focus} seek={controls.seek} openPerson={settled ? setOpenPersonId : undefined} change={settled ? change : undefined} ghosts={rw.ghosts} forkAt={forkAt} labels={reelLabels} />
         <RewriteCard state={rw} firstName={chronicle.protagonist.name.split(" ")[0]!} dict={dict.chronicle} />
       </div>

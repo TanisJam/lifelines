@@ -20,15 +20,30 @@
   background: var(--ll-parchment);
   color: var(--ll-ink);
 }
+/* The life page hides the site header and footer, so its sky takes the whole viewport instead of the space the
+   frame reserves for that chrome. The start screen shows the same full-bleed scene while a life is being written
+   (the sky is then main's only child, with no `.sky-page` in between), so its chrome steps aside too: the frame
+   needs that height for the left column, which now stacks the intro and the place. */
+@media (min-width: 1000px) {
+  .sky-page .sky-frame { height: calc(100svh - 28px); }
+  body:has(> main > section.sky-frame) > header,
+  body:has(> main > section.sky-frame) > footer { display: none; }
+  body:has(> main > section.sky-frame) > main > section.sky-frame { height: calc(100svh - 28px); }
+}
 .sky-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: -1; }
 .sky-area { position: relative; min-height: 0; }
-.sky-intro { position: absolute; left: 38px; top: 18px; display: grid; gap: 18px; width: min(390px, 30%); }
+/* The left edge is one column, so a taller intro pushes the place down instead of drawing over it. */
+.sky-left { position: absolute; left: 38px; top: 18px; bottom: 14px; display: flex; flex-direction: column; gap: 18px; width: min(390px, 30%); overflow-y: auto; scrollbar-width: none; }
+.sky-left::-webkit-scrollbar { display: none; }
+.sky-back { flex: none; align-self: start; font-family: var(--font-cinzel), Georgia, serif; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ll-ink-faint); text-decoration: underline dotted; text-underline-offset: 4px; }
+.sky-back:hover { color: var(--sky-gold-ink); }
+.sky-intro { display: grid; flex: none; gap: 16px; }
 .sky-heading { margin: 0; font-family: var(--font-cormorant), Georgia, serif; font-weight: 500; font-size: clamp(30px, 3.4vw, 50px); line-height: 1.02; text-wrap: balance; }
 .sky-lede { max-width: 34ch; margin: 0; font-size: 15px; line-height: 1.5; opacity: 0.86; }
 .sky-rule { width: 34px; height: 1px; margin: 0; border: 0; background: rgb(227 191 114 / 0.55); }
 .sky-motto { margin: 0; font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-size: 17px; line-height: 1.4; color: var(--sky-gold); }
 .sky-motto.epitaph { max-width: 32ch; font-size: 17.5px; color: var(--sky-gold-ink); }
-.sky-place { position: absolute; left: 38px; bottom: 14px; display: grid; gap: 8px; width: min(320px, 30%); }
+.sky-place { display: grid; flex: none; gap: 8px; margin-top: auto; width: min(320px, 100%); }
 .sky-place .name { font-family: var(--font-cinzel), Georgia, serif; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; }
 .sky-place .souls { font-size: 13px; color: var(--ll-ink-faint); font-variant-numeric: tabular-nums; }
 .sky-place .souls b { font-weight: 500; color: var(--sky-gold); }
@@ -222,13 +237,15 @@
 @media (max-width: 999px) {
   .sky-frame { display: block; height: auto; min-height: 0; margin: 10px; padding-bottom: 8px; }
   .sky-area { display: grid; gap: 18px; padding: 14px 18px 8px; }
+  .sky-left { display: contents; }
   .sky-intro, .sky-place, .sky-now, .sky-edge-panel { position: static; width: auto; }
+  .sky-place { order: 1; }
   .sky-edge-panel { display: block; }
   .sky-edge-panel q { text-align: left; }
   .sky-timebar { display: none; }
   .sky-disc { position: relative; left: auto; top: auto; transform: none; width: 100%; height: auto; max-width: 560px; justify-self: center; }
   .sky-rail { display: none; }
-  .sky-reel { position: static; display: grid; gap: 4px; }
+  .sky-reel { position: static; display: grid; gap: 4px; order: 2; }
   .sky-reel li { position: relative; width: auto; transform: none !important; }
   .sky-reel .node { left: 6px; top: 22px; }
   .sky-reel li.focus .node { left: 0; top: 16px; }
