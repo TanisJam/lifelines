@@ -1,4 +1,4 @@
-import type { LifeScene, SceneEdge } from "@/contracts/life";
+import type { LifeScene, SceneEdge, ScenePerson } from "@/contracts/life";
 import { R_PROGRESS } from "@/lib/sky/constants";
 import { arcPath, dialAngle, type Timeline } from "@/lib/sky/dial";
 import { control, paramAt, partial, polar, quad, travel, type Vec } from "@/lib/sky/motion";
@@ -8,6 +8,7 @@ import { computeLayout, edgeKey } from "@/lib/sky/layout";
 import { scrubTo, stepClock } from "@/lib/sky/clock";
 import { frameAt } from "@/lib/sky/scene-model";
 import { createAmbient, floatOffset, type LiveBond } from "./ambient";
+import { keptLabels } from "./label-fit";
 import { domCoordinate } from "@/lib/sky/dom-coordinate";
 
 export interface SkyEngineInit {
@@ -41,6 +42,8 @@ export interface SkyEngine {
 }
 
 const one = <T extends Element>(root: ParentNode, selector: string): T => root.querySelector<T>(selector)!;
+/** A name drawn under its star: the protagonist first, then the story circle, then everyone beyond it. */
+const labelRank = (p: ScenePerson) => (p.group === "self" ? 0 : p.group === "outer" ? 2 : 1);
 const setClass = (el: Element, name: string, on: boolean) => {
   if (el.classList.contains(name) !== on) el.classList.toggle(name, on);
 };
@@ -55,18 +58,20 @@ export function createSkyEngine({ svg, scene: initialScene, timeline: initialLin
   let line = initialLine;
   let layout = computeLayout(scene);
   let bounds = { start: line.start, frontier: initialFrontier ?? line.end, end: line.end };
-  let personEls = new Map<string, { g: SVGGElement; core: SVGElement; trail: SVGPathElement }>();
+  let personEls = new Map<string, { g: SVGGElement; core: SVGElement; trail: SVGPathElement; nm: SVGTextElement }>();
   let edgeEls = new Map<string, { path: SVGPathElement; head: SVGCircleElement }>();
   let edgeByKey = new Map<string, SceneEdge>();
   let villageEls: SVGElement[] = [];
   let bandEls: SVGElement[] = [];
   let selfId: string | undefined;
+  /** The names that fit without landing on each other: settled from the resting layout, never per frame. */
+  let kept: ReadonlySet<string> = new Set<string>();
   /** Finds the nodes SkySvg rendered for the current scene. */
   const bind = () => {
     personEls = new Map();
     scene.people.forEach((p) => {
       const g = one<SVGGElement>(svg, `[data-person="${domCoordinate(p.id)}"]`);
-      personEls.set(p.id, { g, core: one(g, ".sky-core"), trail: one(svg, `[data-trail="${domCoordinate(p.id)}"]`) });
+      personEls.set(p.id, { g, core: one(g, ".sky-core"), trail: one(svg, `[data-trail="${domCoordinate(p.id)}"]`), nm: one(g, ".sky-nm") });
     });
     edgeEls = new Map();
     scene.edges.forEach((e) => {
@@ -77,6 +82,12 @@ export function createSkyEngine({ svg, scene: initialScene, timeline: initialLin
     villageEls = [...svg.querySelectorAll<SVGElement>("[data-village]")];
     bandEls = [...svg.querySelectorAll<SVGElement>("[data-band]")];
     selfId = scene.people.find((p) => p.group === "self")?.id;
+    kept = keptLabels(
+      scene.people.flatMap((p) => {
+        const home = layout.homes.get(p.id);
+        return home ? [{ id: p.id, x: home[0], y: home[1], name: p.name, rank: labelRank(p) }] : [];
+      }),
+    );
   };
   bind();
   const progress = one<SVGPathElement>(svg, "[data-progress]");
@@ -114,6 +125,7 @@ export function createSkyEngine({ svg, scene: initialScene, timeline: initialLin
       els.g.setAttribute("transform", `translate(${pos[0].toFixed(1)},${pos[1].toFixed(1)})${arriving ? ` scale(${s.toFixed(3)})` : ""}`);
       els.g.setAttribute("opacity", arriving ? Math.min(1, pf.presence * 2.5).toFixed(3) : "1");
       els.core.style.opacity = pf.coreOpacity.toFixed(3);
+      els.nm.style.display = kept.has(p.id) ? "" : "none";
       setClass(els.g, "circle", pf.inCircle);
       setClass(els.g, "outside", !pf.inCircle);
       setClass(els.g, "dead", !pf.alive);
