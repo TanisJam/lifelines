@@ -72,8 +72,11 @@ describe("lifecycle projection index (P3)", () => {
     expect(en!.lifeId).toBe("loc-p3-1");
     expect(es!.lifeId).toBe("loc-p3-1");
     expect(en!.summary).not.toBe(es!.summary);
-    expect(JSON.stringify((await buildLifecycleChronicle("loc-p3-1", undefined, "en")).data)).toBe(JSON.stringify(en));
-    expect(JSON.stringify((await buildLifecycleChronicle("loc-p3-1", undefined, "es")).data)).toBe(JSON.stringify(es));
+    // Stored views stay branch-free; reads decorate them with the life's branch list.
+    const root = (label: string) => ({ branchId: "loc-p3-b1", parentBranchId: null, forkYear: null, label });
+    expect(en!.branches).toEqual([]);
+    expect(JSON.stringify((await buildLifecycleChronicle("loc-p3-1", undefined, "en")).data)).toBe(JSON.stringify({ ...en, branches: [root("Original life")] }));
+    expect(JSON.stringify((await buildLifecycleChronicle("loc-p3-1", undefined, "es")).data)).toBe(JSON.stringify({ ...es, branches: [root("Vida original")] }));
     // The index row carries the admitted digest, never anything the caller claimed.
     expect(count("SELECT count(*) AS n FROM main.lifecycle_projections_v1 WHERE capsule_digest = ?", digest)).toBe(2);
   }, 240_000);
