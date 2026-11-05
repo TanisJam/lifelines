@@ -2,7 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+const database = vi.hoisted(() => ({ db: undefined as DatabaseSync | undefined }));
+vi.mock("./db", async importOriginal => ({ ...await importOriginal<typeof import("./db")>(), getDb: () => database.db! }));
+vi.mock("./abuse-guard", () => ({ guardSimulation: async () => ({ engine: {} }) }));
 import { createLifecycleCompactCapsule, LIFECYCLE_COMPACT_CAPSULE_MANIFEST, serializeLifecycleCompactCapsule, type LifecycleCompactCapsule } from "@/domain/e-lifecycle-capsule";
 import { createLifecycleGenesis } from "@/domain/e-lifecycle-genesis";
 import { deserializeCompactLifecycleDag, serializeCompactLifecycleDag } from "@/domain/e-lifecycle-dag";
@@ -13,6 +16,8 @@ import { projectLifecyclePersonSheet } from "./lifecycle-projection";
 import { openDb } from "./db";
 import { EBranchRepository } from "./e-branch-repository";
 import { LIFECYCLE_BINDING_VERSION, LifecycleRepository, type LifecycleBranchBinding } from "./lifecycle-repository";
+import { LifecycleBranchStore } from "./lifecycle-branch-store";
+import { POST } from "@/app/api/lives/[lifeId]/rewrite/stream/route";
 
 /**
  * Builds a compact lifecycle capsule from a real genesis + one replayed year, plus the life
@@ -142,6 +147,33 @@ describe("LifecycleRepository persistence (RI1a)", () => {
       await expect(repo.publish(other)).rejects.toThrow("Conflicting immutable lifecycle binding");
       expect(count(db, "lifecycle_bindings")).toBe(1);
     } finally {
+      db.close();
+    }
+  });
+
+  it("keeps publication loadable and rebuilds the decision index when its summary cache write fails", async () => {
+    const input = await publication("lifecycle-rb-summary-failure");
+    const db = openDb(dbPath);
+    const prepare = vi.spyOn(LifecycleBranchStore.prototype, "prepareDecisionsFromPublished")
+      .mockImplementation(() => { throw new Error("derived summary unavailable"); });
+    try {
+      const repo = new LifecycleRepository(db);
+      const written = await repo.publish(input);
+      const loaded = await repo.load(input.lifeId, input.branchId);
+      expect(loaded?.binding).toEqual(written);
+      if (!loaded) throw new Error("Published branch did not load");
+      const target = loaded!.capsule.output.owned.decisions[0];
+      expect(target).toBeDefined();
+      database.db = db;
+      const load = vi.spyOn(LifecycleRepository.prototype, "load");
+      const response = await POST(new Request("http://local/rewrite", { method: "POST", body: JSON.stringify({ branchId: input.branchId, decisionId: target.id, optionId: target.chosen }) }), { params: Promise.resolve({ lifeId: input.lifeId }) });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "The selected option is already the choice for this decision." });
+      expect(load).toHaveBeenCalledOnce();
+      load.mockRestore();
+    } finally {
+      database.db = undefined;
+      prepare.mockRestore();
       db.close();
     }
   });

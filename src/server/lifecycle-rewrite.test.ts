@@ -7,6 +7,16 @@ import type { LifeStreamEvent } from "@/contracts/life";
 
 const state = vi.hoisted(() => ({ db: undefined as DatabaseSync | undefined }));
 vi.mock("./db", async importOriginal => ({ ...await importOriginal<typeof import("./db")>(), getDb: () => state.db! }));
+const chronicleRead = vi.hoisted(() => ({ calls: 0, afterRead: undefined as (() => void) | undefined }));
+vi.mock("./lifecycle-read", async importOriginal => {
+  const original = await importOriginal<typeof import("./lifecycle-read")>();
+  return { ...original, buildLifecycleChronicle: vi.fn(async (...args: Parameters<typeof original.buildLifecycleChronicle>) => {
+    chronicleRead.calls++;
+    const result = await original.buildLifecycleChronicle(...args);
+    chronicleRead.afterRead?.();
+    return result;
+  }) };
+});
 vi.mock("@/domain/decision-id", async importOriginal => {
   const original = await importOriginal<typeof import("@/domain/decision-id")>();
   return { ...original, buildGhostAnnotations: vi.fn(original.buildGhostAnnotations) };
@@ -72,8 +82,8 @@ it("does not publish when aborted before publication", async () => {
 
 it("leaves a committed child loadable but suppresses done when publication aborts", async () => {
   const controller = new AbortController(), events: LifeStreamEvent[] = [];
-  const reads = await import("./lifecycle-read");
-  const read = vi.spyOn(reads, "buildLifecycleChronicle");
+  chronicleRead.calls = 0;
+  chronicleRead.afterRead = undefined;
   const store = new LifecycleBranchStore(state.db!);
   const publish = store.publishFork.bind(store);
   vi.spyOn(store, "publishFork").mockImplementation(async (input, options) => {
@@ -83,9 +93,23 @@ it("leaves a committed child loadable but suppresses done when publication abort
   const otherChoice = { ...choice, year: target.year, decisionId: target.id, optionId: target.options.find(o => o.id !== target.chosen)!.id };
   await streamLifecycleRewrite({ lifeId: "life", branchId: "during-publish", parent, choice: otherChoice, locale: "en", signal: controller.signal, store, send: e => { events.push(e); } });
   expect(events.some(e => e.type === "done")).toBe(false);
-  expect(read).not.toHaveBeenCalled();
-  read.mockRestore();
+  expect(chronicleRead.calls).toBe(0);
   expect((await buildLifecycleChronicle("life", "during-publish", "en")).data).toBeDefined();
+}, 180000);
+
+it("suppresses done when abort occurs during the final chronicle read", async () => {
+  const controller = new AbortController(), events: LifeStreamEvent[] = [];
+  const store = new LifecycleBranchStore(state.db!);
+  const target = parent.output.owned.decisions.find(d => d.id !== "immigration:world#1327.1" && d.options.some(o => o.id !== d.chosen))!;
+  const otherChoice = { ...choice, year: target.year, decisionId: target.id, optionId: target.options.find(o => o.id !== target.chosen)!.id };
+  chronicleRead.calls = 0;
+  chronicleRead.afterRead = () => controller.abort();
+  try {
+    await streamLifecycleRewrite({ lifeId: "life", branchId: "during-chronicle", parent, choice: otherChoice, locale: "en", signal: controller.signal, store, send: e => { events.push(e); } });
+    expect(chronicleRead.calls).toBe(1);
+    expect(events.some(e => e.type === "done")).toBe(false);
+    expect(store.binding("life", "during-chronicle")).toBeDefined();
+  } finally { chronicleRead.afterRead = undefined; }
 }, 180000);
 
 it("does not publish when cancellation arrives while preparing the capsule", async () => {

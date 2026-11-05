@@ -64,6 +64,12 @@ it.each(["audit", "compact"] as const)("reopens a public %s rewrite in a fresh p
     expect(frames.map(frame => frame.type)).toEqual(["start", "divergence", "tick", "tick", "done"]);
     const start = frames[0]; if (start.type !== "start") throw new Error("Missing start");
     const done = frames.at(-1); if (done?.type !== "done") throw new Error("Missing done");
+    const childLoad = vi.spyOn(LifecycleRepository.prototype, "load");
+    const sameChildChoice = await POST(request({ ...body, branchId: start.branchId, optionId: body.optionId }), ctx);
+    expect(sameChildChoice.status).toBe(400);
+    expect(await sameChildChoice.json()).toEqual({ error: "The selected option is already the choice for this decision." });
+    expect(childLoad).not.toHaveBeenCalled();
+    childLoad.mockRestore();
     const rewrite = async (branchId: string, target: typeof decision) => {
       const alternate = target.options.find(option => option.id !== target.chosen);
       if (!alternate) throw new Error("Fixture target has no alternative");
